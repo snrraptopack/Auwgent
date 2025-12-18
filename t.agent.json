@@ -1,0 +1,80 @@
+{
+  "name": "Hello",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "modelName": "gemini-3.0",
+        "prompt": "You are nothing without me"
+      },
+      "namedConfig": [
+        {
+          "configName": "Cluade",
+          "modelName": "opus",
+          "prompt": "code for me..."
+        }
+      ]
+    }
+  ],
+  "input": {
+    "name": "string",
+    "id": "string"
+  },
+  "output": {
+    "response": "string"
+  },
+  "tools": [
+    {
+      "description": " for getting the location",
+      "params": {},
+      "name": "getLocation",
+      "returns": "string"
+    },
+    {
+      "description": "for gettting the weather of the user",
+      "params": {
+        "location": "string"
+      },
+      "name": "getWeather",
+      "returns": "string"
+    }
+  ],
+  "workflows": [
+    {
+      "flowName": "watherFlow",
+      "flowParams": {},
+      "retuns": "string",
+      "body": [
+        {
+          "name": "a",
+          "value": {
+            "value": "getLocation",
+            "type": "functionCall",
+            "args": []
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "name": "b",
+          "value": {
+            "value": "getWeather",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "a",
+                "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "type": "return",
+          "value": {
+            "value": "b",
+            "type": "varRef"
+          }
+        }
+      ]
+    }
+  ]
+}
