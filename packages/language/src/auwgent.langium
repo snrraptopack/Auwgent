@@ -66,7 +66,7 @@ TypeConfigDeclaration:
 
 
 Types:
-    types=(UnionType|BooleanType|StringType|NumberType|INT);
+    types=(UnionType|BooleanType|StringType|NumberType|INT|ArrayType);
 
 Statement:
     VariableDeclartion | ReturnStatement
@@ -84,6 +84,7 @@ Expression:
     {infer StringLiteral} value=STRING
     | {infer NumberLiteral} value=INT
     | {infer UnionLiteral} value=UnionType
+    | ArrayLiteral
     | VariableRef
     | FunctionCall
 ;
@@ -98,7 +99,11 @@ VariableRef:
     variable=[VariableDeclartion:ID]
 ;
 
+ArrayLiteral:
+    '[' (elements+=Expression (',' elements+=Expression)*)? ']';
 
+ArrayType:
+    type=(StringType | NumberType | BooleanType) '[' ']';
 BooleanType:
     type="boolean";
 StringType:

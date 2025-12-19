@@ -8,19 +8,10 @@ agent Hello {
         text: string
     }
 
-    tool getLoction():string{
-        description:"get the user location"
-    }
-    tool getWeather():string{
-        description: "get the weather for a location"
-    }
-
-    workflow checkWeatherflow():string{
-        description: "This checks the weather contains all the tools to do that at once given you one unified feedback"
-        let location = getLoction()
-        let weather = getWeather()
-        return weather
-    }
+   output{
+        title:string @desc "The description of what the user said"
+        sentimens: string[] @desc "an array containing the sentimenet extracted"
+   }
 
 }
 

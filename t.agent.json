@@ -12,54 +12,16 @@
   "input": {
     "text": "string"
   },
-  "output": null,
-  "tools": [
-    {
-      "description": "get the user location",
-      "params": {},
-      "name": "getLoction",
-      "returns": "string"
+  "output": {
+    "title": {
+      "type": "string",
+      "description": "The description of what the user said"
     },
-    {
-      "description": "get the weather for a location",
-      "params": {},
-      "name": "getWeather",
-      "returns": "string"
+    "sentimens": {
+      "type": "unknown",
+      "description": "an array containing the sentimenet extracted"
     }
-  ],
-  "workflows": [
-    {
-      "flowName": "checkWeatherflow",
-      "flowParams": {},
-      "returns": "string",
-      "body": [
-        {
-          "name": "location",
-          "value": {
-            "value": "getLoction",
-            "type": "functionCall",
-            "args": []
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "name": "weather",
-          "value": {
-            "value": "getWeather",
-            "type": "functionCall",
-            "args": []
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "type": "return",
-          "value": {
-            "value": "weather",
-            "type": "varRef"
-          }
-        }
-      ],
-      "description": "This checks the weather contains all the tools to do that at once given you one unified feedback"
-    }
-  ]
+  },
+  "tools": [],
+  "workflows": []
 }

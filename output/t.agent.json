@@ -4,7 +4,7 @@
     {
       "defaultConfig": {
         "modelName": "gemini-2.5-flash",
-        "prompt": null
+        "prompt": "You are a helpfull assistant please reply in a nice tone"
       },
       "namedConfig": []
     }
@@ -12,53 +12,16 @@
   "input": {
     "text": "string"
   },
-  "output": null,
-  "tools": [
-    {
-      "description": "get the user location",
-      "params": {},
-      "name": "getLoction",
-      "returns": "string"
+  "output": {
+    "title": {
+      "type": "string",
+      "description": "The description of what the user said"
     },
-    {
-      "description": "get the weather for a location",
-      "params": {},
-      "name": "getWeather",
-      "returns": "string"
+    "sentimens": {
+      "type": "string[]",
+      "description": "an array containing the sentimenet extracted"
     }
-  ],
-  "workflows": [
-    {
-      "flowName": "checkWeatherflow",
-      "flowParams": {},
-      "returns": "string",
-      "body": [
-        {
-          "name": "location",
-          "value": {
-            "value": "getLoction",
-            "type": "functionCall",
-            "args": []
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "name": "weather",
-          "value": {
-            "value": "getWeather",
-            "type": "functionCall",
-            "args": []
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "type": "return",
-          "value": {
-            "value": "weather",
-            "type": "varRef"
-          }
-        }
-      ]
-    }
-  ]
+  },
+  "tools": [],
+  "workflows": []
 }

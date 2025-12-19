@@ -5,10 +5,8 @@ export interface HelloInput {
 }
 
 export interface HelloOutput {
-
+    title: string
+    sentimens: string[]
 }
 
-export interface HelloTools {
-    getLoction: (args: {  }) => Promise<string>;
-    getWeather: (args: {  }) => Promise<string>;
-}
+

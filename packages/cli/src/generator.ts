@@ -3,6 +3,8 @@ import {
     Expression,
     InputConfig,
     isAgentConfig,
+    isArrayLiteral,
+    isArrayType,
     isBooleanType,
     isFunctionCall,
     isInputConfig,
@@ -160,6 +162,11 @@ function extractType(types: Types): string {
         if (isBooleanType(t) || isNumberType(t) || isStringType(t)) {
             return t.type
         }
+
+        if (isArrayType(t)) {
+            const innerType = extractType({ types: t.type } as any);
+            return `${innerType}[]`;
+        }
     }
     return 'unknown';
 }
@@ -182,6 +189,11 @@ function extractExpression(express: Expression | Statement): any {
 
     if (isNumberLiteral(express) || isStringLiteral(express)) {
         return { value: express.value, type: "literal" }
+    }
+
+    if (isArrayLiteral(express)) {
+        let elements = express.elements.map(item => extractExpression(item))
+        return { type: "array", value: elements }
     }
 
     if (isUnionLiteral(express)) {

@@ -63,10 +63,11 @@ export class Synthesizer {
         for (const [key, val] of Object.entries(this.ir.output)) {
             const typeInfo = typeof val === 'string' ? { type: val } : val;
 
-            properties[key] = {
-                type: this.normalizeType(typeInfo.type),
-                description: (typeInfo as any).description
-            };
+            properties[key] = this.convertTypeToSchema(typeInfo.type);
+            // Add description if present
+            if ((typeInfo as any).description) {
+                properties[key].description = (typeInfo as any).description;
+            }
         }
 
         return {
@@ -107,9 +108,7 @@ export class Synthesizer {
         const properties: Record<string, JsonSchema> = {};
 
         for (const [key, type] of Object.entries(params)) {
-            properties[key] = {
-                type: this.normalizeType(type)
-            };
+            properties[key] = this.convertTypeToSchema(type);
         }
         return {
             type: "object",
@@ -118,6 +117,21 @@ export class Synthesizer {
         };
     }
 
+
+    private convertTypeToSchema(irType: string): JsonSchema {
+        if (irType.endsWith("[]")) {
+            const innerType = irType.slice(0, -2);
+            return {
+                type: "array",
+                items: {
+                    type: this.normalizeType(innerType)
+                }
+            };
+        }
+        return {
+            type: this.normalizeType(irType)
+        };
+    }
 
     private normalizeType(irType: string): string {
         switch (irType.toLowerCase()) {
