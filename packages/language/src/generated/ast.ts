@@ -23,6 +23,7 @@ export type AuwgentKeywordNames =
     | ","
     | ":"
     | "="
+    | "@desc"
     | "agent"
     | "boolean"
     | "config"
@@ -238,10 +239,27 @@ export function isNumberType(item: unknown): item is NumberType {
     return reflection.isInstance(item, NumberType.$type);
 }
 
+export interface Output extends langium.AstNode {
+    readonly $container: OutputConfig;
+    readonly $type: 'Output';
+    description: string;
+    td: TypeConfigDeclaration;
+}
+
+export const Output = {
+    $type: 'Output',
+    description: 'description',
+    td: 'td'
+} as const;
+
+export function isOutput(item: unknown): item is Output {
+    return reflection.isInstance(item, Output.$type);
+}
+
 export interface OutputConfig extends langium.AstNode {
     readonly $container: Agent;
     readonly $type: 'OutputConfig';
-    outProperties: Array<TypeConfigDeclaration>;
+    outProperties: Array<Output>;
 }
 
 export const OutputConfig = {
@@ -345,7 +363,7 @@ export function isToolFunction(item: unknown): item is ToolFunction {
 }
 
 export interface TypeConfigDeclaration extends langium.AstNode {
-    readonly $container: InputConfig | OutputConfig | ToolFunction | WorkFlowConfig;
+    readonly $container: InputConfig | Output | ToolFunction | WorkFlowConfig;
     readonly $type: 'TypeConfigDeclaration';
     name: string;
     t: Types;
@@ -475,6 +493,7 @@ export type AuwgentAstType = {
     NonDefaultConfigModel: NonDefaultConfigModel
     NumberLiteral: NumberLiteral
     NumberType: NumberType
+    Output: Output
     OutputConfig: OutputConfig
     ReturnStatement: ReturnStatement
     Statement: Statement
@@ -622,6 +641,18 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             properties: {
                 type: {
                     name: NumberType.type
+                }
+            },
+            superTypes: []
+        },
+        Output: {
+            name: Output.$type,
+            properties: {
+                description: {
+                    name: Output.description
+                },
+                td: {
+                    name: Output.td
                 }
             },
             superTypes: []

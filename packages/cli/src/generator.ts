@@ -84,6 +84,8 @@ export function generateOutput(model: Model, source: string, destination: string
             }
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
+            const typesPath = path.join(destDir, `${baseName}.agent.types.ts`)
+            fs.writeFileSync(typesPath, generateTypes(agentIR))
         }
     }
 
@@ -119,8 +121,8 @@ function extractInOutConfig(inputConfig: InputConfig | OutputConfig) {
             result[input.name] = extractType(input.t)
         })
     } else {
-        inputConfig.outProperties.map(input => {
-            result[input.name] = extractType(input.t)
+        inputConfig.outProperties.map(output => {
+            result[output.td.name] = { type: extractType(output.td.t), description: output.description }
         })
     }
 
@@ -136,14 +138,15 @@ function extractToolConfig(toolConfig: ToolConfig) {
 function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
 
     let flowName = workflowConfig.name
+    let description = workflowConfig.desc
     let flowParams = extractParams(workflowConfig.params)
-    let retuns = extractType(workflowConfig.return)
+    let returns = extractType(workflowConfig.return)
 
     let body = workflowConfig.body.map(bdy => {
         return extractExpression(bdy)
     })
 
-    return { flowName, flowParams, retuns, body }
+    return { flowName, flowParams, returns, body, description }
 }
 
 
@@ -203,3 +206,56 @@ function extractExpression(express: Expression | Statement): any {
     return null
 }
 
+
+// Build TypeScript types
+function generateTypes(agent: any): string {
+    // Check if input exists
+    const inputProps = agent.input
+        ? Object.entries(agent.input)
+            .map(([name, type]) => `    ${name}: ${type}`)
+            .join('\n')
+        : '';
+
+    // Check if output exists
+    const outputProps = agent.output
+        ? Object.entries(agent.output)
+            .map(([name, value]: [string, any]) => {
+                const type = typeof value === 'string' ? value : value.type
+                return `    ${name}: ${type}`
+            })
+            .join('\n')
+        : '';
+
+    const toolInterface = generateToolsInterface(agent);
+
+    return `// Auto-generated from ${agent.name}
+
+export interface ${agent.name}Input {
+${inputProps}
+}
+
+export interface ${agent.name}Output {
+${outputProps}
+}
+
+${toolInterface}
+`
+}
+
+
+function generateToolsInterface(agent: any): string {
+    if (!agent.tools || agent.tools.length === 0) {
+        return "";
+    }
+    const toolMethods = agent.tools.map((tool: any) => {
+        const paramType = Object.entries(tool.params)
+            .map(([name, type]) => `${name}: ${type}`)
+            .join(', ');
+
+        // e.g. calculate: (args: {a: number, b: number}) => Promise<number>;
+        return `    ${tool.name}: (args: { ${paramType} }) => Promise<${tool.returns}>;`;
+    }).join('\n');
+    return `export interface ${agent.name}Tools {
+${toolMethods}
+}`;
+}

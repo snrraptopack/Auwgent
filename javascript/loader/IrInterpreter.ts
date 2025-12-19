@@ -1,0 +1,124 @@
+import { Synthesizer } from "./Synthesizer";
+import type { AgentIR } from "./types/ir";
+import type { AgentDriver, SyntheticMessage } from "./types/protocol";
+import type { ToolMap } from "./types/tool"; // Import new type
+import { WorkflowRunner } from "./WorkflowRunner";
+
+export class Agent<
+    TInput extends Record<string, any>,
+    TOutput extends string | Record<string, any> = string,
+    TTools extends object = ToolMap
+> {
+    private synthesizer: Synthesizer | null = null;
+    private ir: AgentIR | null = null;
+    private maxTurns = 10; // Prevent infinite loops
+
+    constructor(private driver: AgentDriver) { }
+
+    load(ir: AgentIR) {
+        this.ir = ir;
+        this.synthesizer = new Synthesizer(ir);
+    }
+
+    // Updated Signature: Accept tools!
+    async run(
+        input: TInput, tools?: TTools,
+    ): Promise<TOutput> {
+        if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
+
+        const safeTools = tools as unknown as ToolMap
+
+
+        // 1. Initial Synthesis
+        const request = this.synthesizer.synthesize(input);
+        let currentMessages: SyntheticMessage[] = [...request.messages];
+        let turnCount = 0;
+
+        // 2. The Loop
+        while (turnCount < this.maxTurns) {
+            turnCount++;
+
+            // Execute Driver
+            const result = await this.driver.execute({
+                ...request,
+                messages: currentMessages
+            });
+
+            // CASE A: Tool Call
+            if (result.toolParams) {
+                const { name, args } = result.toolParams;
+
+                // Add model's tool call to history
+                // (Note: Drivers might handle history differently, but for now we simulate a 'chat')
+                currentMessages.push({
+                    role: 'assistant',
+                    content: `Call ${name} with ${JSON.stringify(args)}`
+                });
+
+                const workflow = this.ir.workflows?.find(w => w.flowName === name);
+
+                try {
+                    let toolResult: any;
+
+                    // 1. Dispatch: Check if it's a Workflow or a Tool
+                    if (workflow) {
+                        console.log(`[Agent] >>> Dispatching to Workflow: ${name}`);
+                        const runner = new WorkflowRunner(this.ir, safeTools);
+                        toolResult = await runner.run(name, args);
+                        console.log(`[Agent] <<< Workflow ${name} completed.`);
+                    } else {
+                        // It must be a user tool
+                        if (!tools || !safeTools[name]) {
+                            throw new Error(`Model tried to call unknown tool: ${name}`);
+                        }
+                        console.log(`[Agent] >>> Calling Tool: ${name}`);
+                        toolResult = await safeTools[name](args);
+                        console.log(`[Agent] <<< Tool ${name} completed.`);
+                    }
+
+                    // 2. Add result to history
+                    currentMessages.push({
+                        role: 'user',
+                        content: `Tool Result: ${JSON.stringify(toolResult)}`
+                    });
+                } catch (e: any) {
+                    console.error(`[Agent] Execution Error:`, e);
+                    currentMessages.push({
+                        role: 'user',
+                        content: `Tool Error: ${e.message}`
+                    });
+                }
+
+                // Continue loop -> Model sees result -> Decides next step
+                continue;
+            }
+
+            // CASE B: Final Text Result
+            if (request.responseSchema) {
+                try {
+                    return JSON.parse(result.text ?? "{}") as TOutput;
+                } catch (e) {
+                    console.error("Failed to parse JSON response:", result.text);
+                    throw new Error("Model failed to return valid JSON");
+                }
+            }
+
+            return (result.text ?? "") as TOutput;
+        }
+
+        throw new Error("Agent exceeded maximum turns");
+    }
+
+    /**
+     * Executes a workflow defined in the agent's IR.
+     */
+    async executeWorkflow(name: string, args: Record<string, any>, tools?: ToolMap): Promise<any> {
+        if (!this.ir) throw new Error("Agent not loaded");
+
+        // Use provided tools or empty map if none
+        const safeTools = (tools || {}) as ToolMap;
+
+        const runner = new WorkflowRunner(this.ir, safeTools);
+        return runner.run(name, args);
+    }
+}

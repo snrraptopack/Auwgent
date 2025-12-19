@@ -46,7 +46,11 @@ ModelConfig:
 InputConfig:
     "input" "{" inProperties+=TypeConfigDeclaration* "}";
 OutputConfig:
-    "output" "{" outProperties+=TypeConfigDeclaration* "}";
+    "output" "{" outProperties+=(Output)* "}";
+
+Output:
+    td=TypeConfigDeclaration "@desc" description=STRING
+;
 
 ToolConfig:
     "tool" tool=ToolFunction

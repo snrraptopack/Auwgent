@@ -1,36 +1,26 @@
 
 agent Hello {
-    default config {
-        model : "gemini-3.0"
-        prompt : "You are nothing without me"
+    default config{
+        model:"gemini-2.5-flash"
+        prompt: "You are a helpfull assistant please reply in a nice tone"
+    }
+    input{
+        text: string
     }
 
-    config Cluade {
-        model : "opus"
-        prompt : "code for me..."
+    tool getLoction():string{
+        description:"get the user location"
+    }
+    tool getWeather():string{
+        description: "get the weather for a location"
     }
 
-    input {
-        name:string
-        id: string
+    workflow checkWeatherflow():string{
+        description: "This checks the weather contains all the tools to do that at once given you one unified feedback"
+        let location = getLoction()
+        let weather = getWeather()
+        return weather
     }
 
-    output {
-        response:string
-    }
-
-    tool getLocation(): string {
-        description : " for getting the location"
-    } 
-    tool getWeather(location:string): string {
-        description : "for gettting the weather of the user"
-    }
-
-    workflow watherFlow(): string{
-        description: "flow for getting the wather"
-        let a = getLocation()
-        let b = getWeather(a)
-        return  b
-    }
 }
 

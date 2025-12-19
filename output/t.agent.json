@@ -4,7 +4,7 @@
     {
       "defaultConfig": {
         "modelName": "gemini-2.5-flash",
-        "prompt": "You are a helpfull assistant please reply in a nice tone"
+        "prompt": null
       },
       "namedConfig": []
     }
@@ -58,8 +58,7 @@
             "type": "varRef"
           }
         }
-      ],
-      "description": "This checks the weather contains all the tools to do that at once given you one unified feedback"
+      ]
     }
   ]
 }
