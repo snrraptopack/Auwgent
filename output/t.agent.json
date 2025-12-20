@@ -1,27 +1,150 @@
 {
-  "name": "Hello",
+  "name": "OrderProcessor",
   "modelConfig": [
     {
       "defaultConfig": {
-        "modelName": "gemini-2.5-flash",
-        "prompt": "You are a helpfull assistant please reply in a nice tone"
+        "modelName": "kimi-k2-0905-preview",
+        "prompt": "You are a helpful assistant you have been giving tools and workflows to use please provide response in accurate manner dont assume "
       },
       "namedConfig": []
     }
   ],
   "input": {
-    "text": "string"
-  },
-  "output": {
-    "title": {
+    "request": {
       "type": "string",
-      "description": "The description of what the user said"
-    },
-    "sentimens": {
-      "type": "string[]",
-      "description": "an array containing the sentimenet extracted"
+      "optional": false
     }
   },
-  "tools": [],
-  "workflows": []
+  "output": {
+    "result": {
+      "type": "string",
+      "description": "The result of your response",
+      "optional": false
+    }
+  },
+  "tools": [
+    {
+      "description": "returns the total number of student",
+      "params": {},
+      "name": "totalstudent",
+      "returns": "number"
+    },
+    {
+      "description": "returns the name of the student",
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "name": "getstudentname",
+      "returns": "string"
+    },
+    {
+      "description": "get the location of the student",
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "name": "getstudentlocation",
+      "returns": "string"
+    },
+    {
+      "description": "get the grades of the student",
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "name": "getstudentgrade",
+      "returns": "string"
+    }
+  ],
+  "workflows": [
+    {
+      "flowName": "getstudentdetails",
+      "flowParams": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "name": "string",
+          "location": "string",
+          "grade": "number"
+        }
+      },
+      "body": [
+        {
+          "name": "grade",
+          "value": {
+            "value": "getstudentgrade",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "id",
+                "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "name": "location",
+          "value": {
+            "value": "getstudentlocation",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "id",
+                "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "name": "name",
+          "value": {
+            "value": "getstudentname",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "id",
+                "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "object",
+            "value": {
+              "name": {
+                "type": "varRef",
+                "value": "name"
+              },
+              "location": {
+                "type": "varRef",
+                "value": "location"
+              },
+              "grade": {
+                "type": "varRef",
+                "value": "grade"
+              }
+            }
+          }
+        }
+      ],
+      "description": "get the student deatails, including location,grade and name"
+    }
+  ]
 }

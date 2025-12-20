@@ -61,31 +61,52 @@ ToolFunction:
     name=ID "(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")" 
     ":" returns=Types "{" "description" ":" desc=STRING "}";
 
-TypeConfigDeclaration:
-    name=ID ":" t=Types;
 
-
-Types:
-    types=(UnionType|BooleanType|StringType|NumberType|INT|ArrayType);
 
 Statement:
-    VariableDeclartion | ReturnStatement
+    VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration
 ;
 
 VariableDeclartion:
     "let" name=ID "=" value=Expression
 ;
 
+TypeDeclaration:
+    "type" name=ID "{" types+=TypeConfigDeclaration* "}" ;
+
+TypeConfigDeclaration:
+    name=ID (isOptional?='?')? ":" t=Types;
+
+IfStatement:
+    'if' '(' condition=Condition ')' '{' 
+        (thenBlock+=Statement)* 
+    '}' 
+    ('else' '{' 
+        (elseBlock+=Statement)* 
+    '}')?
+;
+
+Condition:
+    left=Expression op=Operators right=Expression;
+
+Operators returns string:
+    "=="| ">" | "<" | "!="
+;
+
 ReturnStatement:
     "return" value=Expression
 ;
+
+type Referenceable =  VariableDeclartion |TypeConfigDeclaration ;
 
 Expression:
     {infer StringLiteral} value=STRING
     | {infer NumberLiteral} value=INT
     | {infer UnionLiteral} value=UnionType
+    | {infer BooleanLiteral} value=("true"|"false")
     | ArrayLiteral
-    | VariableRef
+    | ObjectLiteral
+    | {infer VariableRef} variable=[Referenceable]
     | FunctionCall
 ;
 
@@ -95,15 +116,23 @@ FunctionCall:
     ")"
 ;
 
-VariableRef:
-    variable=[VariableDeclartion:ID]
-;
+
 
 ArrayLiteral:
     '[' (elements+=Expression (',' elements+=Expression)*)? ']';
 
+ObjectLiteral:
+    '{' (properties+=PropertyValue (',' properties+=PropertyValue)*)? '}';
+
+PropertyValue:
+    name=ID (':' value=Expression)?;
+
 ArrayType:
     type=(StringType | NumberType | BooleanType) '[' ']';
+
+Types:
+    types=(ArrayType|ObjectType|UnionType|BooleanType|StringType|NumberType|INT);
+
 BooleanType:
     type="boolean";
 StringType:
@@ -112,6 +141,12 @@ NumberType:
     type="number";
 UnionType:
     options+=STRING ('|' options+=STRING)*;
+
+ObjectType:
+    '{' (properties+=PropertyType (',' properties+=PropertyType)*)? '}';
+
+PropertyType:
+    name=ID (isOptional?='?')? ":" type=Types;
 
 
 hidden terminal WS: /\s+/;

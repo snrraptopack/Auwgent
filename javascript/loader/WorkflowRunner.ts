@@ -43,6 +43,34 @@ export class WorkflowRunner {
                 const value = await this.evaluateExpression(stmt.value, scope);
                 return { __type: 'ReturnSignal', value };
             }
+            case "if": {
+                // Evaluate condition
+                const left = await this.evaluateExpression((stmt as any).condition.left, scope);
+                const right = await this.evaluateExpression((stmt as any).condition.right, scope);
+                const operator = (stmt as any).condition.operator;
+
+                let conditionResult = false;
+                switch (operator) {
+                    case "==": conditionResult = left == right; break;
+                    case "!=": conditionResult = left != right; break;
+                    case "<": conditionResult = left < right; break;
+                    case ">": conditionResult = left > right; break;
+                    case "<=": conditionResult = left <= right; break;
+                    case ">=": conditionResult = left >= right; break;
+                }
+
+                // Execute appropriate block
+                const block = conditionResult ? (stmt as any).then : (stmt as any).else;
+                if (block && block.length > 0) {
+                    for (const innerStmt of block) {
+                        const result = await this.executeStatement(innerStmt, scope);
+                        if (result && typeof result === 'object' && result.__type === 'ReturnSignal') {
+                            return result; // Propagate return up
+                        }
+                    }
+                }
+                return undefined;
+            }
             case "functionCall": // Function call as a statement (ignore return value)
                 await this.evaluateExpression(stmt as any, scope); // casting because Expression is subset
                 return undefined;
@@ -62,13 +90,35 @@ export class WorkflowRunner {
                 return expr.value;
 
             case "union":
-                return expr.value; // string[]
+                // Unions are type constraints, not runtime values
+                throw new Error(`Union types cannot be used as runtime values. Options: ${expr.value.join(' | ')}`);
 
             case "varRef": {
                 if (!scope.has(expr.value)) {
                     throw new Error(`Variable not found: ${expr.value}`);
                 }
                 return scope.get(expr.value);
+            }
+
+            case "object": {
+                const result: Record<string, any> = {};
+                
+                // expr.value contains the properties object from the IR
+                // Format: { name: { type: "varRef", value: "name" }, age: { type: "literal", value: 25 } }
+                for (const [key, valueExpr] of Object.entries((expr as any).value)) {
+                    result[key] = await this.evaluateExpression(valueExpr as Expression, scope);
+                }
+                
+                return result;
+            }
+
+            case "array": {
+                const elements = (expr as any).value || [];
+                const result = [];
+                for (const elemExpr of elements) {
+                    result.push(await this.evaluateExpression(elemExpr, scope));
+                }
+                return result;
             }
 
             case "functionCall": {

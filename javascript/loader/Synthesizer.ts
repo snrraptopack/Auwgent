@@ -59,21 +59,40 @@ export class Synthesizer {
         }
 
         const properties: Record<string, JsonSchema> = {};
+        const requiredFields: string[] = [];
 
         for (const [key, val] of Object.entries(this.ir.output)) {
             const typeInfo = typeof val === 'string' ? { type: val } : val;
+            const actualType = this.unwrapType(typeInfo.type);
+            const isOptional = (typeInfo as any).optional === true;
 
-            properties[key] = this.convertTypeToSchema(typeInfo.type);
+            // Handle union type objects
+            if (typeof actualType === 'object' && actualType.type === 'union' && Array.isArray(actualType.options)) {
+                properties[key] = {
+                    type: 'string',
+                    enum: actualType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
+                };
+            } else if (typeof actualType === 'object' && actualType.type === 'object' && actualType.properties) {
+                properties[key] = this.objectTypeToSchema(actualType.properties);   
+            }else {
+                properties[key] = this.convertTypeToSchema(typeof actualType === 'string' ? actualType : 'string');
+            }
+
             // Add description if present
             if ((typeInfo as any).description) {
                 properties[key].description = (typeInfo as any).description;
+            }
+
+            // Only add to required if NOT optional
+            if (!isOptional) {
+                requiredFields.push(key);
             }
         }
 
         return {
             type: "object",
             properties,
-            required: Object.keys(properties)
+            required: requiredFields
         };
     }
 
@@ -104,17 +123,49 @@ export class Synthesizer {
         return allTools
     }
 
-    private paramsToSchema(params: Record<string, string>): JsonSchema {
+    private paramsToSchema(params: Record<string, any>): JsonSchema {
         const properties: Record<string, JsonSchema> = {};
+        const requiredFields: string[] = [];
 
-        for (const [key, type] of Object.entries(params)) {
-            properties[key] = this.convertTypeToSchema(type);
+        for (const [key, typeVal] of Object.entries(params)) {
+            const actualType = this.unwrapType(typeVal);
+            const isOptional = typeof typeVal === 'object' && typeVal?.optional === true;
+
+            // Handle union type objects
+            if (typeof actualType === 'object' && actualType.type === 'union') {
+                properties[key] = {
+                    type: 'string',
+                    enum: actualType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
+                };
+            }else if(typeof actualType === 'object' && actualType.type === 'object' && actualType.properties){
+                  properties[key] = this.objectTypeToSchema(actualType.properties);
+            }else {
+                properties[key] = this.convertTypeToSchema(typeof actualType === 'string' ? actualType : 'string');
+            }
+
+            if (!isOptional) {
+                requiredFields.push(key);
+            }
         }
         return {
             type: "object",
             properties,
-            required: Object.keys(properties)
+            required: requiredFields
         };
+    }
+
+    // Helper to unwrap nested type structures
+    private unwrapType(typeVal: any): any {
+        if (typeof typeVal === 'string') {
+            return typeVal;
+        }
+        if (typeVal && typeof typeVal.type === 'object') {
+            return this.unwrapType(typeVal.type);
+        }
+        if (typeVal && typeof typeVal.type === 'string') {
+            return typeVal.type;
+        }
+        return typeVal;
     }
 
 
@@ -132,6 +183,48 @@ export class Synthesizer {
             type: this.normalizeType(irType)
         };
     }
+
+
+        /**
+     * Converts an object type definition to JSON Schema
+     * Input: { name: "string", age: "number", address: { type: "object", properties: {...} } }
+     * Output: JSON Schema with nested properties
+     */
+    private objectTypeToSchema(properties: Record<string, any>): JsonSchema {
+        const schemaProps: Record<string, JsonSchema> = {};
+        const required: string[] = [];
+
+        for (const [key, typeVal] of Object.entries(properties)) {
+            const actualType = this.unwrapType(typeVal);
+            const isOptional = typeof typeVal === 'object' && typeVal?.optional === true;
+
+            // Recursive: Handle nested objects
+            if (typeof actualType === 'object' && actualType.type === 'object' && actualType.properties) {
+                schemaProps[key] = this.objectTypeToSchema(actualType.properties);
+            }
+            // Handle unions
+            else if (typeof actualType === 'object' && actualType.type === 'union') {
+                schemaProps[key] = {
+                    type: 'string',
+                    enum: actualType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
+                };
+            }
+            // Handle primitives and arrays
+            else {
+                schemaProps[key] = this.convertTypeToSchema(typeof actualType === 'string' ? actualType : 'string');
+            }
+            if (!isOptional) {
+                required.push(key);
+            }
+        }
+
+        return {
+            type: "object",
+            properties: schemaProps,
+            required
+        };
+    }
+
 
     private normalizeType(irType: string): string {
         switch (irType.toLowerCase()) {

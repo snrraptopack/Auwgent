@@ -21,93 +21,104 @@ export class Agent<
     }
 
     // Updated Signature: Accept tools!
-    async run(
-        input: TInput, tools?: TTools,
-    ): Promise<TOutput> {
-        if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
+   async run(
+    input: TInput, tools?: TTools,
+): Promise<TOutput> {
+    if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
-        const safeTools = tools as unknown as ToolMap
+    const safeTools = tools as unknown as ToolMap
 
+    // 1. Initial Synthesis
+    const request = this.synthesizer.synthesize(input);
+    let currentMessages: SyntheticMessage[] = [...request.messages];
+    let turnCount = 0;
+    let toolsStillAvailable = true; // Track if tools should be sent to model
 
-        // 1. Initial Synthesis
-        const request = this.synthesizer.synthesize(input);
-        let currentMessages: SyntheticMessage[] = [...request.messages];
-        let turnCount = 0;
+    // 2. The Loop
+    while (turnCount < this.maxTurns) {
+        turnCount++;
 
-        // 2. The Loop
-        while (turnCount < this.maxTurns) {
-            turnCount++;
+        // Build the current request
+        const currentRequest = {
+            ...request,
+            messages: currentMessages,
+            // Remove tools after first tool call to enable structured output
+            tools: toolsStillAvailable ? request.tools : undefined
+        };
 
-            // Execute Driver
-            const result = await this.driver.execute({
-                ...request,
-                messages: currentMessages
+        // Execute Driver
+        const result = await this.driver.execute(currentRequest);
+
+        // CASE A: Tool Call
+        if (result.toolParams) {
+            const { name, args } = result.toolParams;
+
+            // Add model's tool call to history
+            currentMessages.push({
+                role: 'assistant',
+                content: `Call ${name} with ${JSON.stringify(args)}`
             });
 
-            // CASE A: Tool Call
-            if (result.toolParams) {
-                const { name, args } = result.toolParams;
+            const workflow = this.ir.workflows?.find(w => w.flowName === name);
 
-                // Add model's tool call to history
-                // (Note: Drivers might handle history differently, but for now we simulate a 'chat')
+            try {
+                let toolResult: any;
+
+                // 1. Dispatch: Check if it's a Workflow or a Tool
+                if (workflow) {
+                    console.log(`[Agent] >>> Dispatching to Workflow: ${name}`);
+                    const runner = new WorkflowRunner(this.ir, safeTools);
+                    toolResult = await runner.run(name, args);
+                    console.log(`[Agent] <<< Workflow ${name} completed.`);
+                } else {
+                    // It must be a user tool
+                    if (!tools || !safeTools[name]) {
+                        throw new Error(`Model tried to call unknown tool: ${name}`);
+                    }
+                    console.log(`[Agent] >>> Calling Tool: ${name}`);
+                    toolResult = await safeTools[name](args);
+                    console.log(`[Agent] <<< Tool ${name} completed.`);
+                }
+
+                // 2. Add result to history
                 currentMessages.push({
-                    role: 'assistant',
-                    content: `Call ${name} with ${JSON.stringify(args)}`
+                    role: 'user',
+                    content: `Tool Result: ${JSON.stringify(toolResult)}`
                 });
 
-                const workflow = this.ir.workflows?.find(w => w.flowName === name);
+                // 3. IMPORTANT: Remove tools for next turn so model can return structured output
+                toolsStillAvailable = false;
 
-                try {
-                    let toolResult: any;
-
-                    // 1. Dispatch: Check if it's a Workflow or a Tool
-                    if (workflow) {
-                        console.log(`[Agent] >>> Dispatching to Workflow: ${name}`);
-                        const runner = new WorkflowRunner(this.ir, safeTools);
-                        toolResult = await runner.run(name, args);
-                        console.log(`[Agent] <<< Workflow ${name} completed.`);
-                    } else {
-                        // It must be a user tool
-                        if (!tools || !safeTools[name]) {
-                            throw new Error(`Model tried to call unknown tool: ${name}`);
-                        }
-                        console.log(`[Agent] >>> Calling Tool: ${name}`);
-                        toolResult = await safeTools[name](args);
-                        console.log(`[Agent] <<< Tool ${name} completed.`);
-                    }
-
-                    // 2. Add result to history
-                    currentMessages.push({
-                        role: 'user',
-                        content: `Tool Result: ${JSON.stringify(toolResult)}`
-                    });
-                } catch (e: any) {
-                    console.error(`[Agent] Execution Error:`, e);
-                    currentMessages.push({
-                        role: 'user',
-                        content: `Tool Error: ${e.message}`
-                    });
-                }
-
-                // Continue loop -> Model sees result -> Decides next step
-                continue;
+            } catch (e: any) {
+                console.error(`[Agent] Execution Error:`, e);
+                currentMessages.push({
+                    role: 'user',
+                    content: `Tool Error: ${e.message}`
+                });
+                // Still remove tools even on error
+                toolsStillAvailable = false;
             }
 
-            // CASE B: Final Text Result
-            if (request.responseSchema) {
-                try {
-                    return JSON.parse(result.text ?? "{}") as TOutput;
-                } catch (e) {
-                    console.error("Failed to parse JSON response:", result.text);
-                    throw new Error("Model failed to return valid JSON");
-                }
-            }
-
-            return (result.text ?? "") as TOutput;
+            // Continue loop -> Model sees result -> Decides next step
+            continue;
         }
 
-        throw new Error("Agent exceeded maximum turns");
+        // CASE B: Final Text Result
+        if (request.responseSchema) {
+            try {
+                return JSON.parse(result.text ?? "{}") as TOutput;
+            } catch (e) {
+                console.error("Failed to parse JSON response:", result.text);
+                throw new Error("Model failed to return valid JSON");
+            }
+        }
+
+        return (result.text ?? "") as TOutput;
     }
+
+    throw new Error("Agent exceeded maximum turns");
+}
+
 
     /**
      * Executes a workflow defined in the agent's IR.

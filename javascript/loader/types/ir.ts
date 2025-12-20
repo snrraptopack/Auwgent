@@ -2,7 +2,7 @@ export interface AgentIR {
     name: string;
     modelConfig: ModelConfig[];
     input: Record<string, string>;
-    output: Record<string, string | { type: string; description: string }>;
+    output: Record<string, string | { type: string; description: string, optional: boolean }>;
     tools: Tool[];
     workflows: Workflow[];
 }
@@ -25,13 +25,16 @@ export interface Workflow {
 export type Statement =
     | VariableDeclaration
     | ReturnStatement
+    | IfStatement
     | Expression;
 
 export type Expression =
     | Literal
     | UnionLiteral
     | VarRef
-    | FunctionCall;
+    | FunctionCall
+    | ObjectLiteral
+    | ArrayLiteral;
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -42,6 +45,17 @@ export interface VariableDeclaration {
 export interface ReturnStatement {
     type: "return";
     value: Expression;
+}
+
+export interface IfStatement {
+    type: "if";
+    condition: {
+        left: Expression;
+        operator: string;
+        right: Expression;
+    };
+    then: Statement[];
+    else: Statement[];
 }
 
 export interface Literal {
@@ -63,6 +77,16 @@ export interface FunctionCall {
     type: "functionCall";
     value: string; // Function name
     args: Expression[];
+}
+
+export interface ObjectLiteral {
+    type: "object";
+    value: Record<string, Expression>;  // Properties map to expressions
+}
+
+export interface ArrayLiteral {
+    type: "array";
+    value: Expression[];  // Array of expressions
 }
 
 export type ModelConfig = {

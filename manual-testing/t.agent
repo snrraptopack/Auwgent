@@ -1,17 +1,41 @@
-
-agent Hello {
-    default config{
-        model:"gemini-2.5-flash"
-        prompt: "You are a helpfull assistant please reply in a nice tone"
+agent OrderProcessor {
+    default config {
+        model: "kimi-k2-0905-preview"
+        prompt: "You are a helpful assistant you have been giving tools and workflows to use please provide response in accurate manner dont assume "
     }
-    input{
-        text: string
+    
+    input {
+        request: string
+    }
+    
+    output {
+        result:string @desc "The result of your response"
+    }
+    
+    tool totalstudent():number{
+        description:"returns the total number of student"
     }
 
-   output{
-        title:string @desc "The description of what the user said"
-        sentimens: string[] @desc "an array containing the sentimenet extracted"
-   }
+    tool getstudentname(id:number):string{
+        description:"returns the name of the student"
+    }
 
+    tool getstudentlocation(id:number):string{
+        description:"get the location of the student"
+    }
+
+    tool getstudentgrade(id:number):string{
+        description:"get the grades of the student"
+    }
+
+
+    workflow getstudentdetails(id:number):{name:string,location:string,grade:number}{
+        description:"get the student deatails, including location,grade and name"
+        let grade = getstudentgrade(id)
+        let location = getstudentlocation(id)
+        let name = getstudentname(id)
+
+        return {name,location,grade}
+    }
+    
 }
-
