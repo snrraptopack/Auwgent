@@ -62,7 +62,7 @@ const tools: OrderProcessorTools = {
 
 
 const result = await agent.run({
-    request: "what is the details of student with an id 10"
+    request: "get me the details of the student with id 3"
 }, tools);
 
 console.log("final", result);

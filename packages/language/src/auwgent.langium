@@ -5,7 +5,7 @@ entry Model:
     (elements+=Element)*;
 
 Element:
-    agents+=Agent;
+    Agent | NamedPrompt;
 
 Agent:
     "agent" name=ID "{" 
@@ -41,7 +41,15 @@ NonDefaultConfigModel:
 
 ModelConfig:
     "model" ":" ModelName=STRING
-    ("prompt" ":" prompt=STRING)?;
+    ("prompt" "{" (parts+=PromptStatement)* "}")?
+    ("prompt" ":" refPrompt=[NamedPrompt]?  simplePrompt=STRING?)?
+;
+
+NamedPrompt:
+    "prompt" name=ID  "{" (parts+=PromptStatement)* "}";
+
+PromptStatement:
+    Expression|IfStatement;
 
 InputConfig:
     "input" "{" inProperties+=TypeConfigDeclaration* "}";
@@ -100,7 +108,6 @@ type Referenceable =  VariableDeclartion |TypeConfigDeclaration ;
 Expression:
     {infer StringLiteral} value=STRING
     | {infer NumberLiteral} value=INT
-    | {infer UnionLiteral} value=UnionType
     | {infer BooleanLiteral} value=("true"|"false")
     | ArrayLiteral
     | ObjectLiteral

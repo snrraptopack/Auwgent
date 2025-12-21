@@ -21,8 +21,8 @@ export class GoogleDriver implements AgentDriver {
             parts: [{ text: m.content }]
         }));
 
-    const systemInstruction = request.messages
-        .find(m => m.role === 'system')?.content;
+    let systemInstruction = request.messages
+        .find(m => m.role === 'system')?.content ?? "";
 
     // 3. Map Tools
     let toolsConfig: any[] = [];
@@ -38,12 +38,13 @@ export class GoogleDriver implements AgentDriver {
 
     // 4. Map Schema (IMPORTANT: Only use structured output if NO tools are present)
     let generationConfig: any = {};
-    
+    const hasTools = toolsConfig.length > 0;
     // Google doesn't support function calling + JSON schema at the same time
     // Only use structured output when there are no tools
-    if (request.responseSchema && toolsConfig.length === 0) {
+    if (request.responseSchema && !hasTools) {
         generationConfig.responseMimeType = "application/json";
         generationConfig.responseSchema = request.responseSchema;
+        systemInstruction += `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(request.responseSchema)}`;
     }
 
     // 5. Execute

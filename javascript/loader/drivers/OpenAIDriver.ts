@@ -61,7 +61,7 @@ export class OpenAIDriver implements AgentDriver {
             model,
             messages,
             tools: hasTools ? tools : undefined,
-            tool_choice: hasTools ? "required" : undefined,
+            tool_choice: hasTools ? "auto" : undefined,
             response_format: !hasTools && request.responseSchema ? { type: "json_object" } : undefined,
             temperature: request.config.temperature ?? 0
         });

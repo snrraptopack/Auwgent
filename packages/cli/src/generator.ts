@@ -1,38 +1,27 @@
 import {
-    AgentConfig,
     Expression,
-    InputConfig,
-    isAgentConfig,
     isArrayLiteral,
     isArrayType,
     isBooleanLiteral,
     isBooleanType,
     isFunctionCall,
     isIfStatement,
-    isInputConfig,
     isNumberLiteral,
     isNumberType,
     isObjectLiteral,
     isObjectType,
-    isOutputConfig,
     isReturnStatement,
     isStringLiteral,
     isStringType,
     isTemplateLiteral,
     isTemplateString,
-    isToolConfig,
-    isUnionLiteral,
     isUnionType,
     isVariableDeclartion,
     isVariableRef,
-    isWorkFlowConfig,
     Model,
-    OutputConfig,
     Statement,
-    ToolConfig,
     TypeConfigDeclaration,
     Types,
-    WorkFlowConfig,
     TemplateExpr,
     TemplateString
 } from "auwgent-language"
@@ -40,8 +29,7 @@ import {
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-
-
+import { handleAgentConfig } from "./agentConfig.js";
 
 
 export function generateOutput(model: Model, source: string, destination: string) {
@@ -60,106 +48,23 @@ export function generateOutput(model: Model, source: string, destination: string
 
         let currentElement = model.elements[i]
 
-        for (let agent of currentElement.agents) {
-            const agentIR = {
-                name: agent.name,
-                modelConfig: [] as any,
-                input: null,
-                output: null,
-                tools: [] as any,
-                workflows: [] as any
-            }
-
-            for (let config of agent.configs) {
-                if (isAgentConfig(config)) {
-                    agentIR.modelConfig.push(extractAgentConfig(config))
-                }
-
-                if (isInputConfig(config)) {
-                    agentIR.input = extractInOutConfig(config)
-                }
-
-                if (isOutputConfig(config)) {
-                    agentIR.output = extractInOutConfig(config)
-                }
-
-                if (isToolConfig(config)) {
-                    agentIR.tools.push(extractToolConfig(config))
-                }
-
-                if (isWorkFlowConfig(config)) {
-                    agentIR.workflows.push(extractWorkflowConfig(config))
-                }
-            }
-
-            fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
-            const typesPath = path.join(destDir, `${baseName}.agent.types.ts`)
-            fs.writeFileSync(typesPath, generateTypes(agentIR))
+        let agentIR = {} as { name:string, modelConfig: [], input: null, output: null, tools: [], workflows: []}
+        if(currentElement.$type === "Agent"){
+            agentIR=handleAgentConfig(currentElement)    
         }
-    }
+        if(currentElement.$type === "NamedPrompt")  continue
 
+
+        fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
+        const typesPath = path.join(destDir, `${baseName}.agent.types.ts`)
+        fs.writeFileSync(typesPath, generateTypes(agentIR))
+    }
     return outputPath;
 }
 
-function extractAgentConfig(agentConfig: AgentConfig) {
-    const result: any = {};
-
-    if (agentConfig.defaultconfig) {
-        result.defaultConfig = {
-            modelName: agentConfig.defaultconfig.ModelName,
-            prompt: agentConfig.defaultconfig.prompt ?? null
-        };
-    }
-
-    if (agentConfig.nondefaultConfig) {
-        result.namedConfig = agentConfig.nondefaultConfig.map(conf => ({
-            configName: conf.name,
-            modelName: conf.nonConf.ModelName,
-            prompt: conf.nonConf.prompt ?? null
-        }))
-    }
-
-    return result
-}
-
-function extractInOutConfig(inputConfig: InputConfig | OutputConfig) {
-    let result = {} as any
-
-    if (inputConfig.$type === "InputConfig") {
-        inputConfig.inProperties.map(input => {
-            result[input.name] = { type: extractType(input.t), optional: input.isOptional }
-        })
-    } else {
-        inputConfig.outProperties.map(output => {
-            result[output.td.name] = { type: extractType(output.td.t), description: output.description, optional: output.td.isOptional }
-        })
-    }
-
-    return result
-}
-
-function extractToolConfig(toolConfig: ToolConfig) {
-    let tool = toolConfig.tool
-    return { description: tool.desc, params: extractParams(tool.params), name: tool.name, returns: extractType(tool.returns) }
-
-}
-
-function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
-
-    let flowName = workflowConfig.name
-    let description = workflowConfig.desc
-    let flowParams = extractParams(workflowConfig.params)
-    let returns = extractType(workflowConfig.return)
-
-    let body = workflowConfig.body.map(bdy => {
-        return extractExpression(bdy)
-    })
-
-    return { flowName, flowParams, returns, body, description }
-}
 
 
-function extractType(types: Types): any {
+export function extractType(types: Types): any {
     if (types.types) {
         const t = types.types;
 
@@ -186,7 +91,7 @@ function extractType(types: Types): any {
     return 'unknown';
 }
 
-function extractParams(params: TypeConfigDeclaration[]) {
+export function extractParams(params: TypeConfigDeclaration[]) {
     let param = {} as any
     params.forEach(p => {
         param[p.name] = { type: extractType(p.t), optional: p.isOptional }
@@ -194,7 +99,7 @@ function extractParams(params: TypeConfigDeclaration[]) {
     return param
 }
 
-function extractExpression(express: Expression | Statement): any {
+export function extractExpression(express: Expression | Statement): any {
 
     if (isVariableDeclartion(express)) {
         let value = extractExpression(express.value) as any
@@ -209,10 +114,6 @@ function extractExpression(express: Expression | Statement): any {
     if (isArrayLiteral(express)) {
         let elements = express.elements.map(item => extractExpression(item))
         return { type: "array", value: elements }
-    }
-
-    if (isUnionLiteral(express)) {
-        return { value: express.value.options, type: "union" }
     }
 
     if (isVariableRef(express)) {
@@ -267,7 +168,7 @@ function extractExpression(express: Expression | Statement): any {
 
 //for building the template pattern
 
-function buildTemplate(template:(TemplateExpr | TemplateString)[]){
+export function buildTemplate(template:(TemplateExpr | TemplateString)[]){
     let stringBuilder = ""
 
     const parts = [] as any

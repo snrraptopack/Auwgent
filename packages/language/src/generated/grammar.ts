@@ -36,16 +36,23 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
       "$type": "ParserRule",
       "name": "Element",
       "definition": {
-        "$type": "Assignment",
-        "feature": "agents",
-        "operator": "+=",
-        "terminal": {
-          "$type": "RuleCall",
-          "rule": {
-            "$ref": "#/rules@2"
+        "$type": "Alternatives",
+        "elements": [
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@2"
+            },
+            "arguments": []
           },
-          "arguments": []
-        }
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@8"
+            },
+            "arguments": []
+          }
+        ]
       },
       "entry": false,
       "fragment": false,
@@ -68,7 +75,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -87,14 +94,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@8"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@9"
+                    "$ref": "#/rules@10"
                   },
                   "arguments": []
                 },
@@ -102,6 +102,13 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                   "$type": "RuleCall",
                   "rule": {
                     "$ref": "#/rules@11"
+                  },
+                  "arguments": []
+                },
+                {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@13"
                   },
                   "arguments": []
                 },
@@ -187,7 +194,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -206,7 +213,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@16"
+                    "$ref": "#/rules@18"
                   },
                   "arguments": []
                 }
@@ -225,7 +232,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@16"
+                        "$ref": "#/rules@18"
                       },
                       "arguments": []
                     }
@@ -251,7 +258,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@30"
+                "$ref": "#/rules@32"
               },
               "arguments": []
             }
@@ -275,7 +282,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@40"
+                "$ref": "#/rules@42"
               },
               "arguments": []
             }
@@ -287,7 +294,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@13"
+                "$ref": "#/rules@15"
               },
               "arguments": []
             },
@@ -355,7 +362,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -407,10 +414,41 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@40"
+                "$ref": "#/rules@42"
               },
               "arguments": []
             }
+          },
+          {
+            "$type": "Group",
+            "elements": [
+              {
+                "$type": "Keyword",
+                "value": "prompt"
+              },
+              {
+                "$type": "Keyword",
+                "value": "{"
+              },
+              {
+                "$type": "Assignment",
+                "feature": "parts",
+                "operator": "+=",
+                "terminal": {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@9"
+                  },
+                  "arguments": []
+                },
+                "cardinality": "*"
+              },
+              {
+                "$type": "Keyword",
+                "value": "}"
+              }
+            ],
+            "cardinality": "?"
           },
           {
             "$type": "Group",
@@ -425,18 +463,108 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
               },
               {
                 "$type": "Assignment",
-                "feature": "prompt",
+                "feature": "refPrompt",
+                "operator": "=",
+                "terminal": {
+                  "$type": "CrossReference",
+                  "type": {
+                    "$ref": "#/rules@8"
+                  },
+                  "deprecatedSyntax": false,
+                  "isMulti": false
+                },
+                "cardinality": "?"
+              },
+              {
+                "$type": "Assignment",
+                "feature": "simplePrompt",
                 "operator": "=",
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@40"
+                    "$ref": "#/rules@42"
                   },
                   "arguments": []
-                }
+                },
+                "cardinality": "?"
               }
             ],
             "cardinality": "?"
+          }
+        ]
+      },
+      "entry": false,
+      "fragment": false,
+      "parameters": []
+    },
+    {
+      "$type": "ParserRule",
+      "name": "NamedPrompt",
+      "definition": {
+        "$type": "Group",
+        "elements": [
+          {
+            "$type": "Keyword",
+            "value": "prompt"
+          },
+          {
+            "$type": "Assignment",
+            "feature": "name",
+            "operator": "=",
+            "terminal": {
+              "$type": "RuleCall",
+              "rule": {
+                "$ref": "#/rules@40"
+              },
+              "arguments": []
+            }
+          },
+          {
+            "$type": "Keyword",
+            "value": "{"
+          },
+          {
+            "$type": "Assignment",
+            "feature": "parts",
+            "operator": "+=",
+            "terminal": {
+              "$type": "RuleCall",
+              "rule": {
+                "$ref": "#/rules@9"
+              },
+              "arguments": []
+            },
+            "cardinality": "*"
+          },
+          {
+            "$type": "Keyword",
+            "value": "}"
+          }
+        ]
+      },
+      "entry": false,
+      "fragment": false,
+      "parameters": []
+    },
+    {
+      "$type": "ParserRule",
+      "name": "PromptStatement",
+      "definition": {
+        "$type": "Alternatives",
+        "elements": [
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@23"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@19"
+            },
+            "arguments": []
           }
         ]
       },
@@ -465,7 +593,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@16"
+                "$ref": "#/rules@18"
               },
               "arguments": []
             },
@@ -502,7 +630,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@10"
+                "$ref": "#/rules@12"
               },
               "arguments": []
             },
@@ -531,7 +659,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@16"
+                "$ref": "#/rules@18"
               },
               "arguments": []
             }
@@ -547,7 +675,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@40"
+                "$ref": "#/rules@42"
               },
               "arguments": []
             }
@@ -575,7 +703,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@12"
+                "$ref": "#/rules@14"
               },
               "arguments": []
             }
@@ -599,7 +727,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -618,7 +746,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@16"
+                    "$ref": "#/rules@18"
                   },
                   "arguments": []
                 }
@@ -637,7 +765,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@16"
+                        "$ref": "#/rules@18"
                       },
                       "arguments": []
                     }
@@ -663,7 +791,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@30"
+                "$ref": "#/rules@32"
               },
               "arguments": []
             }
@@ -687,7 +815,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@40"
+                "$ref": "#/rules@42"
               },
               "arguments": []
             }
@@ -711,14 +839,21 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@14"
+              "$ref": "#/rules@16"
             },
             "arguments": []
           },
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@20"
+              "$ref": "#/rules@22"
+            },
+            "arguments": []
+          },
+          {
+            "$type": "RuleCall",
+            "rule": {
+              "$ref": "#/rules@19"
             },
             "arguments": []
           },
@@ -726,13 +861,6 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "$type": "RuleCall",
             "rule": {
               "$ref": "#/rules@17"
-            },
-            "arguments": []
-          },
-          {
-            "$type": "RuleCall",
-            "rule": {
-              "$ref": "#/rules@15"
             },
             "arguments": []
           }
@@ -759,7 +887,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -775,7 +903,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@21"
+                "$ref": "#/rules@23"
               },
               "arguments": []
             }
@@ -803,7 +931,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -819,7 +947,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@16"
+                "$ref": "#/rules@18"
               },
               "arguments": []
             },
@@ -848,7 +976,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -874,7 +1002,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@30"
+                "$ref": "#/rules@32"
               },
               "arguments": []
             }
@@ -906,7 +1034,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@18"
+                "$ref": "#/rules@20"
               },
               "arguments": []
             }
@@ -926,7 +1054,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@13"
+                "$ref": "#/rules@15"
               },
               "arguments": []
             },
@@ -954,7 +1082,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@13"
+                    "$ref": "#/rules@15"
                   },
                   "arguments": []
                 },
@@ -986,7 +1114,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@21"
+                "$ref": "#/rules@23"
               },
               "arguments": []
             }
@@ -998,7 +1126,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@19"
+                "$ref": "#/rules@21"
               },
               "arguments": []
             }
@@ -1010,7 +1138,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@21"
+                "$ref": "#/rules@23"
               },
               "arguments": []
             }
@@ -1067,7 +1195,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@21"
+                "$ref": "#/rules@23"
               },
               "arguments": []
             }
@@ -1101,7 +1229,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@40"
+                    "$ref": "#/rules@42"
                   },
                   "arguments": []
                 }
@@ -1125,31 +1253,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@39"
-                  },
-                  "arguments": []
-                }
-              }
-            ]
-          },
-          {
-            "$type": "Group",
-            "elements": [
-              {
-                "$type": "Action",
-                "inferredType": {
-                  "$type": "InferredType",
-                  "name": "UnionLiteral"
-                }
-              },
-              {
-                "$type": "Assignment",
-                "feature": "value",
-                "operator": "=",
-                "terminal": {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@34"
+                    "$ref": "#/rules@41"
                   },
                   "arguments": []
                 }
@@ -1189,14 +1293,14 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@23"
+              "$ref": "#/rules@25"
             },
             "arguments": []
           },
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@24"
+              "$ref": "#/rules@26"
             },
             "arguments": []
           },
@@ -1228,14 +1332,14 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@22"
+              "$ref": "#/rules@24"
             },
             "arguments": []
           },
           {
             "$type": "RuleCall",
             "rule": {
-              "$ref": "#/rules@25"
+              "$ref": "#/rules@27"
             },
             "arguments": []
           }
@@ -1258,12 +1362,12 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "CrossReference",
               "type": {
-                "$ref": "#/rules@12"
+                "$ref": "#/rules@14"
               },
               "terminal": {
                 "$type": "RuleCall",
                 "rule": {
-                  "$ref": "#/rules@38"
+                  "$ref": "#/rules@40"
                 },
                 "arguments": []
               },
@@ -1285,7 +1389,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@21"
+                    "$ref": "#/rules@23"
                   },
                   "arguments": []
                 }
@@ -1304,7 +1408,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@21"
+                        "$ref": "#/rules@23"
                       },
                       "arguments": []
                     }
@@ -1345,7 +1449,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@21"
+                    "$ref": "#/rules@23"
                   },
                   "arguments": []
                 }
@@ -1364,7 +1468,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@21"
+                        "$ref": "#/rules@23"
                       },
                       "arguments": []
                     }
@@ -1405,7 +1509,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@28"
+                    "$ref": "#/rules@30"
                   },
                   "arguments": []
                 }
@@ -1424,7 +1528,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@28"
+                        "$ref": "#/rules@30"
                       },
                       "arguments": []
                     }
@@ -1465,14 +1569,14 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@26"
+                    "$ref": "#/rules@28"
                   },
                   "arguments": []
                 },
                 {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@27"
+                    "$ref": "#/rules@29"
                   },
                   "arguments": []
                 }
@@ -1500,7 +1604,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
         "terminal": {
           "$type": "RuleCall",
           "rule": {
-            "$ref": "#/rules@38"
+            "$ref": "#/rules@40"
           },
           "arguments": []
         }
@@ -1526,7 +1630,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@21"
+                "$ref": "#/rules@23"
               },
               "arguments": []
             }
@@ -1554,7 +1658,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -1573,7 +1677,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@21"
+                    "$ref": "#/rules@23"
                   },
                   "arguments": []
                 }
@@ -1603,7 +1707,14 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@32"
+                    "$ref": "#/rules@34"
+                  },
+                  "arguments": []
+                },
+                {
+                  "$type": "RuleCall",
+                  "rule": {
+                    "$ref": "#/rules@35"
                   },
                   "arguments": []
                 },
@@ -1611,13 +1722,6 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                   "$type": "RuleCall",
                   "rule": {
                     "$ref": "#/rules@33"
-                  },
-                  "arguments": []
-                },
-                {
-                  "$type": "RuleCall",
-                  "rule": {
-                    "$ref": "#/rules@31"
                   },
                   "arguments": []
                 }
@@ -1651,27 +1755,6 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@29"
-              },
-              "arguments": []
-            },
-            {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@35"
-              },
-              "arguments": []
-            },
-            {
-              "$type": "RuleCall",
-              "rule": {
-                "$ref": "#/rules@34"
-              },
-              "arguments": []
-            },
-            {
-              "$type": "RuleCall",
-              "rule": {
                 "$ref": "#/rules@31"
               },
               "arguments": []
@@ -1679,7 +1762,14 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@32"
+                "$ref": "#/rules@37"
+              },
+              "arguments": []
+            },
+            {
+              "$type": "RuleCall",
+              "rule": {
+                "$ref": "#/rules@36"
               },
               "arguments": []
             },
@@ -1693,7 +1783,21 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@39"
+                "$ref": "#/rules@34"
+              },
+              "arguments": []
+            },
+            {
+              "$type": "RuleCall",
+              "rule": {
+                "$ref": "#/rules@35"
+              },
+              "arguments": []
+            },
+            {
+              "$type": "RuleCall",
+              "rule": {
+                "$ref": "#/rules@41"
               },
               "arguments": []
             }
@@ -1765,7 +1869,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@40"
+                "$ref": "#/rules@42"
               },
               "arguments": []
             }
@@ -1784,7 +1888,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@40"
+                    "$ref": "#/rules@42"
                   },
                   "arguments": []
                 }
@@ -1818,7 +1922,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "RuleCall",
                   "rule": {
-                    "$ref": "#/rules@36"
+                    "$ref": "#/rules@38"
                   },
                   "arguments": []
                 }
@@ -1837,7 +1941,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                     "terminal": {
                       "$type": "RuleCall",
                       "rule": {
-                        "$ref": "#/rules@36"
+                        "$ref": "#/rules@38"
                       },
                       "arguments": []
                     }
@@ -1871,7 +1975,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@38"
+                "$ref": "#/rules@40"
               },
               "arguments": []
             }
@@ -1897,7 +2001,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "RuleCall",
               "rule": {
-                "$ref": "#/rules@30"
+                "$ref": "#/rules@32"
               },
               "arguments": []
             }
@@ -1989,13 +2093,13 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
           {
             "$type": "SimpleType",
             "typeRef": {
-              "$ref": "#/rules@14"
+              "$ref": "#/rules@16"
             }
           },
           {
             "$type": "SimpleType",
             "typeRef": {
-              "$ref": "#/rules@16"
+              "$ref": "#/rules@18"
             }
           }
         ]

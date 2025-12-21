@@ -4,7 +4,40 @@
     {
       "defaultConfig": {
         "modelName": "kimi-k2-0905-preview",
-        "prompt": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume "
+        "prompt": {
+          "type": "ref",
+          "name": "A",
+          "value": [
+            {
+              "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n    provide response in accurate manner dont assume ",
+              "type": "literal"
+            },
+            {
+              "type": "if",
+              "condition": {
+                "left": {
+                  "value": 10,
+                  "type": "literal"
+                },
+                "operator": ">",
+                "right": {
+                  "value": 30,
+                  "type": "literal"
+                }
+              },
+              "then": [
+                {
+                  "type": "return",
+                  "value": {
+                    "value": "hello",
+                    "type": "literal"
+                  }
+                }
+              ],
+              "else": []
+            }
+          ]
+        }
       },
       "namedConfig": []
     }
@@ -118,39 +151,6 @@
               {
                 "value": "id",
                 "type": "varRef"
-              }
-            ]
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "name": "again",
-          "value": {
-            "type": "template",
-            "parts": [
-              {
-                "type": "literal",
-                "value": " hello how are you doing"
-              },
-              {
-                "type": "expression",
-                "value": {
-                  "value": "name",
-                  "type": "varRef"
-                }
-              },
-              {
-                "type": "expression",
-                "value": {
-                  "value": "getstudentgrade",
-                  "type": "functionCall",
-                  "args": [
-                    {
-                      "value": 10,
-                      "type": "literal"
-                    }
-                  ]
-                }
               }
             ]
           },

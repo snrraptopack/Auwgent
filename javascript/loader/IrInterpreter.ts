@@ -29,7 +29,7 @@ export class Agent<
     const safeTools = tools as unknown as ToolMap
 
     // 1. Initial Synthesis
-    const request = this.synthesizer.synthesize(input);
+    const request = await this.synthesizer.synthesize(input);
     let currentMessages: SyntheticMessage[] = [...request.messages];
     let turnCount = 0;
     let toolsStillAvailable = true; // Track if tools should be sent to model
@@ -104,14 +104,34 @@ export class Agent<
         }
 
         // CASE B: Final Text Result
-        if (request.responseSchema) {
-            try {
-                return JSON.parse(result.text ?? "{}") as TOutput;
-            } catch (e) {
-                console.error("Failed to parse JSON response:", result.text);
-                throw new Error("Model failed to return valid JSON");
+       
+        if (result.toolParams === undefined) {
+            // Model didn't call a tool - it's giving a final response
+            
+            // If we expect JSON but got plain text, and tools were still available,
+            // the model chose not to use tools. We should still try to get JSON.
+            if (request.responseSchema) {
+                // Try to parse as JSON
+                try {
+                    return JSON.parse(result.text ?? "{}") as TOutput;
+                } catch (e) {
+                    // If tools were available, model might have just responded with text
+                    // Wrap the text in the expected schema format
+                    if (toolsStillAvailable && request.responseSchema.properties) {
+                        // Get the first property name from schema (e.g., "result")
+                        const firstProp = Object.keys(request.responseSchema.properties)[0];
+                        if (firstProp) {
+                            return { [firstProp]: result.text } as TOutput;
+                        }
+                    }
+                    console.error("Failed to parse JSON response:", result.text);
+                    throw new Error("Model failed to return valid JSON");
+                }
             }
+
+            return (result.text ?? "") as TOutput;
         }
+
 
         return (result.text ?? "") as TOutput;
     }

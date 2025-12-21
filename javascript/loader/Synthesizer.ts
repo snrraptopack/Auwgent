@@ -1,3 +1,4 @@
+import { ExpressionEvaluator } from './ExpressionEvaluator';
 import type { AgentIR } from './types/ir';
 import type { JsonSchema, SyntheticRequest, SyntheticMessage, SyntheticToolDef } from './types/protocol';
 
@@ -8,9 +9,9 @@ export class Synthesizer {
      * The main entry point.
      * Takes runtime inputs and converts them into a standardized request.
      */
-    public synthesize(input: Record<string, any>): SyntheticRequest {
+    public async synthesize(input: Record<string, any>): Promise<SyntheticRequest> {
         // 1. Build Messages
-        const messages = this.buildMessages(input);
+        const messages = await this.buildMessages(input);
 
         // 2. Build Output Schema
         const responseSchema = this.buildOutputSchema();
@@ -33,22 +34,63 @@ export class Synthesizer {
         return this.ir.modelConfig[0]?.defaultConfig.modelName ?? "gemini-2.0-flash-exp";
     }
 
-    private buildMessages(input: Record<string, any>): SyntheticMessage[] {
-        const promptTemplate = this.ir.modelConfig[0]?.defaultConfig.prompt;
+    private async buildMessages(input: Record<string, any>): Promise<SyntheticMessage[]> {
+        const promptConfig = this.ir.modelConfig[0]?.defaultConfig.prompt;
         const userMessage = Object.entries(input)
             .map(([k, v]) => `${k}: ${v}`)
             .join("\n");
 
         const messages: SyntheticMessage[] = [];
 
-        if (promptTemplate) {
-            messages.push({ role: 'system', content: promptTemplate });
+        if (promptConfig) {
+            const systemContent = this.resolvePrompt(promptConfig,input);
+            if (systemContent) {
+                messages.push({ role: 'system', content: await systemContent });
+            }
         }
 
         messages.push({ role: 'user', content: userMessage });
-
         return messages;
     }
+
+    private async resolvePrompt(prompt: any, input: Record<string, any>): Promise<string> {
+    // Case 1: Simple string
+        if (typeof prompt === 'string') {
+            return prompt;
+        }
+    
+        // Case 2: Parts with expressions/if statements
+        if (prompt.type === 'parts' && Array.isArray(prompt.value)) {
+            const evaluator = new ExpressionEvaluator();
+            const scope = new Map(Object.entries(input));
+            return await evaluator.evaluateStatements(prompt.value, scope, true);
+        }
+    
+        // Case 3: Simple wrapper
+        if (prompt.type === 'simple') {
+            return prompt.value;
+        }
+
+        if (prompt.type === 'ref' && Array.isArray(prompt.value)) {
+            const evaluator = new ExpressionEvaluator();
+            const scope = new Map(Object.entries(input));
+            return await evaluator.evaluateStatements(prompt.value, scope, true);
+        }
+    
+        return '';
+}
+
+private evaluatePromptParts(parts: any[]): string {
+    // Similar to template literal evaluation
+    // For now, just concatenate literals
+    // Later you can add expression evaluation if needed
+    return parts.map(part => {
+        if (part.type === 'literal') return part.value;
+        // Handle expressions if needed
+        return '';
+    }).join('');
+}
+
 
     /**
      * Converts the IR 'output' definition into strict JSON Schema

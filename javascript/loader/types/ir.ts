@@ -92,7 +92,7 @@ export interface ArrayLiteral {
 
 export interface TemplateLiteral {
     type: "template";
-    parts: TemplatePart[];
+    value: TemplatePart[];
 }
 
 export type TemplatePart = 

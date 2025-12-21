@@ -1,11 +1,20 @@
+
+prompt A{
+    "You are a helpful assistant you have been giving tools and workflows to use please 
+    provide response in accurate manner dont assume "
+            
+    if(10>30){
+        return "hello"
+    }
+}
+
 agent OrderProcessor {
     default config {
         model: "kimi-k2-0905-preview"
-        prompt: "You are a helpful assistant you have been giving tools and workflows to use please 
-            provide response in accurate manner dont assume "
+
+        prompt:A 
     }
 
-    
     input {
         request: string
     }
