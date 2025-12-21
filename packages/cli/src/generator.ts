@@ -18,6 +18,8 @@ import {
     isReturnStatement,
     isStringLiteral,
     isStringType,
+    isTemplateLiteral,
+    isTemplateString,
     isToolConfig,
     isUnionLiteral,
     isUnionType,
@@ -30,7 +32,9 @@ import {
     ToolConfig,
     TypeConfigDeclaration,
     Types,
-    WorkFlowConfig
+    WorkFlowConfig,
+    TemplateExpr,
+    TemplateString
 } from "auwgent-language"
 
 
@@ -47,7 +51,6 @@ export function generateOutput(model: Model, source: string, destination: string
         fs.mkdirSync(destDir, { recursive: true });
     }
 
-
     // Build output filename
     const baseName = path.basename(source, '.agent');
     const outputPath = path.join(destDir, `${baseName}.agent.json`);
@@ -58,7 +61,6 @@ export function generateOutput(model: Model, source: string, destination: string
         let currentElement = model.elements[i]
 
         for (let agent of currentElement.agents) {
-
             const agentIR = {
                 name: agent.name,
                 modelConfig: [] as any,
@@ -254,7 +256,46 @@ function extractExpression(express: Expression | Statement): any {
         return {type:"object", value: props};
     }
 
+    if(isTemplateLiteral(express)){
+      // const templates = {} as any  
+    let result = buildTemplate(express.templates)
+    return {type:"template",parts:result}
+    }
+
     return null
+}
+
+//for building the template pattern
+
+function buildTemplate(template:(TemplateExpr | TemplateString)[]){
+    let stringBuilder = ""
+
+    const parts = [] as any
+
+      for(let i=0; i < template.length;i++){
+        let current = template[i]
+
+        if(isTemplateString(current)){
+            stringBuilder += " "+ current.value
+        }else{
+            let expr = extractExpression(current.expr)
+            if(stringBuilder.trim().length > 0){
+                parts.push({type:"literal",value:stringBuilder})
+                parts.push({type:"expression",value:expr})
+                stringBuilder = ""
+            }else{
+               parts.push({type:"expression",value:expr})
+            }
+        }
+    }
+
+    if(stringBuilder.trim().length > 0){
+        parts.push({type:"literal",value:stringBuilder})
+        stringBuilder = ""
+    }  
+
+    return parts
+
 }
 
 

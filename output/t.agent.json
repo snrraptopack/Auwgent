@@ -4,7 +4,7 @@
     {
       "defaultConfig": {
         "modelName": "kimi-k2-0905-preview",
-        "prompt": "You are a helpful assistant you have been giving tools and workflows to use please provide response in accurate manner dont assume "
+        "prompt": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume "
       },
       "namedConfig": []
     }
@@ -118,6 +118,39 @@
               {
                 "value": "id",
                 "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "name": "again",
+          "value": {
+            "type": "template",
+            "parts": [
+              {
+                "type": "literal",
+                "value": " hello how are you doing"
+              },
+              {
+                "type": "expression",
+                "value": {
+                  "value": "name",
+                  "type": "varRef"
+                }
+              },
+              {
+                "type": "expression",
+                "value": {
+                  "value": "getstudentgrade",
+                  "type": "functionCall",
+                  "args": [
+                    {
+                      "value": 10,
+                      "type": "literal"
+                    }
+                  ]
+                }
               }
             ]
           },

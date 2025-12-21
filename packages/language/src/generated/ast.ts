@@ -9,7 +9,7 @@ import * as langium from 'langium';
 export const AuwgentTerminals = {
     WS: /\s+/,
     ID: /[_a-zA-Z][\w_]*/,
-    INT: /[0-9]+/,
+    INT: /[0-9]+(\.[0-9]+)?/,
     STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/,
     ML_COMMENT: /\/\*[\s\S]*?\*\//,
     SL_COMMENT: /\/\/[^\n\r]*/,
@@ -19,6 +19,7 @@ export type AuwgentTerminalNames = keyof typeof AuwgentTerminals;
 
 export type AuwgentKeywordNames =
     | "!="
+    | "${"
     | "("
     | ")"
     | ","
@@ -31,6 +32,7 @@ export type AuwgentKeywordNames =
     | "@desc"
     | "["
     | "]"
+    | "`"
     | "agent"
     | "boolean"
     | "config"
@@ -92,7 +94,7 @@ export function isAgentConfig(item: unknown): item is AgentConfig {
 }
 
 export interface ArrayLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ArrayLiteral';
     elements: Array<Expression>;
 }
@@ -122,7 +124,7 @@ export function isArrayType(item: unknown): item is ArrayType {
 }
 
 export interface BooleanLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'BooleanLiteral';
     value: 'false' | 'true';
 }
@@ -195,7 +197,7 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
-export type Expression = ArrayLiteral | BooleanLiteral | FunctionCall | NumberLiteral | ObjectLiteral | StringLiteral | UnionLiteral | VariableRef;
+export type Expression = ArrayLiteral | BooleanLiteral | FunctionCall | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | UnionLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -206,7 +208,7 @@ export function isExpression(item: unknown): item is Expression {
 }
 
 export interface FunctionCall extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'FunctionCall';
     args: Array<Expression>;
     func: langium.Reference<ToolFunction>;
@@ -305,7 +307,7 @@ export function isNonDefaultConfigModel(item: unknown): item is NonDefaultConfig
 }
 
 export interface NumberLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'NumberLiteral';
     value: number;
 }
@@ -335,7 +337,7 @@ export function isNumberType(item: unknown): item is NumberType {
 }
 
 export interface ObjectLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ObjectLiteral';
     properties: Array<PropertyValue>;
 }
@@ -474,7 +476,7 @@ export function isStatement(item: unknown): item is Statement {
 }
 
 export interface StringLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'StringLiteral';
     value: string;
 }
@@ -501,6 +503,51 @@ export const StringType = {
 
 export function isStringType(item: unknown): item is StringType {
     return reflection.isInstance(item, StringType.$type);
+}
+
+export interface TemplateExpr extends langium.AstNode {
+    readonly $container: TemplateLiteral;
+    readonly $type: 'TemplateExpr';
+    expr: Expression;
+}
+
+export const TemplateExpr = {
+    $type: 'TemplateExpr',
+    expr: 'expr'
+} as const;
+
+export function isTemplateExpr(item: unknown): item is TemplateExpr {
+    return reflection.isInstance(item, TemplateExpr.$type);
+}
+
+export interface TemplateLiteral extends langium.AstNode {
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'TemplateLiteral';
+    templates: Array<TemplateExpr | TemplateString>;
+}
+
+export const TemplateLiteral = {
+    $type: 'TemplateLiteral',
+    templates: 'templates'
+} as const;
+
+export function isTemplateLiteral(item: unknown): item is TemplateLiteral {
+    return reflection.isInstance(item, TemplateLiteral.$type);
+}
+
+export interface TemplateString extends langium.AstNode {
+    readonly $container: TemplateLiteral;
+    readonly $type: 'TemplateString';
+    value: string;
+}
+
+export const TemplateString = {
+    $type: 'TemplateString',
+    value: 'value'
+} as const;
+
+export function isTemplateString(item: unknown): item is TemplateString {
+    return reflection.isInstance(item, TemplateString.$type);
 }
 
 export interface ToolConfig extends langium.AstNode {
@@ -591,7 +638,7 @@ export function isTypes(item: unknown): item is Types {
 }
 
 export interface UnionLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'UnionLiteral';
     value: UnionType;
 }
@@ -638,7 +685,7 @@ export function isVariableDeclartion(item: unknown): item is VariableDeclartion 
 }
 
 export interface VariableRef extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'VariableRef';
     variable: langium.Reference<Referenceable>;
 }
@@ -705,6 +752,9 @@ export type AuwgentAstType = {
     Statement: Statement
     StringLiteral: StringLiteral
     StringType: StringType
+    TemplateExpr: TemplateExpr
+    TemplateLiteral: TemplateLiteral
+    TemplateString: TemplateString
     ToolConfig: ToolConfig
     ToolFunction: ToolFunction
     TypeConfigDeclaration: TypeConfigDeclaration
@@ -1017,6 +1067,34 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             properties: {
                 type: {
                     name: StringType.type
+                }
+            },
+            superTypes: []
+        },
+        TemplateExpr: {
+            name: TemplateExpr.$type,
+            properties: {
+                expr: {
+                    name: TemplateExpr.expr
+                }
+            },
+            superTypes: []
+        },
+        TemplateLiteral: {
+            name: TemplateLiteral.$type,
+            properties: {
+                templates: {
+                    name: TemplateLiteral.templates,
+                    defaultValue: []
+                }
+            },
+            superTypes: [Expression.$type]
+        },
+        TemplateString: {
+            name: TemplateString.$type,
+            properties: {
+                value: {
+                    name: TemplateString.value
                 }
             },
             superTypes: []

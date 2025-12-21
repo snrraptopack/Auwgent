@@ -61,8 +61,6 @@ ToolFunction:
     name=ID "(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")" 
     ":" returns=Types "{" "description" ":" desc=STRING "}";
 
-
-
 Statement:
     VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration
 ;
@@ -108,6 +106,7 @@ Expression:
     | ObjectLiteral
     | {infer VariableRef} variable=[Referenceable]
     | FunctionCall
+    | TemplateLiteral
 ;
 
 FunctionCall:
@@ -123,6 +122,17 @@ ArrayLiteral:
 
 ObjectLiteral:
     '{' (properties+=PropertyValue (',' properties+=PropertyValue)*)? '}';
+
+
+TemplateLiteral:
+    "`" templates+=(TemplateString|TemplateExpr)*  "`"
+    ;
+
+TemplateString:
+    value=ID;
+
+TemplateExpr:
+    "${" expr=Expression "}";
 
 PropertyValue:
     name=ID (':' value=Expression)?;
@@ -151,7 +161,10 @@ PropertyType:
 
 hidden terminal WS: /\s+/;
 terminal ID: /[_a-zA-Z][\w_]*/;
-terminal INT returns number: /[0-9]+/;
+
+
+terminal INT returns number:/[0-9]+(\.[0-9]+)?/;
 terminal STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/;
+
 hidden terminal ML_COMMENT: /\/\*[\s\S]*?\*\//;
 hidden terminal SL_COMMENT: /\/\/[^\n\r]*/;

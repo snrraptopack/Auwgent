@@ -34,7 +34,8 @@ export type Expression =
     | VarRef
     | FunctionCall
     | ObjectLiteral
-    | ArrayLiteral;
+    | ArrayLiteral
+    | TemplateLiteral
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -88,6 +89,15 @@ export interface ArrayLiteral {
     type: "array";
     value: Expression[];  // Array of expressions
 }
+
+export interface TemplateLiteral {
+    type: "template";
+    parts: TemplatePart[];
+}
+
+export type TemplatePart = 
+    | { type: "literal"; value: string }
+    | { type: "expression"; value: Expression };
 
 export type ModelConfig = {
     defaultConfig: Config,

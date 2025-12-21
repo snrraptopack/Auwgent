@@ -121,6 +121,22 @@ export class WorkflowRunner {
                 return result;
             }
 
+            case "template":{
+                const parts = (expr as any).parts || [];
+                let result = "";
+                
+                for (const part of parts) {
+                    if (part.type === "literal") {
+                        result += part.value;
+                    } else if (part.type === "expression") {
+                        const value = await this.evaluateExpression(part.value, scope);
+                        result += String(value);
+                    }
+                }
+                
+                return result;
+            }
+
             case "functionCall": {
                 const funcName = expr.value;
                 const args = expr.args;

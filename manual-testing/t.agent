@@ -1,8 +1,10 @@
 agent OrderProcessor {
     default config {
         model: "kimi-k2-0905-preview"
-        prompt: "You are a helpful assistant you have been giving tools and workflows to use please provide response in accurate manner dont assume "
+        prompt: "You are a helpful assistant you have been giving tools and workflows to use please 
+            provide response in accurate manner dont assume "
     }
+
     
     input {
         request: string
@@ -28,12 +30,12 @@ agent OrderProcessor {
         description:"get the grades of the student"
     }
 
-
     workflow getstudentdetails(id:number):{name:string,location:string,grade:number}{
         description:"get the student deatails, including location,grade and name"
         let grade = getstudentgrade(id)
         let location = getstudentlocation(id)
         let name = getstudentname(id)
+        let again = `hello how are you doing ${name} ${getstudentgrade(10)}`
 
         return {name,location,grade}
     }

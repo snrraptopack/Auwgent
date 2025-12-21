@@ -3,6 +3,7 @@ import { GoogleDriver } from "./loader/drivers/GoogleDriver";
 import data from "../output/t.agent.json"
 import type { OrderProcessorInput, OrderProcessorOutput, OrderProcessorTools } from "../output/t.agent.types"
 import { OpenAIDriver } from "./loader/drivers/OpenAIDriver";
+import { kimi, TempKey } from "./keys";
 
 
 
@@ -10,7 +11,7 @@ const driver = new GoogleDriver(TempKey);
 
 const driver1 = new OpenAIDriver(kimi, "https://api.moonshot.ai/v1")
 
-const agent = new Agent<OrderProcessorInput, OrderProcessorOutput>(driver);
+const agent = new Agent<OrderProcessorInput, OrderProcessorOutput>(driver1);
 agent.load(data as any);
 
 const students = [
@@ -61,7 +62,7 @@ const tools: OrderProcessorTools = {
 
 
 const result = await agent.run({
-    request: "can you get me the details of student with an id of 3"
+    request: "what is the details of student with an id 10"
 }, tools);
 
 console.log("final", result);
