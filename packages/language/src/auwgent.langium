@@ -12,7 +12,9 @@ Agent:
         configs+=(
             InputConfig 
             | OutputConfig 
+            | ContextConfig
             | ToolConfig
+            | ToolsConfig
             | AgentConfig
             | WorkFlowConfig
         )* 
@@ -55,6 +57,12 @@ InputConfig:
     "input" "{" inProperties+=TypeConfigDeclaration* "}";
 OutputConfig:
     "output" "{" outProperties+=(Output)* "}";
+ContextConfig:
+    "context" "{" contextProperties+=TypeConfigDeclaration* "}"
+;
+
+ContextReference:
+    'ctx' '.' property=[TypeConfigDeclaration:ID];
 
 Output:
     td=TypeConfigDeclaration "@desc" description=STRING
@@ -64,10 +72,16 @@ ToolConfig:
     "tool" tool=ToolFunction
 ;
 
+ToolsConfig:
+    "tools" "{" tools+=ToolFunction* "}";
 
 ToolFunction:
-    name=ID "(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")" 
-    ":" returns=Types "{" "description" ":" desc=STRING "}";
+    name=ID 
+    "(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")" 
+    ":" returns=Types 
+    ("{" "description" ":" desc+=STRING "}")?
+    ("@desc" desc+=STRING)?
+;
 
 Statement:
     VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration
@@ -78,7 +92,7 @@ VariableDeclartion:
 ;
 
 TypeDeclaration:
-    "type" name=ID "{" types+=TypeConfigDeclaration* "}" ;
+    "type" name=ID "{" types+=TypeConfigDeclaration* "}";
 
 TypeConfigDeclaration:
     name=ID (isOptional?='?')? ":" t=Types;
@@ -103,7 +117,7 @@ ReturnStatement:
     "return" value=Expression
 ;
 
-type Referenceable =  VariableDeclartion |TypeConfigDeclaration ;
+type Referenceable = VariableDeclartion |TypeConfigDeclaration;
 
 Expression:
     {infer StringLiteral} value=STRING
@@ -114,6 +128,7 @@ Expression:
     | {infer VariableRef} variable=[Referenceable]
     | FunctionCall
     | TemplateLiteral
+    | ContextReference
 ;
 
 FunctionCall:
@@ -121,7 +136,6 @@ FunctionCall:
         (args+=Expression  ("," args+=Expression)*)?
     ")"
 ;
-
 
 
 ArrayLiteral:
@@ -132,14 +146,14 @@ ObjectLiteral:
 
 
 TemplateLiteral:
-    "`" templates+=(TemplateString|TemplateExpr)*  "`"
-    ;
+    "`"  templates+=(TemplateString|TemplateExpr)*  "`"
+;
 
 TemplateString:
-    value=ID;
+    value=(ID|STRING);
 
 TemplateExpr:
-    "${" expr=Expression "}";
+    "{" expr=Expression "}";
 
 PropertyValue:
     name=ID (':' value=Expression)?;
@@ -172,6 +186,7 @@ terminal ID: /[_a-zA-Z][\w_]*/;
 
 terminal INT returns number:/[0-9]+(\.[0-9]+)?/;
 terminal STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/;
+terminal TEMPLATE: /`[^`]*`/;
 
 hidden terminal ML_COMMENT: /\/\*[\s\S]*?\*\//;
 hidden terminal SL_COMMENT: /\/\/[^\n\r]*/;

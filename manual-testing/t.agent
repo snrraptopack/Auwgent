@@ -11,8 +11,12 @@ prompt A{
 agent OrderProcessor {
     default config {
         model: "kimi-k2-0905-preview"
+        prompt{
+            "You are a helpful assistant you have been giving tools and workflows to use please 
+            provide response in accurate manner dont assume "
 
-        prompt:A 
+            "The user has an id of :" ctx.id
+        } 
     }
 
     input {
@@ -22,30 +26,26 @@ agent OrderProcessor {
     output {
         result:string @desc "The result of your response"
     }
+
+    context{
+        id:1
+        isAdmin:boolean
+    }
+
     
-    tool totalstudent():number{
-        description:"returns the total number of student"
+    tools {
+        getstudentgrade(id:number):string @desc "get the grades of the student"
+        getstudentlocation(id:number):string @desc "get the location of the student"
+        totalstudent():number @desc "returns the total number of student"
+        getstudentname(id:number):string @desc "get the name of the student"
     }
 
-    tool getstudentname(id:number):string{
-        description:"returns the name of the student"
-    }
-
-    tool getstudentlocation(id:number):string{
-        description:"get the location of the student"
-    }
-
-    tool getstudentgrade(id:number):string{
-        description:"get the grades of the student"
-    }
 
     workflow getstudentdetails(id:number):{name:string,location:string,grade:number}{
         description:"get the student deatails, including location,grade and name"
         let grade = getstudentgrade(id)
         let location = getstudentlocation(id)
         let name = getstudentname(id)
-        let again = `hello how are you doing ${name} ${getstudentgrade(10)}`
-
         return {name,location,grade}
     }
     

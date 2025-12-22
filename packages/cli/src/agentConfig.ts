@@ -1,39 +1,50 @@
-import { Agent, AgentConfig, InputConfig, isAgentConfig, isInputConfig, isOutputConfig, isToolConfig, isWorkFlowConfig, ModelConfig, OutputConfig, ToolConfig, WorkFlowConfig } from "auwgent-language";
+import { Agent, AgentConfig, ContextConfig, InputConfig, isAgentConfig, isContextConfig, isInputConfig, isOutputConfig, isToolConfig, isToolsConfig, isWorkFlowConfig, ModelConfig, OutputConfig, ToolConfig, ToolsConfig, WorkFlowConfig } from "auwgent-language";
 import { extractType, extractParams, extractExpression } from "./generator.js";
 
 
-export function handleAgentConfig(agent:Agent){
+export function handleAgentConfig(agent: Agent) {
     const agentIR = {
         name: agent.name,
         modelConfig: [] as any,
         input: null,
         output: null,
+        context: null,
         tools: [] as any,
         workflows: [] as any
     }
 
-     for (let config of agent.configs) {
-            if (isAgentConfig(config)) {
-                agentIR.modelConfig.push(extractAgentConfig(config))
-            }
-
-            if (isInputConfig(config)) {
-                agentIR.input = extractInOutConfig(config)
-            }
-
-            if (isOutputConfig(config)) {
-                agentIR.output = extractInOutConfig(config)
-            }
-
-            if (isToolConfig(config)) {
-                agentIR.tools.push(extractToolConfig(config))
-            }
-
-            if (isWorkFlowConfig(config)) {
-                agentIR.workflows.push(extractWorkflowConfig(config))
-            }
+    for (let config of agent.configs) {
+        if (isAgentConfig(config)) {
+            agentIR.modelConfig.push(extractAgentConfig(config))
         }
-    return agentIR        
+
+        if (isInputConfig(config)) {
+            agentIR.input = extractInOutConfig(config)
+        }
+
+        if (isOutputConfig(config)) {
+            agentIR.output = extractInOutConfig(config)
+        }
+
+        // Single tool: tool functionName()
+        if (isToolConfig(config)) {
+            agentIR.tools.push(extractSingleToolConfig(config))
+        }
+
+        // Grouped tools: tools { ... }
+        if (isToolsConfig(config)) {
+            agentIR.tools.push(...extractToolsConfig(config))
+        }
+
+        if (isWorkFlowConfig(config)) {
+            agentIR.workflows.push(extractWorkflowConfig(config))
+        }
+
+        if (isContextConfig(config)) {
+            agentIR.context = extractInOutConfig(config)
+        }
+    }
+    return agentIR
 }
 
 function extractAgentConfig(agentConfig: AgentConfig) {
@@ -57,36 +68,48 @@ function extractAgentConfig(agentConfig: AgentConfig) {
     return result
 }
 
-function extractInOutConfig(inputConfig: InputConfig | OutputConfig) {
+function extractInOutConfig(inputConfig: InputConfig | OutputConfig | ContextConfig) {
     let result = {} as any
 
     if (inputConfig.$type === "InputConfig") {
         inputConfig.inProperties.map(input => {
             result[input.name] = { type: extractType(input.t), optional: input.isOptional }
         })
-    } else {
+    } else if (inputConfig.$type === "OutputConfig") {
         inputConfig.outProperties.map(output => {
             result[output.td.name] = { type: extractType(output.td.t), description: output.description, optional: output.td.isOptional }
+        })
+    } else if (inputConfig.$type === "ContextConfig") {
+        inputConfig.contextProperties.map(context => {
+            result[context.name] = { type: extractType(context.t), optional: context.isOptional }
         })
     }
 
     return result
 }
 
-function extractToolConfig(toolConfig: ToolConfig) {
+function extractSingleToolConfig(toolConfig: ToolConfig) {
     let tool = toolConfig.tool
-    return { description: tool.desc, params: extractParams(tool.params), name: tool.name, returns: extractType(tool.returns) }
-
+    return { description: tool.desc?.[0] ?? "", params: extractParams(tool.params), name: tool.name, returns: extractType(tool.returns) }
 }
 
-function extractPrompt(modelConfig:ModelConfig){
+function extractToolsConfig(toolsConfig: ToolsConfig) {
+    return toolsConfig.tools.map(tool => ({
+        description: tool.desc?.[0] ?? "",
+        params: extractParams(tool.params),
+        name: tool.name,
+        returns: extractType(tool.returns)
+    }))
+}
 
-     // Case 1: Inline parts - prompt { ... }
-    if(modelConfig.parts && modelConfig.parts.length > 0){
-        return {type:"parts",value:modelConfig.parts.map(part=> extractExpression(part))}
+function extractPrompt(modelConfig: ModelConfig) {
+
+    // Case 1: Inline parts - prompt { ... }
+    if (modelConfig.parts && modelConfig.parts.length > 0) {
+        return { type: "parts", value: modelConfig.parts.map(part => extractExpression(part)) }
     }
 
-       // Case 2: Reference - prompt: SomeNamedPrompt
+    // Case 2: Reference - prompt: SomeNamedPrompt
     if (modelConfig.refPrompt?.ref) {
         const namedPrompt = modelConfig.refPrompt.ref;
         return {
@@ -115,10 +138,10 @@ function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
 
     // Extract all statements
     let allStatements = workflowConfig.body.map(bdy => extractExpression(bdy))
-    
+
     // Find used variables (starting from return statement)
     const usedVars = findUsedVariables(allStatements)
-    
+
     // Filter to only include used statements
     let body = allStatements.filter(stmt => {
         if (stmt.type === 'return') return true
@@ -134,19 +157,19 @@ function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
 function findUsedVariables(statements: any[]): Set<string> {
     const used = new Set<string>()
     const varDeps = new Map<string, Set<string>>() // var -> vars it depends on
-    
+
     // Build dependency graph
     for (const stmt of statements) {
         if (stmt.type === 'variableDeclaration') {
             varDeps.set(stmt.name, collectVarRefs(stmt.value))
         }
     }
-    
+
     // Find return statement and collect its refs
     const returnStmt = statements.find(s => s.type === 'return')
     if (returnStmt) {
         const returnRefs = collectVarRefs(returnStmt.value)
-        
+
         // Recursively mark all used vars
         const markUsed = (varName: string) => {
             if (used.has(varName)) return
@@ -154,16 +177,16 @@ function findUsedVariables(statements: any[]): Set<string> {
             const deps = varDeps.get(varName)
             if (deps) deps.forEach(markUsed)
         }
-        
+
         returnRefs.forEach(markUsed)
     }
-    
+
     return used
 }
 
 function collectVarRefs(expr: any): Set<string> {
     const refs = new Set<string>()
-    
+
     const walk = (node: any) => {
         if (!node) return
         if (node.type === 'varRef') refs.add(node.value)
@@ -177,7 +200,7 @@ function collectVarRefs(expr: any): Set<string> {
             })
         }
     }
-    
+
     walk(expr)
     return refs
 }

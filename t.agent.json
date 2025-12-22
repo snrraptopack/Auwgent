@@ -5,19 +5,36 @@
       "defaultConfig": {
         "modelName": "kimi-k2-0905-preview",
         "prompt": {
-          "type": "parts",
+          "type": "ref",
+          "name": "A",
           "value": [
             {
-              "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume ",
+              "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n    provide response in accurate manner dont assume ",
               "type": "literal"
             },
             {
-              "value": "The user has an id of :",
-              "type": "literal"
-            },
-            {
-              "type": "contextRef",
-              "property": "id"
+              "type": "if",
+              "condition": {
+                "left": {
+                  "value": 10,
+                  "type": "literal"
+                },
+                "operator": ">",
+                "right": {
+                  "value": 30,
+                  "type": "literal"
+                }
+              },
+              "then": [
+                {
+                  "type": "return",
+                  "value": {
+                    "value": "hello",
+                    "type": "literal"
+                  }
+                }
+              ],
+              "else": []
             }
           ]
         }
@@ -35,16 +52,6 @@
     "result": {
       "type": "string",
       "description": "The result of your response",
-      "optional": false
-    }
-  },
-  "context": {
-    "id": {
-      "type": "unknown",
-      "optional": false
-    },
-    "isAdmin": {
-      "type": "boolean",
       "optional": false
     }
   },
@@ -86,6 +93,11 @@
         }
       },
       "name": "getstudentname",
+      "returns": "string"
+    },
+    {
+      "params": {},
+      "name": "getKwamen",
       "returns": "string"
     }
   ],

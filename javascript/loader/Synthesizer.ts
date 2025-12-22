@@ -9,9 +9,9 @@ export class Synthesizer {
      * The main entry point.
      * Takes runtime inputs and converts them into a standardized request.
      */
-    public async synthesize(input: Record<string, any>): Promise<SyntheticRequest> {
+    public async synthesize(input: Record<string, any>, context?: Record<string, any>): Promise<SyntheticRequest> {
         // 1. Build Messages
-        const messages = await this.buildMessages(input);
+        const messages = await this.buildMessages(input, context);
 
         // 2. Build Output Schema
         const responseSchema = this.buildOutputSchema();
@@ -34,7 +34,7 @@ export class Synthesizer {
         return this.ir.modelConfig[0]?.defaultConfig.modelName ?? "gemini-2.0-flash-exp";
     }
 
-    private async buildMessages(input: Record<string, any>): Promise<SyntheticMessage[]> {
+    private async buildMessages(input: Record<string, any>, context?: Record<string, any>): Promise<SyntheticMessage[]> {
         const promptConfig = this.ir.modelConfig[0]?.defaultConfig.prompt;
         const userMessage = Object.entries(input)
             .map(([k, v]) => `${k}: ${v}`)
@@ -43,7 +43,7 @@ export class Synthesizer {
         const messages: SyntheticMessage[] = [];
 
         if (promptConfig) {
-            const systemContent = this.resolvePrompt(promptConfig,input);
+            const systemContent = this.resolvePrompt(promptConfig, input, context);
             if (systemContent) {
                 messages.push({ role: 'system', content: await systemContent });
             }
@@ -53,19 +53,19 @@ export class Synthesizer {
         return messages;
     }
 
-    private async resolvePrompt(prompt: any, input: Record<string, any>): Promise<string> {
-    // Case 1: Simple string
+    private async resolvePrompt(prompt: any, input: Record<string, any>, context?: Record<string, any>): Promise<string> {
+        // Case 1: Simple string
         if (typeof prompt === 'string') {
             return prompt;
         }
-    
+
         // Case 2: Parts with expressions/if statements
         if (prompt.type === 'parts' && Array.isArray(prompt.value)) {
             const evaluator = new ExpressionEvaluator();
-            const scope = new Map(Object.entries(input));
+            const scope = new Map(Object.entries({ ...input, ...context }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
-    
+
         // Case 3: Simple wrapper
         if (prompt.type === 'simple') {
             return prompt.value;
@@ -76,20 +76,20 @@ export class Synthesizer {
             const scope = new Map(Object.entries(input));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
-    
-        return '';
-}
 
-private evaluatePromptParts(parts: any[]): string {
-    // Similar to template literal evaluation
-    // For now, just concatenate literals
-    // Later you can add expression evaluation if needed
-    return parts.map(part => {
-        if (part.type === 'literal') return part.value;
-        // Handle expressions if needed
         return '';
-    }).join('');
-}
+    }
+
+    private evaluatePromptParts(parts: any[]): string {
+        // Similar to template literal evaluation
+        // For now, just concatenate literals
+        // Later you can add expression evaluation if needed
+        return parts.map(part => {
+            if (part.type === 'literal') return part.value;
+            // Handle expressions if needed
+            return '';
+        }).join('');
+    }
 
 
     /**
@@ -115,8 +115,8 @@ private evaluatePromptParts(parts: any[]): string {
                     enum: actualType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
                 };
             } else if (typeof actualType === 'object' && actualType.type === 'object' && actualType.properties) {
-                properties[key] = this.objectTypeToSchema(actualType.properties);   
-            }else {
+                properties[key] = this.objectTypeToSchema(actualType.properties);
+            } else {
                 properties[key] = this.convertTypeToSchema(typeof actualType === 'string' ? actualType : 'string');
             }
 
@@ -179,9 +179,9 @@ private evaluatePromptParts(parts: any[]): string {
                     type: 'string',
                     enum: actualType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
                 };
-            }else if(typeof actualType === 'object' && actualType.type === 'object' && actualType.properties){
-                  properties[key] = this.objectTypeToSchema(actualType.properties);
-            }else {
+            } else if (typeof actualType === 'object' && actualType.type === 'object' && actualType.properties) {
+                properties[key] = this.objectTypeToSchema(actualType.properties);
+            } else {
                 properties[key] = this.convertTypeToSchema(typeof actualType === 'string' ? actualType : 'string');
             }
 
@@ -227,11 +227,11 @@ private evaluatePromptParts(parts: any[]): string {
     }
 
 
-        /**
-     * Converts an object type definition to JSON Schema
-     * Input: { name: "string", age: "number", address: { type: "object", properties: {...} } }
-     * Output: JSON Schema with nested properties
-     */
+    /**
+ * Converts an object type definition to JSON Schema
+ * Input: { name: "string", age: "number", address: { type: "object", properties: {...} } }
+ * Output: JSON Schema with nested properties
+ */
     private objectTypeToSchema(properties: Record<string, any>): JsonSchema {
         const schemaProps: Record<string, JsonSchema> = {};
         const required: string[] = [];

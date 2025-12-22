@@ -8,9 +8,12 @@ export class WorkflowRunner {
         private tools: ToolMap
     ) { }
 
-    async run(workflowName: string, args: Record<string, any>): Promise<any> {
+    async run(workflowName: string, args: Record<string, any>, context?: Record<string, any>): Promise<any> {
         const evaluator = new ExpressionEvaluator(this.ir, this.tools);
-        const scope = new Map<string, any>(Object.entries(args));
+        const scope = new Map<string, any>([
+            ...Object.entries(context ?? {}),  // Context first
+            ...Object.entries(args)             // Workflow args override
+        ]);
 
         const flow = this.ir.workflows.find(w => w.flowName === workflowName);
         if (!flow) {

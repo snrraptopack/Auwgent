@@ -19,10 +19,10 @@ export type AuwgentTerminalNames = keyof typeof AuwgentTerminals;
 
 export type AuwgentKeywordNames =
     | "!="
-    | "${"
     | "("
     | ")"
     | ","
+    | "."
     | ":"
     | "<"
     | "="
@@ -36,6 +36,8 @@ export type AuwgentKeywordNames =
     | "agent"
     | "boolean"
     | "config"
+    | "context"
+    | "ctx"
     | "default"
     | "description"
     | "else"
@@ -50,6 +52,7 @@ export type AuwgentKeywordNames =
     | "return"
     | "string"
     | "tool"
+    | "tools"
     | "true"
     | "type"
     | "workflow"
@@ -62,7 +65,7 @@ export type AuwgentTokenNames = AuwgentTerminalNames | AuwgentKeywordNames;
 export interface Agent extends langium.AstNode {
     readonly $container: Model;
     readonly $type: 'Agent';
-    configs: Array<AgentConfig | InputConfig | OutputConfig | ToolConfig | WorkFlowConfig>;
+    configs: Array<AgentConfig | ContextConfig | InputConfig | OutputConfig | ToolConfig | ToolsConfig | WorkFlowConfig>;
     name: string;
 }
 
@@ -172,6 +175,36 @@ export function isCondition(item: unknown): item is Condition {
     return reflection.isInstance(item, Condition.$type);
 }
 
+export interface ContextConfig extends langium.AstNode {
+    readonly $container: Agent;
+    readonly $type: 'ContextConfig';
+    contextProperties: Array<TypeConfigDeclaration>;
+}
+
+export const ContextConfig = {
+    $type: 'ContextConfig',
+    contextProperties: 'contextProperties'
+} as const;
+
+export function isContextConfig(item: unknown): item is ContextConfig {
+    return reflection.isInstance(item, ContextConfig.$type);
+}
+
+export interface ContextReference extends langium.AstNode {
+    readonly $container: ArrayLiteral | Condition | FunctionCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'ContextReference';
+    property: langium.Reference<TypeConfigDeclaration>;
+}
+
+export const ContextReference = {
+    $type: 'ContextReference',
+    property: 'property'
+} as const;
+
+export function isContextReference(item: unknown): item is ContextReference {
+    return reflection.isInstance(item, ContextReference.$type);
+}
+
 export type DefaultConfigModel = ModelConfig;
 
 export const DefaultConfigModel = {
@@ -192,7 +225,7 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
-export type Expression = ArrayLiteral | BooleanLiteral | FunctionCall | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
+export type Expression = ArrayLiteral | BooleanLiteral | ContextReference | FunctionCall | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -592,9 +625,9 @@ export function isToolConfig(item: unknown): item is ToolConfig {
 }
 
 export interface ToolFunction extends langium.AstNode {
-    readonly $container: ToolConfig;
+    readonly $container: ToolConfig | ToolsConfig;
     readonly $type: 'ToolFunction';
-    desc: string;
+    desc: Array<string>;
     name: string;
     params: Array<TypeConfigDeclaration>;
     returns: Types;
@@ -612,8 +645,23 @@ export function isToolFunction(item: unknown): item is ToolFunction {
     return reflection.isInstance(item, ToolFunction.$type);
 }
 
+export interface ToolsConfig extends langium.AstNode {
+    readonly $container: Agent;
+    readonly $type: 'ToolsConfig';
+    tools: Array<ToolFunction>;
+}
+
+export const ToolsConfig = {
+    $type: 'ToolsConfig',
+    tools: 'tools'
+} as const;
+
+export function isToolsConfig(item: unknown): item is ToolsConfig {
+    return reflection.isInstance(item, ToolsConfig.$type);
+}
+
 export interface TypeConfigDeclaration extends langium.AstNode {
-    readonly $container: InputConfig | Output | ToolFunction | TypeDeclaration | WorkFlowConfig;
+    readonly $container: ContextConfig | InputConfig | Output | ToolFunction | TypeDeclaration | WorkFlowConfig;
     readonly $type: 'TypeConfigDeclaration';
     isOptional: boolean;
     name: string;
@@ -741,6 +789,8 @@ export type AuwgentAstType = {
     BooleanLiteral: BooleanLiteral
     BooleanType: BooleanType
     Condition: Condition
+    ContextConfig: ContextConfig
+    ContextReference: ContextReference
     DefaultConfigModel: DefaultConfigModel
     Element: Element
     Expression: Expression
@@ -770,6 +820,7 @@ export type AuwgentAstType = {
     TemplateString: TemplateString
     ToolConfig: ToolConfig
     ToolFunction: ToolFunction
+    ToolsConfig: ToolsConfig
     TypeConfigDeclaration: TypeConfigDeclaration
     TypeDeclaration: TypeDeclaration
     Types: Types
@@ -858,6 +909,26 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: []
+        },
+        ContextConfig: {
+            name: ContextConfig.$type,
+            properties: {
+                contextProperties: {
+                    name: ContextConfig.contextProperties,
+                    defaultValue: []
+                }
+            },
+            superTypes: []
+        },
+        ContextReference: {
+            name: ContextReference.$type,
+            properties: {
+                property: {
+                    name: ContextReference.property,
+                    referenceType: TypeConfigDeclaration.$type
+                }
+            },
+            superTypes: [Expression.$type]
         },
         DefaultConfigModel: {
             name: DefaultConfigModel.$type,
@@ -1147,7 +1218,8 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             name: ToolFunction.$type,
             properties: {
                 desc: {
-                    name: ToolFunction.desc
+                    name: ToolFunction.desc,
+                    defaultValue: []
                 },
                 name: {
                     name: ToolFunction.name
@@ -1158,6 +1230,16 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 },
                 returns: {
                     name: ToolFunction.returns
+                }
+            },
+            superTypes: []
+        },
+        ToolsConfig: {
+            name: ToolsConfig.$type,
+            properties: {
+                tools: {
+                    name: ToolsConfig.tools,
+                    defaultValue: []
                 }
             },
             superTypes: []

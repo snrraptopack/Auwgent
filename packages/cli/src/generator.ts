@@ -23,13 +23,15 @@ import {
     TypeConfigDeclaration,
     Types,
     TemplateExpr,
-    TemplateString
+    TemplateString,
+    isContextReference
 } from "auwgent-language"
 
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { handleAgentConfig } from "./agentConfig.js";
+import { generateTypesFile } from "./Types/typesGenerator.js";
 
 
 export function generateOutput(model: Model, source: string, destination: string) {
@@ -48,16 +50,16 @@ export function generateOutput(model: Model, source: string, destination: string
 
         let currentElement = model.elements[i]
 
-        let agentIR = {} as { name:string, modelConfig: [], input: null, output: null, tools: [], workflows: []}
-        if(currentElement.$type === "Agent"){
-            agentIR=handleAgentConfig(currentElement)    
+        let agentIR = {} as { name: string, modelConfig: [], input: null, output: null, context: null, tools: [], workflows: [] }
+        if (currentElement.$type === "Agent") {
+            agentIR = handleAgentConfig(currentElement)
         }
-        if(currentElement.$type === "NamedPrompt")  continue
+        if (currentElement.$type === "NamedPrompt") continue
 
 
         fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
         const typesPath = path.join(destDir, `${baseName}.agent.types.ts`)
-        fs.writeFileSync(typesPath, generateTypes(agentIR))
+        fs.writeFileSync(typesPath, generateTypesFile(agentIR))
     }
     return outputPath;
 }
@@ -80,12 +82,12 @@ export function extractType(types: Types): any {
             return `${innerType}[]`;
         }
 
-        if(isObjectType(t)){
+        if (isObjectType(t)) {
             const props = {} as any
-            t.properties.forEach(prop=>{
+            t.properties.forEach(prop => {
                 props[prop.name] = extractType(prop.type)
             })
-            return {type:"object",properties:props}
+            return { type: "object", properties: props }
         }
     }
     return 'unknown';
@@ -148,19 +150,23 @@ export function extractExpression(express: Expression | Statement): any {
         return { type: "return", value: extractExpression(express.value) }
     }
 
-    if(isObjectLiteral(express)){
+    if (isObjectLiteral(express)) {
         const props: any = {};
         express.properties.forEach(prop => {
-        // If value exists, extract it; otherwise it's shorthand (use property name)
+            // If value exists, extract it; otherwise it's shorthand (use property name)
             props[prop.name] = prop.value ? extractExpression(prop.value) : { type: "varRef", value: prop.name };
         });
-        return {type:"object", value: props};
+        return { type: "object", value: props };
     }
 
-    if(isTemplateLiteral(express)){
-      // const templates = {} as any  
-    let result = buildTemplate(express.templates)
-    return {type:"template",parts:result}
+    if (isTemplateLiteral(express)) {
+        // const templates = {} as any  
+        let result = buildTemplate(express.templates)
+        return { type: "template", parts: result }
+    }
+
+    if (isContextReference(express)) {
+        return { type: "contextRef", property: express.property.ref?.name }
     }
 
     return null
@@ -168,124 +174,33 @@ export function extractExpression(express: Expression | Statement): any {
 
 //for building the template pattern
 
-export function buildTemplate(template:(TemplateExpr | TemplateString)[]){
+export function buildTemplate(template: (TemplateExpr | TemplateString)[]) {
     let stringBuilder = ""
 
     const parts = [] as any
 
-      for(let i=0; i < template.length;i++){
+    for (let i = 0; i < template.length; i++) {
         let current = template[i]
 
-        if(isTemplateString(current)){
-            stringBuilder += " "+ current.value
-        }else{
+        if (isTemplateString(current)) {
+            stringBuilder += " " + current.value
+        } else {
             let expr = extractExpression(current.expr)
-            if(stringBuilder.trim().length > 0){
-                parts.push({type:"literal",value:stringBuilder})
-                parts.push({type:"expression",value:expr})
+            if (stringBuilder.trim().length > 0) {
+                parts.push({ type: "literal", value: stringBuilder })
+                parts.push({ type: "expression", value: expr })
                 stringBuilder = ""
-            }else{
-               parts.push({type:"expression",value:expr})
+            } else {
+                parts.push({ type: "expression", value: expr })
             }
         }
     }
 
-    if(stringBuilder.trim().length > 0){
-        parts.push({type:"literal",value:stringBuilder})
+    if (stringBuilder.trim().length > 0) {
+        parts.push({ type: "literal", value: stringBuilder })
         stringBuilder = ""
-    }  
+    }
 
     return parts
 
 }
-
-
-// Build TypeScript types
-function generateTypes(agent: any): string {
-
-    // Check if input exists
-    const inputProps = agent.input
-        ? Object.entries(agent.input)
-            .map(([name, val]: [string, any]) => {
-                const optionalMarker = val?.optional ? '?' : '';
-                return `    ${name}${optionalMarker}: ${typeToTsString(val)}`
-            })
-            .join('\n')
-        : '';
-
-    // Check if output exists
-    const outputProps = agent.output
-        ? Object.entries(agent.output)
-            .map(([name, val]: [string, any]) => {
-                const optionalMarker = val?.optional ? '?' : '';
-                return `    ${name}${optionalMarker}: ${typeToTsString(val)}`
-            })
-            .join('\n')
-        : '';
-
-    const toolInterface = generateToolsInterface(agent);
-
-    return `// Auto-generated from ${agent.name}
-
-export interface ${agent.name}Input {
-${inputProps}
-}
-
-export interface ${agent.name}Output {
-${outputProps}
-}
-
-${toolInterface}
-`
-}
-
-
-function generateToolsInterface(agent: any): string {
-    if (!agent.tools || agent.tools.length === 0) {
-        return "";
-    }
-    
-    const toolMethods = agent.tools.map((tool: any) => {
-        const paramType = Object.entries(tool.params)
-            .map(([name, typeObj]: [string, any]) => {
-                const optionalMarker = typeObj?.optional ? '?' : '';
-                return `${name}${optionalMarker}: ${typeToTsString(typeObj)}`;
-            })
-            .join(', ');
-
-        return `    ${tool.name}: (args: { ${paramType} }) => Promise<${typeToTsString(tool.returns)}>;`;
-    }).join('\n');
-    
-    return `export interface ${agent.name}Tools {
-    [key: string]: (args: any) => Promise<any>;  // Index signature for ToolMap compatibility
-${toolMethods}
-}`;
-}
-
-
- // Helper to convert type value to TS string (same as in generateTypes)
-function typeToTsString(typeVal: any): string{
-        if (typeof typeVal === 'string') {
-            return typeVal;
-        }
-        // Handle union type: { type: "union", options: [...] }
-        if (typeVal && typeVal.type === 'union' && Array.isArray(typeVal.options)) {
-            return typeVal.options.map((o: string) => `"${o.replace(/^["']|["']$/g, '')}"`).join(' | ');
-        }
-        // Handle object type: { type: "object", properties: {...} }
-        if (typeVal && typeVal.type === 'object' && typeVal.properties) {
-            const props = Object.entries(typeVal.properties)
-                .map(([key, val]) => `${key}: ${typeToTsString(val)}`)
-                .join(', ');
-            return `{ ${props} }`;
-        }
-        // Handle nested type wrapper: { type: {...}, optional: ... }
-        if (typeVal && typeof typeVal.type === 'object') {
-            return typeToTsString(typeVal.type);
-        }
-        // Handle simple wrapper: { type: "string", optional: ... }
-        if (typeVal && typeof typeVal.type === 'string') {
-            return typeVal.type;
-        }
-        return 'unknown';
-    };

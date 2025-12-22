@@ -4,6 +4,7 @@ import { AuwgentGeneratedModule, AuwgentGeneratedSharedModule } from './generate
 import { AuwgentValidator, registerValidationChecks } from './auwgent-validator.js';
 import { AuwgentScopeProvider } from './scope/auwgent-scope.js';
 
+
 /**
  * Declaration of custom services - add your own service classes here.
  */
@@ -30,7 +31,7 @@ export const AuwgentModule: Module<AuwgentServices, PartialLangiumServices & Auw
     },
     references: {
         ScopeProvider: (service) => new AuwgentScopeProvider(service)
-    }
+    },
 };
 
 /**

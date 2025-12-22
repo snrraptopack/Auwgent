@@ -5,12 +5,12 @@ export class ExpressionEvaluator {
     constructor(
         private ir?: AgentIR,
         private tools?: ToolMap
-    ) {}
+    ) { }
 
     /**
      * Evaluate any expression/statement and return the result
      */
-    async evaluate(expr: Expression|Statement, scope: Map<string, any>): Promise<any> {
+    async evaluate(expr: Expression | Statement, scope: Map<string, any>): Promise<any> {
         if (!expr) return null;
 
         switch (expr.type) {
@@ -22,6 +22,9 @@ export class ExpressionEvaluator {
                     throw new Error(`Variable not found: ${expr.value}`);
                 }
                 return scope.get(expr.value);
+
+            case "contextRef":
+                return scope.get(expr.property)
 
             case "template":
                 return this.evaluateTemplate(expr.value, scope);
@@ -37,6 +40,7 @@ export class ExpressionEvaluator {
 
             case "if":
                 return this.evaluateIf(expr, scope);
+
 
             case "variableDeclaration":
                 const value = await this.evaluate(expr.value, scope);
@@ -120,16 +124,26 @@ export class ExpressionEvaluator {
             }
         }
 
-        // Execute tool
+        // Execute tool with graceful error handling
         if (!this.tools || !this.tools[funcName]) {
-            throw new Error(`Tool implementation missing for: ${funcName}`);
+            return {
+                __toolError: true,
+                tool: funcName,
+                message: `Tool implementation missing for: ${funcName}`
+            };
         }
 
         try {
             return await this.tools[funcName](resolvedArgs);
         } catch (e: any) {
-            // Wrap with context
-            throw new Error(`Tool '${funcName}' failed with args ${JSON.stringify(resolvedArgs)}: ${e.message}`);
+            // Don't throw — return error as data so workflow can continue
+            console.warn(`[Tool Error] ${funcName}: ${e.message}`);
+            return {
+                __toolError: true,
+                tool: funcName,
+                args: resolvedArgs,
+                message: e.message
+            };
         }
     }
 

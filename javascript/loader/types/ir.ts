@@ -3,6 +3,7 @@ export interface AgentIR {
     modelConfig: ModelConfig[];
     input: Record<string, string>;
     output: Record<string, string | { type: string; description: string, optional: boolean }>;
+    context: Record<string, string>
     tools: Tool[];
     workflows: Workflow[];
 }
@@ -36,6 +37,7 @@ export type Expression =
     | ObjectLiteral
     | ArrayLiteral
     | TemplateLiteral
+    | ContextReference
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -95,9 +97,14 @@ export interface TemplateLiteral {
     value: TemplatePart[];
 }
 
-export type TemplatePart = 
+export type TemplatePart =
     | { type: "literal"; value: string }
     | { type: "expression"; value: Expression };
+
+export interface ContextReference {
+    type: "contextRef",
+    property: string
+}
 
 export type ModelConfig = {
     defaultConfig: Config,
