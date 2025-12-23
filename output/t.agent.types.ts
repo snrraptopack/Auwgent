@@ -1,36 +1,34 @@
-// Auto-generated types for OrderProcessor
+// Auto-generated types for UIMaker
 // Do not edit manually
 // Core Runtime Imports
 import { Agent } from "../javascript/loader/IrInterpreter";
 import { DriverRegistry } from "../javascript/loader/DriverRegistry";
 import type { AgentIR } from "../javascript/loader/types/ir";
-export interface OrderProcessorInput {
+export interface UIMakerInput {
     request: string;
 }
 
-export interface OrderProcessorOutput {
+export interface UIProgrammerOutput {
+    code: string;
+}
+
+export interface UIMakerBaseOutput {
     result: string;
 }
 
-export interface OrderProcessorContext {
-    id: unknown;
-    isAdmin: boolean;
-}
+/** Union of possible output types (includes transfer destinations) */
+export type UIMakerOutput = UIMakerBaseOutput | UIProgrammerOutput;
 
-export interface OrderProcessorTools {
-    [key: string]: (args: any) => Promise<any>;
-    getstudentgrade: (args: { id: number }) => Promise<string>;
-    getstudentlocation: (args: { id: number }) => Promise<string>;
-    totalstudent: (args: {  }) => Promise<number>;
-    getstudentname: (args: { id: number }) => Promise<string>;
+export interface UIMakerContext {
+
 }
 
 
 /**
- * Create a type-safe OrderProcessor agent instance
+ * Create a type-safe UIMaker agent instance
  */
-export function createOrderProcessor(registry: DriverRegistry) {
-    const agent = new Agent<OrderProcessorInput, OrderProcessorOutput, OrderProcessorContext, OrderProcessorTools>(registry);
+export function createUIMaker(registry: DriverRegistry) {
+    const agent = new Agent<UIMakerInput, UIMakerOutput, Record<string, never>, Record<string, never>>(registry);
     
     return {
         /**
@@ -41,9 +39,9 @@ export function createOrderProcessor(registry: DriverRegistry) {
         /**
          * Run the agent with type-safe parameters
          */
-        run: (input: OrderProcessorInput, tools: OrderProcessorTools, context: OrderProcessorContext, configName?: "Gemini"): Promise<OrderProcessorOutput> => 
-            agent.run(input, tools, context, configName)
+        run: (input: UIMakerInput, configName?: never): Promise<UIMakerOutput> => 
+            agent.run(input, undefined, {}, configName)
     };
 }
 /** Type for the created agent instance */
-export type OrderProcessorAgent = ReturnType<typeof createOrderProcessor>;
+export type UIMakerAgent = ReturnType<typeof createUIMaker>;

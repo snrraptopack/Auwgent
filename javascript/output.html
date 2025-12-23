@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Responsive Card Grid</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --clr-bg: #f5f7fa;
+      --clr-card: #ffffff;
+      --clr-text: #222;
+      --clr-accent: #0066ff;
+      --radius: 12px;
+      --shadow: 0 4px 14px rgba(0, 0, 0, .08);
+      --transition: .25s ease-in-out;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: var(--clr-bg);
+      color: var(--clr-text);
+      line-height: 1.5;
+      padding: 2rem;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 2rem;
+      font-size: clamp(1.5rem, 2vw + 1rem, 2.5rem);
+    }
+
+    .grid {
+      display: grid;
+      gap: 1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    .card {
+      background: var(--clr-card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform var(--transition), box-shadow var(--transition);
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+    }
+
+    .card img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      display: block;
+    }
+
+    .card-body {
+      padding: 1.25rem;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      margin-bottom: .5rem;
+    }
+
+    .card-text {
+      flex: 1;
+      margin-bottom: 1rem;
+      opacity: .8;
+    }
+
+    .card-btn {
+      align-self: start;
+      background: var(--clr-accent);
+      color: #fff;
+      border: none;
+      padding: .6rem 1.2rem;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background var(--transition);
+    }
+
+    .card-btn:hover {
+      background: #0053d9;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Responsive Card Grid</h1>
+  <section class="grid">
+    <article class="card">
+      <img src="https://picsum.photos/seed/nature/800/450" alt="Nature">
+      <div class="card-body">
+        <h2 class="card-title">Explore Nature</h2>
+        <p class="card-text">Immerse yourself in breathtaking landscapes and discover the serenity of untouched
+          wilderness.</p>
+        <button class="card-btn">Learn more</button>
+      </div>
+    </article>
+    <article class="card">
+      <img src="https://picsum.photos/seed/city/800/450" alt="City">
+      <div class="card-body">
+        <h2 class="card-title">Urban Life</h2>
+        <p class="card-text">Feel the pulse of the city with vibrant culture, architecture, and endless opportunities.
+        </p>
+        <button class="card-btn">Learn more</button>
+      </div>
+    </article>
+    <article class="card">
+      <img src="https://picsum.photos/seed/tech/800/450" alt="Tech">
+      <div class="card-body">
+        <h2 class="card-title">Future Tech</h2>
+        <p class="card-text">Stay ahead with cutting-edge innovations shaping tomorrow's digital landscape.</p>
+        <button class="card-btn">Learn more</button>
+      </div>
+    </article>
+  </section>
+</body>
+
+</html>

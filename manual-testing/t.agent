@@ -1,79 +1,71 @@
-// Helper 1: Ingredient analyzer
-helper IngredientAnalyzer {
-    description: "Analyzes available ingredients and suggests what can be made. Use this first before creating recipes."
-    
-    default config {
-        model: "kimi-k2-0905-preview"
-        prompt: "You analyze ingredients and suggest what types of dishes could be made with them. Be concise."
-    }
-    
-    input {
-        ingredients: string
-    }
-    
-    output {
-        analysis: string @desc "What can be made with these ingredients"
-        cuisineType: string @desc "Suggested cuisine type"
-    }
-    
-    returns: back
-}
 
-// Helper 2: Recipe creator
-helper RecipeCreator {
-    description: "Creates detailed recipes based on cuisine type and ingredients. Only use after analyzing ingredients."
-    
-    default config {
-        model: "kimi-k2-0905-preview"
-        prompt: "You are a professional chef. Create detailed, step-by-step recipes. Include cooking times and tips."
-    }
-    
-    input {
-        cuisineType: string
-        ingredients: string
-    }
-    
-    output {
-        recipeName: string @desc "Name of the recipe"
-        instructions: string @desc "Step-by-step cooking instructions"
-        cookingTime: string @desc "Total cooking time"
-    }
-    
-    returns: back
-}
-
-// Main agent with workflow
-agent Chef {
-    helpers {
-        IngredientAnalyzer
-        RecipeCreator
-    }
-    
+helper UIPatternMaker{
+    description: "Takes the user input carefully analyze it and propose a design solution based on trending and best practices"
     default config {
         model: "kimi-k2-0905-preview"
         prompt {
-            "You are a helpful cooking assistant."
-            "You have access to two helpers and one workflow:"
-            "- IngredientAnalyzer: Analyzes what can be made from ingredients"
-            "- RecipeCreator: Creates detailed recipes"
-            "- createRecipe workflow: COMBINES BOTH - first analyzes ingredients, then creates a recipe. USE THIS for full meal creation."
-            "When user wants a complete meal suggestion, use the createRecipe workflow (NOT the helpers directly)."
+            "You are a professional UI pattern descovery, Your task it to analyze come up with unique designs that dont feel anyway but feels modern and natural"
+            "Critically analyze the task, and make sure you pick the right color combination and other best design practices"
         }
     }
-    
-    input {
+
+     input {
+            query:string
+        }
+     output{
+        propose:string @desc "The proposed design solution that needs to be returned"
+     }   
+}
+
+
+
+helper UIProgrammer{
+    description: "Takes The design format analyze it carefully then implement it in pure html,css and javascript"
+    default config {
+        model: "kimi-k2-0905-preview"
+        prompt {
+           "You are a professional Programmer that takes in users designs choices or codes and refine it into something that communicate their intent"
+           "it should be responsive modern practices and should use html,css and javascript if needed for now prioritize single file"
+        }
+    }
+
+     input {
+            design:string
+        }
+     output{
+        code:string @desc "The written code"
+     }   
+}
+
+
+agent UIMaker{
+
+    helpers{UIPatternMaker UIProgrammer}
+
+    default config{
+        model: "kimi-k2-0905-preview"
+        prompt {
+            "You are a ui designer"
+            "Your task is to analyze the users query understand the intend"
+            "formulate the request well, make it clear and handle cases where the user didnt add or improve what they said"
+            "propose an initial color scheme and a design pattern we can you then pass it on to the appropriate workflow"
+            "You can call a helper directly which will pass the original user intent if you wish to ofload some of the task"
+            "we have workflows that will help to design the user's request which should be html css and javascript if some is part"
+        }
+    }
+
+     input {
         request: string
     }
     
     output {
-        result: string @desc "Your response"
+        result: string @desc "Your UI design response"
     }
-    
-    // Workflow that chains both helpers
-    workflow createRecipe(ingredients: string): string {
-        description: "Creates a complete recipe by first analyzing ingredients then generating a detailed recipe. USE THIS for full meal creation requests."
-        let analysis = hlp.IngredientAnalyzer({ ingredients: ingredients })
-        let recipe = hlp.RecipeCreator({ cuisineType: "based on analysis", ingredients: ingredients })
-        return recipe
+
+
+    workflow fullDesign(query: string): string {
+        description: "This workflow takes from design planning using the uipattern planner then the uiprogrammer then gives you the final result"
+        let design = hlp.UIPatternMaker({ query: query })
+        transfer to hlp.UIProgrammer({ design: design })
     }
 }

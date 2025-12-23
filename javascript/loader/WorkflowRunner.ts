@@ -28,11 +28,13 @@ export class WorkflowRunner {
             const result = await evaluator.evaluate(stmt, scope);
 
             // Handle Return
-            // (In a real interpreter we'd have a wrapper for ReturnValue, 
-            // but here we can just check if result is defined if we strict)
-            // Actually, let's use a special object for Return to distinguish from generic values
             if (result && typeof result === 'object' && result.__type === 'ReturnSignal') {
                 return result.value;
+            }
+
+            // Handle Transfer - propagate up to the caller (IrInterpreter)
+            if (result && typeof result === 'object' && result.__type === 'TransferSignal') {
+                return result; // Pass the whole signal up
             }
         }
 

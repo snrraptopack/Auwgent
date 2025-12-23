@@ -96,19 +96,12 @@ export class Agent<
                 try {
                     let toolResult: any;
 
-                    // 1. Check if it's a Helper (sub-agent)
+                    // 1. Check if it's a Helper (sub-agent) - called directly by model
                     if (helper) {
                         console.log(`[Agent] >>> Delegating to Helper Agent: ${name}`);
                         toolResult = await this.executeHelper(helper, args);
                         console.log(`[Agent] <<< Helper ${name} completed.`);
-
-                        // Handle return mode
-                        if (helper.returns === "user") {
-                            // Return directly to user, bypass orchestrator
-                            console.log(`[Agent] Helper returned directly to user.`);
-                            return toolResult as TOutput;
-                        }
-                        // Otherwise ("back" or "back | user"), continue to add to messages
+                        // Helper called directly by model always returns to model
                     }
                     // 2. Check if it's a Workflow
                     else if (workflow) {
@@ -120,6 +113,29 @@ export class Agent<
                         );
                         toolResult = await runner.run(name, args, this.context);
                         console.log(`[Agent] <<< Workflow ${name} completed.`);
+
+                        // Handle TransferSignal from workflow
+                        if (toolResult && typeof toolResult === 'object' && toolResult.__type === 'TransferSignal') {
+                            console.log(`[Agent] Transfer detected from workflow (mode: ${toolResult.mode})`);
+
+                            if (toolResult.mode === "direct") {
+                                // Direct transfer: return helper result to user immediately
+                                console.log(`[Agent] Returning transferred result directly to user.`);
+                                return toolResult.value as TOutput;
+                            } else if (toolResult.mode === "thenContinue") {
+                                // Then continue: mark that we should append after user gets the result
+                                // For now, we'll send the transferred value and continue
+                                // TODO: Implement streaming/async continuation
+                                console.log(`[Agent] Transfer with continue - sending result, workflow continues.`);
+                                // Add the transfer result to messages and continue
+                                currentMessages.push({
+                                    role: 'user',
+                                    content: `Helper Result (sent to user): ${JSON.stringify(toolResult.value)}`
+                                });
+                                toolsStillAvailable = false;
+                                continue;
+                            }
+                        }
                     } else {
                         // It must be a user tool
                         if (!tools || !safeTools[name]) {

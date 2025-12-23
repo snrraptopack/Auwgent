@@ -11,12 +11,7 @@ Helper:
     "helper" name=ID "{"
         "description" ":" desc=STRING
         configs+=AgentConfigurations* 
-        ("returns" ":" returnMode=ReturnMode)?
     "}"
-;
-
-ReturnMode returns string:
-    "back" | "user" | "back" "|" "user"
 ;
 
 
@@ -108,7 +103,7 @@ ToolFunction:
 ;
 
 Statement:
-    VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration
+    VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration | TransferStatement
 ;
 
 VariableDeclartion:
@@ -162,6 +157,8 @@ FunctionCall:
     ")"
 ;
 
+TransferStatement:
+    "transfer" "to" call=HelperCall (thenContinue?="then" "continue")?;
 
 ArrayLiteral:
     '[' (elements+=Expression (',' elements+=Expression)*)? ']';

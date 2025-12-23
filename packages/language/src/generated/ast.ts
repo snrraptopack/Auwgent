@@ -34,10 +34,10 @@ export type AuwgentKeywordNames =
     | "]"
     | "`"
     | "agent"
-    | "back"
     | "boolean"
     | "config"
     | "context"
+    | "continue"
     | "ctx"
     | "default"
     | "description"
@@ -54,13 +54,14 @@ export type AuwgentKeywordNames =
     | "output"
     | "prompt"
     | "return"
-    | "returns"
     | "string"
+    | "then"
+    | "to"
     | "tool"
     | "tools"
+    | "transfer"
     | "true"
     | "type"
-    | "user"
     | "workflow"
     | "{"
     | "|"
@@ -274,15 +275,13 @@ export interface Helper extends langium.AstNode {
     configs: Array<AgentConfigurations>;
     desc: string;
     name: string;
-    returnMode?: ReturnMode;
 }
 
 export const Helper = {
     $type: 'Helper',
     configs: 'configs',
     desc: 'desc',
-    name: 'name',
-    returnMode: 'returnMode'
+    name: 'name'
 } as const;
 
 export function isHelper(item: unknown): item is Helper {
@@ -290,7 +289,7 @@ export function isHelper(item: unknown): item is Helper {
 }
 
 export interface HelperCall extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | TransferStatement | VariableDeclartion;
     readonly $type: 'HelperCall';
     args: Array<Expression>;
     helper: langium.Reference<Helper>;
@@ -578,12 +577,6 @@ export function isReferenceable(item: unknown): item is Referenceable {
     return reflection.isInstance(item, Referenceable.$type);
 }
 
-export type ReturnMode = string;
-
-export function isReturnMode(item: unknown): item is ReturnMode {
-    return typeof item === 'string';
-}
-
 export interface ReturnStatement extends langium.AstNode {
     readonly $container: IfStatement | WorkFlowConfig;
     readonly $type: 'ReturnStatement';
@@ -599,7 +592,7 @@ export function isReturnStatement(item: unknown): item is ReturnStatement {
     return reflection.isInstance(item, ReturnStatement.$type);
 }
 
-export type Statement = IfStatement | ReturnStatement | TypeDeclaration | VariableDeclartion;
+export type Statement = IfStatement | ReturnStatement | TransferStatement | TypeDeclaration | VariableDeclartion;
 
 export const Statement = {
     $type: 'Statement'
@@ -733,6 +726,23 @@ export const ToolsConfig = {
 
 export function isToolsConfig(item: unknown): item is ToolsConfig {
     return reflection.isInstance(item, ToolsConfig.$type);
+}
+
+export interface TransferStatement extends langium.AstNode {
+    readonly $container: IfStatement | WorkFlowConfig;
+    readonly $type: 'TransferStatement';
+    call: HelperCall;
+    thenContinue: boolean;
+}
+
+export const TransferStatement = {
+    $type: 'TransferStatement',
+    call: 'call',
+    thenContinue: 'thenContinue'
+} as const;
+
+export function isTransferStatement(item: unknown): item is TransferStatement {
+    return reflection.isInstance(item, TransferStatement.$type);
 }
 
 export interface TypeConfigDeclaration extends langium.AstNode {
@@ -900,6 +910,7 @@ export type AuwgentAstType = {
     ToolConfig: ToolConfig
     ToolFunction: ToolFunction
     ToolsConfig: ToolsConfig
+    TransferStatement: TransferStatement
     TypeConfigDeclaration: TypeConfigDeclaration
     TypeDeclaration: TypeDeclaration
     Types: Types
@@ -1059,9 +1070,6 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 },
                 name: {
                     name: Helper.name
-                },
-                returnMode: {
-                    name: Helper.returnMode
                 }
             },
             superTypes: [Element.$type]
@@ -1372,6 +1380,19 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: [AgentConfigurations.$type]
+        },
+        TransferStatement: {
+            name: TransferStatement.$type,
+            properties: {
+                call: {
+                    name: TransferStatement.call
+                },
+                thenContinue: {
+                    name: TransferStatement.thenContinue,
+                    defaultValue: false
+                }
+            },
+            superTypes: [Statement.$type]
         },
         TypeConfigDeclaration: {
             name: TypeConfigDeclaration.$type,

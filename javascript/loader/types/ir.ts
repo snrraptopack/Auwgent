@@ -12,7 +12,6 @@ export interface AgentIR {
 export interface HelperIR {
     name: string;
     description: string;
-    returns: "back" | "user" | "back | user";
     modelConfig: ModelConfig[];
     input: Record<string, string>;
     output: Record<string, string | { type: string; description: string, optional: boolean }>;
@@ -40,6 +39,7 @@ export type Statement =
     | VariableDeclaration
     | ReturnStatement
     | IfStatement
+    | TransferStatement
     | Expression;
 
 export type Expression =
@@ -124,6 +124,12 @@ export type TemplatePart =
 export interface ContextReference {
     type: "contextRef",
     property: string
+}
+
+export interface TransferStatement {
+    type: "transfer";
+    target: HelperCall;
+    mode: "direct" | "thenContinue";
 }
 
 export type ModelConfig = {

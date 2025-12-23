@@ -57,6 +57,9 @@ export class ExpressionEvaluator {
                 const returnValue = await this.evaluate(expr.value, scope);
                 return { __type: "ReturnSignal", value: returnValue };
 
+            case "transfer":
+                return this.evaluateTransfer(expr, scope);
+
             default:
                 throw new Error(`Unknown expression type: ${expr.type}`);
         }
@@ -199,6 +202,10 @@ export class ExpressionEvaluator {
                 if (result && typeof result === "object" && result.__type === "ReturnSignal") {
                     return result;
                 }
+                // Propagate transfer signal
+                if (result && typeof result === "object" && result.__type === "TransferSignal") {
+                    return result;
+                }
             }
         }
 
@@ -218,6 +225,44 @@ export class ExpressionEvaluator {
             case "<=": return left <= right;
             default: return false;
         }
+    }
+
+    /**
+     * Evaluate transfer statement - delegates to helper and returns TransferSignal
+     */
+    private async evaluateTransfer(expr: any, scope: Map<string, any>): Promise<any> {
+        const target = expr.target;
+        const helperName = target.value;
+        const args = target.args || [];
+        const mode = expr.mode; // "direct" or "thenContinue"
+
+        // Find helper definition
+        const helper = this.ir?.helpers?.find(h => h.name === helperName);
+        if (!helper) {
+            throw new Error(`Helper not found for transfer: ${helperName}`);
+        }
+
+        // Resolve args - expect a single object arg
+        if (args.length === 1) {
+            const resolvedArgs = await this.evaluate(args[0], scope);
+
+            if (!this.helperExecutor) {
+                throw new Error(`No helper executor provided for transfer to: ${helperName}`);
+            }
+
+            console.log(`[Workflow] Transfer to helper: ${helperName} (mode: ${mode})`);
+            const result = await this.helperExecutor(helper, resolvedArgs);
+
+            // Return TransferSignal with mode
+            return {
+                __type: "TransferSignal",
+                value: result,
+                mode: mode,
+                helperName: helperName
+            };
+        }
+
+        throw new Error(`Transfer to ${helperName} expects exactly 1 object argument`);
     }
 
     /**

@@ -1,5 +1,5 @@
 {
-  "name": "OrderProcessor",
+  "name": "UIMaker",
   "modelConfig": [
     {
       "defaultConfig": {
@@ -8,43 +8,33 @@
           "type": "parts",
           "value": [
             {
-              "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume ",
+              "value": "You are a ui designer",
               "type": "literal"
             },
             {
-              "value": "The user has an id of :",
+              "value": "Your task is to analyze the users query understand the intend",
               "type": "literal"
             },
             {
-              "type": "contextRef",
-              "property": "id"
+              "value": "formulate the request well, make it clear and handle cases where the user didnt add or improve what they said",
+              "type": "literal"
+            },
+            {
+              "value": "propose an initial color scheme and a design pattern we can you then pass it on to the appropriate workflow",
+              "type": "literal"
+            },
+            {
+              "value": "You can call a helper directly which will pass the original user intent if you wish to ofload some of the task",
+              "type": "literal"
+            },
+            {
+              "value": "we have workflows that will help to design the user's request which should be html css and javascript if some is part",
+              "type": "literal"
             }
           ]
         }
       },
-      "namedConfig": [
-        {
-          "configName": "Gemini",
-          "modelName": "gemini-2.5-flash",
-          "prompt": {
-            "type": "parts",
-            "value": [
-              {
-                "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume ",
-                "type": "literal"
-              },
-              {
-                "value": "The user has an id of :",
-                "type": "literal"
-              },
-              {
-                "type": "contextRef",
-                "property": "id"
-              }
-            ]
-          }
-        }
-      ]
+      "namedConfig": []
     }
   ],
   "input": {
@@ -56,161 +46,144 @@
   "output": {
     "result": {
       "type": "string",
-      "description": "The result of your response",
+      "description": "Your UI design response",
       "optional": false
     }
   },
-  "context": {
-    "id": {
-      "type": "unknown",
-      "optional": false
-    },
-    "isAdmin": {
-      "type": "boolean",
-      "optional": false
-    }
-  },
-  "tools": [
-    {
-      "description": "get the grades of the student",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "name": "getstudentgrade",
-      "returns": "string"
-    },
-    {
-      "description": "get the location of the student",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "name": "getstudentlocation",
-      "returns": "string"
-    },
-    {
-      "description": "returns the total number of student",
-      "params": {},
-      "name": "totalstudent",
-      "returns": "number"
-    },
-    {
-      "description": "get the name of the student",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "name": "getstudentname",
-      "returns": "string"
-    }
-  ],
+  "context": null,
+  "tools": [],
   "workflows": [
     {
-      "flowName": "getstudentdetails",
+      "flowName": "fullDesign",
       "flowParams": {
-        "id": {
-          "type": "number",
+        "query": {
+          "type": "string",
           "optional": false
         }
       },
-      "returns": {
-        "type": "object",
-        "properties": {
-          "name": "string",
-          "location": "string",
-          "grade": "number"
-        }
-      },
+      "returns": "string",
       "body": [
         {
-          "name": "grade",
+          "name": "design",
           "value": {
-            "value": "getstudentgrade",
-            "type": "functionCall",
+            "type": "helperCall",
+            "value": "UIPatternMaker",
             "args": [
               {
-                "value": "id",
-                "type": "varRef"
+                "type": "object",
+                "value": {
+                  "query": {
+                    "value": "query",
+                    "type": "varRef"
+                  }
+                }
               }
             ]
           },
           "type": "variableDeclaration"
         },
         {
-          "name": "location",
-          "value": {
-            "value": "getstudentlocation",
-            "type": "functionCall",
+          "type": "transfer",
+          "target": {
+            "type": "helperCall",
+            "value": "UIProgrammer",
             "args": [
               {
-                "value": "id",
-                "type": "varRef"
+                "type": "object",
+                "value": {
+                  "design": {
+                    "value": "design",
+                    "type": "varRef"
+                  }
+                }
               }
             ]
           },
-          "type": "variableDeclaration"
-        },
-        {
-          "name": "name",
-          "value": {
-            "value": "getstudentname",
-            "type": "functionCall",
-            "args": [
-              {
-                "value": "id",
-                "type": "varRef"
-              }
-            ]
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "type": "return",
-          "value": {
-            "type": "object",
-            "value": {
-              "name": {
-                "type": "varRef",
-                "value": "name"
-              },
-              "location": {
-                "type": "varRef",
-                "value": "location"
-              },
-              "grade": {
-                "type": "varRef",
-                "value": "grade"
-              }
-            }
-          }
+          "mode": "direct"
         }
       ],
-      "description": "get the student deatails, including location,grade and name"
+      "description": "This workflow takes from design planning using the uipattern planner then the uiprogrammer then gives you the final result"
     }
   ],
   "helpers": [
     {
-      "name": "DeepThink",
-      "description": "okay",
-      "returns": "back|user",
+      "name": "UIPatternMaker",
+      "description": "Takes the user input carefully analyze it and propose a design solution based on trending and best practices",
       "modelConfig": [
         {
           "defaultConfig": {
-            "modelName": "",
-            "prompt": null
+            "modelName": "kimi-k2-0905-preview",
+            "prompt": {
+              "type": "parts",
+              "value": [
+                {
+                  "value": "You are a professional UI pattern descovery, Your task it to analyze come up with unique designs that dont feel anyway but feels modern and natural",
+                  "type": "literal"
+                },
+                {
+                  "value": "Critically analyze the task, and make sure you pick the right color combination and other best design practices",
+                  "type": "literal"
+                }
+              ]
+            }
           },
           "namedConfig": []
         }
       ],
-      "input": {},
-      "output": null,
+      "input": {
+        "query": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "output": {
+        "propose": {
+          "type": "string",
+          "description": "The proposed design solution that needs to be returned",
+          "optional": false
+        }
+      },
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "UIProgrammer",
+      "description": "Takes The design format analyze it carefully then implement it in pure html,css and javascript",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "modelName": "kimi-k2-0905-preview",
+            "prompt": {
+              "type": "parts",
+              "value": [
+                {
+                  "value": "You are a professional Programmer that takes in users designs choices or codes and refine it into something that communicate their intent",
+                  "type": "literal"
+                },
+                {
+                  "value": "it should be responsive modern practices and should use html,css and javascript if needed for now prioritize single file",
+                  "type": "literal"
+                }
+              ]
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "design": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "output": {
+        "code": {
+          "type": "string",
+          "description": "The written code",
+          "optional": false
+        }
+      },
       "context": null,
       "tools": [],
       "workflows": []

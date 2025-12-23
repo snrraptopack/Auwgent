@@ -18,6 +18,7 @@ import {
     isUnionType,
     isVariableDeclartion,
     isVariableRef,
+    isTransferStatement,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -50,14 +51,13 @@ type AgentIr = {
 type HelperType = {
     name: string,
     description: string,
-    returns: string | undefined,
     modelConfig: any[],
     input: any,
     output: any,
     context: any,
     tools: any[],
     workflows: any[]
-}
+} /// returns: string | undefined, has be removed requires changes in the loader too
 
 
 export function generateOutput(model: Model, source: string, destination: string) {
@@ -122,7 +122,6 @@ function handleHelper(helper: Helper): HelperType {
     return {
         name: helper.name,
         description: helper.desc,
-        returns: helper.returnMode,
         modelConfig: baseConfig.modelConfig || [],
         input: baseConfig.input,
         output: baseConfig.output,
@@ -241,6 +240,17 @@ export function extractExpression(express: Expression | Statement): any {
         const helperName = express.helper.ref?.name
         const args = express.args.map(arg => extractExpression(arg))
         return { type: "helperCall", value: helperName, args: args }
+    }
+
+    if (isTransferStatement(express)) {
+        const helperName = express.call.helper.ref?.name
+        const args = express.call.args.map(arg => extractExpression(arg))
+        const mode = express.thenContinue ? "thenContinue" : "direct"
+        return {
+            type: "transfer",
+            target: { type: "helperCall", value: helperName, args: args },
+            mode: mode
+        }
     }
 
     return null

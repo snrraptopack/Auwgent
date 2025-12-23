@@ -3,13 +3,19 @@
  * Generates type-safe interfaces and factory functions from Agent IR
  */
 
+interface HelperType {
+    name: string;
+    output: Record<string, any> | null;
+}
+
 interface AgentIR {
     name: string;
     input: Record<string, any> | null;
     output: Record<string, any> | null;
     context: Record<string, any> | null;
     tools: Array<{ name: string; params: Record<string, any>; returns: any; description: string }>;
-    workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any }>;
+    workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[] }>;
+    helpers: HelperType[];
     modelConfig?: Array<{
         defaultConfig?: { modelName: string; prompt: any };
         namedConfig?: Array<{ configName: string; modelName: string; prompt: any }>;
@@ -23,6 +29,9 @@ export function generateTypesFile(agent: AgentIR): string {
     const hasTools = agent.tools && agent.tools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
 
+    // Collect helpers that are transferred to (their output becomes part of agent output)
+    const transferredHelpers = collectTransferredHelpers(agent);
+
     const sections = [
         `// Auto-generated types for ${agent.name}`,
         `// Do not edit manually`,
@@ -33,13 +42,46 @@ export function generateTypesFile(agent: AgentIR): string {
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
         ``,
         generateInputInterface(agent),
-        generateOutputInterface(agent),
+        // Generate output interfaces for transferred helpers
+        ...transferredHelpers.map(helper => generateHelperOutputInterface(helper)),
+        generateOutputInterface(agent, transferredHelpers),
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false),
+        generateAgentFactory(agent, hasTools, hasContext ?? false, transferredHelpers),
     ];
 
     return sections.filter(Boolean).join('\n');
+}
+
+/**
+ * Recursively scan workflow bodies for transfer statements
+ * Returns array of helper names that are transferred to
+ */
+function collectTransferredHelpers(agent: AgentIR): HelperType[] {
+    const transferredNames = new Set<string>();
+
+    for (const workflow of (agent.workflows || [])) {
+        scanForTransfers(workflow.body || [], transferredNames);
+    }
+
+    // Map names to actual helper definitions
+    return (agent.helpers || []).filter(h => transferredNames.has(h.name));
+}
+
+/**
+ * Recursively scan statements for transfer statements
+ */
+function scanForTransfers(statements: any[], found: Set<string>): void {
+    for (const stmt of statements) {
+        if (stmt.type === 'transfer' && stmt.target?.value) {
+            found.add(stmt.target.value);
+        }
+        // Recurse into if statements
+        if (stmt.type === 'if') {
+            if (stmt.then) scanForTransfers(stmt.then, found);
+            if (stmt.else) scanForTransfers(stmt.else, found);
+        }
+    }
 }
 
 /**
@@ -62,9 +104,28 @@ ${props}
 }
 
 /**
- * Generate Output interface
+ * Generate Helper Output interface (for transferred helpers)
  */
-function generateOutputInterface(agent: AgentIR): string {
+function generateHelperOutputInterface(helper: HelperType): string {
+    const props = helper.output
+        ? Object.entries(helper.output)
+            .map(([name, val]) => {
+                const optional = val?.optional ? '?' : '';
+                return `    ${name}${optional}: ${typeToTsString(val)};`;
+            })
+            .join('\n')
+        : '';
+
+    return `export interface ${helper.name}Output {
+${props}
+}
+`;
+}
+
+/**
+ * Generate Output interface (with union types for transfers)
+ */
+function generateOutputInterface(agent: AgentIR, transferredHelpers: HelperType[]): string {
     const props = agent.output
         ? Object.entries(agent.output)
             .map(([name, val]) => {
@@ -74,9 +135,29 @@ function generateOutputInterface(agent: AgentIR): string {
             .join('\n')
         : '';
 
-    return `export interface ${agent.name}Output {
+    // Base output interface
+    const baseInterface = `export interface ${agent.name}BaseOutput {
 ${props}
 }
+`;
+
+    // If no transfers, just use the base interface with the normal name
+    if (transferredHelpers.length === 0) {
+        return `export interface ${agent.name}Output {
+${props}
+}
+`;
+    }
+
+    // With transfers: generate union type
+    const unionMembers = [
+        `${agent.name}BaseOutput`,
+        ...transferredHelpers.map(h => `${h.name}Output`)
+    ].join(' | ');
+
+    return `${baseInterface}
+/** Union of possible output types (includes transfer destinations) */
+export type ${agent.name}Output = ${unionMembers};
 `;
 }
 
@@ -128,7 +209,7 @@ ${toolMethods}
 /**
  * Generate factory function with conditional parameters
  */
-function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean): string {
+function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, transferredHelpers: HelperType[]): string {
     // Build parameter list based on what's defined
     const runParams: string[] = [`input: ${agent.name}Input`];
     const runArgs: string[] = ['input'];
