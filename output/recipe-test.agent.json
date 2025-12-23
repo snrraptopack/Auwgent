@@ -64,8 +64,45 @@
       "returns": "string",
       "body": [
         {
+          "name": "analysis",
+          "value": {
+            "type": "helperCall",
+            "value": "IngredientAnalyzer",
+            "args": [
+              {
+                "type": "object",
+                "value": {
+                  "ingredients": {
+                    "value": "ingredients",
+                    "type": "varRef"
+                  }
+                }
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
           "name": "recipe",
-          "value": null,
+          "value": {
+            "type": "helperCall",
+            "value": "RecipeCreator",
+            "args": [
+              {
+                "type": "object",
+                "value": {
+                  "cuisineType": {
+                    "value": "based on analysis",
+                    "type": "literal"
+                  },
+                  "ingredients": {
+                    "value": "ingredients",
+                    "type": "varRef"
+                  }
+                }
+              }
+            ]
+          },
           "type": "variableDeclaration"
         },
         {
@@ -87,7 +124,7 @@
       "modelConfig": [
         {
           "defaultConfig": {
-            "modelName": "gemini-2.5-flash",
+            "modelName": "kimi-k2-0905-preview",
             "prompt": {
               "type": "simple",
               "value": "You analyze ingredients and suggest what types of dishes could be made with them. Be concise."
@@ -125,7 +162,7 @@
       "modelConfig": [
         {
           "defaultConfig": {
-            "modelName": "gemini-2.5-flash",
+            "modelName": "kimi-k2-0905-preview",
             "prompt": {
               "type": "simple",
               "value": "You are a professional chef. Create detailed, step-by-step recipes. Include cooking times and tips."

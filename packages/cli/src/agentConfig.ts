@@ -143,11 +143,14 @@ function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
     // Find used variables (starting from return statement)
     const usedVars = findUsedVariables(allStatements)
 
-    // Filter to only include used statements
+    // Filter to only include used statements (but keep side-effect statements)
     let body = allStatements.filter(stmt => {
         if (stmt.type === 'return') return true
         if (stmt.type === 'variableDeclaration') {
-            return usedVars.has(stmt.name)
+            // Keep if referenced OR if it has side effects (function/helper calls)
+            if (usedVars.has(stmt.name)) return true
+            if (hasSideEffects(stmt.value)) return true
+            return false
         }
         return true // keep other statements like if
     })
@@ -204,4 +207,24 @@ function collectVarRefs(expr: any): Set<string> {
 
     walk(expr)
     return refs
+}
+
+function hasSideEffects(expr: any): boolean {
+    if (!expr) return false
+
+    // Direct side-effect calls
+    if (expr.type === 'functionCall') return true
+    if (expr.type === 'helperCall') return true
+
+    // Check nested expressions
+    if (expr.value && typeof expr.value === 'object') {
+        if (hasSideEffects(expr.value)) return true
+    }
+    if (expr.args && Array.isArray(expr.args)) {
+        for (const arg of expr.args) {
+            if (hasSideEffects(arg)) return true
+        }
+    }
+
+    return false
 }
