@@ -232,13 +232,166 @@ agent Name {
 }
 ```
 
+## Multi-Agent Orchestration
+
+Auwgent supports **DSL-native multi-agent systems** with `helper` agents that can be dynamically or deterministically invoked.
+
+### Defining Helpers
+
+```
+helper DeepThink {
+    description: "A specialist for complex reasoning and analysis"
+    
+    default config {
+        model: "gemini-2.5-flash"
+        prompt: "You are a deep thinker. Analyze thoroughly."
+    }
+    
+    input { question: string }
+    output { analysis: string, conclusion: string }
+    
+    returns: back  // "back" = return to caller, "user" = return directly to user
+}
+
+helper CodeReviewer {
+    description: "Reviews code for bugs and improvements"
+    
+    default config { model: "gpt-4o" prompt: "You are a senior code reviewer." }
+    
+    input { code: string, language: string }
+    output { issues: string[], suggestions: string[] }
+    
+    returns: back
+}
+```
+
+### Using Helpers in Agents
+
+```
+agent Manager {
+    helpers { DeepThink, CodeReviewer }  // Declare available helpers
+    
+    default config {
+        model: "kimi-k2-0905-preview"
+        prompt {
+            "You are a manager. Delegate complex tasks to helpers."
+            "- DeepThink: For deep analysis"
+            "- CodeReviewer: For code review"
+        }
+    }
+    
+    input { request: string }
+    output { result: string }
+    
+    // Workflow that chains helpers deterministically
+    workflow fullReview(code: string): string {
+        description: "Analyze code then review it"
+        let analysis = hlp.DeepThink({ question: "What does this code do?" })
+        let review = hlp.CodeReviewer({ code: code, language: "typescript" })
+        return review
+    }
+}
+```
+
+### How It Works
+
+| Mode | Description |
+|------|-------------|
+| **Dynamic** | LLM decides when to call helpers (they appear as tools) |
+| **Deterministic** | Workflows call helpers explicitly with `hlp.HelperName()` |
+| **return: back** | Helper result goes back to calling agent for processing |
+| **return: user** | Helper result bypasses caller, returns directly to user |
+
+---
+
+## Comparison with Other Frameworks
+
+### CrewAI
+
+```python
+# CrewAI - Python only, verbose setup
+researcher = Agent(role='Researcher', goal='...', backstory='...')
+writer = Agent(role='Writer', goal='...', backstory='...')
+
+task1 = Task(description='Research topic', agent=researcher)
+task2 = Task(description='Write article', agent=writer)
+
+crew = Crew(agents=[researcher, writer], tasks=[task1, task2])
+result = crew.kickoff()
+```
+
+**Issues:** Sequential task execution only. Agents are defined in Python, not declarative. No type safety. Provider locked.
+
+### LangGraph
+
+```python
+# LangGraph - Complex state machines
+def research(state): ...
+def write(state): ...
+
+workflow = StateGraph(AgentState)
+workflow.add_node("research", research)
+workflow.add_node("write", write)
+workflow.add_edge("research", "write")
+
+app = workflow.compile()
+```
+
+**Issues:** Requires manual state management. Edges are runtime, not compile-time. No schema validation.
+
+### AutoGen
+
+```python
+# AutoGen - Chat-based coordination
+user = UserProxyAgent("user", human_input_mode="NEVER")
+researcher = AssistantAgent("researcher", llm_config=...)
+writer = AssistantAgent("writer", llm_config=...)
+
+user.initiate_chat(researcher, message="Research AI", max_turns=3)
+researcher.initiate_chat(writer, message="Write based on research")
+```
+
+**Issues:** Turn-based chat, not structured workflow. No deterministic paths. Heavy runtime overhead.
+
+### Auwgent
+
+```
+helper Researcher {
+    input { topic: string }
+    output { research: string }
+    returns: back
+}
+
+agent Coordinator {
+    helpers { Researcher, Writer }
+    
+    workflow createArticle(topic: string): string {
+        let research = hlp.Researcher({ topic: topic })
+        let article = hlp.Writer({ content: research })
+        return article
+    }
+}
+```
+
+**Advantages:**
+- ✅ **Declarative DSL** - Define agents in `.agent` files, not code
+- ✅ **Type-safe** - Compile-time validation of inputs/outputs
+- ✅ **Provider agnostic** - Same agent, any LLM
+- ✅ **Deterministic workflows** - `hlp.Helper()` executes without LLM guessing
+- ✅ **Dynamic fallback** - LLM can still choose to call helpers dynamically
+- ✅ **Return modes** - Control whether helper returns to caller or user
+
+---
+
 ## Roadmap
 
-- [ ] Context block for runtime metadata
-- [ ] Multi-agent orchestration
+- [x] Multi-agent orchestration (helpers)
+- [x] Dynamic and deterministic helper calls
+- [ ] Member access (`result.property`)
 - [ ] Streaming support
 - [ ] More drivers (Anthropic, Cohere)
 - [ ] Agent testing framework
+- [ ] Nested helper agents
 
 ## License
 
