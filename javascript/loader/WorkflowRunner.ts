@@ -1,15 +1,18 @@
 import { ExpressionEvaluator } from "./ExpressionEvaluator";
-import type { AgentIR, Statement, Expression } from "./types/ir";
+import type { AgentIR, Statement, Expression, HelperIR } from "./types/ir";
 import type { ToolMap } from "./types/tool";
+
+export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
 
 export class WorkflowRunner {
     constructor(
         private ir: AgentIR,
-        private tools: ToolMap
+        private tools: ToolMap,
+        private helperExecutor?: HelperExecutor
     ) { }
 
     async run(workflowName: string, args: Record<string, any>, context?: Record<string, any>): Promise<any> {
-        const evaluator = new ExpressionEvaluator(this.ir, this.tools);
+        const evaluator = new ExpressionEvaluator(this.ir, this.tools, this.helperExecutor);
         const scope = new Map<string, any>([
             ...Object.entries(context ?? {}),  // Context first
             ...Object.entries(args)             // Workflow args override

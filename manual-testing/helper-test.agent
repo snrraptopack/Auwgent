@@ -1,0 +1,50 @@
+// Helper for deep thinking - returns result back to manager
+helper DeepThink {
+    description: "A specialist for complex reasoning and analysis. Use for questions requiring deep thought."
+    
+    default config {
+        model: "gemini-2.5-flash"
+        prompt: "You are a deep thinker. Take your time to analyze thoroughly. Provide detailed reasoning."
+    }
+    
+    input {
+        question: string
+    }
+    
+    output {
+        analysis: string @desc "The detailed analysis"
+        conclusion: string @desc "The final conclusion"
+    }
+    
+    returns: back
+}
+
+// Main agent that can delegate to DeepThink
+agent Manager {
+    helpers {
+        DeepThink
+    }
+    
+    default config {
+        model: "kimi-k2-0905-preview"
+        prompt {
+            "You are a helpful manager. For simple questions, answer directly."
+            "For complex questions requiring deep analysis, delegate to the DeepThink helper."
+        }
+    }
+    
+    input {
+        request: string
+    }
+    
+    output {
+        result: string @desc "Your response to the user"
+    }
+    
+    // Workflow that explicitly calls the helper (deterministic)
+    workflow analyze(topic: string): string {
+        description: "Analyze a topic using the DeepThink helper"
+        let result = hlp.DeepThink({ question: topic })
+        return result
+    }
+}

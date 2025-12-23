@@ -1,5 +1,5 @@
 import { AstNode, DefaultScopeProvider, ReferenceInfo, Scope, StreamScope, stream } from 'langium';
-import { isAgent, isContextConfig, isContextReference, isToolConfig, isToolsConfig, ToolFunction, TypeConfigDeclaration } from '../generated/ast.js';
+import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, Helper, ToolFunction, TypeConfigDeclaration } from '../generated/ast.js';
 
 export class AuwgentScopeProvider extends DefaultScopeProvider {
 
@@ -25,6 +25,17 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
             if (contextProps.length > 0) {
                 const descriptions = contextProps.map(prop =>
                     this.descriptions.createDescription(prop, prop.name)
+                );
+                return new StreamScope(stream(descriptions));
+            }
+        }
+
+        // Handle HelperCall.helper
+        if (context.property === 'helper' && isHelperCall(context.container)) {
+            const helpers = this.getHelpersInScope(context.container);
+            if (helpers.length > 0) {
+                const descriptions = helpers.map(helper =>
+                    this.descriptions.createDescription(helper, helper.name)
                 );
                 return new StreamScope(stream(descriptions));
             }
@@ -76,6 +87,32 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
             current = current.$container;
         }
         return [];
+    }
 
+    /**
+     * Find all Helper references declared in the HelpersConfig of the containing Agent
+     */
+    private getHelpersInScope(node: AstNode): Helper[] {
+        const helpers: Helper[] = [];
+        let current: AstNode | undefined = node;
+
+        while (current) {
+            if (isAgent(current)) {
+                for (const config of current.configs) {
+                    if (isHelpersConfig(config) && config.helpers) {
+                        // Collect resolved helper references
+                        for (const helperRef of config.helpers) {
+                            if (helperRef.ref) {
+                                helpers.push(helperRef.ref);
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            current = current.$container;
+        }
+
+        return helpers;
     }
 } 

@@ -10,6 +10,10 @@ interface AgentIR {
     context: Record<string, any> | null;
     tools: Array<{ name: string; params: Record<string, any>; returns: any; description: string }>;
     workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any }>;
+    modelConfig?: Array<{
+        defaultConfig?: { modelName: string; prompt: any };
+        namedConfig?: Array<{ configName: string; modelName: string; prompt: any }>;
+    }>;
 }
 
 /**
@@ -23,10 +27,10 @@ export function generateTypesFile(agent: AgentIR): string {
         `// Auto-generated types for ${agent.name}`,
         `// Do not edit manually`,
         ``,
-        `// To use the factory function, import Agent and AgentDriver from your loader:`,
-        `// import { Agent } from "../javascript/loader/IrInterpreter";`,
-        `// import type { AgentDriver } from "../javascript/loader/types/protocol";`,
-        `// import type { AgentIR } from "../javascript/loader/types/ir";`,
+        `// Core Runtime Imports`,
+        `import { Agent } from "../javascript/loader/IrInterpreter";`,
+        `import { DriverRegistry } from "../javascript/loader/DriverRegistry";`,
+        `import type { AgentIR } from "../javascript/loader/types/ir";`,
         ``,
         generateInputInterface(agent),
         generateOutputInterface(agent),
@@ -143,6 +147,19 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
         runArgs.push('{}');
     }
 
+    // Extract named config names for type-safe configName
+    const namedConfigs = agent.modelConfig?.[0]?.namedConfig ?? [];
+    const configNames = namedConfigs
+        .map((c: any) => c.configName)
+        .filter((name: string | undefined) => name);
+
+    const configNameType = configNames.length > 0
+        ? configNames.map((n: string) => `"${n}"`).join(' | ')
+        : 'never';
+
+    runParams.push(`configName?: ${configNameType}`);
+    runArgs.push(`configName`);
+
     // Type parameters for Agent generic
     const typeParams = [
         `${agent.name}Input`,
@@ -155,8 +172,8 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
 /**
  * Create a type-safe ${agent.name} agent instance
  */
-export function create${agent.name}(driver: AgentDriver) {
-    const agent = new Agent<${typeParams}>(driver);
+export function create${agent.name}(registry: DriverRegistry) {
+    const agent = new Agent<${typeParams}>(registry);
     
     return {
         /**
@@ -171,7 +188,6 @@ export function create${agent.name}(driver: AgentDriver) {
             agent.run(${runArgs.join(', ')})
     };
 }
-
 /** Type for the created agent instance */
 export type ${agent.name}Agent = ReturnType<typeof create${agent.name}>;
 `;

@@ -22,7 +22,29 @@
           ]
         }
       },
-      "namedConfig": []
+      "namedConfig": [
+        {
+          "configName": "Gemini",
+          "modelName": "gemini-2.5-flash",
+          "prompt": {
+            "type": "parts",
+            "value": [
+              {
+                "value": "You are a helpful assistant you have been giving tools and workflows to use please \r\n            provide response in accurate manner dont assume ",
+                "type": "literal"
+              },
+              {
+                "value": "The user has an id of :",
+                "type": "literal"
+              },
+              {
+                "type": "contextRef",
+                "property": "id"
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "input": {
@@ -171,6 +193,27 @@
         }
       ],
       "description": "get the student deatails, including location,grade and name"
+    }
+  ],
+  "helpers": [
+    {
+      "name": "DeepThink",
+      "description": "okay",
+      "returns": "back|user",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "modelName": "",
+            "prompt": null
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {},
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
     }
   ]
 }

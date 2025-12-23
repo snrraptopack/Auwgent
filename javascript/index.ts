@@ -1,67 +1,27 @@
 
 import { GoogleDriver } from "./loader/drivers/GoogleDriver";
 import data from "../output/t.agent.json"
-import { createOrderProcessor, type OrderProcessorTools } from "../output/t.agent.types"
+import { createOrderProcessor } from "../output/t.agent.types"
 import { OpenAIDriver } from "./loader/drivers/OpenAIDriver";
 import { kimi, TempKey } from "./keys";
+import { DriverRegistry } from "./loader/DriverRegistry";
+import { tools } from "./tools";
 
 
 
 const driver = new GoogleDriver(TempKey);
 const driver1 = new OpenAIDriver(kimi, "https://api.moonshot.ai/v1")
 
-const agent = createOrderProcessor(driver1)
+const registry = new DriverRegistry()
+registry.registerProvider("kimi", driver1)
+registry.registerProvider("google", driver)
+
+const agent = createOrderProcessor(registry)
 agent.load(data as any);
-
-const students = [
-    { id: 1, name: "Ama Johnson", location: "New York", grade: "A" },
-    { id: 2, name: "Kwame Mensah", location: "London", grade: "B+" },
-    { id: 3, name: "Yaa Asante", location: "Accra", grade: "A-" },
-    { id: 4, name: "Kofi Owusu", location: "Toronto", grade: "B" },
-    { id: 5, name: "Akua Boateng", location: "Paris", grade: "A+" },
-];
-
-const tools: OrderProcessorTools = {
-    // Returns the total number of students
-    totalstudent: async () => {
-        console.log("[Tool] totalstudent called");
-        return students.length;
-    },
-
-    // Returns the name of a student by ID
-    getstudentname: async ({ id }) => {
-        console.log(`[Tool] getstudentname called with id: ${id}`);
-        const student = students.find(s => s.id === id);
-        if (!student) {
-            throw new Error(`Student with id ${id} not found`);
-        }
-        return student.name;
-    },
-
-    // Returns the location of a student by ID
-    getstudentlocation: async ({ id }) => {
-        console.log(`[Tool] getstudentlocation called with id: ${id}`);
-        const student = students.find(s => s.id === id);
-        if (!student) {
-            throw new Error(`Student with id ${id} not found`);
-        }
-        return student.location;
-    },
-
-    // Returns the grade of a student by ID
-    getstudentgrade: async ({ id }) => {
-        console.log(`[Tool] getstudentgrade called with id: ${id}`);
-        const student = students.find(s => s.id === id);
-        if (!student) {
-            throw new Error(`Student with id ${id} not found`);
-        }
-        return student.grade;
-    },
-};
 
 
 const result = await agent.run({
-    request: "please get my details for me"
+    request: "what model are you?"
 }, tools, { id: 10, isAdmin: false });
 
 console.log("final", result);

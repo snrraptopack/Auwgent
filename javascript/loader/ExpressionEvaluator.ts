@@ -1,10 +1,13 @@
-import type { AgentIR, Expression, Statement } from "./types/ir";
+import type { AgentIR, Expression, Statement, HelperIR } from "./types/ir";
 import type { ToolMap } from "./types/tool";
+
+export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
 
 export class ExpressionEvaluator {
     constructor(
         private ir?: AgentIR,
-        private tools?: ToolMap
+        private tools?: ToolMap,
+        private helperExecutor?: HelperExecutor
     ) { }
 
     /**
@@ -37,6 +40,9 @@ export class ExpressionEvaluator {
 
             case "functionCall":
                 return this.evaluateFunctionCall(expr, scope);
+
+            case "helperCall":
+                return this.evaluateHelperCall(expr, scope);
 
             case "if":
                 return this.evaluateIf(expr, scope);
@@ -145,6 +151,34 @@ export class ExpressionEvaluator {
                 message: e.message
             };
         }
+    }
+
+    /**
+     * Evaluate helper call (delegate to helper agent)
+     */
+    private async evaluateHelperCall(expr: any, scope: Map<string, any>): Promise<any> {
+        const helperName = expr.value;
+        const args = expr.args || [];
+
+        // Find helper definition
+        const helper = this.ir?.helpers?.find(h => h.name === helperName);
+        if (!helper) {
+            throw new Error(`Helper not found: ${helperName}`);
+        }
+
+        // Resolve args - for now we expect a single object arg
+        if (args.length === 1) {
+            const resolvedArgs = await this.evaluate(args[0], scope);
+
+            if (!this.helperExecutor) {
+                throw new Error(`No helper executor provided for: ${helperName}`);
+            }
+
+            console.log(`[Workflow] Calling helper: ${helperName}`);
+            return await this.helperExecutor(helper, resolvedArgs);
+        }
+
+        throw new Error(`Helper ${helperName} expects exactly 1 object argument`);
     }
 
     /**

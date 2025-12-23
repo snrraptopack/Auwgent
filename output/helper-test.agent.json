@@ -1,0 +1,80 @@
+{
+  "name": "Manager",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "modelName": "kimi-k2-0905-preview",
+        "prompt": {
+          "type": "parts",
+          "value": [
+            {
+              "value": "You are a helpful manager. For simple questions, answer directly.",
+              "type": "literal"
+            },
+            {
+              "value": "For complex questions requiring deep analysis, delegate to the DeepThink helper.",
+              "type": "literal"
+            }
+          ]
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": {
+    "request": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "output": {
+    "result": {
+      "type": "string",
+      "description": "Your response to the user",
+      "optional": false
+    }
+  },
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [
+    {
+      "name": "DeepThink",
+      "description": "A specialist for complex reasoning and analysis. Use for questions requiring deep thought.",
+      "returns": "back",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "modelName": "gemini-2.5-flash",
+            "prompt": {
+              "type": "simple",
+              "value": "You are a deep thinker. Take your time to analyze thoroughly. Provide detailed reasoning."
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "question": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "output": {
+        "analysis": {
+          "type": "string",
+          "description": "The detailed analysis",
+          "optional": false
+        },
+        "conclusion": {
+          "type": "string",
+          "description": "The final conclusion",
+          "optional": false
+        }
+      },
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ]
+}

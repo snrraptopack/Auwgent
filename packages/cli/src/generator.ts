@@ -24,7 +24,9 @@ import {
     Types,
     TemplateExpr,
     TemplateString,
-    isContextReference
+    isContextReference,
+    isHelperCall,
+    Helper
 } from "auwgent-language"
 
 
@@ -32,6 +34,30 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { handleAgentConfig } from "./agentConfig.js";
 import { generateTypesFile } from "./Types/typesGenerator.js";
+
+
+type AgentIr = {
+    name: string,
+    modelConfig: any[],
+    input: any,
+    output: any,
+    context: any,
+    tools: any[],
+    workflows: any[],
+    helpers: HelperType[]
+}
+
+type HelperType = {
+    name: string,
+    description: string,
+    returns: string | undefined,
+    modelConfig: any[],
+    input: any,
+    output: any,
+    context: any,
+    tools: any[],
+    workflows: any[]
+}
 
 
 export function generateOutput(model: Model, source: string, destination: string) {
@@ -46,22 +72,64 @@ export function generateOutput(model: Model, source: string, destination: string
     const outputPath = path.join(destDir, `${baseName}.agent.json`);
 
 
-    for (let i = 0; i < model.elements.length; i++) {
-
-        let currentElement = model.elements[i]
-
-        let agentIR = {} as { name: string, modelConfig: [], input: null, output: null, context: null, tools: [], workflows: [] }
-        if (currentElement.$type === "Agent") {
-            agentIR = handleAgentConfig(currentElement)
+    // First pass: collect all helpers into a map by name
+    const helperMap = new Map<string, HelperType>();
+    for (const element of model.elements) {
+        if (element.$type === "Helper") {
+            const helperIR = handleHelper(element);
+            helperMap.set(element.name, helperIR);
         }
-        if (currentElement.$type === "NamedPrompt") continue
+    }
 
+    // Second pass: process agents
+    for (let i = 0; i < model.elements.length; i++) {
+        let currentElement = model.elements[i];
 
-        fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
-        const typesPath = path.join(destDir, `${baseName}.agent.types.ts`)
-        fs.writeFileSync(typesPath, generateTypesFile(agentIR))
+        if (currentElement.$type === "Agent") {
+            const agentIR = handleAgentConfig(currentElement) as AgentIr;
+
+            // Filter helpers: only include those declared in agent's helpers { } block
+            const declaredHelpers: HelperType[] = [];
+            for (const config of currentElement.configs) {
+                if (config.$type === "HelpersConfig" && config.helpers) {
+                    for (const helperRef of config.helpers) {
+                        if (helperRef.ref && helperMap.has(helperRef.ref.name)) {
+                            declaredHelpers.push(helperMap.get(helperRef.ref.name)!);
+                        }
+                    }
+                }
+            }
+            agentIR.helpers = declaredHelpers;
+
+            fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
+            const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
+            fs.writeFileSync(typesPath, generateTypesFile(agentIR));
+        }
+
+        if (currentElement.$type === "NamedPrompt") continue;
     }
     return outputPath;
+}
+
+
+/**
+ * Handle Helper element - extract its configs into HelperType
+ */
+function handleHelper(helper: Helper): HelperType {
+    // Extract helper configs using the same logic as agents
+    const baseConfig = handleAgentConfig(helper as any); // Reuse agent config extraction
+
+    return {
+        name: helper.name,
+        description: helper.desc,
+        returns: helper.returnMode,
+        modelConfig: baseConfig.modelConfig || [],
+        input: baseConfig.input,
+        output: baseConfig.output,
+        context: baseConfig.context,
+        tools: baseConfig.tools || [],
+        workflows: baseConfig.workflows || []
+    };
 }
 
 
@@ -167,6 +235,12 @@ export function extractExpression(express: Expression | Statement): any {
 
     if (isContextReference(express)) {
         return { type: "contextRef", property: express.property.ref?.name }
+    }
+
+    if (isHelperCall(express)) {
+        const helperName = express.helper.ref?.name
+        const args = express.args.map(arg => extractExpression(arg))
+        return { type: "helperCall", value: helperName, args: args }
     }
 
     return null

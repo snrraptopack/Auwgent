@@ -1,8 +1,9 @@
 import { Synthesizer } from "./Synthesizer";
-import type { AgentIR } from "./types/ir";
+import type { AgentIR, HelperIR } from "./types/ir";
 import type { AgentDriver, SyntheticMessage } from "./types/protocol";
 import type { ToolMap } from "./types/tool"; // Import new type
 import { WorkflowRunner } from "./WorkflowRunner";
+import { DriverRegistry } from "./DriverRegistry";
 
 export class Agent<
     TInput extends Record<string, any>,
@@ -15,17 +16,37 @@ export class Agent<
     private maxTurns = 10; // Prevent infinite loops
     private context?: Record<string, any>
 
-    constructor(private driver: AgentDriver) { }
+    // OPTIMIZATION: Cache helper agents to avoid recreation
+    private helperCache = new Map<string, Agent<any, any>>();
+    // OPTIMIZATION: Cache resolved drivers
+    private driverCache = new Map<string, AgentDriver>();
+
+    constructor(private registry: DriverRegistry) { }
 
     load(ir: AgentIR) {
         this.ir = ir;
         this.synthesizer = new Synthesizer(ir);
+
+        // STRICT VALIDATION: Ensure we have drivers for ALL used models
+        const requiredModels = this.synthesizer.getRequiredModels();
+        const missingModels: string[] = [];
+
+        for (const model of requiredModels) {
+            if (!this.registry.resolve(model)) {
+                missingModels.push(model);
+            }
+        }
+
+        if (missingModels.length > 0) {
+            throw new Error(`Missing drivers for the following models: ${missingModels.join(", ")}. Please register them with the DriverRegistry.`);
+        }
     }
 
     async run(
         input: TInput,
         tools?: TTools,
-        context?: TContext
+        context?: TContext,
+        configName?: string
     ): Promise<TOutput> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
@@ -34,7 +55,12 @@ export class Agent<
         this.context = context
 
         // 1. Initial Synthesis
-        const request = await this.synthesizer.synthesize(input, context);
+        const request = await this.synthesizer.synthesize(input, context, configName);
+
+        // RESOLVE DRIVER (cached)
+        const modelName = request.config.model ?? "";
+        const driver = this.getDriver(modelName);
+
         let currentMessages: SyntheticMessage[] = [...request.messages];
         let turnCount = 0;
         let toolsStillAvailable = true; // Track if tools should be sent to model
@@ -52,7 +78,7 @@ export class Agent<
             };
 
             // Execute Driver
-            const result = await this.driver.execute(currentRequest);
+            const result = await driver.execute(currentRequest);
 
             // CASE A: Tool Call
             if (result.toolParams) {
@@ -65,14 +91,33 @@ export class Agent<
                 });
 
                 const workflow = this.ir.workflows?.find(w => w.flowName === name);
+                const helper = this.ir.helpers?.find(h => h.name === name);
 
                 try {
                     let toolResult: any;
 
-                    // 1. Dispatch: Check if it's a Workflow or a Tool
-                    if (workflow) {
+                    // 1. Check if it's a Helper (sub-agent)
+                    if (helper) {
+                        console.log(`[Agent] >>> Delegating to Helper Agent: ${name}`);
+                        toolResult = await this.executeHelper(helper, args);
+                        console.log(`[Agent] <<< Helper ${name} completed.`);
+
+                        // Handle return mode
+                        if (helper.returns === "user") {
+                            // Return directly to user, bypass orchestrator
+                            console.log(`[Agent] Helper returned directly to user.`);
+                            return toolResult as TOutput;
+                        }
+                        // Otherwise ("back" or "back | user"), continue to add to messages
+                    }
+                    // 2. Check if it's a Workflow
+                    else if (workflow) {
                         console.log(`[Agent] >>> Dispatching to Workflow: ${name}`);
-                        const runner = new WorkflowRunner(this.ir, safeTools);
+                        const runner = new WorkflowRunner(
+                            this.ir,
+                            safeTools,
+                            (helper, args) => this.executeHelper(helper, args)
+                        );
                         toolResult = await runner.run(name, args, this.context);
                         console.log(`[Agent] <<< Workflow ${name} completed.`);
                     } else {
@@ -85,13 +130,13 @@ export class Agent<
                         console.log(`[Agent] <<< Tool ${name} completed.`);
                     }
 
-                    // 2. Add result to history
+                    // 3. Add result to history
                     currentMessages.push({
                         role: 'user',
                         content: `Tool Result: ${JSON.stringify(toolResult)}`
                     });
 
-                    // 3. IMPORTANT: Remove tools for next turn so model can return structured output
+                    // 4. IMPORTANT: Remove tools for next turn so model can return structured output
                     toolsStillAvailable = false;
 
                 } catch (e: any) {
@@ -154,7 +199,62 @@ export class Agent<
         // Use provided tools or empty map if none
         const safeTools = (tools || {}) as ToolMap;
 
-        const runner = new WorkflowRunner(this.ir, safeTools);
+        const runner = new WorkflowRunner(
+            this.ir,
+            safeTools,
+            (helper, args) => this.executeHelper(helper, args)
+        );
         return runner.run(name, args);
+    }
+
+    /**
+     * Executes a helper as a sub-agent (with caching).
+     */
+    private async executeHelper(helper: HelperIR, args: Record<string, any>): Promise<any> {
+        // Check cache first
+        let subAgent = this.helperCache.get(helper.name);
+
+        if (!subAgent) {
+            // Create and cache the helper agent
+            subAgent = new Agent<Record<string, any>, any>(this.registry);
+
+            // Convert HelperIR to AgentIR-like structure for loading
+            const helperAsAgent: AgentIR = {
+                name: helper.name,
+                modelConfig: helper.modelConfig,
+                input: helper.input,
+                output: helper.output,
+                context: helper.context,
+                tools: helper.tools,
+                workflows: helper.workflows,
+                helpers: [] // Helpers don't have nested helpers (for now)
+            };
+
+            subAgent.load(helperAsAgent);
+            this.helperCache.set(helper.name, subAgent);
+            console.log(`[Agent] Helper ${helper.name} cached for future calls.`);
+        } else {
+            console.log(`[Agent] Using cached helper: ${helper.name}`);
+        }
+
+        // Run the helper with provided args
+        return await subAgent.run(args);
+    }
+
+    /**
+     * Get or cache a driver for a model name.
+     */
+    private getDriver(modelName: string): AgentDriver {
+        let driver = this.driverCache.get(modelName);
+
+        if (!driver) {
+            driver = this.registry.resolve(modelName);
+            if (!driver) {
+                throw new Error(`No driver found for model: ${modelName}`);
+            }
+            this.driverCache.set(modelName, driver);
+        }
+
+        return driver;
     }
 }

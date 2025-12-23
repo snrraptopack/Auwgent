@@ -5,25 +5,49 @@ entry Model:
     (elements+=Element)*;
 
 Element:
-    Agent | NamedPrompt;
+    Agent | NamedPrompt | Helper;
+
+Helper:
+    "helper" name=ID "{"
+        "description" ":" desc=STRING
+        configs+=AgentConfigurations* 
+        ("returns" ":" returnMode=ReturnMode)?
+    "}"
+;
+
+ReturnMode returns string:
+    "back" | "user" | "back" "|" "user"
+;
+
 
 Agent:
     "agent" name=ID "{" 
         configs+=(
-            InputConfig 
-            | OutputConfig 
-            | ContextConfig
-            | ToolConfig
-            | ToolsConfig
-            | AgentConfig
-            | WorkFlowConfig
+           AgentConfigurations
         )* 
     "}"
+;
+
+AgentConfigurations:
+    InputConfig 
+    | OutputConfig 
+    | ContextConfig
+    | ToolConfig
+    | ToolsConfig
+    | AgentConfig
+    | WorkFlowConfig
+    | HelpersConfig
 ;
 
 AgentConfig:
     defaultconfig=DefaultConfigModel (nondefaultConfig+=NonDefaultConfigModel*)?
 ;
+
+HelpersConfig:
+    "helpers" "{" helpers+=[Helper]* "}";
+
+HelperCall:
+    "hlp" "." helper=[Helper:ID] "(" (args+=Expression ("," args+=Expression)*)? ")";
 
 WorkFlowConfig:
     "workflow" name=ID 
@@ -129,6 +153,7 @@ Expression:
     | FunctionCall
     | TemplateLiteral
     | ContextReference
+    | HelperCall
 ;
 
 FunctionCall:

@@ -9,9 +9,9 @@ export class Synthesizer {
      * The main entry point.
      * Takes runtime inputs and converts them into a standardized request.
      */
-    public async synthesize(input: Record<string, any>, context?: Record<string, any>): Promise<SyntheticRequest> {
+    public async synthesize(input: Record<string, any>, context?: Record<string, any>, configName?: string): Promise<SyntheticRequest> {
         // 1. Build Messages
-        const messages = await this.buildMessages(input, context);
+        const messages = await this.buildMessages(input, context, configName);
 
         // 2. Build Output Schema
         const responseSchema = this.buildOutputSchema();
@@ -24,18 +24,48 @@ export class Synthesizer {
             responseSchema,
             tools,
             config: {
-                model: this.getModelName(),
+                model: this.getModelName(configName),
                 temperature: 0
             }
         };
     }
+    /**
+         * extract all unique model names used in this agent configuration
+         */
+    public getRequiredModels(): string[] {
+        const models = new Set<string>()
 
-    private getModelName(): string {
-        return this.ir.modelConfig[0]?.defaultConfig.modelName ?? "gemini-2.0-flash-exp";
+        if (this.ir.modelConfig[0]?.defaultConfig?.modelName) {
+            models.add(this.ir.modelConfig[0].defaultConfig.modelName)
+        }
+
+        if (this.ir.modelConfig[0]?.namedConfig) {
+            for (const config of this.ir.modelConfig[0].namedConfig) {
+                if (config.modelName) {
+                    models.add(config.modelName)
+                }
+            }
+        }
+
+        return Array.from(models)
     }
 
-    private async buildMessages(input: Record<string, any>, context?: Record<string, any>): Promise<SyntheticMessage[]> {
-        const promptConfig = this.ir.modelConfig[0]?.defaultConfig.prompt;
+    private getModelName(configName?: string): string {
+        const config = this.getConfig(configName);
+        return config?.modelName ?? "gemini-2.0-flash-exp";
+    }
+
+    private getConfig(configName?: string) {
+        if (configName) {
+            return this.ir.modelConfig[0]?.namedConfig?.find(c => c.modelName === configName || (c as any).configName === configName) || this.ir.modelConfig[0]?.defaultConfig;
+        }
+        return this.ir.modelConfig[0]?.defaultConfig;
+    }
+
+    private async buildMessages(input: Record<string, any>, context?: Record<string, any>, configName?: string): Promise<SyntheticMessage[]> {
+        const config = this.getConfig(configName);
+        const promptConfig = config?.prompt;
+
         const userMessage = Object.entries(input)
             .map(([k, v]) => `${k}: ${v}`)
             .join("\n");
@@ -78,17 +108,6 @@ export class Synthesizer {
         }
 
         return '';
-    }
-
-    private evaluatePromptParts(parts: any[]): string {
-        // Similar to template literal evaluation
-        // For now, just concatenate literals
-        // Later you can add expression evaluation if needed
-        return parts.map(part => {
-            if (part.type === 'literal') return part.value;
-            // Handle expressions if needed
-            return '';
-        }).join('');
     }
 
 
@@ -139,10 +158,6 @@ export class Synthesizer {
     }
 
     private buildTools(): SyntheticToolDef[] | undefined {
-        if (!this.ir.tools || this.ir.tools.length === 0) {
-            return undefined;
-        }
-
         // 1. Convert regular Tools
         const toolDefs = (this.ir.tools || []).map(tool => ({
             name: tool.name,
@@ -157,12 +172,28 @@ export class Synthesizer {
             parameters: this.paramsToSchema(wf.flowParams)
         }));
 
-        const allTools = [...toolDefs, ...workflowDefs]
+        // 3. Convert Helpers (Exposed as special agent-tools)
+        const helperDefs = (this.ir.helpers || []).map(helper => {
+            const returnModeHint = helper.returns === "user"
+                ? "(returns directly to user)"
+                : helper.returns === "back"
+                    ? "(returns result to you for further processing)"
+                    : "(you can choose to get result back OR send to user)";
+
+            return {
+                name: helper.name,
+                description: `[HELPER AGENT] ${helper.description} ${returnModeHint}`,
+                parameters: this.paramsToSchema(helper.input || {}),
+                _meta: { isHelper: true, returns: helper.returns }
+            };
+        });
+
+        const allTools = [...toolDefs, ...workflowDefs, ...helperDefs];
 
         if (allTools.length === 0) {
             return undefined;
         }
-        return allTools
+        return allTools;
     }
 
     private paramsToSchema(params: Record<string, any>): JsonSchema {

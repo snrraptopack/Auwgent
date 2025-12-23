@@ -6,6 +6,19 @@ export interface AgentIR {
     context: Record<string, string>
     tools: Tool[];
     workflows: Workflow[];
+    helpers: HelperIR[];
+}
+
+export interface HelperIR {
+    name: string;
+    description: string;
+    returns: "back" | "user" | "back | user";
+    modelConfig: ModelConfig[];
+    input: Record<string, string>;
+    output: Record<string, string | { type: string; description: string, optional: boolean }>;
+    context: Record<string, string>;
+    tools: Tool[];
+    workflows: Workflow[];
 }
 
 export interface Tool {
@@ -34,6 +47,7 @@ export type Expression =
     | UnionLiteral
     | VarRef
     | FunctionCall
+    | HelperCall
     | ObjectLiteral
     | ArrayLiteral
     | TemplateLiteral
@@ -82,6 +96,12 @@ export interface FunctionCall {
     args: Expression[];
 }
 
+export interface HelperCall {
+    type: "helperCall";
+    value: string; // Helper name
+    args: Expression[];
+}
+
 export interface ObjectLiteral {
     type: "object";
     value: Record<string, Expression>;  // Properties map to expressions
@@ -113,5 +133,10 @@ export type ModelConfig = {
 
 export type Config = {
     modelName: string,
-    prompt: string | null
+    prompt: PromptConfig | null
 }
+
+export type PromptConfig =
+    | { type: "simple", value: string }
+    | { type: "ref", name?: string, value: Expression[] }
+    | { type: "parts", value: Expression[] }

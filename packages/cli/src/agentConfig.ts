@@ -10,7 +10,8 @@ export function handleAgentConfig(agent: Agent) {
         output: null,
         context: null,
         tools: [] as any,
-        workflows: [] as any
+        workflows: [] as any,
+        helpers: [] as any
     }
 
     for (let config of agent.configs) {
@@ -61,7 +62,7 @@ function extractAgentConfig(agentConfig: AgentConfig) {
         result.namedConfig = agentConfig.nondefaultConfig.map(conf => ({
             configName: conf.name,
             modelName: conf.nonConf.ModelName,
-            prompt: extractPrompt(agentConfig.defaultconfig)
+            prompt: extractPrompt(conf.nonConf)
         }))
     }
 
