@@ -45,7 +45,8 @@ type AgentIr = {
     context: any,
     tools: any[],
     workflows: any[],
-    helpers: HelperType[]
+    helpers: HelperType[],
+    helperToolGrants?: Record<string, string[] | "all">  // helperName -> tool names or "all"
 }
 
 type HelperType = {
@@ -89,17 +90,33 @@ export function generateOutput(model: Model, source: string, destination: string
             const agentIR = handleAgentConfig(currentElement) as AgentIr;
 
             // Filter helpers: only include those declared in agent's helpers { } block
+            // Also extract tool grants for each helper
             const declaredHelpers: HelperType[] = [];
+            const helperToolGrants: Record<string, string[] | "all"> = {};
+
             for (const config of currentElement.configs) {
                 if (config.$type === "HelpersConfig" && config.helpers) {
                     for (const helperRef of config.helpers) {
-                        if (helperRef.ref && helperMap.has(helperRef.ref.name)) {
-                            declaredHelpers.push(helperMap.get(helperRef.ref.name)!);
+                        const helperName = helperRef.helper?.ref?.name;
+                        if (helperName && helperMap.has(helperName)) {
+                            declaredHelpers.push(helperMap.get(helperName)!);
+
+                            // Extract tool grants
+                            if (helperRef.withAllTools) {
+                                helperToolGrants[helperName] = "all";
+                            } else if (helperRef.grantedTools && helperRef.grantedTools.length > 0) {
+                                helperToolGrants[helperName] = helperRef.grantedTools
+                                    .map(t => t.ref?.name)
+                                    .filter((n): n is string => !!n);
+                            }
                         }
                     }
                 }
             }
             agentIR.helpers = declaredHelpers;
+            if (Object.keys(helperToolGrants).length > 0) {
+                agentIR.helperToolGrants = helperToolGrants;
+            }
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
             const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);

@@ -7,6 +7,7 @@ export interface AgentIR {
     tools: Tool[];
     workflows: Workflow[];
     helpers: HelperIR[];
+    helperToolGrants?: Record<string, string[] | "all">;  // helperName -> tool names or "all"
 }
 
 export interface HelperIR {

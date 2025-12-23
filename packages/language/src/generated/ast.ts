@@ -34,6 +34,7 @@ export type AuwgentKeywordNames =
     | "]"
     | "`"
     | "agent"
+    | "all"
     | "boolean"
     | "config"
     | "context"
@@ -62,6 +63,7 @@ export type AuwgentKeywordNames =
     | "transfer"
     | "true"
     | "type"
+    | "with"
     | "workflow"
     | "{"
     | "|"
@@ -305,10 +307,29 @@ export function isHelperCall(item: unknown): item is HelperCall {
     return reflection.isInstance(item, HelperCall.$type);
 }
 
+export interface HelperRef extends langium.AstNode {
+    readonly $container: HelpersConfig;
+    readonly $type: 'HelperRef';
+    grantedTools: Array<langium.Reference<ToolFunction>>;
+    helper: langium.Reference<Helper>;
+    withAllTools: boolean;
+}
+
+export const HelperRef = {
+    $type: 'HelperRef',
+    grantedTools: 'grantedTools',
+    helper: 'helper',
+    withAllTools: 'withAllTools'
+} as const;
+
+export function isHelperRef(item: unknown): item is HelperRef {
+    return reflection.isInstance(item, HelperRef.$type);
+}
+
 export interface HelpersConfig extends langium.AstNode {
     readonly $container: Agent | Helper;
     readonly $type: 'HelpersConfig';
-    helpers: Array<langium.Reference<Helper>>;
+    helpers: Array<HelperRef>;
 }
 
 export const HelpersConfig = {
@@ -883,6 +904,7 @@ export type AuwgentAstType = {
     FunctionCall: FunctionCall
     Helper: Helper
     HelperCall: HelperCall
+    HelperRef: HelperRef
     HelpersConfig: HelpersConfig
     IfStatement: IfStatement
     InputConfig: InputConfig
@@ -1088,13 +1110,31 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: [Expression.$type]
         },
+        HelperRef: {
+            name: HelperRef.$type,
+            properties: {
+                grantedTools: {
+                    name: HelperRef.grantedTools,
+                    defaultValue: [],
+                    referenceType: ToolFunction.$type
+                },
+                helper: {
+                    name: HelperRef.helper,
+                    referenceType: Helper.$type
+                },
+                withAllTools: {
+                    name: HelperRef.withAllTools,
+                    defaultValue: false
+                }
+            },
+            superTypes: []
+        },
         HelpersConfig: {
             name: HelpersConfig.$type,
             properties: {
                 helpers: {
                     name: HelpersConfig.helpers,
-                    defaultValue: [],
-                    referenceType: Helper.$type
+                    defaultValue: []
                 }
             },
             superTypes: [AgentConfigurations.$type]

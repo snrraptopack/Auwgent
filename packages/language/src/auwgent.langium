@@ -39,7 +39,10 @@ AgentConfig:
 ;
 
 HelpersConfig:
-    "helpers" "{" helpers+=[Helper]* "}";
+    "helpers" "{" helpers+=HelperRef* "}";
+
+HelperRef:
+    helper=[Helper] ("with" "tools" "{" (withAllTools?="all" | grantedTools+=[ToolFunction]* ) "}")?;
 
 HelperCall:
     "hlp" "." helper=[Helper:ID] "(" (args+=Expression ("," args+=Expression)*)? ")";

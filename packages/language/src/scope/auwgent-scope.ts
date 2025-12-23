@@ -102,8 +102,8 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
                     if (isHelpersConfig(config) && config.helpers) {
                         // Collect resolved helper references
                         for (const helperRef of config.helpers) {
-                            if (helperRef.ref) {
-                                helpers.push(helperRef.ref);
+                            if (helperRef.helper?.ref) {
+                                helpers.push(helperRef.helper.ref);
                             }
                         }
                     }

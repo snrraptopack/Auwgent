@@ -234,6 +234,9 @@ export class Agent<
             // Create and cache the helper agent
             subAgent = new Agent<Record<string, any>, any>(this.registry);
 
+            // Resolve granted tools from parent
+            const grantedTools = this.resolveGrantedTools(helper.name);
+
             // Convert HelperIR to AgentIR-like structure for loading
             const helperAsAgent: AgentIR = {
                 name: helper.name,
@@ -241,20 +244,42 @@ export class Agent<
                 input: helper.input,
                 output: helper.output,
                 context: helper.context,
-                tools: helper.tools,
+                tools: [...helper.tools, ...grantedTools],  // Merge helper's tools with granted parent tools
                 workflows: helper.workflows,
                 helpers: [] // Helpers don't have nested helpers (for now)
             };
 
             subAgent.load(helperAsAgent);
             this.helperCache.set(helper.name, subAgent);
-            console.log(`[Agent] Helper ${helper.name} cached for future calls.`);
+            console.log(`[Agent] Helper ${helper.name} cached for future calls.${grantedTools.length > 0 ? ` (with ${grantedTools.length} granted tools)` : ''}`);
         } else {
             console.log(`[Agent] Using cached helper: ${helper.name}`);
         }
 
         // Run the helper with provided args
         return await subAgent.run(args);
+    }
+
+    /**
+     * Resolve granted tools from parent for a specific helper
+     */
+    private resolveGrantedTools(helperName: string): any[] {
+        if (!this.ir) return [];
+
+        const grants = this.ir.helperToolGrants;
+        if (!grants || !grants[helperName]) {
+            return [];
+        }
+
+        const grant = grants[helperName];
+
+        if (grant === "all") {
+            // Return all parent tools
+            return this.ir.tools || [];
+        }
+
+        // Return only the specified tools
+        return (this.ir.tools || []).filter(t => grant.includes(t.name));
     }
 
     /**
