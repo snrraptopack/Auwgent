@@ -244,7 +244,7 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
-export type Expression = ArrayLiteral | BooleanLiteral | ContextReference | FunctionCall | HelperCall | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
+export type Expression = ArrayLiteral | BooleanLiteral | ContextReference | FunctionCall | HelperCall | MemberAccess | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -373,6 +373,25 @@ export const InputConfig = {
 
 export function isInputConfig(item: unknown): item is InputConfig {
     return reflection.isInstance(item, InputConfig.$type);
+}
+
+export interface MemberAccess extends langium.AstNode {
+    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'MemberAccess';
+    chain: Array<string>;
+    object: langium.Reference<Referenceable>;
+    property: string;
+}
+
+export const MemberAccess = {
+    $type: 'MemberAccess',
+    chain: 'chain',
+    object: 'object',
+    property: 'property'
+} as const;
+
+export function isMemberAccess(item: unknown): item is MemberAccess {
+    return reflection.isInstance(item, MemberAccess.$type);
 }
 
 export interface Model extends langium.AstNode {
@@ -908,6 +927,7 @@ export type AuwgentAstType = {
     HelpersConfig: HelpersConfig
     IfStatement: IfStatement
     InputConfig: InputConfig
+    MemberAccess: MemberAccess
     Model: Model
     ModelConfig: ModelConfig
     NamedPrompt: NamedPrompt
@@ -1165,6 +1185,23 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: [AgentConfigurations.$type]
+        },
+        MemberAccess: {
+            name: MemberAccess.$type,
+            properties: {
+                chain: {
+                    name: MemberAccess.chain,
+                    defaultValue: []
+                },
+                object: {
+                    name: MemberAccess.object,
+                    referenceType: Referenceable.$type
+                },
+                property: {
+                    name: MemberAccess.property
+                }
+            },
+            superTypes: [Expression.$type]
         },
         Model: {
             name: Model.$type,

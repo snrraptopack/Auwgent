@@ -40,7 +40,18 @@ export function createUIMaker(registry: DriverRegistry) {
          * Run the agent with type-safe parameters
          */
         run: (input: UIMakerInput, configName?: never): Promise<UIMakerOutput> => 
-            agent.run(input, undefined, {}, configName)
+            agent.run(input, undefined, {}, configName),
+        
+        /**
+         * Fluent streaming API with callbacks
+         * @example
+         * const result = await agent
+         *   .stream({ request: "..." })
+         *   .onText(delta => console.log(delta))
+         *   .run();
+         */
+        stream: (input: UIMakerInput, configName?: never) => 
+            agent.stream(input, undefined, {}, configName)
     };
 }
 /** Type for the created agent instance */

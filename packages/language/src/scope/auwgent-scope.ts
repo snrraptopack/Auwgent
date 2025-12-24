@@ -41,6 +41,17 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
             }
         }
 
+        // Handle HelperRef.grantedTools - resolve tool references in "with tools { ... }"
+        if (context.property === 'grantedTools') {
+            const tools = this.getToolFunctionsInScope(context.container);
+            if (tools.length > 0) {
+                const descriptions = tools.map(tool =>
+                    this.descriptions.createDescription(tool, tool.name)
+                );
+                return new StreamScope(stream(descriptions), super.getScope(context));
+            }
+        }
+
         return super.getScope(context);
     }
 

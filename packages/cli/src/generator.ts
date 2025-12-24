@@ -19,6 +19,7 @@ import {
     isVariableDeclartion,
     isVariableRef,
     isTransferStatement,
+    isMemberAccess,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -268,6 +269,16 @@ export function extractExpression(express: Expression | Statement): any {
             target: { type: "helperCall", value: helperName, args: args },
             mode: mode
         }
+    }
+
+    if (isMemberAccess(express)) {
+        const objectName = express.object.ref?.name;
+        const properties = [express.property, ...(express.chain || [])];
+        return {
+            type: "memberAccess",
+            object: { type: "varRef", value: objectName },
+            properties: properties
+        };
     }
 
     return null

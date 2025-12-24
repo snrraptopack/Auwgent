@@ -64,13 +64,32 @@ export interface DriverResult {
 }
 
 /**
+ * Stream chunk types for async generator streaming
+ */
+export type StreamChunk =
+    | { type: 'text'; delta: string }
+    | { type: 'tool_start'; name: string; id: string }
+    | { type: 'tool_args'; id: string; delta: string }
+    | { type: 'tool_end'; id: string }
+    | { type: 'tool_result'; name: string; result: any }
+    | { type: 'transfer'; mode: 'direct' | 'thenContinue'; helperName: string }
+    | { type: 'helper_start'; name: string }
+    | { type: 'helper_end'; name: string; result: any }
+    | { type: 'helper_chunk'; name: string; chunk: StreamChunk };
+
+/**
  * The interface every provider driver must implement.
  */
 export interface AgentDriver {
     name: string;
     /**
-     * Execute the synthetic request and return the raw text result.
-     * The driver is responsible for unwrapping the provider's specific response object.
+     * Execute the synthetic request and return the complete result.
      */
     execute(request: SyntheticRequest): Promise<DriverResult>;
+
+    /**
+     * Execute with streaming - yields chunks as they arrive.
+     * Returns final DriverResult when complete.
+     */
+    executeStream?(request: SyntheticRequest): AsyncGenerator<StreamChunk, DriverResult, unknown>;
 }

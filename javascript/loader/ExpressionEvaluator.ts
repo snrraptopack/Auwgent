@@ -1,13 +1,16 @@
 import type { AgentIR, Expression, Statement, HelperIR } from "./types/ir";
 import type { ToolMap } from "./types/tool";
+import type { StreamChunk } from "./types/protocol";
 
 export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
+export type StreamingHelperExecutor = (helper: HelperIR, args: Record<string, any>) => AsyncGenerator<StreamChunk, any, unknown>;
 
 export class ExpressionEvaluator {
     constructor(
         private ir?: AgentIR,
         private tools?: ToolMap,
-        private helperExecutor?: HelperExecutor
+        private helperExecutor?: HelperExecutor,
+        private streamingHelperExecutor?: StreamingHelperExecutor
     ) { }
 
     /**
@@ -60,9 +63,207 @@ export class ExpressionEvaluator {
             case "transfer":
                 return this.evaluateTransfer(expr, scope);
 
+            case "memberAccess":
+                return this.evaluateMemberAccess(expr, scope);
+
             default:
                 throw new Error(`Unknown expression type: ${expr.type}`);
         }
+    }
+
+    /**
+     * STREAMING VERSION: Evaluate expression/statement, yielding chunks for helper calls.
+     * For expressions that don't stream (literals, templates, etc.), returns value via generator return.
+     * For helperCall/transfer, yields chunks from the streaming helper executor.
+     */
+    async *evaluateStream(
+        expr: Expression | Statement,
+        scope: Map<string, any>
+    ): AsyncGenerator<StreamChunk, any, unknown> {
+        if (!expr) return null;
+
+        switch (expr.type) {
+            // Streaming-aware types: yield chunks from helper streams
+            case "helperCall":
+                return yield* this.evaluateHelperCallStream(expr, scope);
+
+            case "transfer":
+                return yield* this.evaluateTransferStream(expr, scope);
+
+            case "if":
+                return yield* this.evaluateIfStream(expr, scope);
+
+            case "variableDeclaration": {
+                // Variable declarations might contain streaming helper calls
+                const valueGen = this.evaluateStream(expr.value, scope);
+                let value: any;
+                while (true) {
+                    const { value: chunk, done } = await valueGen.next();
+                    if (done) {
+                        value = chunk;
+                        break;
+                    }
+                    yield chunk;
+                }
+                scope.set(expr.name, value);
+                return undefined;
+            }
+
+            case "return": {
+                // Return might contain streaming helper call
+                const returnGen = this.evaluateStream(expr.value, scope);
+                let returnValue: any;
+                while (true) {
+                    const { value: chunk, done } = await returnGen.next();
+                    if (done) {
+                        returnValue = chunk;
+                        break;
+                    }
+                    yield chunk;
+                }
+                return { __type: "ReturnSignal", value: returnValue };
+            }
+
+            // Non-streaming types: delegate to regular evaluate()
+            default:
+                return await this.evaluate(expr, scope);
+        }
+    }
+
+    /**
+     * STREAMING: Evaluate helper call - yields chunks from helper stream
+     */
+    private async *evaluateHelperCallStream(
+        expr: any,
+        scope: Map<string, any>
+    ): AsyncGenerator<StreamChunk, any, unknown> {
+        const helperName = expr.value;
+        const args = expr.args || [];
+
+        const helper = this.ir?.helpers?.find(h => h.name === helperName);
+        if (!helper) {
+            throw new Error(`Helper not found: ${helperName}`);
+        }
+
+        if (args.length === 1) {
+            const resolvedArgs = await this.evaluate(args[0], scope);
+
+            if (this.streamingHelperExecutor) {
+                console.log(`[Workflow] Calling helper (streaming): ${helperName}`);
+                const stream = this.streamingHelperExecutor(helper, resolvedArgs);
+                let result: any;
+
+                while (true) {
+                    const { value, done } = await stream.next();
+                    if (done) {
+                        result = value;
+                        break;
+                    }
+                    yield value;  // Yield immediately!
+                }
+                return result;
+            }
+
+            // Fallback to non-streaming
+            if (!this.helperExecutor) {
+                throw new Error(`No helper executor provided for: ${helperName}`);
+            }
+            console.log(`[Workflow] Calling helper (fallback): ${helperName}`);
+            return await this.helperExecutor(helper, resolvedArgs);
+        }
+
+        throw new Error(`Helper ${helperName} expects exactly 1 object argument`);
+    }
+
+    /**
+     * STREAMING: Evaluate transfer - yields chunks and returns TransferSignal
+     */
+    private async *evaluateTransferStream(
+        expr: any,
+        scope: Map<string, any>
+    ): AsyncGenerator<StreamChunk, any, unknown> {
+        const target = expr.target;
+        const helperName = target.value;
+        const args = target.args || [];
+        const mode = expr.mode;
+
+        const helper = this.ir?.helpers?.find(h => h.name === helperName);
+        if (!helper) {
+            throw new Error(`Helper not found for transfer: ${helperName}`);
+        }
+
+        if (args.length === 1) {
+            const resolvedArgs = await this.evaluate(args[0], scope);
+            let result: any;
+
+            if (this.streamingHelperExecutor) {
+                console.log(`[Workflow] Transfer to helper (streaming): ${helperName} (mode: ${mode})`);
+                const stream = this.streamingHelperExecutor(helper, resolvedArgs);
+
+                while (true) {
+                    const { value, done } = await stream.next();
+                    if (done) {
+                        result = value;
+                        break;
+                    }
+                    yield value;  // Yield immediately!
+                }
+            } else {
+                if (!this.helperExecutor) {
+                    throw new Error(`No helper executor provided for transfer to: ${helperName}`);
+                }
+                console.log(`[Workflow] Transfer to helper (fallback): ${helperName} (mode: ${mode})`);
+                result = await this.helperExecutor(helper, resolvedArgs);
+            }
+
+            return {
+                __type: "TransferSignal",
+                value: result,
+                mode: mode,
+                helperName: helperName
+            };
+        }
+
+        throw new Error(`Transfer to ${helperName} expects exactly 1 object argument`);
+    }
+
+    /**
+     * STREAMING: Evaluate if statement - yields chunks from streaming blocks
+     */
+    private async *evaluateIfStream(
+        expr: any,
+        scope: Map<string, any>
+    ): AsyncGenerator<StreamChunk, any, unknown> {
+        const left = await this.evaluate(expr.condition.left, scope);
+        const right = await this.evaluate(expr.condition.right, scope);
+        const operator = expr.condition.operator;
+
+        const conditionMet = this.compare(left, operator, right);
+
+        const block = conditionMet ? expr.then : expr.else;
+        if (block && block.length > 0) {
+            for (const stmt of block) {
+                const stmtGen = this.evaluateStream(stmt, scope);
+                let result: any;
+
+                while (true) {
+                    const { value: chunk, done } = await stmtGen.next();
+                    if (done) {
+                        result = chunk;
+                        break;
+                    }
+                    yield chunk;
+                }
+
+                // Propagate signals
+                if (result && typeof result === "object" &&
+                    (result.__type === "ReturnSignal" || result.__type === "TransferSignal")) {
+                    return result;
+                }
+            }
+        }
+
+        return undefined;
     }
 
     /**
@@ -94,6 +295,30 @@ export class ExpressionEvaluator {
         }
 
         return result;
+    }
+
+    /**
+     * Evaluate member access (e.g., design.propose)
+     * Traverses the object and returns the nested property value
+     */
+    private async evaluateMemberAccess(expr: any, scope: Map<string, any>): Promise<any> {
+        // First, get the base object
+        const baseObject = await this.evaluate(expr.object, scope);
+
+        if (baseObject === null || baseObject === undefined) {
+            throw new Error(`Cannot access property '${expr.properties[0]}' of ${baseObject}`);
+        }
+
+        // Traverse through the property chain
+        let current = baseObject;
+        for (const prop of expr.properties) {
+            if (current === null || current === undefined) {
+                throw new Error(`Cannot access property '${prop}' of ${current}`);
+            }
+            current = current[prop];
+        }
+
+        return current;
     }
 
     /**
@@ -157,7 +382,8 @@ export class ExpressionEvaluator {
     }
 
     /**
-     * Evaluate helper call (delegate to helper agent)
+     * Evaluate helper call (delegate to helper agent) - NON-STREAMING
+     * For streaming, use evaluateStream() instead.
      */
     private async evaluateHelperCall(expr: any, scope: Map<string, any>): Promise<any> {
         const helperName = expr.value;
@@ -228,7 +454,8 @@ export class ExpressionEvaluator {
     }
 
     /**
-     * Evaluate transfer statement - delegates to helper and returns TransferSignal
+     * Evaluate transfer statement - NON-STREAMING
+     * For streaming, use evaluateStream() instead.
      */
     private async evaluateTransfer(expr: any, scope: Map<string, any>): Promise<any> {
         const target = expr.target;

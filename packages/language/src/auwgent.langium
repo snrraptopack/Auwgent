@@ -147,11 +147,16 @@ Expression:
     | {infer BooleanLiteral} value=("true"|"false")
     | ArrayLiteral
     | ObjectLiteral
+    | MemberAccess
     | {infer VariableRef} variable=[Referenceable]
     | FunctionCall
     | TemplateLiteral
     | ContextReference
     | HelperCall
+;
+
+MemberAccess:
+    object=[Referenceable] '.' property=ID ('.' chain+=ID)*
 ;
 
 FunctionCall:

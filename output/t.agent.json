@@ -92,14 +92,39 @@
                 "type": "object",
                 "value": {
                   "design": {
-                    "value": "design",
-                    "type": "varRef"
+                    "type": "memberAccess",
+                    "object": {
+                      "type": "varRef",
+                      "value": "design"
+                    },
+                    "properties": [
+                      "propose"
+                    ]
                   }
                 }
               }
             ]
           },
-          "mode": "direct"
+          "mode": "thenContinue"
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "template",
+            "parts": [
+              {
+                "type": "expression",
+                "value": {
+                  "value": "query",
+                  "type": "varRef"
+                }
+              },
+              {
+                "type": "literal",
+                "value": " was done you can choose to continue or wrap give a notice to the user"
+              }
+            ]
+          }
         }
       ],
       "description": "This workflow takes from design planning using the uipattern planner then the uiprogrammer then gives you the final result"
@@ -158,11 +183,7 @@
               "type": "parts",
               "value": [
                 {
-                  "value": "You are a professional Programmer that takes in users designs choices or codes and refine it into something that communicate their intent",
-                  "type": "literal"
-                },
-                {
-                  "value": "it should be responsive modern practices and should use html,css and javascript if needed for now prioritize single file",
+                  "value": "Strictly produce html,css and javscript code that aligns with the design query giving to you",
                   "type": "literal"
                 }
               ]

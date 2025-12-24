@@ -266,7 +266,18 @@ export function create${agent.name}(registry: DriverRegistry) {
          * Run the agent with type-safe parameters
          */
         run: (${runParams.join(', ')}): Promise<${agent.name}Output> => 
-            agent.run(${runArgs.join(', ')})
+            agent.run(${runArgs.join(', ')}),
+        
+        /**
+         * Fluent streaming API with callbacks
+         * @example
+         * const result = await agent
+         *   .stream({ request: "..." })
+         *   .onText(delta => console.log(delta))
+         *   .run();
+         */
+        stream: (${runParams.join(', ')}) => 
+            agent.stream(${runArgs.join(', ')})
     };
 }
 /** Type for the created agent instance */

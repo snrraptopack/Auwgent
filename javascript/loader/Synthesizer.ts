@@ -166,11 +166,21 @@ export class Synthesizer {
         }));
 
         // 2. Convert Workflows (The Model sees them as tools too!)
-        const workflowDefs = (this.ir.workflows || []).map(wf => ({
-            name: wf.flowName,
-            description: wf.description,
-            parameters: this.paramsToSchema(wf.flowParams)
-        }));
+        const workflowDefs = (this.ir.workflows || []).map(wf => {
+            const usesThenContinue = this.workflowUsesThenContinue(wf);
+            const baseDesc = wf.description || '';
+
+            // Add awareness about thenContinue pattern
+            const continueMeta = usesThenContinue
+                ? ' [CONTINUES AFTER DELIVERY: This workflow automatically delivers its result to the user. After completion, do NOT call this workflow again unless there is a genuinely different task. If there is nothing else to do, simply notify the user that the task is complete.]'
+                : '';
+
+            return {
+                name: wf.flowName,
+                description: baseDesc + continueMeta,
+                parameters: this.paramsToSchema(wf.flowParams)
+            };
+        });
 
         // 3. Convert Helpers (Exposed as special agent-tools)
         // Note: Transfer semantics are now controlled at call-site in workflows,
@@ -188,6 +198,27 @@ export class Synthesizer {
             return undefined;
         }
         return allTools;
+    }
+
+    /**
+     * Check if a workflow contains a transfer statement with thenContinue mode
+     */
+    private workflowUsesThenContinue(wf: any): boolean {
+        return this.scanForThenContinue(wf.body || []);
+    }
+
+    private scanForThenContinue(statements: any[]): boolean {
+        for (const stmt of statements) {
+            if (stmt.type === 'transfer' && stmt.mode === 'thenContinue') {
+                return true;
+            }
+            // Recurse into if statements
+            if (stmt.type === 'if') {
+                if (stmt.then && this.scanForThenContinue(stmt.then)) return true;
+                if (stmt.else && this.scanForThenContinue(stmt.else)) return true;
+            }
+        }
+        return false;
     }
 
     private paramsToSchema(params: Record<string, any>): JsonSchema {

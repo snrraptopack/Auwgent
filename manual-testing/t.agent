@@ -24,8 +24,7 @@ helper UIProgrammer{
     default config {
         model: "kimi-k2-0905-preview"
         prompt {
-           "You are a professional Programmer that takes in users designs choices or codes and refine it into something that communicate their intent"
-           "it should be responsive modern practices and should use html,css and javascript if needed for now prioritize single file"
+           "Strictly produce html,css and javscript code that aligns with the design query giving to you"
         }
     }
 
@@ -40,8 +39,12 @@ helper UIProgrammer{
 
 agent UIMaker{
 
-    helpers{UIPatternMaker UIProgrammer}
+    helpers{
+        UIPatternMaker 
+        UIProgrammer with tools {all}
+    }
 
+    
     default config{
         model: "kimi-k2-0905-preview"
         prompt {
@@ -66,6 +69,8 @@ agent UIMaker{
     workflow fullDesign(query: string): string {
         description: "This workflow takes from design planning using the uipattern planner then the uiprogrammer then gives you the final result"
         let design = hlp.UIPatternMaker({ query: query })
-        transfer to hlp.UIProgrammer({ design: design })
+        transfer to hlp.UIProgrammer({ design: design.propose}) then continue
+
+        return `{query} was done you can choose "to continue" or wrap give a notice "to" the user`
     }
 }

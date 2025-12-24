@@ -53,6 +53,7 @@ export type Expression =
     | ArrayLiteral
     | TemplateLiteral
     | ContextReference
+    | MemberAccess
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -125,6 +126,12 @@ export type TemplatePart =
 export interface ContextReference {
     type: "contextRef",
     property: string
+}
+
+export interface MemberAccess {
+    type: "memberAccess";
+    object: VarRef;
+    properties: string[];  // Chain of property names, e.g., ["propose"] or ["data", "result"]
 }
 
 export interface TransferStatement {
