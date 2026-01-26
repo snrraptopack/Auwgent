@@ -31,7 +31,6 @@ const tools: TestAutoRegTools = {
 }
 
 
-
 const agent = createTestAutoReg({
     geminiApiKey: TempKey1
 })
@@ -39,10 +38,23 @@ const agent = createTestAutoReg({
 agent.load(data as any)
 
 
-
-let result = await agent.stream({ message: "hello how are youd doing please get me the name the of the student with id 10" }, tools, { chatId: "123" }, lifecycle)
-    .onText((text) => {
-        console.log(text)
-    }).run()
+let result = await agent.stream({ message: "what the name of the student with id 10" }, tools, { chatId: "123" }, lifecycle)
+    .onChunk((text) => {
+        console.log(text)    
+    })
+    .onToolResult((name,result)=>{
+        console.log("tool",name)
+        console.log("result",result)
+    })
+    .onToolEnd((name)=>{
+        console.log("end",name)
+    })
+    .onToolArgs((name,delta)=>{
+        console.log("args for",name, "args:",delta)
+    })
+    .run()
 
 console.log("final", result)
+
+
+console.log(memoryStore.get("123"))

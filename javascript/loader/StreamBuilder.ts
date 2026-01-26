@@ -6,8 +6,8 @@ import type { StreamChunk } from "./types/protocol";
 export interface StreamHandlers {
     onText?: (delta: string) => void;
     onToolStart?: (name: string, id: string) => void;
-    onToolArgs?: (id: string, delta: string) => void;
-    onToolEnd?: (id: string) => void;
+    onToolArgs?: (name: string, id: string, delta: string) => void;
+    onToolEnd?: (name: string, id: string) => void;
     onToolResult?: (name: string, result: any) => void;
     onHelperStart?: (name: string) => void;
     onHelperEnd?: (name: string, result: any) => void;
@@ -31,6 +31,7 @@ export interface StreamHandlers {
  */
 export class StreamBuilder<TOutput> {
     private handlers: StreamHandlers = {};
+    private toolNames = new Map<string, string>(); // Track tool names by id
 
     constructor(
         private streamGenerator: () => AsyncGenerator<StreamChunk, TOutput, unknown>
@@ -55,7 +56,7 @@ export class StreamBuilder<TOutput> {
     /**
      * Called when tool arguments are streamed
      */
-    onToolArgs(handler: (id: string, delta: string) => void): this {
+    onToolArgs(handler: (name: string, id: string, delta: string) => void): this {
         this.handlers.onToolArgs = handler;
         return this;
     }
@@ -63,7 +64,7 @@ export class StreamBuilder<TOutput> {
     /**
      * Called when a tool invocation ends
      */
-    onToolEnd(handler: (id: string) => void): this {
+    onToolEnd(handler: (name: string, id: string) => void): this {
         this.handlers.onToolEnd = handler;
         return this;
     }
@@ -152,15 +153,19 @@ export class StreamBuilder<TOutput> {
                 break;
 
             case 'tool_start':
+                this.toolNames.set(chunk.id, chunk.name); // Track tool name
                 this.handlers.onToolStart?.(chunk.name, chunk.id);
                 break;
 
             case 'tool_args':
-                this.handlers.onToolArgs?.(chunk.id, chunk.delta);
+                const toolNameForArgs = this.toolNames.get(chunk.id) || 'unknown';
+                this.handlers.onToolArgs?.(toolNameForArgs, chunk.id, chunk.delta);
                 break;
 
             case 'tool_end':
-                this.handlers.onToolEnd?.(chunk.id);
+                const toolNameForEnd = this.toolNames.get(chunk.id) || 'unknown';
+                this.handlers.onToolEnd?.(toolNameForEnd, chunk.id);
+                this.toolNames.delete(chunk.id); // Clean up
                 break;
 
             case 'tool_result':

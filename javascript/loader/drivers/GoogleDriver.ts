@@ -43,8 +43,7 @@ export class GoogleDriver implements AgentDriver {
         // Only use structured output when there are no tools
         if (request.responseSchema && !hasTools) {
             generationConfig.responseMimeType = "application/json";
-            generationConfig.responseSchema = request.responseSchema;
-            systemInstruction += `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(request.responseSchema)}`;
+            generationConfig.responseJsonSchema = request.responseSchema;
         }
 
         // 5. Execute
@@ -108,8 +107,7 @@ export class GoogleDriver implements AgentDriver {
         const hasTools = toolsConfig.length > 0;
         if (request.responseSchema && !hasTools) {
             generationConfig.responseMimeType = "application/json";
-            generationConfig.responseSchema = request.responseSchema;
-            systemInstruction += `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(request.responseSchema)}`;
+            generationConfig.responseJsonSchema = request.responseSchema;
         }
 
         // Use streaming API

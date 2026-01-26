@@ -400,7 +400,7 @@ export class Agent<
 
             // Use streaming execution
             const stream = driver.executeStream(currentRequest);
-            let result;
+            let result: any;
 
             // Yield chunks and capture final result
             while (true) {
@@ -412,7 +412,7 @@ export class Agent<
                 yield value;  // Forward chunk to caller
             }
 
-            // Handle tool calls (same logic as non-streaming)
+            // Handle tool calls
             if (result.toolParams) {
                 const { name, args } = result.toolParams;
                 let toolResult: any;
@@ -427,6 +427,12 @@ export class Agent<
                     });
                     continue; // Skip execution, let model see error
                 }
+
+                // Add model's tool call to history - THIS WAS THE BUG (MISSING IN STREAMING)
+                currentMessages.push({
+                    role: 'assistant',
+                    content: `Call ${name} with ${JSON.stringify(args)}`
+                });
 
                 // Check workflows first
                 const workflow = this.ir.workflows?.find(w => w.flowName === name);
