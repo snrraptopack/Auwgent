@@ -1,4 +1,4 @@
-import { createTestAutoReg, type TestAutoRegLifecycle } from "../test-autoreg.agent.types"
+import { createTestAutoReg, type TestAutoRegLifecycle, type TestAutoRegTools } from "../test-autoreg.agent.types"
 import data from "../test-autoreg.agent.json"
 import { TempKey1 } from "./keys";
 
@@ -24,6 +24,12 @@ const lifecycle: TestAutoRegLifecycle = {
     }
 };
 
+const tools: TestAutoRegTools = {
+    getStudentName: async ({ id: string }) => {
+        return "Amihere"
+    }
+}
+
 
 
 const agent = createTestAutoReg({
@@ -34,7 +40,7 @@ agent.load(data as any)
 
 
 
-let result = await agent.stream({ message: "hello how are you doing" }, { chatId: "123" }, lifecycle)
+let result = await agent.stream({ message: "hello how are youd doing please get me the name the of the student with id 10" }, tools, { chatId: "123" }, lifecycle)
     .onText((text) => {
         console.log(text)
     }).run()

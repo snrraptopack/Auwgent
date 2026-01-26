@@ -1,7 +1,7 @@
 // Auto-generated types for TestAutoReg
 // Do not edit manually
 // Core Runtime Imports
-import { Agent, RunConfig } from "./javascript/loader/IrInterpreter";
+import { Agent } from "./javascript/loader/IrInterpreter";
 import { GoogleDriver } from "./javascript/loader/drivers/GoogleDriver";
 import type { AgentIR } from "./javascript/loader/types/ir";
 import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
@@ -15,6 +15,11 @@ export interface TestAutoRegOutput {
 
 export interface TestAutoRegContext {
     chatId: string;
+}
+
+export interface TestAutoRegTools {
+    [key: string]: (args: any) => Promise<any>;
+    getStudentName: (args: { id: string }) => Promise<string>;
 }
 
 /**
@@ -57,7 +62,7 @@ export interface TestAutoRegApiKeys {
  * Auto-creates drivers based on required providers
  */
 export function createTestAutoReg(apiKeys: TestAutoRegApiKeys) {
-    const agent = new Agent<TestAutoRegInput, TestAutoRegOutput, TestAutoRegContext, Record<string, never>>({
+    const agent = new Agent<TestAutoRegInput, TestAutoRegOutput, TestAutoRegContext, TestAutoRegTools>({
         gemini: new GoogleDriver(apiKeys.geminiApiKey)
     });
 
@@ -70,8 +75,8 @@ export function createTestAutoReg(apiKeys: TestAutoRegApiKeys) {
         /**
          * Run the agent with type-safe parameters
          */
-        run: (input: TestAutoRegInput, context: TestAutoRegContext, lifecycle: TestAutoRegLifecycle, configName?: never): Promise<TestAutoRegOutput> =>
-            agent.run(input, { context, lifecycle, configName }),
+        run: (input: TestAutoRegInput, tools: TestAutoRegTools, context: TestAutoRegContext, lifecycle: TestAutoRegLifecycle, configName?: never): Promise<TestAutoRegOutput> =>
+            agent.run(input, { tools, context, lifecycle, configName }),
 
         /**
          * Fluent streaming API with callbacks
@@ -81,8 +86,8 @@ export function createTestAutoReg(apiKeys: TestAutoRegApiKeys) {
          *   .onText(delta => console.log(delta))
          *   .run();
          */
-        stream: (input: TestAutoRegInput, context: TestAutoRegContext, lifecycle: TestAutoRegLifecycle, configName?: never) =>
-            agent.stream(input, { context, lifecycle, configName })
+        stream: (input: TestAutoRegInput, tools: TestAutoRegTools, context: TestAutoRegContext, lifecycle: TestAutoRegLifecycle, configName?: never) =>
+            agent.stream(input, { tools, context, lifecycle, configName })
     };
 }
 /** Type for the created agent instance */

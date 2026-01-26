@@ -34,7 +34,19 @@
       "optional": false
     }
   },
-  "tools": [],
+  "tools": [
+    {
+      "description": "The name of the student",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "getStudentName",
+      "returns": "string"
+    }
+  ],
   "workflows": [],
   "helpers": [],
   "lifecycle": {

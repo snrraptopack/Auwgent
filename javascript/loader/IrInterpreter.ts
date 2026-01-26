@@ -219,10 +219,18 @@ export class Agent<
                         logger.debug(`[Agent] <<< Tool ${name} completed.`);
                     }
 
-                    // 3. Add result to history
+                    // 3. Add result to history with distinguishable prefix
+                    let resultPrefix: string;
+                    if (helper) {
+                        resultPrefix = `Helper Result [${name}]`;
+                    } else if (workflow) {
+                        resultPrefix = `Workflow Result [${name}]`;
+                    } else {
+                        resultPrefix = `Tool Result [${name}]`;
+                    }
                     currentMessages.push({
                         role: 'user',
-                        content: `Tool Result: ${JSON.stringify(toolResult)}`
+                        content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
                     });
 
                     // 4. IMPORTANT: Remove tools for next turn so model can return structured output
@@ -503,9 +511,20 @@ export class Agent<
                 // Yield tool result to client
                 yield { type: 'tool_result', name, result: toolResult };
 
+                // Add result to history with distinguishable prefix
+                const isWorkflow = this.ir.workflows?.some(w => w.flowName === name);
+                const isHelper = this.ir.helpers?.some(h => h.name === name);
+                let resultPrefix: string;
+                if (isHelper) {
+                    resultPrefix = `Helper Result [${name}]`;
+                } else if (isWorkflow) {
+                    resultPrefix = `Workflow Result [${name}]`;
+                } else {
+                    resultPrefix = `Tool Result [${name}]`;
+                }
                 currentMessages.push({
                     role: 'user',
-                    content: `Tool Result: ${JSON.stringify(toolResult)}`
+                    content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
                 });
                 // toolsStillAvailable = false; // Allow multi-turn tool usage
                 continue;
