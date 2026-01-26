@@ -32,6 +32,7 @@ AgentConfigurations:
     | AgentConfig
     | WorkFlowConfig
     | HelpersConfig
+    | UseLifecycle
 ;
 
 AgentConfig:
@@ -81,6 +82,12 @@ OutputConfig:
     "output" "{" outProperties+=(Output)* "}";
 ContextConfig:
     "context" "{" contextProperties+=TypeConfigDeclaration* "}"
+;
+UseLifecycle:
+    "use" "lifecycle" ("{"
+        ("maxTokens" ":" maxTokens=INT)?
+        ("maxMessages" ":" maxMessages=INT)?
+    "}")?
 ;
 
 ContextReference:

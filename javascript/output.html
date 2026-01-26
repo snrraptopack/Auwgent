@@ -1,442 +1,147 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
 <head>
-  <meta charset="UTF-8">
-  <title>CSS-Grid Dashboard</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <style>
-    /* ---------- CSS VARIABLES ---------- */
-    :root {
-      --surface-dark: #0D0F18;
-      --surface-light: #F5F7FC;
-      --primary-dark: #161A28;
-      --primary-light: #FFFFFF;
-      --text-dark: #F5F7FC;
-      --text-light: #0D0F18;
-      --accent: #00F2FE;
-      --blur: 20px;
-    }
-
-    [data-theme="dark"] {
-      --surface: var(--surface-dark);
-      --primary: var(--primary-dark);
-      --text: var(--text-dark);
-    }
-
-    [data-theme="light"] {
-      --surface: var(--surface-light);
-      --primary: var(--primary-light);
-      --text: var(--text-light);
-    }
-
-    @supports not (backdrop-filter:blur(20px)) {
-      :root {
-        --blur: 0px
-      }
-    }
-
-    /* ---------- GLOBAL ---------- */
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif
-    }
-
-    body {
-      background: linear-gradient(135deg, var(--surface) 0%, var(--primary) 100%);
-      color: var(--text);
-      transition: background 300ms cubic-bezier(.34, 1.56, .64, 1);
-    }
-
-    #root {
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column
-    }
-
-    /* ---------- TOP BAR ---------- */
-    .topbar {
-      height: 48px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      background: rgba(var(--surface), .6);
-      backdrop-filter: blur(var(--blur));
-      border-bottom: 1px solid rgba(255, 255, 255, .12);
-    }
-
-    #themeToggle {
-      width: 24px;
-      height: 24px;
-      cursor: pointer;
-      overflow: hidden
-    }
-
-    #themeToggle svg {
-      width: 100%;
-      height: 100%
-    }
-
-    #themeToggle .sun {
-      opacity: 1;
-      transform: rotate(0deg);
-      transition: all 300ms
-    }
-
-    #themeToggle .moon {
-      opacity: 0;
-      transform: rotate(-180deg);
-      transition: all 300ms
-    }
-
-    [data-theme="light"] #themeToggle .sun {
-      opacity: 0;
-      transform: rotate(180deg)
-    }
-
-    [data-theme="light"] #themeToggle .moon {
-      opacity: 1;
-      transform: rotate(0deg)
-    }
-
-    /* ---------- MAIN GRID ---------- */
-    .main {
-      flex: 1;
-      padding: 16px;
-      overflow-y: auto;
-      display: grid;
-      grid-template-columns: repeat(12, 1fr);
-      gap: 16px;
-    }
-
-    @media(max-width:900px) {
-      .main {
-        grid-template-columns: repeat(6, 1fr)
-      }
-    }
-
-    @media(max-width:600px) {
-      .main {
-        grid-template-columns: 1fr
-      }
-    }
-
-    /* ---------- CARD ---------- */
-    .card {
-      grid-column: span 3;
-      background: rgba(var(--surface), .6);
-      border: 1px solid rgba(255, 255, 255, .12);
-      border-radius: 16px;
-      padding: 16px;
-      position: relative;
-      transform: translateY(0);
-      transition: transform 200ms, border 200ms;
-      animation: slideFade 200ms both;
-      animation-delay: calc(var(--i)*40ms);
-      border-image: conic-gradient(from 0deg at 4px 4px, var(--accent) 0 90deg, transparent 90deg) 1;
-    }
-
-    @media(max-width:900px) {
-      .card {
-        grid-column: span 3
-      }
-    }
-
-    @media(max-width:600px) {
-      .card {
-        grid-column: span 1
-      }
-    }
-
-    .card:hover {
-      transform: translateY(-6px);
-      border-image: conic-gradient(from 0deg at 2px 2px, var(--accent) 0 90deg, transparent 90deg) 1;
-    }
-
-    @keyframes slideFade {
-      from {
-        opacity: 0;
-        transform: translateY(20px)
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0)
-      }
-    }
-
-    /* ---------- KPI ---------- */
-    .kpi {
-      display: flex;
-      align-items: center;
-      justify-content: space-between
-    }
-
-    .kpi .num {
-      font-size: 2rem;
-      font-weight: 600
-    }
-
-    .radial {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      background: conic-gradient(var(--accent) calc(var(--pct)*1%), transparent 0);
-      mask: radial-gradient(circle at center, transparent 16px, black 16px);
-      transition: --pct 600ms;
-    }
-
-    @property --pct {
-      syntax: '<number>';
-      inherits: false;
-      initial-value: 0
-    }
-
-    /* ---------- CHART ---------- */
-    .chart {
-      height: 120px;
-      position: relative
-    }
-
-    .chart svg {
-      width: 100%;
-      height: 100%
-    }
-
-    .chart path {
-      fill: none;
-      stroke: url(#grad);
-      stroke-width: 2;
-      stroke-dasharray: 1000;
-      stroke-dashoffset: 1000;
-      animation: draw 800ms forwards;
-    }
-
-    .chart circle {
-      fill: var(--accent);
-      transform: scale(0);
-      animation: pop 300ms forwards;
-      animation-delay: 600ms;
-    }
-
-    @keyframes draw {
-      to {
-        stroke-dashoffset: 0
-      }
-    }
-
-    @keyframes pop {
-      to {
-        transform: scale(1)
-      }
-    }
-
-    /* ---------- TOOLTIP ---------- */
-    .tooltip {
-      position: absolute;
-      padding: 4px 8px;
-      background: rgba(0, 0, 0, .5);
-      backdrop-filter: blur(12px);
-      border-radius: 4px;
-      font-size: .75rem;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 200ms;
-    }
-
-    /* ---------- BUTTON ---------- */
-    .btn {
-      background: var(--accent);
-      color: #000;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      position: relative;
-      overflow: hidden;
-      transition: transform 100ms;
-    }
-
-    .btn:active {
-      transform: scale(.97);
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, .15)
-    }
-
-    .ripple {
-      position: absolute;
-      width: 40px;
-      height: 40px;
-      background: radial-gradient(circle, rgba(255, 255, 255, .6) 0%, transparent 70%);
-      border-radius: 50%;
-      transform: scale(0);
-      pointer-events: none;
-      animation: ripple 400ms;
-    }
-
-    @keyframes ripple {
-      to {
-        transform: scale(2.5);
-        opacity: 0
-      }
-    }
-
-    /* ---------- TOGGLE ---------- */
-    .toggle {
-      width: 24px;
-      height: 12px;
-      background: rgba(255, 255, 255, .2);
-      border-radius: 6px;
-      position: relative;
-      cursor: pointer;
-    }
-
-    .toggle::after {
-      content: '';
-      position: absolute;
-      width: 12px;
-      height: 12px;
-      background: #fff;
-      border-radius: 50%;
-      top: 0;
-      left: 0;
-      transition: transform 300ms cubic-bezier(.34, 1.56, .64, 1);
-    }
-
-    .toggle.on::after {
-      transform: translateX(12px)
-    }
-
-    /* ---------- MOBILE BAR ---------- */
-    @media(max-width:600px) {
-      .topbar {
-        position: fixed;
-        bottom: 16px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: auto;
-        height: 56px;
-        border-radius: 28px;
-        padding: 0 24px;
-        border: none;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
-      }
-
-      .main {
-        padding-bottom: 80px
-      }
-    }
-  </style>
+<meta charset="utf-8">
+<title>Hello Orb</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;height:100%;background:#0a0a0f;overflow:hidden}
+  hello-orb{display:block;width:100vw;height:100vh}
+</style>
 </head>
+<body>
+<hello-orb></hello-orb>
 
-<body data-theme="dark">
-  <div id="root">
-    <header class="topbar">
-      <h1 style="font-size:1rem">Dashboard</h1>
-      <div id="themeToggle" aria-label="Toggle theme">
-        <svg viewBox="0 0 24 24">
-          <g class="sun">
-            <circle cx="12" cy="12" r="5" fill="currentColor" />
-            <g stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <line x1="12" y1="1" x2="12" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="23" />
-              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-              <line x1="1" y1="12" x2="3" y2="12" />
-              <line x1="21" y1="12" x2="23" y2="12" />
-              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-            </g>
-          </g>
-          <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor" />
-        </svg>
-      </div>
-    </header>
-
-    <main class="main">
-      <div class="card kpi" style="--i:0">
-        <div>
-          <div class="num">2.4k</div>
-          <div>Users</div>
-        </div>
-        <div class="radial" style="--pct:75"></div>
-      </div>
-      <div class="card kpi" style="--i:1">
-        <div>
-          <div class="num">89%</div>
-          <div>Growth</div>
-        </div>
-        <div class="radial" style="--pct:89"></div>
-      </div>
-      <div class="card chart" style="--i:2">
-        <svg preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="grad" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="var(--accent)" />
-              <stop offset="100%" stop-color="#fff" />
-            </linearGradient>
-          </defs>
-          <path d="M0,100 L50,80 L100,60 L150,70 L200,40 L250,30 L300,50" vector-effect="non-scaling-stroke" />
-          <circle cx="0" cy="100" r="4" />
-          <circle cx="50" cy="80" r="4" />
-          <circle cx="100" cy="60" r="4" />
-          <circle cx="150" cy="70" r="4" />
-          <circle cx="200" cy="40" r="4" />
-          <circle cx="250" cy="30" r="4" />
-          <circle cx="300" cy="50" r="4" />
-        </svg>
-        <div class="tooltip">Tooltip</div>
-      </div>
-      <div class="card" style="--i:3">
-        <button class="btn">Action</button>
-        <div class="toggle"></div>
-      </div>
-    </main>
-  </div>
-
-  <script>
-    /* ---------- THEME ---------- */
-    const root = document.documentElement;
-    document.getElementById('themeToggle').onclick = () => {
-      const isDark = root.getAttribute('data-theme') === 'dark';
-      root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+<script>
+customElements.define('hello-orb', class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({mode:'open'});
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host{
+          display:block;width:100%;height:100%;
+          background:#0a0a0f;
+          position:relative;
+        }
+        #bloom{
+          position:absolute;inset:0;
+          background:radial-gradient(circle at center, #0c0044 0%, #7f00ff 100%);
+          opacity:0;
+          animation:bloom 400ms forwards;
+        }
+        @keyframes bloom{
+          from{opacity:0;transform:scale(0)}
+          to{opacity:1;transform:scale(1)}
+        }
+        svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+        #orb{
+          position:absolute;left:50%;top:50%;
+          width:48px;height:48px;
+          transform:translate(-50%,-50%);
+          border-radius:50%;
+          background:radial-gradient(circle, #7f00ff 0%, #7f00ff 100%);
+          opacity:0;
+          transition:opacity 300ms;
+          --glow:#7f00ff;
+        }
+        #orb.visible{opacity:1}
+        #orb:hover,#orb:focus{
+          background:radial-gradient(circle, var(--glow) 0%, var(--glow) 100%);
+          transition:background 200ms cubic-bezier(.4,0,.2,1);
+          --glow:#ff6e4a;
+        }
+      </style>
+      <div id="bloom" hidden></div>
+      <svg id="wave" aria-hidden="true"></svg>
+      <div id="orb" tabindex="0" aria-hidden="true"></div>
+    `;
+    this.bloom = this.shadowRoot.getElementById('bloom');
+    this.svg = this.shadowRoot.getElementById('wave');
+    this.orb = this.shadowRoot.getElementById('orb');
+    this.path = null;
+    this.audioCtx = null;
+    this.analyser = null;
+    this.recognizer = null;
+    this.raf = null;
+    this.speaking = false;
+  }
+  connectedCallback() {
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
+    const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+    this.recognizer = new Speech();
+    this.recognizer.continuous = true;
+    this.recognizer.interimResults = true;
+    this.recognizer.lang = 'en-US';
+    this.recognizer.onresult = e => {
+      const last = e.results[e.results.length-1];
+      if (last.isFinal && /hello/i.test(last[0].transcript)) {
+        this.ignite();
+      }
     };
-
-    /* ---------- RIPPLE ---------- */
-    document.querySelectorAll('.btn').forEach(btn => {
-      btn.onclick = function (e) {
-        const r = document.createElement('span');
-        r.className = 'ripple';
-        const rect = this.getBoundingClientRect();
-        r.style.left = e.clientX - rect.left - 20 + 'px';
-        r.style.top = e.clientY - rect.top - 20 + 'px';
-        this.appendChild(r);
-        setTimeout(() => r.remove(), 400);
-      };
-    });
-
-    /* ---------- TOGGLE ---------- */
-    document.querySelectorAll('.toggle').forEach(t => {
-      t.onclick = () => t.classList.toggle('on');
-    });
-
-    /* ---------- TOOLTIP ---------- */
-    const tooltip = document.querySelector('.tooltip');
-    document.querySelector('.chart').onmousemove = function (e) {
-      const pt = this.querySelector('circle');
-      if (!pt) return;
-      const bb = pt.getBBox();
-      tooltip.style.left = bb.x + bb.width / 2 + 'px';
-      tooltip.style.top = bb.y - 28 + 'px';
-      tooltip.style.opacity = 1;
-    };
-    this.onmouseleave = () => tooltip.style.opacity = 0;
-  </script>
+    this.recognizer.start();
+  }
+  ignite() {
+    if (this.bloom.hidden) {
+      this.bloom.hidden = false;
+      this.startAudio();
+    }
+  }
+  startAudio() {
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
+      this.audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      this.analyser = this.audioCtx.createAnalyser();
+      this.analyser.fftSize = 256;
+      const source = this.audioCtx.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+      this.draw();
+    }).catch(()=>{});
+  }
+  draw() {
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteFrequencyData(data);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const step = width / data.length;
+    let d = `M0,${height}`;
+    let silent = true;
+    for (let i=0;i<data.length;i++){
+      const y = height - (data[i]/255)*height*0.5;
+      d += `L${i*step},${y}`;
+      if (data[i]>10) silent=false;
+    }
+    if (!this.path) {
+      this.path = document.createElementNS('http://www.w3.org/2000/svg','path');
+      this.path.setAttribute('fill','none');
+      this.path.setAttribute('stroke','#7f00ff');
+      this.path.setAttribute('stroke-width','1');
+      this.path.setAttribute('stroke-linecap','round');
+      this.svg.appendChild(this.path);
+    }
+    this.path.setAttribute('d',d);
+    if (!silent) this.speaking = true;
+    if (silent && this.speaking) {
+      this.speaking = false;
+      this.collapse();
+      return;
+    }
+    this.raf = requestAnimationFrame(()=>this.draw());
+  }
+  collapse() {
+    cancelAnimationFrame(this.raf);
+    this.svg.style.transition = 'opacity 300ms';
+    this.svg.style.opacity = '0';
+    setTimeout(()=>{
+      this.svg.remove();
+      this.orb.classList.add('visible');
+    },300);
+  }
+  disconnectedCallback() {
+    if (this.recognizer) this.recognizer.stop();
+    if (this.audioCtx) this.audioCtx.close();
+    cancelAnimationFrame(this.raf);
+  }
+});
+</script>
 </body>
-
 </html>

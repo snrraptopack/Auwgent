@@ -7,7 +7,14 @@ export interface AgentIR {
     tools: Tool[];
     workflows: Workflow[];
     helpers: HelperIR[];
-    helperToolGrants?: Record<string, string[] | "all">;  // helperName -> tool names or "all"
+    helperToolGrants?: Record<string, string[] | "all">;
+    lifecycle?: LifecycleConfig;
+}
+
+export interface LifecycleConfig {
+    enabled: true;
+    maxTokens?: number;
+    maxMessages?: number;
 }
 
 export interface HelperIR {

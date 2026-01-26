@@ -8,6 +8,7 @@
  */
 import OpenAI from "openai";
 import type { AgentDriver, DriverResult, StreamChunk, SyntheticRequest } from "../types/protocol";
+import { logger } from "../Logger";
 
 export class OpenAIDriver implements AgentDriver {
     name = "openai";
@@ -71,6 +72,15 @@ export class OpenAIDriver implements AgentDriver {
             throw new Error("No response from OpenAI");
         }
 
+        // Track token usage
+        if (completion.usage) {
+            logger.trackTokens({
+                promptTokens: completion.usage.prompt_tokens,
+                completionTokens: completion.usage.completion_tokens,
+                totalTokens: completion.usage.total_tokens
+            });
+            logger.debug(`[OpenAI] Tokens: ${completion.usage.total_tokens} (${completion.usage.prompt_tokens}+${completion.usage.completion_tokens})`);
+        }
 
         // Check for tool calls
         if (choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
@@ -127,19 +137,20 @@ export class OpenAIDriver implements AgentDriver {
             }
         }
 
-        // DEBUG: Log tools being sent
-        console.log(`[OpenAI Stream] hasTools: ${hasTools}, tools count: ${tools?.length ?? 0}`);
+        // Log tools being sent
+        logger.debug(`[OpenAI] Streaming with ${hasTools ? tools?.length : 0} tools`);
 
-        // Use streaming API
-        const stream = await this.client.chat.completions.create({
+        // Use streaming API with usage tracking
+        const stream = await (this.client.chat.completions.create({
             model,
             messages,
             tools: hasTools ? tools : undefined,
             tool_choice: hasTools ? "required" : undefined,
             response_format: !hasTools && request.responseSchema ? { type: "json_object" } : undefined,
             temperature: request.config.temperature ?? 0,
-            stream: true
-        });
+            stream: true,
+            stream_options: { include_usage: true }  // Get token usage in streaming
+        }) as any);
 
         let fullText = '';
         let toolParams: { name: string; args: any } | undefined;
@@ -204,6 +215,17 @@ export class OpenAIDriver implements AgentDriver {
                     };
                 }
             }
+
+            // Track token usage from final chunk (OpenAI sends it with stream_options)
+            if ((chunk as any).usage) {
+                const usage = (chunk as any).usage;
+                logger.trackTokens({
+                    promptTokens: usage.prompt_tokens,
+                    completionTokens: usage.completion_tokens,
+                    totalTokens: usage.total_tokens
+                });
+                logger.debug(`[OpenAI] Tokens: ${usage.total_tokens} (${usage.prompt_tokens}+${usage.completion_tokens})`);
+            }
         }
 
         // Return final result
@@ -222,7 +244,7 @@ export class OpenAIDriver implements AgentDriver {
                     }
                 };
             } catch (e) {
-                console.warn("[OpenAIDriver] Failed to parse buffered tool args:", e);
+                logger.warn("[OpenAI] Failed to parse buffered tool args", e);
                 // Return text if parsing failed, or partial tool? Better to fall through to text or throw.
                 // Assuming if we have a name, it was intended as a tool call.
             }

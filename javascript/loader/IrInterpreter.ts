@@ -1,10 +1,21 @@
 import { Synthesizer } from "./Synthesizer";
 import type { AgentIR, HelperIR } from "./types/ir";
-import type { AgentDriver, StreamChunk, SyntheticMessage } from "./types/protocol";
-import type { ToolMap } from "./types/tool"; // Import new type
+import type { AgentDriver, StreamChunk, SyntheticMessage, LifecycleHooks, ConversationState } from "./types/protocol";
+import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { DriverRegistry } from "./DriverRegistry";
 import { StreamBuilder } from "./StreamBuilder";
+import { logger } from "./Logger";
+
+/**
+ * Configuration object for agent.run()
+ */
+export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>> {
+    tools?: TTools;
+    context?: TContext;
+    configName?: string;
+    lifecycle?: LifecycleHooks<TContext>;
+}
 
 export class Agent<
     TInput extends Record<string, any>,
@@ -47,15 +58,47 @@ export class Agent<
 
     async run(
         input: TInput,
-        tools?: TTools,
-        context?: TContext,
-        configName?: string
+        config?: RunConfig<TTools, TContext>
     ): Promise<TOutput> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
-        const safeTools = tools as unknown as ToolMap
+        // Destructure config
+        const { tools, context, configName, lifecycle } = config ?? {};
+        const safeTools = tools as unknown as ToolMap;
+        this.context = context;
 
-        this.context = context
+        // LIFECYCLE: Validate hooks if lifecycle enabled in IR
+        if (this.ir.lifecycle?.enabled && !lifecycle) {
+            throw new Error(
+                `Agent "${this.ir.name}" has lifecycle enabled. ` +
+                `You must provide lifecycle hooks: { prune, load, save }`
+            );
+        }
+
+        // LIFECYCLE: Prune + Load (before synthesis)
+        let loadedMessages: SyntheticMessage[] = [];
+        if (lifecycle) {
+            // Calculate usage for prune
+            const usage = {
+                currentTokens: 0,  // Will be updated after load
+                maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
+                currentMessages: 0,
+                maxMessages: this.ir.lifecycle?.maxMessages ?? 100
+            };
+
+            // Run prune (decides what to keep in context)
+            await lifecycle.prune({
+                context: context as TContext,
+                agent: this,
+                usage
+            });
+
+            // Run load (fetch prepared messages)
+            const state = await lifecycle.load({
+                context: context as TContext
+            });
+            loadedMessages = state.messages;
+        }
 
         // 1. Initial Synthesis
         const request = await this.synthesizer.synthesize(input, context, configName);
@@ -64,7 +107,9 @@ export class Agent<
         const modelName = request.config.model ?? "";
         const driver = this.getDriver(modelName);
 
-        let currentMessages: SyntheticMessage[] = [...request.messages];
+        // Prepend loaded messages from lifecycle
+        let currentMessages: SyntheticMessage[] = [...loadedMessages, ...request.messages];
+        const messagesBeforeRun = currentMessages.length;
         let turnCount = 0;
         let toolsStillAvailable = true; // Track if tools should be sent to model
 
@@ -90,7 +135,7 @@ export class Agent<
                 // GUARD: Check if this exact call was already completed via thenContinue
                 const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
                 if (this.completedCalls.has(callSignature)) {
-                    console.log(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
+                    logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
                     currentMessages.push({
                         role: 'user',
                         content: `[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`
@@ -112,37 +157,48 @@ export class Agent<
 
                     // 1. Check if it's a Helper (sub-agent) - called directly by model
                     if (helper) {
-                        console.log(`[Agent] >>> Delegating to Helper Agent: ${name}`);
+                        logger.debug(`[Agent] >>> Delegating to Helper Agent: ${name}`);
+                        logger.trackHelperCall(name);
                         toolResult = await this.executeHelper(helper, args);
-                        console.log(`[Agent] <<< Helper ${name} completed.`);
+                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
                         // Helper called directly by model always returns to model
                     }
                     // 2. Check if it's a Workflow
                     else if (workflow) {
-                        console.log(`[Agent] >>> Dispatching to Workflow: ${name}`);
+                        logger.debug(`[Agent] >>> Dispatching to Workflow: ${name}`);
+                        logger.trackWorkflowCall(name);
                         const runner = new WorkflowRunner(
                             this.ir,
                             safeTools,
                             (helper, args) => this.executeHelper(helper, args)
                         );
                         toolResult = await runner.run(name, args, this.context);
-                        console.log(`[Agent] <<< Workflow ${name} completed.`);
+                        logger.debug(`[Agent] <<< Workflow ${name} completed.`);
 
                         // Handle TransferSignal from workflow
                         if (toolResult && typeof toolResult === 'object' && toolResult.__type === 'TransferSignal') {
-                            console.log(`[Agent] Transfer detected from workflow (mode: ${toolResult.mode})`);
+                            logger.debug(`[Agent] Transfer detected from workflow (mode: ${toolResult.mode})`);
 
                             if (toolResult.mode === "direct") {
                                 // Direct transfer: return helper result to user immediately
-                                console.log(`[Agent] Returning transferred result directly to user.`);
+                                logger.debug(`[Agent] Returning transferred result directly to user.`);
+                                // LIFECYCLE: Save before returning
+                                if (lifecycle) {
+                                    const newMessages = currentMessages.slice(messagesBeforeRun);
+                                    await lifecycle.save({
+                                        newMessages,
+                                        context: context as TContext,
+                                        output: toolResult.value as TOutput
+                                    });
+                                }
                                 return toolResult.value as TOutput;
                             } else if (toolResult.mode === "thenContinue") {
                                 // thenContinue: result already sent to user, model can optionally add summary
-                                console.log(`[Agent] Transfer with thenContinue - model can wrap up.`);
+                                logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
 
                                 // GUARD: Track this call to prevent re-execution
                                 this.completedCalls.add(callSignature);
-                                console.log(`[Agent] Added to completed calls: ${callSignature}`);
+                                logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
 
                                 currentMessages.push({
                                     role: 'user',
@@ -158,9 +214,10 @@ export class Agent<
                         if (!tools || !safeTools[name]) {
                             throw new Error(`Model tried to call unknown tool: ${name}`);
                         }
-                        console.log(`[Agent] >>> Calling Tool: ${name}`);
+                        logger.debug(`[Agent] >>> Calling Tool: ${name}`);
+                        logger.trackToolCall(name);
                         toolResult = await safeTools[name](args);
-                        console.log(`[Agent] <<< Tool ${name} completed.`);
+                        logger.debug(`[Agent] <<< Tool ${name} completed.`);
                     }
 
                     // 3. Add result to history
@@ -190,13 +247,14 @@ export class Agent<
 
             if (result.toolParams === undefined) {
                 // Model didn't call a tool - it's giving a final response
+                let output: TOutput;
 
                 // If we expect JSON but got plain text, and tools were still available,
                 // the model chose not to use tools. We should still try to get JSON.
                 if (request.responseSchema) {
                     // Try to parse as JSON
                     try {
-                        return JSON.parse(result.text ?? "{}") as TOutput;
+                        output = JSON.parse(result.text ?? "{}") as TOutput;
                     } catch (e) {
                         // If tools were available, model might have just responded with text
                         // Wrap the text in the expected schema format
@@ -204,15 +262,31 @@ export class Agent<
                             // Get the first property name from schema (e.g., "result")
                             const firstProp = Object.keys(request.responseSchema.properties)[0];
                             if (firstProp) {
-                                return { [firstProp]: result.text } as TOutput;
+                                output = { [firstProp]: result.text } as TOutput;
+                            } else {
+                                console.error("Failed to parse JSON response:", result.text);
+                                throw new Error("Model failed to return valid JSON");
                             }
+                        } else {
+                            console.error("Failed to parse JSON response:", result.text);
+                            throw new Error("Model failed to return valid JSON");
                         }
-                        console.error("Failed to parse JSON response:", result.text);
-                        throw new Error("Model failed to return valid JSON");
                     }
+                } else {
+                    output = (result.text ?? "") as TOutput;
                 }
 
-                return (result.text ?? "") as TOutput;
+                // LIFECYCLE: Save after successful run
+                if (lifecycle) {
+                    const newMessages = currentMessages.slice(messagesBeforeRun);
+                    await lifecycle.save({
+                        newMessages,
+                        context: context as TContext,
+                        output
+                    });
+                }
+
+                return output;
             }
 
 
@@ -230,17 +304,15 @@ export class Agent<
      * const result = await agent
      *   .stream({ request: "Create a login page" })
      *   .onText(delta => process.stdout.write(delta))
-     *   .onHelperStart(name => console.log(`>>> ${name}`))
+     *   .onHelperStart(name => logger.debug(`>>> ${name}`))
      *   .run();
      * ```
      */
     stream(
         input: TInput,
-        tools?: TTools,
-        context?: TContext,
-        configName?: string
+        config?: RunConfig<TTools, TContext>
     ): StreamBuilder<TOutput> {
-        return new StreamBuilder(() => this.runStream(input, tools, context, configName));
+        return new StreamBuilder(() => this.runStream(input, config));
     }
 
     /**
@@ -249,12 +321,12 @@ export class Agent<
      */
     private async *runStream(
         input: TInput,
-        tools?: TTools,
-        context?: TContext,
-        configName?: string
+        config?: RunConfig<TTools, TContext>
     ): AsyncGenerator<StreamChunk, TOutput, unknown> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
+        // Destructure config
+        const { tools, context, configName } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
         this.context = context;
 
@@ -266,7 +338,7 @@ export class Agent<
         if (!driver.executeStream) {
             // Fallback to non-streaming
             console.warn(`[Agent] Driver ${driver.name} does not support streaming, falling back to non-streaming`);
-            const result = await this.run(input, tools, context, configName);
+            const result = await this.run(input, config);
             return result;
         }
 
@@ -305,7 +377,7 @@ export class Agent<
                 // GUARD: Check if this exact call was already completed via thenContinue
                 const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
                 if (this.completedCalls.has(callSignature)) {
-                    console.log(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
+                    logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
                     currentMessages.push({
                         role: 'user',
                         content: `[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`
@@ -316,7 +388,8 @@ export class Agent<
                 // Check workflows first
                 const workflow = this.ir.workflows?.find(w => w.flowName === name);
                 if (workflow) {
-                    console.log(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
+                    logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
+                    logger.trackWorkflowCall(name);
 
                     // Use async generator - yields chunks immediately!
                     const workflowStream = this.executeWorkflowStream(name, args, safeTools);
@@ -331,7 +404,7 @@ export class Agent<
                         yield value;  // Forward chunks immediately!
                     }
 
-                    console.log(`[Agent] <<< Workflow ${name} completed.`);
+                    logger.debug(`[Agent] <<< Workflow ${name} completed.`);
 
                     // Handle TransferSignal from workflow
                     if (workflowResult && typeof workflowResult === 'object' && workflowResult.__type === 'TransferSignal') {
@@ -343,15 +416,15 @@ export class Agent<
                         };
 
                         if (workflowResult.mode === "direct") {
-                            console.log(`[Agent] Transfer detected from workflow (mode: direct)`);
+                            logger.debug(`[Agent] Transfer detected from workflow (mode: direct)`);
                             return workflowResult.value as TOutput;
                         } else if (workflowResult.mode === "thenContinue") {
                             // thenContinue: result already sent to user, model can optionally add summary
-                            console.log(`[Agent] Transfer with thenContinue - model can wrap up.`);
+                            logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
 
                             // GUARD: Track this call to prevent re-execution
                             this.completedCalls.add(callSignature);
-                            console.log(`[Agent] Added to completed calls: ${callSignature}`);
+                            logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
 
                             currentMessages.push({
                                 role: 'user',
@@ -367,7 +440,8 @@ export class Agent<
                     // Check helpers
                     const helper = this.ir.helpers?.find(h => h.name === name);
                     if (helper) {
-                        console.log(`[Agent] >>> Calling Helper (streaming): ${name}`);
+                        logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
+                        logger.trackHelperCall(name);
                         // Use streaming helper execution
                         const helperStream = this.executeHelperStream(helper, args);
                         while (true) {
@@ -378,15 +452,16 @@ export class Agent<
                             }
                             yield value;  // Forward helper chunks to caller
                         }
-                        console.log(`[Agent] <<< Helper ${name} completed.`);
+                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
                     } else {
                         // User tool
                         if (!safeTools || !safeTools[name]) {
                             throw new Error(`Unknown tool: ${name}`);
                         }
-                        console.log(`[Agent] >>> Calling Tool: ${name}`);
+                        logger.debug(`[Agent] >>> Calling Tool: ${name}`);
+                        logger.trackToolCall(name);
                         toolResult = await safeTools[name](args);
-                        console.log(`[Agent] <<< Tool ${name} completed.`);
+                        logger.debug(`[Agent] <<< Tool ${name} completed.`);
                     }
                 }
 
@@ -489,9 +564,9 @@ export class Agent<
 
             subAgent.load(helperAsAgent);
             this.helperCache.set(helper.name, subAgent);
-            console.log(`[Agent] Helper ${helper.name} cached for future calls.${grantedTools.length > 0 ? ` (with ${grantedTools.length} granted tools)` : ''}`);
+            logger.debug(`[Agent] Helper ${helper.name} cached for future calls.${grantedTools.length > 0 ? ` (with ${grantedTools.length} granted tools)` : ''}`);
         } else {
-            console.log(`[Agent] Using cached helper: ${helper.name}`);
+            logger.debug(`[Agent] Using cached helper: ${helper.name}`);
         }
 
         // Run the helper with provided args
@@ -526,7 +601,7 @@ export class Agent<
 
             subAgent.load(helperAsAgent);
             this.helperCache.set(helper.name, subAgent);
-            console.log(`[Agent] Helper ${helper.name} cached for streaming.`);
+            logger.debug(`[Agent] Helper ${helper.name} cached for streaming.`);
         }
 
         // Emit helper start

@@ -1,6 +1,7 @@
 import type { AgentIR, Expression, Statement, HelperIR } from "./types/ir";
 import type { ToolMap } from "./types/tool";
 import type { StreamChunk } from "./types/protocol";
+import { logger } from "./Logger";
 
 export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
 export type StreamingHelperExecutor = (helper: HelperIR, args: Record<string, any>) => AsyncGenerator<StreamChunk, any, unknown>;
@@ -149,7 +150,8 @@ export class ExpressionEvaluator {
             const resolvedArgs = await this.evaluate(args[0], scope);
 
             if (this.streamingHelperExecutor) {
-                console.log(`[Workflow] Calling helper (streaming): ${helperName}`);
+                logger.debug(`[Workflow] Calling helper (streaming): ${helperName}`);
+                logger.trackHelperCall(helperName);
                 const stream = this.streamingHelperExecutor(helper, resolvedArgs);
                 let result: any;
 
@@ -168,7 +170,8 @@ export class ExpressionEvaluator {
             if (!this.helperExecutor) {
                 throw new Error(`No helper executor provided for: ${helperName}`);
             }
-            console.log(`[Workflow] Calling helper (fallback): ${helperName}`);
+            logger.debug(`[Workflow] Calling helper (fallback): ${helperName}`);
+            logger.trackHelperCall(helperName);
             return await this.helperExecutor(helper, resolvedArgs);
         }
 
@@ -197,7 +200,8 @@ export class ExpressionEvaluator {
             let result: any;
 
             if (this.streamingHelperExecutor) {
-                console.log(`[Workflow] Transfer to helper (streaming): ${helperName} (mode: ${mode})`);
+                logger.debug(`[Workflow] Transfer to helper (streaming): ${helperName} (mode: ${mode})`);
+                logger.trackHelperCall(helperName);
                 const stream = this.streamingHelperExecutor(helper, resolvedArgs);
 
                 while (true) {
@@ -212,7 +216,8 @@ export class ExpressionEvaluator {
                 if (!this.helperExecutor) {
                     throw new Error(`No helper executor provided for transfer to: ${helperName}`);
                 }
-                console.log(`[Workflow] Transfer to helper (fallback): ${helperName} (mode: ${mode})`);
+                logger.debug(`[Workflow] Transfer to helper (fallback): ${helperName} (mode: ${mode})`);
+                logger.trackHelperCall(helperName);
                 result = await this.helperExecutor(helper, resolvedArgs);
             }
 
@@ -403,7 +408,8 @@ export class ExpressionEvaluator {
                 throw new Error(`No helper executor provided for: ${helperName}`);
             }
 
-            console.log(`[Workflow] Calling helper: ${helperName}`);
+            logger.debug(`[Workflow] Calling helper: ${helperName}`);
+            logger.trackHelperCall(helperName);
             return await this.helperExecutor(helper, resolvedArgs);
         }
 
@@ -477,7 +483,8 @@ export class ExpressionEvaluator {
                 throw new Error(`No helper executor provided for transfer to: ${helperName}`);
             }
 
-            console.log(`[Workflow] Transfer to helper: ${helperName} (mode: ${mode})`);
+            logger.debug(`[Workflow] Transfer to helper: ${helperName} (mode: ${mode})`);
+            logger.trackHelperCall(helperName);
             const result = await this.helperExecutor(helper, resolvedArgs);
 
             // Return TransferSignal with mode

@@ -50,6 +50,9 @@ export type AuwgentKeywordNames =
     | "if"
     | "input"
     | "let"
+    | "lifecycle"
+    | "maxMessages"
+    | "maxTokens"
     | "model"
     | "number"
     | "output"
@@ -63,6 +66,7 @@ export type AuwgentKeywordNames =
     | "transfer"
     | "true"
     | "type"
+    | "use"
     | "with"
     | "workflow"
     | "{"
@@ -105,7 +109,7 @@ export function isAgentConfig(item: unknown): item is AgentConfig {
     return reflection.isInstance(item, AgentConfig.$type);
 }
 
-export type AgentConfigurations = AgentConfig | ContextConfig | HelpersConfig | InputConfig | OutputConfig | ToolConfig | ToolsConfig | WorkFlowConfig;
+export type AgentConfigurations = AgentConfig | ContextConfig | HelpersConfig | InputConfig | OutputConfig | ToolConfig | ToolsConfig | UseLifecycle | WorkFlowConfig;
 
 export const AgentConfigurations = {
     $type: 'AgentConfigurations'
@@ -851,6 +855,23 @@ export function isUnionType(item: unknown): item is UnionType {
     return reflection.isInstance(item, UnionType.$type);
 }
 
+export interface UseLifecycle extends langium.AstNode {
+    readonly $container: Agent | Helper;
+    readonly $type: 'UseLifecycle';
+    maxMessages?: number;
+    maxTokens?: number;
+}
+
+export const UseLifecycle = {
+    $type: 'UseLifecycle',
+    maxMessages: 'maxMessages',
+    maxTokens: 'maxTokens'
+} as const;
+
+export function isUseLifecycle(item: unknown): item is UseLifecycle {
+    return reflection.isInstance(item, UseLifecycle.$type);
+}
+
 export interface VariableDeclartion extends langium.AstNode {
     readonly $container: IfStatement | WorkFlowConfig;
     readonly $type: 'VariableDeclartion';
@@ -957,6 +978,7 @@ export type AuwgentAstType = {
     TypeDeclaration: TypeDeclaration
     Types: Types
     UnionType: UnionType
+    UseLifecycle: UseLifecycle
     VariableDeclartion: VariableDeclartion
     VariableRef: VariableRef
     WorkFlowConfig: WorkFlowConfig
@@ -1518,6 +1540,18 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: []
+        },
+        UseLifecycle: {
+            name: UseLifecycle.$type,
+            properties: {
+                maxMessages: {
+                    name: UseLifecycle.maxMessages
+                },
+                maxTokens: {
+                    name: UseLifecycle.maxTokens
+                }
+            },
+            superTypes: [AgentConfigurations.$type]
         },
         VariableDeclartion: {
             name: VariableDeclartion.$type,

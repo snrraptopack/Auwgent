@@ -93,3 +93,46 @@ export interface AgentDriver {
      */
     executeStream?(request: SyntheticRequest): AsyncGenerator<StreamChunk, DriverResult, unknown>;
 }
+
+/**
+ * Conversation state for lifecycle hooks
+ */
+export interface ConversationState {
+    messages: SyntheticMessage[];
+}
+
+/**
+ * Lifecycle hooks interface for memory management
+ */
+export interface LifecycleHooks<TContext = Record<string, unknown>, TOutput = unknown> {
+    /**
+     * Prune: Runs first. Decides what to include in context window.
+     * Use AI to summarize old messages if needed.
+     */
+    prune: (args: {
+        context: TContext;
+        agent: unknown;
+        usage: {
+            currentTokens: number;
+            maxTokens: number;
+            currentMessages: number;
+            maxMessages: number;
+        };
+    }) => Promise<ConversationState>;
+
+    /**
+     * Load: Runs after prune. Simple fetch of prepared messages.
+     */
+    load: (args: {
+        context: TContext;
+    }) => Promise<ConversationState>;
+
+    /**
+     * Save: Runs after agent completes. Append new messages to storage.
+     */
+    save: (args: {
+        newMessages: SyntheticMessage[];
+        context: TContext;
+        output: TOutput;
+    }) => Promise<void>;
+}

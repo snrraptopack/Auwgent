@@ -210,22 +210,15 @@ ${toolMethods}
  * Generate factory function with conditional parameters
  */
 function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, transferredHelpers: HelperType[]): string {
-    // Build parameter list based on what's defined
+    // Build parameter list for user-facing API
     const runParams: string[] = [`input: ${agent.name}Input`];
-    const runArgs: string[] = ['input'];
 
     if (hasTools) {
         runParams.push(`tools: ${agent.name}Tools`);
-        runArgs.push('tools');
-    } else {
-        runArgs.push('undefined');
     }
 
     if (hasContext) {
         runParams.push(`context: ${agent.name}Context`);
-        runArgs.push('context');
-    } else {
-        runArgs.push('{}');
     }
 
     // Extract named config names for type-safe configName
@@ -239,7 +232,17 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
         : 'never';
 
     runParams.push(`configName?: ${configNameType}`);
-    runArgs.push(`configName`);
+
+    // Build config object construction for run() call
+    const configParts: string[] = [];
+    if (hasTools) {
+        configParts.push('tools');
+    }
+    if (hasContext) {
+        configParts.push('context');
+    }
+    configParts.push('configName');
+    const configObject = `{ ${configParts.join(', ')} }`;
 
     // Type parameters for Agent generic
     const typeParams = [
@@ -266,7 +269,7 @@ export function create${agent.name}(registry: DriverRegistry) {
          * Run the agent with type-safe parameters
          */
         run: (${runParams.join(', ')}): Promise<${agent.name}Output> => 
-            agent.run(${runArgs.join(', ')}),
+            agent.run(input, ${configObject}),
         
         /**
          * Fluent streaming API with callbacks
@@ -277,7 +280,7 @@ export function create${agent.name}(registry: DriverRegistry) {
          *   .run();
          */
         stream: (${runParams.join(', ')}) => 
-            agent.stream(${runArgs.join(', ')})
+            agent.stream(input, ${configObject})
     };
 }
 /** Type for the created agent instance */

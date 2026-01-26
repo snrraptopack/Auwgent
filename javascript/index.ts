@@ -5,8 +5,18 @@ import { createUIMaker } from "../output/t.agent.types"
 import { OpenAIDriver } from "./loader/drivers/OpenAIDriver";
 import { kimi, openAiKey, TempKey } from "./keys";
 import { DriverRegistry } from "./loader/DriverRegistry";
-import { tools } from "./tools";
 import { writeFileSync } from "fs";
+import { logger, LogLevel } from "./loader/Logger";
+
+// ===== Configure logging level =====
+// LogLevel.NONE   = silence everything
+// LogLevel.ERROR  = only errors
+// LogLevel.WARN   = errors + warnings  
+// LogLevel.INFO   = normal output (default for production)
+// LogLevel.DEBUG  = verbose (default for development)
+// LogLevel.TRACE  = everything
+
+logger.setLevel(LogLevel.INFO);  // Change to DEBUG to see all internal logs
 
 const driver = new GoogleDriver(TempKey);
 const driver1 = new OpenAIDriver(kimi, "https://api.moonshot.ai/v1")
@@ -26,7 +36,7 @@ console.log("🚀 Starting agent...\n");
 let capturedCode = "";
 
 const finalResult = await agent
-    .stream({ request: "I need a dashboard a modern looking style not just ordinary one's" })
+    .stream({ request: "hello" })
 
     // Tool lifecycle
     .onToolStart((name) => console.log(`🔧 [Tool] ${name} started`))
@@ -64,10 +74,14 @@ if (capturedCode) {
 
 // Show final acknowledgment
 if (finalResult && typeof finalResult === 'object' && 'result' in finalResult) {
-    console.log(`\n� Model: ${(finalResult as any).result}`);
+    console.log(`\n💬 Model: ${(finalResult as any).result}`);
 }
 
 console.log("\n🏁 Done!");
+
+// Show stats (token usage, call counts)
+logger.finalize();
+logger.printStats();
 
 
 

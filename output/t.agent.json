@@ -8,7 +8,7 @@
           "type": "parts",
           "value": [
             {
-              "value": "You are a ui designer",
+              "value": "You are a ui designer and helper make sure you understand the intent before proceeding",
               "type": "literal"
             },
             {

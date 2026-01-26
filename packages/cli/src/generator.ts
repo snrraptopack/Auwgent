@@ -20,6 +20,7 @@ import {
     isVariableRef,
     isTransferStatement,
     isMemberAccess,
+    isUseLifecycle,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -47,7 +48,12 @@ type AgentIr = {
     tools: any[],
     workflows: any[],
     helpers: HelperType[],
-    helperToolGrants?: Record<string, string[] | "all">  // helperName -> tool names or "all"
+    helperToolGrants?: Record<string, string[] | "all">,
+    lifecycle?: {
+        enabled: true,
+        maxTokens?: number,
+        maxMessages?: number
+    }
 }
 
 type HelperType = {
@@ -117,6 +123,18 @@ export function generateOutput(model: Model, source: string, destination: string
             agentIR.helpers = declaredHelpers;
             if (Object.keys(helperToolGrants).length > 0) {
                 agentIR.helperToolGrants = helperToolGrants;
+            }
+
+            // Extract lifecycle configuration
+            for (const config of currentElement.configs) {
+                if (isUseLifecycle(config)) {
+                    agentIR.lifecycle = {
+                        enabled: true,
+                        maxTokens: config.maxTokens,
+                        maxMessages: config.maxMessages
+                    };
+                    break;
+                }
             }
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
