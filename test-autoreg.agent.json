@@ -1,0 +1,45 @@
+{
+  "name": "TestAutoReg",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.0-flash"
+        },
+        "prompt": {
+          "type": "simple",
+          "value": "You are a helpful assistant."
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": {
+    "message": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "output": {
+    "reply": {
+      "type": "string",
+      "description": "your reply",
+      "optional": false
+    }
+  },
+  "context": {
+    "chatId": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "tools": [],
+  "workflows": [],
+  "helpers": [],
+  "lifecycle": {
+    "enabled": true,
+    "maxTokens": 4000,
+    "maxMessages": 50
+  }
+}

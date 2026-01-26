@@ -1,6 +1,0 @@
-agent MultiAgent {
-    default config { model: "gemini-2.0-flash-exp" prompt: "You are Default" }
-    config specialized { model: "gpt-4o" prompt: "You are Specialized" }
-    input { q: string }
-    output { a: string @desc "The answer" }
-}

@@ -65,9 +65,25 @@ NonDefaultConfigModel:
 ;
 
 ModelConfig:
-    "model" ":" ModelName=STRING
+    "model" ":" model=ModelProvider
     ("prompt" "{" (parts+=PromptStatement)* "}")?
     ("prompt" ":" refPrompt=[NamedPrompt]?  simplePrompt=STRING?)?
+;
+
+ModelProvider:
+    GeminiProvider | OpenAIProvider | CustomProvider
+;
+
+GeminiProvider:
+    "gemini" "(" modelName=STRING ")"
+;
+
+OpenAIProvider:
+    "openai" "(" modelName=STRING ")"
+;
+
+CustomProvider:
+    "custom" "(" url=STRING "," modelName=STRING ")"
 ;
 
 NamedPrompt:

@@ -1,6 +1,7 @@
-agent TestChat {
+agent TestAutoReg {
     input { message: string }
     context { chatId: string }
+    output { reply: string @desc "your reply"}
     
     use lifecycle {
         maxTokens: 4000
@@ -8,7 +9,7 @@ agent TestChat {
     }
     
     default config {
-        model: openai("gpt-2.5-flash")
-        prompt: "You are helpful."
+        model: gemini("gemini-2.0-flash")
+        prompt: "You are a helpful assistant."
     }
 }

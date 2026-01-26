@@ -3,18 +3,17 @@ import type { AgentIR, HelperIR } from "./types/ir";
 import type { AgentDriver, StreamChunk, SyntheticMessage, LifecycleHooks, ConversationState } from "./types/protocol";
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
-import { DriverRegistry } from "./DriverRegistry";
 import { StreamBuilder } from "./StreamBuilder";
 import { logger } from "./Logger";
 
 /**
  * Configuration object for agent.run()
  */
-export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>> {
+export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>, TOutput = unknown> {
     tools?: TTools;
     context?: TContext;
     configName?: string;
-    lifecycle?: LifecycleHooks<TContext>;
+    lifecycle?: LifecycleHooks<TContext, TOutput>;
 }
 
 export class Agent<
@@ -35,30 +34,30 @@ export class Agent<
     // GUARD: Track completed calls to prevent infinite loops after thenContinue
     private completedCalls = new Set<string>();
 
-    constructor(private registry: DriverRegistry) { }
+    constructor(private drivers: Record<string, AgentDriver>) { }
 
     load(ir: AgentIR) {
         this.ir = ir;
         this.synthesizer = new Synthesizer(ir);
 
-        // STRICT VALIDATION: Ensure we have drivers for ALL used models
-        const requiredModels = this.synthesizer.getRequiredModels();
-        const missingModels: string[] = [];
+        // STRICT VALIDATION: Ensure we have drivers for ALL required provider types
+        const requiredProviders = this.synthesizer.getRequiredModels();
+        const missingProviders: string[] = [];
 
-        for (const model of requiredModels) {
-            if (!this.registry.resolve(model)) {
-                missingModels.push(model);
+        for (const providerType of requiredProviders) {
+            if (!this.drivers[providerType]) {
+                missingProviders.push(providerType);
             }
         }
 
-        if (missingModels.length > 0) {
-            throw new Error(`Missing drivers for the following models: ${missingModels.join(", ")}. Please register them with the DriverRegistry.`);
+        if (missingProviders.length > 0) {
+            throw new Error(`Missing drivers for providers: ${missingProviders.join(", ")}. Required drivers: { ${missingProviders.map(p => `${p}: Driver`).join(", ")} }`);
         }
     }
 
     async run(
         input: TInput,
-        config?: RunConfig<TTools, TContext>
+        config?: RunConfig<TTools, TContext, TOutput>
     ): Promise<TOutput> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
@@ -278,6 +277,11 @@ export class Agent<
 
                 // LIFECYCLE: Save after successful run
                 if (lifecycle) {
+                    // Add the assistant response to messages
+                    currentMessages.push({
+                        role: 'assistant',
+                        content: typeof output === 'string' ? output : JSON.stringify(output)
+                    });
                     const newMessages = currentMessages.slice(messagesBeforeRun);
                     await lifecycle.save({
                         newMessages,
@@ -310,7 +314,7 @@ export class Agent<
      */
     stream(
         input: TInput,
-        config?: RunConfig<TTools, TContext>
+        config?: RunConfig<TTools, TContext, TOutput>
     ): StreamBuilder<TOutput> {
         return new StreamBuilder(() => this.runStream(input, config));
     }
@@ -321,14 +325,44 @@ export class Agent<
      */
     private async *runStream(
         input: TInput,
-        config?: RunConfig<TTools, TContext>
+        config?: RunConfig<TTools, TContext, TOutput>
     ): AsyncGenerator<StreamChunk, TOutput, unknown> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
         // Destructure config
-        const { tools, context, configName } = config ?? {};
+        const { tools, context, configName, lifecycle } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
         this.context = context;
+
+        // LIFECYCLE: Validate hooks if lifecycle enabled in IR
+        if (this.ir.lifecycle?.enabled && !lifecycle) {
+            throw new Error(
+                `Agent "${this.ir.name}" has lifecycle enabled. ` +
+                `You must provide lifecycle hooks: { prune, load, save }`
+            );
+        }
+
+        // LIFECYCLE: Prune + Load (before synthesis)
+        let loadedMessages: SyntheticMessage[] = [];
+        if (lifecycle) {
+            const usage = {
+                currentTokens: 0,
+                maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
+                currentMessages: 0,
+                maxMessages: this.ir.lifecycle?.maxMessages ?? 100
+            };
+
+            await lifecycle.prune({
+                context: context as TContext,
+                agent: this,
+                usage
+            });
+
+            const state = await lifecycle.load({
+                context: context as TContext
+            });
+            loadedMessages = state.messages;
+        }
 
         const request = await this.synthesizer.synthesize(input, context, configName);
         const modelName = request.config.model ?? "";
@@ -342,7 +376,8 @@ export class Agent<
             return result;
         }
 
-        let currentMessages: SyntheticMessage[] = [...request.messages];
+        let currentMessages: SyntheticMessage[] = [...loadedMessages, ...request.messages];
+        const messagesBeforeRun = currentMessages.length;
         let turnCount = 0;
         let toolsStillAvailable = true;
 
@@ -477,20 +512,41 @@ export class Agent<
             }
 
             // Final response
+            let output: TOutput;
             if (request.responseSchema) {
                 try {
-                    return JSON.parse(result.text ?? "{}") as TOutput;
+                    output = JSON.parse(result.text ?? "{}") as TOutput;
                 } catch (e) {
                     if (toolsStillAvailable && request.responseSchema.properties) {
                         const firstProp = Object.keys(request.responseSchema.properties)[0];
                         if (firstProp) {
-                            return { [firstProp]: result.text } as TOutput;
+                            output = { [firstProp]: result.text } as TOutput;
+                        } else {
+                            throw new Error("Model failed to return valid JSON");
                         }
+                    } else {
+                        throw new Error("Model failed to return valid JSON");
                     }
-                    throw new Error("Model failed to return valid JSON");
                 }
+            } else {
+                output = (result.text ?? "") as TOutput;
             }
-            return (result.text ?? "") as TOutput;
+
+            // LIFECYCLE: Save after successful run
+            if (lifecycle) {
+                currentMessages.push({
+                    role: 'assistant',
+                    content: typeof output === 'string' ? output : JSON.stringify(output)
+                });
+                const newMessages = currentMessages.slice(messagesBeforeRun);
+                await lifecycle.save({
+                    newMessages,
+                    context: context as TContext,
+                    output
+                });
+            }
+
+            return output;
         }
 
         throw new Error("Agent exceeded maximum turns");
@@ -545,7 +601,7 @@ export class Agent<
 
         if (!subAgent) {
             // Create and cache the helper agent
-            subAgent = new Agent<Record<string, any>, any>(this.registry);
+            subAgent = new Agent<Record<string, any>, any>(this.drivers);
 
             // Resolve granted tools from parent
             const grantedTools = this.resolveGrantedTools(helper.name);
@@ -585,7 +641,7 @@ export class Agent<
         let subAgent = this.helperCache.get(helper.name);
 
         if (!subAgent) {
-            subAgent = new Agent<Record<string, any>, any>(this.registry);
+            subAgent = new Agent<Record<string, any>, any>(this.drivers);
 
             const grantedTools = this.resolveGrantedTools(helper.name);
             const helperAsAgent: AgentIR = {
@@ -650,17 +706,17 @@ export class Agent<
     }
 
     /**
-     * Get or cache a driver for a model name.
+     * Get or cache a driver for a provider type.
      */
-    private getDriver(modelName: string): AgentDriver {
-        let driver = this.driverCache.get(modelName);
+    private getDriver(providerType: string): AgentDriver {
+        let driver = this.driverCache.get(providerType);
 
         if (!driver) {
-            driver = this.registry.resolve(modelName);
+            driver = this.drivers[providerType];
             if (!driver) {
-                throw new Error(`No driver found for model: ${modelName}`);
+                throw new Error(`No driver found for provider: ${providerType}`);
             }
-            this.driverCache.set(modelName, driver);
+            this.driverCache.set(providerType, driver);
         }
 
         return driver;

@@ -48,9 +48,11 @@ export interface SyntheticRequest {
     tools?: SyntheticToolDef[];
 
 
+
     /** Model configuration hints */
     config: {
-        model?: string;
+        model?: string;  // Provider type: "gemini", "openai", "custom"
+        modelName?: string;  // Actual model name
         temperature?: number;
     };
 }

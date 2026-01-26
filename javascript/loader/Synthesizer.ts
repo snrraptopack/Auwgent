@@ -19,45 +19,47 @@ export class Synthesizer {
         // Build Tools
         const tools = this.buildTools()
 
+        const modelProvider = this.getModelProvider(configName);
         return {
             messages,
             responseSchema,
             tools,
             config: {
-                model: this.getModelName(configName),
+                model: modelProvider.type,  // Provider type: "gemini", "openai", "custom"
+                modelName: modelProvider.modelName,
                 temperature: 0
             }
         };
     }
     /**
-         * extract all unique model names used in this agent configuration
-         */
+     * Extract all unique provider types used in this agent configuration
+     */
     public getRequiredModels(): string[] {
-        const models = new Set<string>()
+        const providers = new Set<string>();
 
-        if (this.ir.modelConfig[0]?.defaultConfig?.modelName) {
-            models.add(this.ir.modelConfig[0].defaultConfig.modelName)
+        if (this.ir.modelConfig[0]?.defaultConfig?.model) {
+            providers.add(this.ir.modelConfig[0].defaultConfig.model.type);
         }
 
         if (this.ir.modelConfig[0]?.namedConfig) {
             for (const config of this.ir.modelConfig[0].namedConfig) {
-                if (config.modelName) {
-                    models.add(config.modelName)
+                if (config.model) {
+                    providers.add(config.model.type);
                 }
             }
         }
 
-        return Array.from(models)
+        return Array.from(providers);
     }
 
-    private getModelName(configName?: string): string {
+    private getModelProvider(configName?: string) {
         const config = this.getConfig(configName);
-        return config?.modelName ?? "gemini-2.0-flash-exp";
+        return config?.model ?? { type: "gemini", modelName: "gemini-2.0-flash-exp" };
     }
 
     private getConfig(configName?: string) {
         if (configName) {
-            return this.ir.modelConfig[0]?.namedConfig?.find(c => c.modelName === configName || (c as any).configName === configName) || this.ir.modelConfig[0]?.defaultConfig;
+            return this.ir.modelConfig[0]?.namedConfig?.find(c => c.configName === configName) || this.ir.modelConfig[0]?.defaultConfig;
         }
         return this.ir.modelConfig[0]?.defaultConfig;
     }

@@ -1,5 +1,30 @@
-import { Agent, AgentConfig, ContextConfig, InputConfig, isAgentConfig, isContextConfig, isInputConfig, isOutputConfig, isToolConfig, isToolsConfig, isWorkFlowConfig, ModelConfig, OutputConfig, ToolConfig, ToolsConfig, WorkFlowConfig } from "auwgent-language";
-import { extractType, extractParams, extractExpression } from "./generator.js";
+import {
+    Agent,
+    AgentConfig,
+    ContextConfig,
+    InputConfig,
+    isAgentConfig,
+    isContextConfig,
+    isInputConfig,
+    isOutputConfig,
+    isToolConfig,
+    isToolsConfig,
+    isWorkFlowConfig,
+    ModelConfig,
+    OutputConfig,
+    ToolConfig,
+    ToolsConfig,
+    WorkFlowConfig,
+    isGeminiProvider,
+    isOpenAIProvider,
+    isCustomProvider
+} from "auwgent-language";
+
+import {
+    extractType,
+    extractParams,
+    extractExpression
+} from "./generator.js";
 
 
 export function handleAgentConfig(agent: Agent) {
@@ -48,12 +73,25 @@ export function handleAgentConfig(agent: Agent) {
     return agentIR
 }
 
+function extractModelProvider(provider: any) {
+    if (isGeminiProvider(provider)) {
+        return { type: "gemini", modelName: provider.modelName };
+    }
+    if (isOpenAIProvider(provider)) {
+        return { type: "openai", modelName: provider.modelName };
+    }
+    if (isCustomProvider(provider)) {
+        return { type: "custom", url: provider.url, modelName: provider.modelName };
+    }
+    throw new Error("Unknown model provider type");
+}
+
 function extractAgentConfig(agentConfig: AgentConfig) {
     const result: any = {};
 
     if (agentConfig.defaultconfig) {
         result.defaultConfig = {
-            modelName: agentConfig.defaultconfig.ModelName,
+            model: extractModelProvider(agentConfig.defaultconfig.model),
             prompt: extractPrompt(agentConfig.defaultconfig)
         };
     }
@@ -61,7 +99,7 @@ function extractAgentConfig(agentConfig: AgentConfig) {
     if (agentConfig.nondefaultConfig) {
         result.namedConfig = agentConfig.nondefaultConfig.map(conf => ({
             configName: conf.name,
-            modelName: conf.nonConf.ModelName,
+            model: extractModelProvider(conf.nonConf.model),
             prompt: extractPrompt(conf.nonConf)
         }))
     }

@@ -152,9 +152,15 @@ export type ModelConfig = {
     namedConfig: Config[]
 }
 
+export type ModelProvider =
+    | { type: "gemini"; modelName: string }
+    | { type: "openai"; modelName: string }
+    | { type: "custom"; url: string; modelName: string };
+
 export type Config = {
-    modelName: string,
-    prompt: PromptConfig | null
+    configName?: string;
+    model: ModelProvider;
+    prompt: PromptConfig | null;
 }
 
 export type PromptConfig =

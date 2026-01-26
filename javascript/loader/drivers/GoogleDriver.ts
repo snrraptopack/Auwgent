@@ -11,7 +11,7 @@ export class GoogleDriver implements AgentDriver {
 
     async execute(request: SyntheticRequest): Promise<DriverResult> {
         // 1. Map Configuration
-        const model = request.config.model || "gemini-2.0-flash";
+        const model = request.config.modelName || "gemini-2.0-flash";
 
         // 2. Map Messages to Google Content Format
         const contents = request.messages
@@ -81,7 +81,7 @@ export class GoogleDriver implements AgentDriver {
      * Streaming execution using async generator
      */
     async *executeStream(request: SyntheticRequest): AsyncGenerator<StreamChunk, DriverResult, unknown> {
-        const model = request.config.model || "gemini-2.0-flash";
+        const model = request.config.modelName || "gemini-2.0-flash";
 
         const contents = request.messages
             .filter(m => m.role !== 'system')

@@ -17,9 +17,14 @@ interface AgentIR {
     workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[] }>;
     helpers: HelperType[];
     modelConfig?: Array<{
-        defaultConfig?: { modelName: string; prompt: any };
-        namedConfig?: Array<{ configName: string; modelName: string; prompt: any }>;
+        defaultConfig?: { model: { type: string; modelName: string; url?: string }; prompt: any };
+        namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string }; prompt: any }>;
     }>;
+    lifecycle?: {
+        enabled: true;
+        maxTokens?: number;
+        maxMessages?: number;
+    };
 }
 
 /**
@@ -28,6 +33,8 @@ interface AgentIR {
 export function generateTypesFile(agent: AgentIR): string {
     const hasTools = agent.tools && agent.tools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
+    const hasLifecycle = agent.lifecycle?.enabled === true;
+    const requiredProviders = collectRequiredProviders(agent);
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
     const transferredHelpers = collectTransferredHelpers(agent);
@@ -37,9 +44,11 @@ export function generateTypesFile(agent: AgentIR): string {
         `// Do not edit manually`,
         ``,
         `// Core Runtime Imports`,
-        `import { Agent } from "../javascript/loader/IrInterpreter";`,
-        `import { DriverRegistry } from "../javascript/loader/DriverRegistry";`,
+        `import { Agent, RunConfig } from "../javascript/loader/IrInterpreter";`,
+        requiredProviders.has("gemini") ? `import { GoogleDriver } from "../javascript/loader/drivers/GoogleDriver";` : '',
+        requiredProviders.has("openai") || requiredProviders.has("custom") ? `import { OpenAIDriver } from "../javascript/loader/drivers/OpenAIDriver";` : '',
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
+        `import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";`,
         ``,
         generateInputInterface(agent),
         // Generate output interfaces for transferred helpers
@@ -47,7 +56,9 @@ export function generateTypesFile(agent: AgentIR): string {
         generateOutputInterface(agent, transferredHelpers),
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false, transferredHelpers),
+        hasLifecycle ? generateLifecycleInterface(agent, hasContext ?? false) : '',
+        requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
+        generateAgentFactory(agent, hasTools, hasContext ?? false, hasLifecycle, requiredProviders, transferredHelpers),
     ];
 
     return sections.filter(Boolean).join('\n');
@@ -82,6 +93,57 @@ function scanForTransfers(statements: any[], found: Set<string>): void {
             if (stmt.else) scanForTransfers(stmt.else, found);
         }
     }
+}
+
+/**
+ * Collect all required provider types from agent model config
+ */
+function collectRequiredProviders(agent: AgentIR): Set<string> {
+    const providers = new Set<string>();
+
+    if (agent.modelConfig && agent.modelConfig.length > 0) {
+        const config = agent.modelConfig[0];
+
+        if (config.defaultConfig?.model) {
+            providers.add(config.defaultConfig.model.type);
+        }
+
+        if (config.namedConfig) {
+            for (const named of config.namedConfig) {
+                if (named.model) {
+                    providers.add(named.model.type);
+                }
+            }
+        }
+    }
+
+    return providers;
+}
+
+/**
+ * Generate ApiKeys interface for required providers
+ */
+function generateApiKeysInterface(agent: AgentIR, providers: Set<string>): string {
+    const keys: string[] = [];
+
+    if (providers.has("gemini")) {
+        keys.push("    geminiApiKey: string;");
+    }
+    if (providers.has("openai")) {
+        keys.push("    openaiApiKey: string;");
+    }
+    if (providers.has("custom")) {
+        keys.push("    customApiKey: string;");
+        keys.push("    customUrl?: string;  // Optional override for custom provider URL");
+    }
+
+    return `/**
+ * API keys required for ${agent.name}
+ */
+export interface ${agent.name}ApiKeys {
+${keys.join('\n')}
+}
+`;
 }
 
 /**
@@ -207,9 +269,44 @@ ${toolMethods}
 }
 
 /**
+ * Generate Lifecycle interface for agents with lifecycle enabled
+ */
+function generateLifecycleInterface(agent: AgentIR, hasContext: boolean): string {
+    const contextType = hasContext ? `${agent.name}Context` : 'Record<string, any>';
+
+    return `/**
+ * Lifecycle hooks for ${agent.name}
+ * Implement these to manage conversation history and memory
+ */
+export interface ${agent.name}Lifecycle {
+    prune: (args: {
+        context: ${contextType};
+        agent: any;
+        usage: {
+            currentTokens: number;
+            maxTokens: number;
+            currentMessages: number;
+            maxMessages: number;
+        };
+    }) => Promise<ConversationState>;
+    
+    load: (args: {
+        context: ${contextType};
+    }) => Promise<ConversationState>;
+    
+    save: (args: {
+        newMessages: SyntheticMessage[];
+        context: ${contextType};
+        output: ${agent.name}Output;
+    }) => Promise<void>;
+}
+`;
+}
+
+/**
  * Generate factory function with conditional parameters
  */
-function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, transferredHelpers: HelperType[]): string {
+function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, hasLifecycle: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[]): string {
     // Build parameter list for user-facing API
     const runParams: string[] = [`input: ${agent.name}Input`];
 
@@ -219,6 +316,10 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
 
     if (hasContext) {
         runParams.push(`context: ${agent.name}Context`);
+    }
+
+    if (hasLifecycle) {
+        runParams.push(`lifecycle: ${agent.name}Lifecycle`);
     }
 
     // Extract named config names for type-safe configName
@@ -241,6 +342,9 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     if (hasContext) {
         configParts.push('context');
     }
+    if (hasLifecycle) {
+        configParts.push('lifecycle');
+    }
     configParts.push('configName');
     const configObject = `{ ${configParts.join(', ')} }`;
 
@@ -252,12 +356,30 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
         hasTools ? `${agent.name}Tools` : 'Record<string, never>'
     ].join(', ');
 
+    // Generate drivers object
+    const driverEntries: string[] = [];
+    if (requiredProviders.has("gemini")) {
+        driverEntries.push(`        gemini: new GoogleDriver(apiKeys.geminiApiKey)`);
+    }
+    if (requiredProviders.has("openai")) {
+        driverEntries.push(`        openai: new OpenAIDriver(apiKeys.openaiApiKey)`);
+    }
+    if (requiredProviders.has("custom")) {
+        driverEntries.push(`        custom: new OpenAIDriver(apiKeys.customApiKey, apiKeys.customUrl ?? "https://api.openai.com/v1")`);
+    }
+
+    const hasApiKeys = requiredProviders.size > 0;
+    const factoryParam = hasApiKeys ? `apiKeys: ${agent.name}ApiKeys` : '';
+    const driversObject = driverEntries.length > 0
+        ? `{\n${driverEntries.join(',\n')}\n    }`
+        : '{}';
+
     return `
 /**
- * Create a type-safe ${agent.name} agent instance
+ * Create a type-safe ${agent.name} agent instance${hasApiKeys ? '\n * Auto-creates drivers based on required providers' : ''}
  */
-export function create${agent.name}(registry: DriverRegistry) {
-    const agent = new Agent<${typeParams}>(registry);
+export function create${agent.name}(${factoryParam}) {
+    const agent = new Agent<${typeParams}>(${driversObject});
     
     return {
         /**
