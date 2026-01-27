@@ -116,7 +116,12 @@ function extractInOutConfig(inputConfig: InputConfig | OutputConfig | ContextCon
         })
     } else if (inputConfig.$type === "OutputConfig") {
         inputConfig.outProperties.map(output => {
-            result[output.td.name] = { type: extractType(output.td.t), description: output.description, optional: output.td.isOptional }
+            result[output.td.name] = { 
+                type: extractType(output.td.t), 
+                optional: output.td.isOptional,
+                description: output.td.description ?? "no description" 
+                //...(output.description && { description: output.description })
+            }
         })
     } else if (inputConfig.$type === "ContextConfig") {
         inputConfig.contextProperties.map(context => {

@@ -16,8 +16,31 @@
     }
   ],
   "input": {
-    "message": {
-      "type": "string",
+    "data": {
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "typeRef",
+          "name": "Point"
+        }
+      },
+      "optional": false
+    },
+    "user": {
+      "type": {
+        "type": "typeRef",
+        "name": "User"
+      },
+      "optional": false
+    },
+    "mode": {
+      "type": {
+        "type": "union",
+        "options": [
+          "fast",
+          "thorough"
+        ]
+      },
       "optional": false
     }
   },
@@ -45,7 +68,57 @@
       "optional": false
     }
   },
-  "tools": [],
+  "tools": [
+    {
+      "description": "Calculates Euclidean distance between two points",
+      "params": {
+        "p1": {
+          "type": {
+            "type": "typeRef",
+            "name": "Point"
+          },
+          "optional": false
+        },
+        "p2": {
+          "type": {
+            "type": "typeRef",
+            "name": "Point"
+          },
+          "optional": false
+        }
+      },
+      "name": "calculateDistance",
+      "returns": "number"
+    },
+    {
+      "description": "Fetches user information from database",
+      "params": {
+        "userId": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "getUserInfo",
+      "returns": {
+        "type": "typeRef",
+        "name": "User"
+      }
+    },
+    {
+      "description": "Searches the web and returns structured results",
+      "params": {
+        "query": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "searchWeb",
+      "returns": {
+        "type": "typeRef",
+        "name": "SearchResult"
+      }
+    }
+  ],
   "workflows": [],
   "helpers": [],
   "types": {

@@ -5,7 +5,7 @@ entry Model:
     (elements+=Element)*;
 
 Element:
-    Agent | NamedPrompt | Helper;
+    Agent | NamedPrompt | Helper | TypeDeclaration;
 
 Helper:
     "helper" name=ID "{"
@@ -110,7 +110,7 @@ ContextReference:
     'ctx' '.' property=[TypeConfigDeclaration:ID];
 
 Output:
-    td=TypeConfigDeclaration "@desc" description=STRING
+    td=TypeConfigDeclaration ("@desc" description=STRING)?
 ;
 
 ToolConfig:
@@ -129,7 +129,7 @@ ToolFunction:
 ;
 
 Statement:
-    VariableDeclartion | ReturnStatement | IfStatement | TypeDeclaration | TransferStatement
+    VariableDeclartion | ReturnStatement | IfStatement | TransferStatement
 ;
 
 VariableDeclartion:
@@ -137,10 +137,10 @@ VariableDeclartion:
 ;
 
 TypeDeclaration:
-    "type" name=ID "{" types+=TypeConfigDeclaration* "}";
+    (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration)* "}";
 
 TypeConfigDeclaration:
-    name=ID (isOptional?='?')? ":" t=Types;
+    name=ID (isOptional?='?')? ":" t=Types ("@desc" description=STRING)?;
 
 IfStatement:
     'if' '(' condition=Condition ')' '{' 
@@ -225,11 +225,13 @@ TemplateExpr:
 PropertyValue:
     name=ID (':' value=Expression)?;
 
-ArrayType:
-    type=(StringType | NumberType | BooleanType) '[' ']';
 
 Types:
-    types=(ArrayType|ObjectType|UnionType|BooleanType|StringType|NumberType|INT);
+    BaseType ('[' ']' {infer ArrayType.elementType=current})*;
+
+BaseType:
+    type=(StringType | NumberType | BooleanType | ObjectType | UnionType)
+    | typeRef=[TypeDeclaration:ID];
 
 BooleanType:
     type="boolean";
@@ -241,10 +243,10 @@ UnionType:
     options+=STRING ('|' options+=STRING)*;
 
 ObjectType:
-    '{' (properties+=PropertyType (',' properties+=PropertyType)*)? '}';
+    '{' (properties+=PropertyType)* '}';
 
 PropertyType:
-    name=ID (isOptional?='?')? ":" type=Types;
+    name=ID (isOptional?='?')? ":" type=Types ("@desc" description=STRING)?;
 
 
 hidden terminal WS: /\s+/;

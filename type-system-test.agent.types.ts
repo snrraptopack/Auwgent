@@ -1,10 +1,10 @@
 // Auto-generated types for TypeSystemTest
 // Do not edit manually
 // Core Runtime Imports
-import { Agent} from "./javascript/loader/IrInterpreter";
-import { GoogleDriver } from "./javascript/loader/drivers/GoogleDriver";
-import type { AgentIR } from "./javascript/loader/types/ir";
-import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
+import { Agent, RunConfig } from "../javascript/loader/IrInterpreter";
+import { GoogleDriver } from "../javascript/loader/drivers/GoogleDriver";
+import type { AgentIR } from "../javascript/loader/types/ir";
+import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";
 
 export interface Point {
 
@@ -62,7 +62,9 @@ export interface SearchResult {
 }
 
 export interface TypeSystemTestInput {
-    message: string;
+    data: Point[];
+    user: User;
+    mode: "fast" | "thorough";
 }
 
 export interface TypeSystemTestOutput {
@@ -72,6 +74,13 @@ export interface TypeSystemTestOutput {
 
 export interface TypeSystemTestContext {
     sessionId: string;
+}
+
+export interface TypeSystemTestTools {
+    [key: string]: (args: any) => Promise<any>;
+    calculateDistance: (args: { p1: Point, p2: Point }) => Promise<number>;
+    getUserInfo: (args: { userId: string }) => Promise<User>;
+    searchWeb: (args: { query: string }) => Promise<SearchResult>;
 }
 
 /**
@@ -87,7 +96,7 @@ export interface TypeSystemTestApiKeys {
  * Auto-creates drivers based on required providers
  */
 export function createTypeSystemTest(apiKeys: TypeSystemTestApiKeys) {
-    const agent = new Agent<TypeSystemTestInput, TypeSystemTestOutput, TypeSystemTestContext, Record<string, never>>({
+    const agent = new Agent<TypeSystemTestInput, TypeSystemTestOutput, TypeSystemTestContext, TypeSystemTestTools>({
         gemini: new GoogleDriver(apiKeys.geminiApiKey)
     });
     
@@ -100,8 +109,8 @@ export function createTypeSystemTest(apiKeys: TypeSystemTestApiKeys) {
         /**
          * Run the agent with type-safe parameters
          */
-        run: (input: TypeSystemTestInput, context: TypeSystemTestContext, configName?: never): Promise<TypeSystemTestOutput> => 
-            agent.run(input, { context, configName }),
+        run: (input: TypeSystemTestInput, tools: TypeSystemTestTools, context: TypeSystemTestContext, configName?: never): Promise<TypeSystemTestOutput> => 
+            agent.run(input, { tools, context, configName }),
         
         /**
          * Fluent streaming API with callbacks
@@ -111,8 +120,8 @@ export function createTypeSystemTest(apiKeys: TypeSystemTestApiKeys) {
          *   .onText(delta => console.log(delta))
          *   .run();
          */
-        stream: (input: TypeSystemTestInput, context: TypeSystemTestContext, configName?: never) => 
-            agent.stream(input, { context, configName })
+        stream: (input: TypeSystemTestInput, tools: TypeSystemTestTools, context: TypeSystemTestContext, configName?: never) => 
+            agent.stream(input, { tools, context, configName })
     };
 }
 /** Type for the created agent instance */

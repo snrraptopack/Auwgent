@@ -25,6 +25,14 @@ interface AgentIR {
         maxTokens?: number;
         maxMessages?: number;
     };
+    types?: Record<string, {
+        isOutput: boolean;
+        properties: Record<string, {
+            type: any;
+            optional: boolean;
+            description?: string;
+        }>;
+    }>;
 }
 
 /**
@@ -50,6 +58,8 @@ export function generateTypesFile(agent: AgentIR): string {
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
         `import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";`,
         ``,
+        // Generate custom type interfaces
+        agent.types ? generateCustomTypes(agent.types) : '',
         generateInputInterface(agent),
         // Generate output interfaces for transferred helpers
         ...transferredHelpers.map(helper => generateHelperOutputInterface(helper)),
@@ -93,6 +103,29 @@ function scanForTransfers(statements: any[], found: Set<string>): void {
             if (stmt.else) scanForTransfers(stmt.else, found);
         }
     }
+}
+
+/**
+ * Generate TypeScript interfaces for custom type definitions
+ */
+function generateCustomTypes(types: Record<string, any>): string {
+    const interfaces = Object.entries(types).map(([typeName, typeDef]) => {
+        const props = Object.entries(typeDef.properties)
+            .map(([propName, propInfo]: [string, any]) => {
+                const optional = propInfo.optional ? '?' : '';
+                const comment = propInfo.description ? `\n    /** ${propInfo.description} */` : '';
+                return `${comment}\n    ${propName}${optional}: ${typeToTsString(propInfo.type)};`;
+            })
+            .join('\n');
+
+        const comment = typeDef.isOutput ? '\n/** Output type */\n' : '\n';
+        return `${comment}export interface ${typeName} {
+${props}
+}
+`;
+    });
+
+    return interfaces.join('\n');
 }
 
 /**
@@ -418,6 +451,16 @@ function typeToTsString(typeVal: any): string {
         return normalizeType(typeVal);
     }
 
+    // Handle type reference: { type: "typeRef", name: "Point" }
+    if (typeVal?.type === 'typeRef' && typeVal.name) {
+        return typeVal.name;
+    }
+
+    // Handle array type: { type: "array", items: {...} }
+    if (typeVal?.type === 'array' && typeVal.items) {
+        return `${typeToTsString(typeVal.items)}[]`;
+    }
+
     // Handle union type: { type: "union", options: [...] }
     if (typeVal?.type === 'union' && Array.isArray(typeVal.options)) {
         return typeVal.options
@@ -433,7 +476,7 @@ function typeToTsString(typeVal: any): string {
         return `{ ${props} }`;
     }
 
-    // Handle array type
+    // Handle array type (legacy string format)
     if (typeof typeVal === 'string' && typeVal.endsWith('[]')) {
         const inner = typeVal.slice(0, -2);
         return `${normalizeType(inner)}[]`;

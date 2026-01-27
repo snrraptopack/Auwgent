@@ -28,11 +28,15 @@ import {
     Statement,
     TypeConfigDeclaration,
     Types,
+    BaseType,
+    isBaseType,
     TemplateExpr,
     TemplateString,
     isContextReference,
     isHelperCall,
-    Helper
+    Helper,
+    TypeDeclaration,
+    isTypeDeclaration
 } from "auwgent-language"
 
 
@@ -56,7 +60,19 @@ type AgentIr = {
         enabled: true,
         maxTokens?: number,
         maxMessages?: number
-    }
+    },
+    types?: Record<string, TypeDefinition>
+}
+
+type TypeDefinition = {
+    isOutput: boolean,
+    properties: Record<string, PropertyInfo>
+}
+
+type PropertyInfo = {
+    type: any,
+    optional: boolean,
+    description?: string
 }
 
 type HelperType = {
@@ -82,6 +98,8 @@ export function generateOutput(model: Model, source: string, destination: string
     const baseName = path.basename(source, '.agent');
     const outputPath = path.join(destDir, `${baseName}.agent.json`);
 
+    // Collect all type definitions
+    const typeMap = collectTypes(model);
 
     // First pass: collect all helpers into a map by name
     const helperMap = new Map<string, HelperType>();
@@ -98,6 +116,11 @@ export function generateOutput(model: Model, source: string, destination: string
 
         if (currentElement.$type === "Agent") {
             const agentIR = handleAgentConfig(currentElement) as AgentIr;
+
+            // Add type definitions to IR
+            if (typeMap.size > 0) {
+                agentIR.types = extractTypeDefinitions(typeMap);
+            }
 
             // Filter helpers: only include those declared in agent's helpers { } block
             // Also extract tool grants for each helper
@@ -170,32 +193,101 @@ function handleHelper(helper: Helper): HelperType {
     };
 }
 
+/**
+ * Collect all type declarations from the model
+ */
+function collectTypes(model: Model): Map<string, TypeDeclaration> {
+    const typeMap = new Map<string, TypeDeclaration>();
+    
+    for (const element of model.elements) {
+        if (isTypeDeclaration(element)) {
+            if (typeMap.has(element.name)) {
+                throw new Error(`Duplicate type declaration: ${element.name}`);
+            }
+            typeMap.set(element.name, element);
+        }
+    }
+    
+    return typeMap;
+}
+
+/**
+ * Extract type definitions from the type map into IR format
+ */
+function extractTypeDefinitions(typeMap: Map<string, TypeDeclaration>): Record<string, TypeDefinition> {
+    const types: Record<string, TypeDefinition> = {};
+    
+    for (const [name, typeDecl] of typeMap.entries()) {
+        const properties: Record<string, PropertyInfo> = {};
+        
+        for (const prop of typeDecl.types) {
+            properties[prop.name] = {
+                type: extractType(prop.t),
+                optional: prop.isOptional,
+                ...(prop.description && { description: prop.description })
+            };
+        }
+        
+        types[name] = {
+            isOutput: typeDecl.isOutput,
+            properties
+        };
+    }
+    
+    return types;
+}
 
 
 export function extractType(types: Types): any {
-    if (types.types) {
-        const t = types.types;
+    // Handle ArrayType
+    if (isArrayType(types)) {
+        const elementType = extractBaseType(types.elementType);
+        return { type: "array", items: elementType };
+    }
+    
+    // Handle BaseType
+    if (isBaseType(types)) {
+        return extractBaseType(types);
+    }
+    
+    return 'unknown';
+}
 
+function extractBaseType(baseType: BaseType): any {
+    // Handle type reference
+    if (baseType.typeRef) {
+        return { type: "typeRef", name: baseType.typeRef.ref?.name || "unknown" };
+    }
+    
+    // Handle inline types
+    if (baseType.type) {
+        const t = baseType.type;
+        
         if (isUnionType(t)) {
-            return { type: "union", options: t.options }
+            return { type: "union", options: t.options };
         }
-        if (isBooleanType(t) || isNumberType(t) || isStringType(t)) {
-            return t.type
+        
+        if (isBooleanType(t)) {
+            return "boolean";
         }
-
-        if (isArrayType(t) && !isNumberType(t)) {
-            const innerType = t.type.type;
-            return `${innerType}[]`;
+        
+        if (isNumberType(t)) {
+            return "number";
         }
-
+        
+        if (isStringType(t)) {
+            return "string";
+        }
+        
         if (isObjectType(t)) {
-            const props = {} as any
+            const props = {} as any;
             t.properties.forEach(prop => {
-                props[prop.name] = extractType(prop.type)
-            })
-            return { type: "object", properties: props }
+                props[prop.name] = extractType(prop.type);
+            });
+            return { type: "object", properties: props };
         }
     }
+    
     return 'unknown';
 }
 
