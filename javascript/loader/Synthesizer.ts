@@ -103,6 +103,33 @@ export class Synthesizer {
             return prompt.value;
         }
 
+        // Case 4: Literal (string or number from grammar)
+        if (prompt.type === 'literal') {
+            return String(prompt.value);
+        }
+
+        // Case 5: Concatenation with + operator
+        if (prompt.type === 'concat') {
+            const left = await this.resolvePrompt(prompt.left, input, context);
+            const right = await this.resolvePrompt(prompt.right, input, context);
+            return left + right;
+        }
+
+        // Case 6: Prompt reference (named prompt)
+        if (prompt.type === 'promptRef' && Array.isArray(prompt.value)) {
+            const evaluator = new ExpressionEvaluator();
+            const scope = new Map(Object.entries({ ...input, ...context }));
+            return await evaluator.evaluateStatements(prompt.value, scope, true);
+        }
+
+        // Case 7: Inline prompt block { ... }
+        if (prompt.type === 'inlinePrompt' && Array.isArray(prompt.parts)) {
+            const evaluator = new ExpressionEvaluator();
+            const scope = new Map(Object.entries({ ...input, ...context }));
+            return await evaluator.evaluateStatements(prompt.parts, scope, true);
+        }
+
+        // Legacy case: ref type (for backwards compatibility)
         if (prompt.type === 'ref' && Array.isArray(prompt.value)) {
             const evaluator = new ExpressionEvaluator();
             const scope = new Map(Object.entries(input));

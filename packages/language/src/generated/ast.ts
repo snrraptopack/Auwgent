@@ -21,6 +21,7 @@ export type AuwgentKeywordNames =
     | "!="
     | "("
     | ")"
+    | "+"
     | ","
     | "."
     | ":"
@@ -123,7 +124,7 @@ export function isAgentConfigurations(item: unknown): item is AgentConfiguration
 }
 
 export interface ArrayLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ArrayLiteral';
     elements: Array<Expression>;
 }
@@ -152,8 +153,27 @@ export function isArrayType(item: unknown): item is ArrayType {
     return reflection.isInstance(item, ArrayType.$type);
 }
 
+export interface BinaryExpression extends langium.AstNode {
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'BinaryExpression';
+    left: Expression;
+    op: '+';
+    right: Expression;
+}
+
+export const BinaryExpression = {
+    $type: 'BinaryExpression',
+    left: 'left',
+    op: 'op',
+    right: 'right'
+} as const;
+
+export function isBinaryExpression(item: unknown): item is BinaryExpression {
+    return reflection.isInstance(item, BinaryExpression.$type);
+}
+
 export interface BooleanLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'BooleanLiteral';
     value: 'false' | 'true';
 }
@@ -217,7 +237,7 @@ export function isContextConfig(item: unknown): item is ContextConfig {
 }
 
 export interface ContextReference extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ContextReference';
     property: langium.Reference<TypeConfigDeclaration>;
 }
@@ -268,7 +288,7 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
-export type Expression = ArrayLiteral | BooleanLiteral | ContextReference | FunctionCall | HelperCall | MemberAccess | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
+export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | ContextReference | FunctionCall | HelperCall | InlinePromptBlock | MemberAccess | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -279,7 +299,7 @@ export function isExpression(item: unknown): item is Expression {
 }
 
 export interface FunctionCall extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'FunctionCall';
     args: Array<Expression>;
     func: langium.Reference<ToolFunction>;
@@ -330,7 +350,7 @@ export function isHelper(item: unknown): item is Helper {
 }
 
 export interface HelperCall extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | TransferStatement | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | TransferStatement | VariableDeclartion;
     readonly $type: 'HelperCall';
     args: Array<Expression>;
     helper: langium.Reference<Helper>;
@@ -381,7 +401,7 @@ export function isHelpersConfig(item: unknown): item is HelpersConfig {
 }
 
 export interface IfStatement extends langium.AstNode {
-    readonly $container: IfStatement | ModelConfig | NamedPrompt | WorkFlowConfig;
+    readonly $container: IfStatement | InlinePromptBlock | ModelConfig | NamedPrompt | WorkFlowConfig;
     readonly $type: 'IfStatement';
     condition: Condition;
     elseBlock: Array<Statement>;
@@ -397,6 +417,21 @@ export const IfStatement = {
 
 export function isIfStatement(item: unknown): item is IfStatement {
     return reflection.isInstance(item, IfStatement.$type);
+}
+
+export interface InlinePromptBlock extends langium.AstNode {
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'InlinePromptBlock';
+    parts: Array<PromptStatement>;
+}
+
+export const InlinePromptBlock = {
+    $type: 'InlinePromptBlock',
+    parts: 'parts'
+} as const;
+
+export function isInlinePromptBlock(item: unknown): item is InlinePromptBlock {
+    return reflection.isInstance(item, InlinePromptBlock.$type);
 }
 
 export interface InputConfig extends langium.AstNode {
@@ -415,7 +450,7 @@ export function isInputConfig(item: unknown): item is InputConfig {
 }
 
 export interface MemberAccess extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'MemberAccess';
     chain: Array<string>;
     object: langium.Reference<Referenceable>;
@@ -452,16 +487,14 @@ export interface ModelConfig extends langium.AstNode {
     readonly $type: 'ModelConfig';
     model: ModelProvider;
     parts: Array<PromptStatement>;
-    refPrompt?: langium.Reference<NamedPrompt>;
-    simplePrompt?: string;
+    promptExpr?: Expression;
 }
 
 export const ModelConfig = {
     $type: 'ModelConfig',
     model: 'model',
     parts: 'parts',
-    refPrompt: 'refPrompt',
-    simplePrompt: 'simplePrompt'
+    promptExpr: 'promptExpr'
 } as const;
 
 export function isModelConfig(item: unknown): item is ModelConfig {
@@ -513,7 +546,7 @@ export function isNonDefaultConfigModel(item: unknown): item is NonDefaultConfig
 }
 
 export interface NumberLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'NumberLiteral';
     value: number;
 }
@@ -543,7 +576,7 @@ export function isNumberType(item: unknown): item is NumberType {
 }
 
 export interface ObjectLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ObjectLiteral';
     properties: Array<PropertyValue>;
 }
@@ -671,7 +704,7 @@ export function isPropertyValue(item: unknown): item is PropertyValue {
     return reflection.isInstance(item, PropertyValue.$type);
 }
 
-export type Referenceable = TypeConfigDeclaration | VariableDeclartion;
+export type Referenceable = NamedPrompt | TypeConfigDeclaration | VariableDeclartion;
 
 export const Referenceable = {
     $type: 'Referenceable'
@@ -707,7 +740,7 @@ export function isStatement(item: unknown): item is Statement {
 }
 
 export interface StringLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'StringLiteral';
     value: string;
 }
@@ -752,7 +785,7 @@ export function isTemplateExpr(item: unknown): item is TemplateExpr {
 }
 
 export interface TemplateLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'TemplateLiteral';
     templates: Array<TemplateExpr | TemplateString>;
 }
@@ -950,7 +983,7 @@ export function isVariableDeclartion(item: unknown): item is VariableDeclartion 
 }
 
 export interface VariableRef extends langium.AstNode {
-    readonly $container: ArrayLiteral | Condition | FunctionCall | HelperCall | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'VariableRef';
     variable: langium.Reference<Referenceable>;
 }
@@ -993,6 +1026,7 @@ export type AuwgentAstType = {
     AgentConfigurations: AgentConfigurations
     ArrayLiteral: ArrayLiteral
     ArrayType: ArrayType
+    BinaryExpression: BinaryExpression
     BooleanLiteral: BooleanLiteral
     BooleanType: BooleanType
     Condition: Condition
@@ -1009,6 +1043,7 @@ export type AuwgentAstType = {
     HelperRef: HelperRef
     HelpersConfig: HelpersConfig
     IfStatement: IfStatement
+    InlinePromptBlock: InlinePromptBlock
     InputConfig: InputConfig
     MemberAccess: MemberAccess
     Model: Model
@@ -1100,6 +1135,21 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: []
+        },
+        BinaryExpression: {
+            name: BinaryExpression.$type,
+            properties: {
+                left: {
+                    name: BinaryExpression.left
+                },
+                op: {
+                    name: BinaryExpression.op
+                },
+                right: {
+                    name: BinaryExpression.right
+                }
+            },
+            superTypes: [Expression.$type]
         },
         BooleanLiteral: {
             name: BooleanLiteral.$type,
@@ -1283,6 +1333,16 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: [PromptStatement.$type, Statement.$type]
         },
+        InlinePromptBlock: {
+            name: InlinePromptBlock.$type,
+            properties: {
+                parts: {
+                    name: InlinePromptBlock.parts,
+                    defaultValue: []
+                }
+            },
+            superTypes: [Expression.$type]
+        },
         InputConfig: {
             name: InputConfig.$type,
             properties: {
@@ -1330,12 +1390,8 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     name: ModelConfig.parts,
                     defaultValue: []
                 },
-                refPrompt: {
-                    name: ModelConfig.refPrompt,
-                    referenceType: NamedPrompt.$type
-                },
-                simplePrompt: {
-                    name: ModelConfig.simplePrompt
+                promptExpr: {
+                    name: ModelConfig.promptExpr
                 }
             },
             superTypes: [DefaultConfigModel.$type]
@@ -1357,7 +1413,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     defaultValue: []
                 }
             },
-            superTypes: [Element.$type]
+            superTypes: [Element.$type, Referenceable.$type]
         },
         NonDefaultConfigModel: {
             name: NonDefaultConfigModel.$type,

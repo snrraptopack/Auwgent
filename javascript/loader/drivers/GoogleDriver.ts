@@ -39,8 +39,9 @@ export class GoogleDriver implements AgentDriver {
         // 4. Map Schema (IMPORTANT: Only use structured output if NO tools are present)
         let generationConfig: any = {};
         const hasTools = toolsConfig.length > 0;
-        // Google doesn't support function calling + JSON schema at the same time
-        // Only use structured output when there are no tools
+        // Note: When JSON schema is enabled, streaming will output raw JSON tokens
+        // like {"reply": "... This is a Gemini API limitation - the model generates
+        // JSON structure token-by-token. There's no way to stream just the values.
         if (request.responseSchema && !hasTools) {
             generationConfig.responseMimeType = "application/json";
             generationConfig.responseJsonSchema = request.responseSchema;

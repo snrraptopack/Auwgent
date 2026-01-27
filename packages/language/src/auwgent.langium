@@ -67,7 +67,7 @@ NonDefaultConfigModel:
 ModelConfig:
     "model" ":" model=ModelProvider
     ("prompt" "{" (parts+=PromptStatement)* "}")?
-    ("prompt" ":" refPrompt=[NamedPrompt]?  simplePrompt=STRING?)?
+    ("prompt" ":" promptExpr=Expression)?
 ;
 
 ModelProvider:
@@ -162,9 +162,17 @@ ReturnStatement:
     "return" value=Expression
 ;
 
-type Referenceable = VariableDeclartion |TypeConfigDeclaration;
+// NamedPrompt is included so prompt names can be referenced directly (e.g., myPrompt + "text")
+type Referenceable = VariableDeclartion | TypeConfigDeclaration | NamedPrompt;
 
+// Binary expression with left recursion for + operator
 Expression:
+    AdditionExpression;
+
+AdditionExpression infers Expression:
+    PrimaryExpression ({infer BinaryExpression.left=current} op='+' right=PrimaryExpression)*;
+
+PrimaryExpression infers Expression:
     {infer StringLiteral} value=STRING
     | {infer NumberLiteral} value=INT
     | {infer BooleanLiteral} value=("true"|"false")
@@ -176,7 +184,13 @@ Expression:
     | TemplateLiteral
     | ContextReference
     | HelperCall
+    | InlinePromptBlock
+    | '(' Expression ')'
 ;
+
+// Inline prompt parts: { "text" if(...) "more" }
+InlinePromptBlock:
+    '{' (parts+=PromptStatement)* '}';
 
 MemberAccess:
     object=[Referenceable] '.' property=ID ('.' chain+=ID)*

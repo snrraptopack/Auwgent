@@ -21,6 +21,9 @@ import {
     isTransferStatement,
     isMemberAccess,
     isUseLifecycle,
+    isBinaryExpression,
+    isNamedPrompt,
+    isInlinePromptBlock,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -222,7 +225,16 @@ export function extractExpression(express: Expression | Statement): any {
     }
 
     if (isVariableRef(express)) {
-        return { value: express.variable.ref?.name, type: "varRef" }
+        const ref = express.variable.ref;
+        // Check if this is a reference to a NamedPrompt
+        if (ref && isNamedPrompt(ref)) {
+            return {
+                type: "promptRef",
+                name: ref.name,
+                value: ref.parts?.map(part => extractExpression(part)) ?? []
+            }
+        }
+        return { value: ref?.name, type: "varRef" }
     }
 
     if (isBooleanLiteral(express)) {
@@ -297,6 +309,21 @@ export function extractExpression(express: Expression | Statement): any {
             object: { type: "varRef", value: objectName },
             properties: properties
         };
+    }
+
+    if (isBinaryExpression(express)) {
+        return {
+            type: "concat",
+            left: extractExpression(express.left),
+            right: extractExpression(express.right)
+        }
+    }
+
+    if (isInlinePromptBlock(express)) {
+        return {
+            type: "inlinePrompt",
+            parts: express.parts.map(part => extractExpression(part))
+        }
     }
 
     return null

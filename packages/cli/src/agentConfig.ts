@@ -148,24 +148,11 @@ function extractPrompt(modelConfig: ModelConfig) {
         return { type: "parts", value: modelConfig.parts.map(part => extractExpression(part)) }
     }
 
-    // Case 2: Reference - prompt: SomeNamedPrompt
-    if (modelConfig.refPrompt?.ref) {
-        const namedPrompt = modelConfig.refPrompt.ref;
-        return {
-            type: "ref",
-            name: namedPrompt.name,
-            // Optionally resolve the parts from the referenced prompt
-            value: namedPrompt.parts?.map(part => extractExpression(part)) ?? []
-        };
+    // Case 2: Expression (concatenation, reference, string, etc.)
+    if (modelConfig.promptExpr) {
+        return extractExpression(modelConfig.promptExpr);
     }
 
-    // Case 3: Simple string - prompt: "some string"
-    if (modelConfig.simplePrompt) {
-        return {
-            type: "simple",
-            value: modelConfig.simplePrompt
-        };
-    }
     return null;
 }
 

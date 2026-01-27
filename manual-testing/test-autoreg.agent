@@ -1,3 +1,9 @@
+
+prompt any{
+    "hello world"
+}
+
+
 agent TestAutoReg {
     input { message: string }
     context { chatId: string }
@@ -14,6 +20,14 @@ agent TestAutoReg {
     
     default config {
         model: gemini("gemini-2.0-flash")
-        prompt: "You are a helpful assistant."
+        prompt: any +"You are a helpful assistant."  + {
+            "helli"
+        }
+    }
+
+
+    workflow hello():string {
+        description : "hello"
+        return "hello" + 3
     }
 }
