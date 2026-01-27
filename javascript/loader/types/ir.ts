@@ -1,14 +1,15 @@
 export interface AgentIR {
     name: string;
     modelConfig: ModelConfig[];
-    input: Record<string, string>;
-    output: Record<string, string | { type: string; description: string, optional: boolean }>;
-    context: Record<string, string>
+    input: Record<string, TypeInfo>;
+    output: Record<string, TypeInfo>;
+    context: Record<string, TypeInfo>;
     tools: Tool[];
     workflows: Workflow[];
     helpers: HelperIR[];
     helperToolGrants?: Record<string, string[] | "all">;
     lifecycle?: LifecycleConfig;
+    types?: Record<string, TypeDefinition>;
 }
 
 export interface LifecycleConfig {
@@ -21,9 +22,9 @@ export interface HelperIR {
     name: string;
     description: string;
     modelConfig: ModelConfig[];
-    input: Record<string, string>;
-    output: Record<string, string | { type: string; description: string, optional: boolean }>;
-    context: Record<string, string>;
+    input: Record<string, TypeInfo>;
+    output: Record<string, TypeInfo>;
+    context: Record<string, TypeInfo>;
     tools: Tool[];
     workflows: Workflow[];
 }
@@ -31,14 +32,14 @@ export interface HelperIR {
 export interface Tool {
     name: string;
     description: string;
-    params: Record<string, string>;
-    returns: string;
+    params: Record<string, TypeInfo>;
+    returns: IRType;
 }
 
 export interface Workflow {
     flowName: string;
-    flowParams: Record<string, string>;
-    returns: string;
+    flowParams: Record<string, TypeInfo>;
+    returns: IRType;
     body: Statement[];
     description: string;
 }
@@ -167,3 +168,73 @@ export type PromptConfig =
     | { type: "simple", value: string }
     | { type: "ref", name?: string, value: Expression[] }
     | { type: "parts", value: Expression[] }
+
+// Enhanced Type System Types
+
+/**
+ * Represents type information with optional flag
+ */
+export interface TypeInfo {
+    type: IRType;
+    optional: boolean;
+    description?: string;
+}
+
+/**
+ * IR Type representation - can be a primitive string or a complex type object
+ */
+export type IRType =
+    | string                    // Primitive types: "string", "number", "boolean"
+    | ArrayTypeIR               // Array types
+    | TypeRefIR                 // Type references
+    | UnionTypeIR               // Union types
+    | ObjectTypeIR;             // Inline object types
+
+/**
+ * Array type: { type: "array", items: IRType }
+ */
+export interface ArrayTypeIR {
+    type: "array";
+    items: IRType;
+}
+
+/**
+ * Type reference: { type: "typeRef", name: string }
+ */
+export interface TypeRefIR {
+    type: "typeRef";
+    name: string;
+}
+
+/**
+ * Union type: { type: "union", options: string[] }
+ */
+export interface UnionTypeIR {
+    type: "union";
+    options: string[];
+}
+
+/**
+ * Inline object type: { type: "object", properties: Record<string, IRType> }
+ */
+export interface ObjectTypeIR {
+    type: "object";
+    properties: Record<string, IRType>;
+}
+
+/**
+ * Type definition in the types section
+ */
+export interface TypeDefinition {
+    isOutput: boolean;
+    properties: Record<string, PropertyInfo>;
+}
+
+/**
+ * Property information within a type definition
+ */
+export interface PropertyInfo {
+    type: IRType;
+    optional: boolean;
+    description?: string;
+}

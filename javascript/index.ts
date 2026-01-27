@@ -10,7 +10,7 @@ const agent = createTypeSystemTest({
 agent.load(data as any)
 
 
-let result = await agent.stream({ message: "what the name of the student with id 10" },{sessionId:"10"})
+let result = await agent.stream({ message: "give me syntetic format of how you will give me data" },{sessionId:"10"})
     .onChunk((text) => {
         console.log(text)    
     })

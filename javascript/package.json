@@ -4,7 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "echo 'No build step'"
+    "build": "echo 'No build step'",
+    "validate-schema": "bun run validate-schema-generation.ts",
+    "test-schema": "bun run test-output-schema.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
