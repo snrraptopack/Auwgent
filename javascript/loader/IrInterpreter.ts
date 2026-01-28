@@ -5,6 +5,7 @@ import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
 import { logger } from "./Logger";
+import { LifecycleError, ConfigurationError } from "./types/errors";
 
 /**
  * Configuration object for agent.run()
@@ -51,7 +52,7 @@ export class Agent<
         }
 
         if (missingProviders.length > 0) {
-            throw new Error(`Missing drivers for providers: ${missingProviders.join(", ")}. Required drivers: { ${missingProviders.map(p => `${p}: Driver`).join(", ")} }`);
+            throw new ConfigurationError(`Missing drivers for providers: ${missingProviders.join(", ")}. Required drivers: { ${missingProviders.map(p => `${p}: Driver`).join(", ")} }`);
         }
     }
 
@@ -68,7 +69,7 @@ export class Agent<
 
         // LIFECYCLE: Validate hooks if lifecycle enabled in IR
         if (this.ir.lifecycle?.enabled && !lifecycle) {
-            throw new Error(
+            throw new ConfigurationError(
                 `Agent "${this.ir.name}" has lifecycle enabled. ` +
                 `You must provide lifecycle hooks: { prune, load, save }`
             );
@@ -77,26 +78,30 @@ export class Agent<
         // LIFECYCLE: Prune + Load (before synthesis)
         let loadedMessages: SyntheticMessage[] = [];
         if (lifecycle) {
-            // Calculate usage for prune
-            const usage = {
-                currentTokens: 0,  // Will be updated after load
-                maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
-                currentMessages: 0,
-                maxMessages: this.ir.lifecycle?.maxMessages ?? 100
-            };
+            try {
+                // Calculate usage for prune
+                const usage = {
+                    currentTokens: 0,  // Will be updated after load
+                    maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
+                    currentMessages: 0,
+                    maxMessages: this.ir.lifecycle?.maxMessages ?? 100
+                };
 
-            // Run prune (decides what to keep in context)
-            await lifecycle.prune({
-                context: context as TContext,
-                agent: this,
-                usage
-            });
+                // Run prune (decides what to keep in context)
+                await lifecycle.prune({
+                    context: context as TContext,
+                    agent: this,
+                    usage
+                });
 
-            // Run load (fetch prepared messages)
-            const state = await lifecycle.load({
-                context: context as TContext
-            });
-            loadedMessages = state.messages;
+                // Run load (fetch prepared messages)
+                const state = await lifecycle.load({
+                    context: context as TContext
+                });
+                loadedMessages = state.messages;
+            } catch (error: any) {
+                throw new LifecycleError('load', error);
+            }
         }
 
         // 1. Initial Synthesis
@@ -183,12 +188,16 @@ export class Agent<
                                 logger.debug(`[Agent] Returning transferred result directly to user.`);
                                 // LIFECYCLE: Save before returning
                                 if (lifecycle) {
-                                    const newMessages = currentMessages.slice(messagesBeforeRun);
-                                    await lifecycle.save({
-                                        newMessages,
-                                        context: context as TContext,
-                                        output: toolResult.value as TOutput
-                                    });
+                                    try {
+                                        const newMessages = currentMessages.slice(messagesBeforeRun);
+                                        await lifecycle.save({
+                                            newMessages,
+                                            context: context as TContext,
+                                            output: toolResult.value as TOutput
+                                        });
+                                    } catch (error: any) {
+                                        throw new LifecycleError('save', error);
+                                    }
                                 }
                                 return toolResult.value as TOutput;
                             } else if (toolResult.mode === "thenContinue") {
@@ -285,17 +294,21 @@ export class Agent<
 
                 // LIFECYCLE: Save after successful run
                 if (lifecycle) {
-                    // Add the assistant response to messages
-                    currentMessages.push({
-                        role: 'assistant',
-                        content: typeof output === 'string' ? output : JSON.stringify(output)
-                    });
-                    const newMessages = currentMessages.slice(messagesBeforeRun);
-                    await lifecycle.save({
-                        newMessages,
-                        context: context as TContext,
-                        output
-                    });
+                    try {
+                        // Add the assistant response to messages
+                        currentMessages.push({
+                            role: 'assistant',
+                            content: typeof output === 'string' ? output : JSON.stringify(output)
+                        });
+                        const newMessages = currentMessages.slice(messagesBeforeRun);
+                        await lifecycle.save({
+                            newMessages,
+                            context: context as TContext,
+                            output
+                        });
+                    } catch (error: any) {
+                        throw new LifecycleError('save', error);
+                    }
                 }
 
                 return output;
@@ -345,7 +358,7 @@ export class Agent<
 
         // LIFECYCLE: Validate hooks if lifecycle enabled in IR
         if (this.ir.lifecycle?.enabled && !lifecycle) {
-            throw new Error(
+            throw new ConfigurationError(
                 `Agent "${this.ir.name}" has lifecycle enabled. ` +
                 `You must provide lifecycle hooks: { prune, load, save }`
             );
@@ -354,23 +367,27 @@ export class Agent<
         // LIFECYCLE: Prune + Load (before synthesis)
         let loadedMessages: SyntheticMessage[] = [];
         if (lifecycle) {
-            const usage = {
-                currentTokens: 0,
-                maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
-                currentMessages: 0,
-                maxMessages: this.ir.lifecycle?.maxMessages ?? 100
-            };
+            try {
+                const usage = {
+                    currentTokens: 0,
+                    maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
+                    currentMessages: 0,
+                    maxMessages: this.ir.lifecycle?.maxMessages ?? 100
+                };
 
-            await lifecycle.prune({
-                context: context as TContext,
-                agent: this,
-                usage
-            });
+                await lifecycle.prune({
+                    context: context as TContext,
+                    agent: this,
+                    usage
+                });
 
-            const state = await lifecycle.load({
-                context: context as TContext
-            });
-            loadedMessages = state.messages;
+                const state = await lifecycle.load({
+                    context: context as TContext
+                });
+                loadedMessages = state.messages;
+            } catch (error: any) {
+                throw new LifecycleError('load', error);
+            }
         }
 
         const request = await this.synthesizer.synthesize(input, context, configName);
@@ -560,16 +577,20 @@ export class Agent<
 
             // LIFECYCLE: Save after successful run
             if (lifecycle) {
-                currentMessages.push({
-                    role: 'assistant',
-                    content: typeof output === 'string' ? output : JSON.stringify(output)
-                });
-                const newMessages = currentMessages.slice(messagesBeforeRun);
-                await lifecycle.save({
-                    newMessages,
-                    context: context as TContext,
-                    output
-                });
+                try {
+                    currentMessages.push({
+                        role: 'assistant',
+                        content: typeof output === 'string' ? output : JSON.stringify(output)
+                    });
+                    const newMessages = currentMessages.slice(messagesBeforeRun);
+                    await lifecycle.save({
+                        newMessages,
+                        context: context as TContext,
+                        output
+                    });
+                } catch (error: any) {
+                    throw new LifecycleError('save', error);
+                }
             }
 
             return output;

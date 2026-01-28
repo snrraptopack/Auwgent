@@ -1,5 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type { AgentDriver, DriverResult, StreamChunk, SyntheticRequest } from "../types/protocol";
+import { DriverError, type ErrorType } from "../types/errors";
 
 export class GoogleDriver implements AgentDriver {
     name = "google";
@@ -10,153 +11,205 @@ export class GoogleDriver implements AgentDriver {
     }
 
     async execute(request: SyntheticRequest): Promise<DriverResult> {
-        // 1. Map Configuration
-        const model = request.config.modelName || "gemini-2.0-flash";
+        try {
+            // 1. Map Configuration
+            const model = request.config.modelName || "gemini-2.0-flash";
 
-        // 2. Map Messages to Google Content Format
-        const contents = request.messages
-            .filter(m => m.role !== 'system') // System prompts go in config
-            .map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }]
-            }));
+            // 2. Map Messages to Google Content Format
+            const contents = request.messages
+                .filter(m => m.role !== 'system') // System prompts go in config
+                .map(m => ({
+                    role: m.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: m.content }]
+                }));
 
-        let systemInstruction = request.messages
-            .find(m => m.role === 'system')?.content ?? "";
+            let systemInstruction = request.messages
+                .find(m => m.role === 'system')?.content ?? "";
 
-        // 3. Map Tools
-        let toolsConfig: any[] = [];
-        if (request.tools && request.tools.length > 0) {
-            toolsConfig = [{
-                functionDeclarations: request.tools.map(t => ({
-                    name: t.name,
-                    description: t.description,
-                    parameters: t.parameters
-                }))
-            }];
-        }
-
-        // 4. Map Schema (IMPORTANT: Only use structured output if NO tools are present)
-        let generationConfig: any = {};
-        const hasTools = toolsConfig.length > 0;
-        // Note: When JSON schema is enabled, streaming will output raw JSON tokens
-        // like {"reply": "... This is a Gemini API limitation - the model generates
-        // JSON structure token-by-token. There's no way to stream just the values.
-        if (request.responseSchema && !hasTools) {
-            generationConfig.responseMimeType = "application/json";
-            generationConfig.responseJsonSchema = request.responseSchema;
-        }
-
-        // 5. Execute
-        const result = await this.client.models.generateContent({
-            model,
-            contents,
-            config: {
-                systemInstruction,
-                ...generationConfig,
-                tools: toolsConfig.length > 0 ? toolsConfig : undefined
+            // 3. Map Tools
+            let toolsConfig: any[] = [];
+            if (request.tools && request.tools.length > 0) {
+                toolsConfig = [{
+                    functionDeclarations: request.tools.map(t => ({
+                        name: t.name,
+                        description: t.description,
+                        parameters: t.parameters
+                    }))
+                }];
             }
-        });
 
-        const candidates = result.candidates;
-        const firstPart = candidates && candidates[0]?.content?.parts ? candidates[0].content.parts[0] : null;
+            // 4. Map Schema (IMPORTANT: Only use structured output if NO tools are present)
+            let generationConfig: any = {};
+            const hasTools = toolsConfig.length > 0;
+            // Note: When JSON schema is enabled, streaming will output raw JSON tokens
+            // like {"reply": "... This is a Gemini API limitation - the model generates
+            // JSON structure token-by-token. There's no way to stream just the values.
+            if (request.responseSchema && !hasTools) {
+                generationConfig.responseMimeType = "application/json";
+                generationConfig.responseJsonSchema = request.responseSchema;
+            }
 
-        // Check for function call
-        if (firstPart?.functionCall) {
-            return {
-                toolParams: {
-                    name: firstPart.functionCall.name ?? "unknown_tool",
-                    args: firstPart.functionCall.args
+            // 5. Execute
+            const result = await this.client.models.generateContent({
+                model,
+                contents,
+                config: {
+                    systemInstruction,
+                    ...generationConfig,
+                    tools: toolsConfig.length > 0 ? toolsConfig : undefined
                 }
-            };
-        }
+            });
 
-        // Return text response
-        return {
-            text: result.text ?? ""
-        };
+            const candidates = result.candidates;
+            const firstPart = candidates && candidates[0]?.content?.parts ? candidates[0].content.parts[0] : null;
+
+            // Check for function call
+            if (firstPart?.functionCall) {
+                return {
+                    toolParams: {
+                        name: firstPart.functionCall.name ?? "unknown_tool",
+                        args: firstPart.functionCall.args
+                    }
+                };
+            }
+
+            // Return text response
+            return {
+                text: result.text ?? ""
+            };
+        } catch (error: any) {
+            throw this.handleError(error);
+        }
     }
 
     /**
      * Streaming execution using async generator
      */
     async *executeStream(request: SyntheticRequest): AsyncGenerator<StreamChunk, DriverResult, unknown> {
-        const model = request.config.modelName || "gemini-2.0-flash";
+        try {
+            const model = request.config.modelName || "gemini-2.0-flash";
 
-        const contents = request.messages
-            .filter(m => m.role !== 'system')
-            .map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }]
-            }));
+            const contents = request.messages
+                .filter(m => m.role !== 'system')
+                .map(m => ({
+                    role: m.role === 'assistant' ? 'model' : 'user',
+                    parts: [{ text: m.content }]
+                }));
 
-        let systemInstruction = request.messages
-            .find(m => m.role === 'system')?.content ?? "";
+            let systemInstruction = request.messages
+                .find(m => m.role === 'system')?.content ?? "";
 
-        let toolsConfig: any[] = [];
-        if (request.tools && request.tools.length > 0) {
-            toolsConfig = [{
-                functionDeclarations: request.tools.map(t => ({
-                    name: t.name,
-                    description: t.description,
-                    parameters: t.parameters
-                }))
-            }];
-        }
-
-        let generationConfig: any = {};
-        const hasTools = toolsConfig.length > 0;
-        if (request.responseSchema && !hasTools) {
-            generationConfig.responseMimeType = "application/json";
-            generationConfig.responseJsonSchema = request.responseSchema;
-        }
-
-        // Use streaming API
-        const stream = await this.client.models.generateContentStream({
-            model,
-            contents,
-            config: {
-                systemInstruction,
-                ...generationConfig,
-                tools: toolsConfig.length > 0 ? toolsConfig : undefined
-            }
-        });
-
-        let fullText = '';
-        let toolParams: { name: string; args: any } | undefined;
-        let toolCallId = 0;
-
-        for await (const chunk of stream) {
-            // Check for function call in chunk
-            const candidates = chunk.candidates;
-            const firstPart = candidates && candidates[0]?.content?.parts ? candidates[0].content.parts[0] : null;
-
-            if (firstPart?.functionCall) {
-                const id = `google_tool_${toolCallId++}`;
-                const name = firstPart.functionCall.name ?? "unknown_tool";
-                const args = firstPart.functionCall.args;
-
-                // Emit full tool call lifecycle (Google doesn't stream args incrementally)
-                yield { type: 'tool_start', name, id };
-                yield { type: 'tool_args', id, delta: JSON.stringify(args) };
-                yield { type: 'tool_end', id };
-
-                toolParams = { name, args };
-                continue;
+            let toolsConfig: any[] = [];
+            if (request.tools && request.tools.length > 0) {
+                toolsConfig = [{
+                    functionDeclarations: request.tools.map(t => ({
+                        name: t.name,
+                        description: t.description,
+                        parameters: t.parameters
+                    }))
+                }];
             }
 
-            // Stream text delta
-            const delta = chunk.text ?? '';
-            if (delta) {
-                fullText += delta;
-                yield { type: 'text', delta };
+            let generationConfig: any = {};
+            const hasTools = toolsConfig.length > 0;
+            if (request.responseSchema && !hasTools) {
+                generationConfig.responseMimeType = "application/json";
+                generationConfig.responseJsonSchema = request.responseSchema;
             }
+
+            // Use streaming API
+            const stream = await this.client.models.generateContentStream({
+                model,
+                contents,
+                config: {
+                    systemInstruction,
+                    ...generationConfig,
+                    tools: toolsConfig.length > 0 ? toolsConfig : undefined
+                }
+            });
+
+            let fullText = '';
+            let toolParams: { name: string; args: any } | undefined;
+            let toolCallId = 0;
+
+            for await (const chunk of stream) {
+                // Check for function call in chunk
+                const candidates = chunk.candidates;
+                const firstPart = candidates && candidates[0]?.content?.parts ? candidates[0].content.parts[0] : null;
+
+                if (firstPart?.functionCall) {
+                    const id = `google_tool_${toolCallId++}`;
+                    const name = firstPart.functionCall.name ?? "unknown_tool";
+                    const args = firstPart.functionCall.args;
+
+                    // Emit full tool call lifecycle (Google doesn't stream args incrementally)
+                    yield { type: 'tool_start', name, id };
+                    yield { type: 'tool_args', id, delta: JSON.stringify(args) };
+                    yield { type: 'tool_end', id };
+
+                    toolParams = { name, args };
+                    continue;
+                }
+
+                // Stream text delta
+                const delta = chunk.text ?? '';
+                if (delta) {
+                    fullText += delta;
+                    yield { type: 'text', delta };
+                }
+            }
+
+            // Return final result
+            if (toolParams) {
+                return { toolParams };
+            }
+            return { text: fullText };
+        } catch (error: any) {
+            throw this.handleError(error);
+        }
+    }
+
+    /**
+     * Classify and wrap errors from Google AI SDK
+     */
+    private handleError(error: any): DriverError {
+        // Extract error details
+        const message = error.message || 'Unknown error';
+        const statusCode = error.status || error.statusCode;
+
+        // Classify error type
+        let type: ErrorType = 'UNKNOWN_ERROR';
+        let retryable = false;
+
+        if (statusCode === 401 || statusCode === 403 || message.includes('API key')) {
+            type = 'AUTH_ERROR';
+            retryable = false;
+        } else if (statusCode === 429 || message.includes('rate limit')) {
+            type = 'RATE_LIMIT';
+            retryable = true;
+        } else if (statusCode === 400 || message.includes('invalid')) {
+            type = 'INVALID_REQUEST';
+            retryable = false;
+        } else if (message.includes('content') && message.includes('policy')) {
+            type = 'CONTENT_POLICY';
+            retryable = false;
+        } else if (message.includes('token') || message.includes('context')) {
+            type = 'TOKEN_LIMIT';
+            retryable = false;
+        } else if (statusCode === 404 || message.includes('model not found')) {
+            type = 'MODEL_NOT_FOUND';
+            retryable = false;
+        } else if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+            type = 'NETWORK_ERROR';
+            retryable = true;
         }
 
-        // Return final result
-        if (toolParams) {
-            return { toolParams };
-        }
-        return { text: fullText };
+        return new DriverError(
+            type,
+            message,
+            error,
+            retryable,
+            statusCode
+        );
     }
 }

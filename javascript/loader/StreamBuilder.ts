@@ -1,4 +1,5 @@
 import type { StreamChunk } from "./types/protocol";
+import { StreamError } from "./types/errors";
 
 /**
  * Handler types for each stream event
@@ -122,73 +123,90 @@ export class StreamBuilder<TOutput> {
      * All registered handlers will be called as chunks arrive.
      */
     async run(): Promise<TOutput> {
-        const stream = this.streamGenerator();
-        let result: TOutput;
+        try {
+            const stream = this.streamGenerator();
+            let result: TOutput;
 
-        while (true) {
-            const { value, done } = await stream.next();
-            if (done) {
-                result = value;
-                break;
+            while (true) {
+                const { value, done } = await stream.next();
+                if (done) {
+                    result = value;
+                    break;
+                }
+
+                // Dispatch to handlers (with error recovery)
+                this.dispatch(value);
             }
 
-            // Dispatch to handlers
-            this.dispatch(value);
+            return result;
+        } catch (error: any) {
+            throw new StreamError('streaming', error);
         }
-
-        return result;
     }
 
     /**
      * Dispatch a chunk to the appropriate handler(s)
+     * Handlers are wrapped in try-catch to prevent single handler from crashing stream
      */
     private dispatch(chunk: StreamChunk): void {
-        // Always call catch-all if registered
-        this.handlers.onChunk?.(chunk);
+        // Always call catch-all if registered (with error recovery)
+        if (this.handlers.onChunk) {
+            try {
+                this.handlers.onChunk(chunk);
+            } catch (error: any) {
+                console.error('[StreamBuilder] Error in onChunk handler:', error);
+                // Continue processing other handlers
+            }
+        }
 
-        // Call specific handler based on chunk type
-        switch (chunk.type) {
-            case 'text':
-                this.handlers.onText?.(chunk.delta);
-                break;
+        // Call specific handler based on chunk type (with error recovery)
+        try {
+            switch (chunk.type) {
+                case 'text':
+                    this.handlers.onText?.(chunk.delta);
+                    break;
 
-            case 'tool_start':
-                this.toolNames.set(chunk.id, chunk.name); // Track tool name
-                this.handlers.onToolStart?.(chunk.name, chunk.id);
-                break;
+                case 'tool_start':
+                    this.toolNames.set(chunk.id, chunk.name); // Track tool name
+                    this.handlers.onToolStart?.(chunk.name, chunk.id);
+                    break;
 
-            case 'tool_args':
-                const toolNameForArgs = this.toolNames.get(chunk.id) || 'unknown';
-                this.handlers.onToolArgs?.(toolNameForArgs, chunk.id, chunk.delta);
-                break;
+                case 'tool_args':
+                    const toolNameForArgs = this.toolNames.get(chunk.id) || 'unknown';
+                    this.handlers.onToolArgs?.(toolNameForArgs, chunk.id, chunk.delta);
+                    break;
 
-            case 'tool_end':
-                const toolNameForEnd = this.toolNames.get(chunk.id) || 'unknown';
-                this.handlers.onToolEnd?.(toolNameForEnd, chunk.id);
-                this.toolNames.delete(chunk.id); // Clean up
-                break;
+                case 'tool_end':
+                    const toolNameForEnd = this.toolNames.get(chunk.id) || 'unknown';
+                    this.handlers.onToolEnd?.(toolNameForEnd, chunk.id);
+                    this.toolNames.delete(chunk.id); // Clean up
+                    break;
 
-            case 'tool_result':
-                this.handlers.onToolResult?.(chunk.name, chunk.result);
-                break;
+                case 'tool_result':
+                    this.handlers.onToolResult?.(chunk.name, chunk.result);
+                    break;
 
-            case 'helper_start':
-                this.handlers.onHelperStart?.(chunk.name);
-                break;
+                case 'helper_start':
+                    this.handlers.onHelperStart?.(chunk.name);
+                    break;
 
-            case 'helper_end':
-                this.handlers.onHelperEnd?.(chunk.name, chunk.result);
-                break;
+                case 'helper_end':
+                    this.handlers.onHelperEnd?.(chunk.name, chunk.result);
+                    break;
 
-            case 'helper_chunk':
-                this.handlers.onHelperChunk?.(chunk.name, chunk.chunk);
-                // Also dispatch the nested chunk for convenience
-                this.dispatch(chunk.chunk);
-                break;
+                case 'helper_chunk':
+                    this.handlers.onHelperChunk?.(chunk.name, chunk.chunk);
+                    // Also dispatch the nested chunk for convenience
+                    this.dispatch(chunk.chunk);
+                    break;
 
-            case 'transfer':
-                this.handlers.onTransfer?.(chunk.helperName, chunk.mode);
-                break;
+                case 'transfer':
+                    this.handlers.onTransfer?.(chunk.helperName, chunk.mode);
+                    break;
+            }
+        } catch (error: any) {
+            console.error(`[StreamBuilder] Error in handler for chunk type "${chunk.type}":`, error);
+            // Continue streaming despite handler error
         }
     }
 }
