@@ -55,10 +55,15 @@ console.log(result2)
 // Bind session once
 const sessionAgent = agent.forContext({ sessionId: "session-123" })
 
-// Multiple calls with same context
-await sessionAgent.run({ message: "My name is John" })
-await sessionAgent.run({ message: "What's my name?" })
-await sessionAgent.run({ message: "Tell me about yourself" })
+// Multiple calls with same context - capture results
+const result3 = await sessionAgent.run({ message: "My name is John" })
+console.log("Response 1:", result3)
+
+const result4 = await sessionAgent.run({ message: "What's my name?" })
+console.log("Response 2:", result4)
+
+const result5 = await sessionAgent.run({ message: "Tell me about yourself" })
+console.log("Response 3:", result5)
 
 // ============================================
 // 6. OVERRIDE CONTEXT PER-CALL
