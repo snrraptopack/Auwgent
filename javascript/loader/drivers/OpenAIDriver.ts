@@ -24,7 +24,7 @@ export class OpenAIDriver implements AgentDriver {
 
     async execute(request: SyntheticRequest): Promise<DriverResult> {
         try {
-            const model = request.config.model || "gpt-4o-mini";
+            const model = request.config.modelName || request.config.model || "gpt-4o-mini";
 
             // Build messages
             const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => ({
@@ -112,7 +112,7 @@ export class OpenAIDriver implements AgentDriver {
      */
     async *executeStream(request: SyntheticRequest): AsyncGenerator<StreamChunk, DriverResult, unknown> {
         try {
-            const model = request.config.model || "gpt-4o-mini";
+            const model = request.config.modelName || request.config.model || "gpt-4o-mini";
 
             const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => ({
                 role: m.role as "user" | "assistant" | "system",

@@ -1,57 +1,22 @@
-// Test the new type system
-
-// Regular data type
-type Point {
-    x: number
-    y: number
+type Student{
+    name:string
+    class:string
+    age:string
+}
+output type Response{
+    student:Student
 }
 
-// Nested type reference
-type Address {
-    street: string
-    city: string
-    zipCode?: string
-}
-
-type User {
-    id: string
-    name: string
-    address: Address
-}
-
-// Output type with descriptions
-output type AnalysisResult {
-    summary: string @desc "High-level summary of findings"
-    confidence: number @desc "Confidence score between 0 and 1"
-    keyFindings: string[] @desc "List of key findings"
-}
-
-output type SearchResult {
-    query: string @desc "The original search query"
-    results: {
-        title: string @desc "Result title"
-        url: string @desc "Result URL"
-        snippet: string @desc "Brief excerpt"
-    }[] @desc "Array of search results"
-    totalCount: number @desc "Total number of results found"
-}
-
-agent TypeSystemTest {
-    input {
-       message:string
+agent School{
+    default config{
+        model:gemini("gemini-2.5-flash")
+        prompt: "you are a helpful assist"
     }
-    
-    output {
-        analysis: AnalysisResult @desc "The complete analysis"
-        searchResults: SearchResult @desc "Related search results"
-    }
-    
-    context {
-        sessionId: string
-    }
-    
-    default config {
-        model: gemini("gemini-2.0-flash")
-        prompt: "You are a data analysis assistant."
+    input{text:string}
+    output {response:Response @desc "response of the student"}
+
+    tools{
+        get_student_with_lower_grade():Student @desc "get the student with lower grade"
+        get_student_with_higher_grade():Student @desc "get the student with higher grade"
     }
 }

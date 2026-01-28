@@ -4,6 +4,7 @@ import type { AgentDriver, StreamChunk, SyntheticMessage, LifecycleHooks, Conver
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
+import { DriverRegistry } from "./DriverRegistry";
 import { logger } from "./Logger";
 import { LifecycleError, ConfigurationError } from "./types/errors";
 
@@ -15,6 +16,11 @@ export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>,
     context?: TContext;
     configName?: string;
     lifecycle?: LifecycleHooks<TContext, TOutput>;
+    modelOverride?: {
+        providerType?: string;
+        modelName?: string;
+        temperature?: number;
+    };
 }
 
 export class Agent<
@@ -26,20 +32,23 @@ export class Agent<
     private synthesizer: Synthesizer | null = null;
     private ir: AgentIR | null = null;
     private maxTurns = 10; // Prevent infinite loops
-    private context?: Record<string, any>
 
     // OPTIMIZATION: Cache helper agents to avoid recreation
     private helperCache = new Map<string, Agent<any, any>>();
     // OPTIMIZATION: Cache resolved drivers
     private driverCache = new Map<string, AgentDriver>();
-    // GUARD: Track completed calls to prevent infinite loops after thenContinue
-    private completedCalls = new Set<string>();
+    private driverRegistry: DriverRegistry;
 
-    constructor(private drivers: Record<string, AgentDriver>) { }
+    constructor(private drivers: Record<string, AgentDriver>, driverRegistry?: DriverRegistry) {
+        this.driverRegistry = driverRegistry ?? new DriverRegistry();
+        this.registerDefaultDrivers();
+    }
 
     load(ir: AgentIR) {
         this.ir = ir;
         this.synthesizer = new Synthesizer(ir);
+        this.helperCache.clear();
+        this.driverCache.clear();
 
         // STRICT VALIDATION: Ensure we have drivers for ALL required provider types
         const requiredProviders = this.synthesizer.getRequiredModels();
@@ -63,9 +72,9 @@ export class Agent<
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
         // Destructure config
-        const { tools, context, configName, lifecycle } = config ?? {};
+        const { tools, context, configName, lifecycle, modelOverride } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
-        this.context = context;
+        const runContext = context as Record<string, any> | undefined;
 
         // LIFECYCLE: Validate hooks if lifecycle enabled in IR
         if (this.ir.lifecycle?.enabled && !lifecycle) {
@@ -106,16 +115,26 @@ export class Agent<
 
         // 1. Initial Synthesis
         const request = await this.synthesizer.synthesize(input, context, configName);
+        if (modelOverride?.providerType) {
+            request.config.model = modelOverride.providerType;
+        }
+        if (modelOverride?.modelName) {
+            request.config.modelName = modelOverride.modelName;
+        }
+        if (modelOverride?.temperature !== undefined) {
+            request.config.temperature = modelOverride.temperature;
+        }
 
         // RESOLVE DRIVER (cached)
-        const modelName = request.config.model ?? "";
-        const driver = this.getDriver(modelName);
+        const providerType = request.config.model ?? "";
+        const driver = this.getDriver(providerType, request.config.modelName);
 
         // Prepend loaded messages from lifecycle
         let currentMessages: SyntheticMessage[] = [...loadedMessages, ...request.messages];
         const messagesBeforeRun = currentMessages.length;
         let turnCount = 0;
         let toolsStillAvailable = true; // Track if tools should be sent to model
+        const completedCalls = new Set<string>();
 
         // 2. The Loop
         while (turnCount < this.maxTurns) {
@@ -138,7 +157,7 @@ export class Agent<
 
                 // GUARD: Check if this exact call was already completed via thenContinue
                 const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                if (this.completedCalls.has(callSignature)) {
+                if (completedCalls.has(callSignature)) {
                     logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
                     currentMessages.push({
                         role: 'user',
@@ -176,7 +195,7 @@ export class Agent<
                             safeTools,
                             (helper, args) => this.executeHelper(helper, args)
                         );
-                        toolResult = await runner.run(name, args, this.context);
+                        toolResult = await runner.run(name, args, runContext);
                         logger.debug(`[Agent] <<< Workflow ${name} completed.`);
 
                         // Handle TransferSignal from workflow
@@ -205,7 +224,7 @@ export class Agent<
                                 logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
 
                                 // GUARD: Track this call to prevent re-execution
-                                this.completedCalls.add(callSignature);
+                                completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
 
                                 currentMessages.push({
@@ -268,25 +287,11 @@ export class Agent<
                 // If we expect JSON but got plain text, and tools were still available,
                 // the model chose not to use tools. We should still try to get JSON.
                 if (request.responseSchema) {
-                    // Try to parse as JSON
                     try {
                         output = JSON.parse(result.text ?? "{}") as TOutput;
                     } catch (e) {
-                        // If tools were available, model might have just responded with text
-                        // Wrap the text in the expected schema format
-                        if (toolsStillAvailable && request.responseSchema.properties) {
-                            // Get the first property name from schema (e.g., "result")
-                            const firstProp = Object.keys(request.responseSchema.properties)[0];
-                            if (firstProp) {
-                                output = { [firstProp]: result.text } as TOutput;
-                            } else {
-                                console.error("Failed to parse JSON response:", result.text);
-                                throw new Error("Model failed to return valid JSON");
-                            }
-                        } else {
-                            console.error("Failed to parse JSON response:", result.text);
-                            throw new Error("Model failed to return valid JSON");
-                        }
+                        console.error("Failed to parse JSON response:", result.text);
+                        throw new Error("Model failed to return valid JSON");
                     }
                 } else {
                     output = (result.text ?? "") as TOutput;
@@ -352,9 +357,9 @@ export class Agent<
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
 
         // Destructure config
-        const { tools, context, configName, lifecycle } = config ?? {};
+        const { tools, context, configName, lifecycle, modelOverride } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
-        this.context = context;
+        const runContext = context as Record<string, any> | undefined;
 
         // LIFECYCLE: Validate hooks if lifecycle enabled in IR
         if (this.ir.lifecycle?.enabled && !lifecycle) {
@@ -391,8 +396,17 @@ export class Agent<
         }
 
         const request = await this.synthesizer.synthesize(input, context, configName);
-        const modelName = request.config.model ?? "";
-        const driver = this.getDriver(modelName);
+        if (modelOverride?.providerType) {
+            request.config.model = modelOverride.providerType;
+        }
+        if (modelOverride?.modelName) {
+            request.config.modelName = modelOverride.modelName;
+        }
+        if (modelOverride?.temperature !== undefined) {
+            request.config.temperature = modelOverride.temperature;
+        }
+        const providerType = request.config.model ?? "";
+        const driver = this.getDriver(providerType, request.config.modelName);
 
         // Check if driver supports streaming
         if (!driver.executeStream) {
@@ -406,6 +420,7 @@ export class Agent<
         const messagesBeforeRun = currentMessages.length;
         let turnCount = 0;
         let toolsStillAvailable = true;
+        const completedCalls = new Set<string>();
 
         while (turnCount < this.maxTurns) {
             turnCount++;
@@ -437,7 +452,7 @@ export class Agent<
 
                 // GUARD: Check if this exact call was already completed via thenContinue
                 const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                if (this.completedCalls.has(callSignature)) {
+                if (completedCalls.has(callSignature)) {
                     logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
                     currentMessages.push({
                         role: 'user',
@@ -459,7 +474,7 @@ export class Agent<
                     logger.trackWorkflowCall(name);
 
                     // Use async generator - yields chunks immediately!
-                    const workflowStream = this.executeWorkflowStream(name, args, safeTools);
+                    const workflowStream = this.executeWorkflowStream(name, args, safeTools, runContext);
                     let workflowResult: any;
 
                     while (true) {
@@ -490,7 +505,7 @@ export class Agent<
                             logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
 
                             // GUARD: Track this call to prevent re-execution
-                            this.completedCalls.add(callSignature);
+                            completedCalls.add(callSignature);
                             logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
 
                             currentMessages.push({
@@ -550,7 +565,7 @@ export class Agent<
                     role: 'user',
                     content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
                 });
-                // toolsStillAvailable = false; // Allow multi-turn tool usage
+                toolsStillAvailable = false;
                 continue;
             }
 
@@ -560,16 +575,7 @@ export class Agent<
                 try {
                     output = JSON.parse(result.text ?? "{}") as TOutput;
                 } catch (e) {
-                    if (toolsStillAvailable && request.responseSchema.properties) {
-                        const firstProp = Object.keys(request.responseSchema.properties)[0];
-                        if (firstProp) {
-                            output = { [firstProp]: result.text } as TOutput;
-                        } else {
-                            throw new Error("Model failed to return valid JSON");
-                        }
-                    } else {
-                        throw new Error("Model failed to return valid JSON");
-                    }
+                    throw new Error("Model failed to return valid JSON");
                 }
             } else {
                 output = (result.text ?? "") as TOutput;
@@ -602,7 +608,7 @@ export class Agent<
     /**
      * Executes a workflow defined in the agent's IR.
      */
-    async executeWorkflow(name: string, args: Record<string, any>, tools?: ToolMap): Promise<any> {
+    async executeWorkflow(name: string, args: Record<string, any>, tools?: ToolMap, context?: Record<string, any>): Promise<any> {
         if (!this.ir) throw new Error("Agent not loaded");
 
         // Use provided tools or empty map if none
@@ -613,7 +619,7 @@ export class Agent<
             safeTools,
             (helper, args) => this.executeHelper(helper, args)
         );
-        return runner.run(name, args);
+        return runner.run(name, args, context);
     }
 
     /**
@@ -622,7 +628,8 @@ export class Agent<
     async *executeWorkflowStream(
         name: string,
         args: Record<string, any>,
-        tools?: ToolMap
+        tools?: ToolMap,
+        context?: Record<string, any>
     ): AsyncGenerator<StreamChunk, any, unknown> {
         if (!this.ir) throw new Error("Agent not loaded");
 
@@ -636,7 +643,7 @@ export class Agent<
         );
 
         // Yield* forwards all chunks and return value
-        return yield* runner.runStream(name, args);
+        return yield* runner.runStream(name, args, context);
     }
 
     /**
@@ -755,17 +762,38 @@ export class Agent<
     /**
      * Get or cache a driver for a provider type.
      */
-    private getDriver(providerType: string): AgentDriver {
-        let driver = this.driverCache.get(providerType);
+    private getDriver(providerType?: string, modelName?: string): AgentDriver {
+        const cacheKey = `${providerType ?? ""}::${modelName ?? ""}`;
+        let driver = this.driverCache.get(cacheKey);
 
         if (!driver) {
-            driver = this.drivers[providerType];
-            if (!driver) {
-                throw new Error(`No driver found for provider: ${providerType}`);
+            driver = providerType ? this.drivers[providerType] : undefined;
+            if (!driver && modelName) {
+                driver = this.driverRegistry.resolve(modelName);
             }
-            this.driverCache.set(providerType, driver);
+            if (!driver && providerType) {
+                driver = this.driverRegistry.resolve(providerType);
+            }
+            if (!driver) {
+                throw new Error(`No driver found for provider: ${providerType ?? "unknown"}`);
+            }
+            this.driverCache.set(cacheKey, driver);
         }
 
         return driver;
+    }
+
+    private registerDefaultDrivers(): void {
+        const geminiDriver = this.drivers["gemini"] ?? this.drivers["google"];
+        if (geminiDriver) {
+            this.driverRegistry.registerProvider("google", geminiDriver);
+        }
+        const openAiDriver = this.drivers["openai"];
+        if (openAiDriver) {
+            this.driverRegistry.registerProvider("openai", openAiDriver);
+            this.driverRegistry.registerProvider("together", openAiDriver);
+            this.driverRegistry.registerProvider("groq", openAiDriver);
+            this.driverRegistry.registerProvider("kimi", openAiDriver);
+        }
     }
 }

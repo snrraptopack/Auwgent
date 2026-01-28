@@ -123,8 +123,8 @@ export function createTypeSystemTest(config: TypeSystemTestConfig) {
          * @param input - Agent input
          * @param overrides - Optional overrides for context, tools, lifecycle, or configName
          */
-        run: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }): Promise<TypeSystemTestOutput> => 
-            agent.run(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
+        run: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }): Promise<TypeSystemTestOutput> => 
+            agent.run(input, { context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Fluent streaming API with callbacks
@@ -140,8 +140,8 @@ export function createTypeSystemTest(config: TypeSystemTestConfig) {
          *   .run();
          * ```
          */
-        stream: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }) => 
-            agent.stream(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
+        stream: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.stream(input, { context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Native async iteration over stream chunks
@@ -155,8 +155,8 @@ export function createTypeSystemTest(config: TypeSystemTestConfig) {
          * }
          * ```
          */
-        streamIterable: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }) => 
-            agent.runStream(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
+        streamIterable: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.runStream(input, { context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Create a new agent instance with bound context
@@ -172,12 +172,12 @@ export function createTypeSystemTest(config: TypeSystemTestConfig) {
         forContext: (context: TypeSystemTestContext) => {
             const boundContext = context;
             return {
-                run: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
-                    agent.run(input, { context: boundContext, configName: overrides?.configName }),
-                stream: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
-                    agent.stream(input, { context: boundContext, configName: overrides?.configName }),
-                streamIterable: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
-                    agent.runStream(input, { context: boundContext, configName: overrides?.configName })
+                run: (input: TypeSystemTestInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                stream: (input: TypeSystemTestInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                streamIterable: (input: TypeSystemTestInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride })
             };
         }
     };

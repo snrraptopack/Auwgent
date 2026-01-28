@@ -1,14 +1,14 @@
 {
-  "name": "TypeSystemTest",
+  "name": "School",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.0-flash"
+          "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "value": "You are a data analysis assistant.",
+          "value": "you are a helpful assist",
           "type": "literal"
         }
       },
@@ -16,139 +16,71 @@
     }
   ],
   "input": {
-    "message": {
+    "text": {
       "type": "string",
       "optional": false
     }
   },
   "output": {
-    "analysis": {
+    "response": {
       "type": {
         "type": "typeRef",
-        "name": "AnalysisResult"
+        "name": "Response"
       },
       "optional": false,
-      "description": "The complete analysis"
+      "description": "response of the student"
+    }
+  },
+  "context": null,
+  "tools": [
+    {
+      "description": "get the student with lower grade",
+      "params": {},
+      "name": "get_student_with_lower_grade",
+      "returns": {
+        "type": "typeRef",
+        "name": "Student"
+      }
     },
-    "searchResults": {
-      "type": {
+    {
+      "description": "get the student with higher grade",
+      "params": {},
+      "name": "get_student_with_higher_grade",
+      "returns": {
         "type": "typeRef",
-        "name": "SearchResult"
-      },
-      "optional": false,
-      "description": "Related search results"
+        "name": "Student"
+      }
     }
-  },
-  "context": {
-    "sessionId": {
-      "type": "string",
-      "optional": false
-    }
-  },
-  "tools": [],
+  ],
   "workflows": [],
   "helpers": [],
   "types": {
-    "Point": {
+    "Student": {
       "isOutput": false,
       "properties": {
-        "x": {
-          "type": "number",
-          "optional": false
-        },
-        "y": {
-          "type": "number",
-          "optional": false
-        }
-      }
-    },
-    "Address": {
-      "isOutput": false,
-      "properties": {
-        "street": {
-          "type": "string",
-          "optional": false
-        },
-        "city": {
-          "type": "string",
-          "optional": false
-        },
-        "zipCode": {
-          "type": "string",
-          "optional": true
-        }
-      }
-    },
-    "User": {
-      "isOutput": false,
-      "properties": {
-        "id": {
-          "type": "string",
-          "optional": false
-        },
         "name": {
           "type": "string",
           "optional": false
         },
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
+        "class": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "string",
           "optional": false
         }
       }
     },
-    "AnalysisResult": {
+    "Response": {
       "isOutput": true,
       "properties": {
-        "summary": {
-          "type": "string",
-          "optional": false,
-          "description": "High-level summary of findings"
-        },
-        "confidence": {
-          "type": "number",
-          "optional": false,
-          "description": "Confidence score between 0 and 1"
-        },
-        "keyFindings": {
+        "student": {
           "type": {
-            "type": "array",
-            "items": "string"
+            "type": "typeRef",
+            "name": "Student"
           },
-          "optional": false,
-          "description": "List of key findings"
-        }
-      }
-    },
-    "SearchResult": {
-      "isOutput": true,
-      "properties": {
-        "query": {
-          "type": "string",
-          "optional": false,
-          "description": "The original search query"
-        },
-        "results": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "title": "string",
-                "url": "string",
-                "snippet": "string"
-              }
-            }
-          },
-          "optional": false,
-          "description": "Array of search results"
-        },
-        "totalCount": {
-          "type": "number",
-          "optional": false,
-          "description": "Total number of results found"
+          "optional": false
         }
       }
     }

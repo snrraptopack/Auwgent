@@ -30,13 +30,13 @@ export type {
 export type {
     AgentIR,
     HelperIR,
-    WorkflowIR,
-    StepIR,
+    Workflow,
+    // StepIR, invalid
     Statement,
     Expression
 } from './types/ir';
 
-export type { ToolMap, Tool } from './types/tool';
+export type { ToolMap, ToolImplementation } from './types/tool';
 
 // Error types
 export {

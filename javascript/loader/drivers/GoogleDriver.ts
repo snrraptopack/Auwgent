@@ -3,9 +3,9 @@ import type { AgentDriver, DriverResult, StreamChunk, SyntheticRequest } from ".
 import { DriverError, type ErrorType } from "../types/errors";
 
 export class GoogleDriver implements AgentDriver {
-    name = "google";
+    name = "gemini";
     private client: GoogleGenAI;
-
+    
     constructor(apiKey: string) {
         this.client = new GoogleGenAI({ apiKey });
     }
@@ -13,7 +13,7 @@ export class GoogleDriver implements AgentDriver {
     async execute(request: SyntheticRequest): Promise<DriverResult> {
         try {
             // 1. Map Configuration
-            const model = request.config.modelName || "gemini-2.0-flash";
+            const model = request.config.modelName || request.config.model || "gemini-2.0-flash";
 
             // 2. Map Messages to Google Content Format
             const contents = request.messages

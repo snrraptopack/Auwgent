@@ -426,6 +426,7 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     if (hasContext) runOverrideProps.push(`context?: ${agent.name}Context`);
     if (hasTools) runOverrideProps.push(`tools?: ${agent.name}Tools`);
     if (hasLifecycle) runOverrideProps.push(`lifecycle?: ${agent.name}Lifecycle`);
+    runOverrideProps.push(`modelOverride?: { providerType?: string; modelName?: string; temperature?: number }`);
     runOverrideProps.push(`configName?: ${configNameType}`);
     
     const runOverrideParam = runOverrideProps.length > 0 
@@ -437,6 +438,7 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     if (hasTools) configMergeParts.push('tools: overrides?.tools ?? config.tools');
     if (hasContext) configMergeParts.push('context: overrides?.context ?? config.context');
     if (hasLifecycle) configMergeParts.push('lifecycle: overrides?.lifecycle ?? config.lifecycle');
+    configMergeParts.push('modelOverride: overrides?.modelOverride');
     configMergeParts.push('configName: overrides?.configName');
     
     const configMerge = `{ ${configMergeParts.join(', ')} }`;
@@ -527,12 +529,12 @@ ${validationChecks.join('\n')}
         forContext: (context: ${agent.name}Context) => {
             const boundContext = context;
             return {
-                run: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
-                    agent.run(input, { context: boundContext, configName: overrides?.configName }),
-                stream: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
-                    agent.stream(input, { context: boundContext, configName: overrides?.configName }),
-                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
-                    agent.runStream(input, { context: boundContext, configName: overrides?.configName })
+                run: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                stream: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride })
             };
         }` : ''}
     };

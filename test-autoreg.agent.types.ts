@@ -1,119 +1,141 @@
-// Auto-generated types for TypeSystemTest
+// Auto-generated types for School
 // Do not edit manually
 // Core Runtime Imports
-import { Agent} from "./javascript/loader/IrInterpreter";
+import { Agent } from "./javascript/loader/IrInterpreter";
 import { GoogleDriver } from "./javascript/loader/drivers/GoogleDriver";
 import type { AgentIR } from "./javascript/loader/types/ir";
 import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
 
-export interface Point {
-
-    x: number;
-
-    y: number;
-}
-
-
-export interface Address {
-
-    street: string;
-
-    city: string;
-
-    zipCode?: string;
-}
-
-
-export interface User {
-
-    id: string;
+export interface Student {
 
     name: string;
 
-    address: Address;
+    class: string;
+
+    age: string;
 }
 
 
 /** Output type */
-export interface AnalysisResult {
+export interface Response {
 
-    /** High-level summary of findings */
-    summary: string;
-
-    /** Confidence score between 0 and 1 */
-    confidence: number;
-
-    /** List of key findings */
-    keyFindings: string[];
+    student: Student;
 }
 
-
-/** Output type */
-export interface SearchResult {
-
-    /** The original search query */
-    query: string;
-
-    /** Array of search results */
-    results: { title: string; url: string; snippet: string }[];
-
-    /** Total number of results found */
-    totalCount: number;
+export interface SchoolInput {
+    text: string;
 }
 
-export interface TypeSystemTestInput {
-    message: string;
+export interface SchoolOutput {
+    response: Response;
 }
 
-export interface TypeSystemTestOutput {
-    analysis: AnalysisResult;
-    searchResults: SearchResult;
+export interface SchoolContext {
+
 }
 
-export interface TypeSystemTestContext {
-    sessionId: string;
+export interface SchoolTools {
+    [key: string]: (args: any) => Promise<any>;
+    get_student_with_lower_grade: (args: {  }) => Promise<Student>;
+    get_student_with_higher_grade: (args: {  }) => Promise<Student>;
 }
 
 /**
- * API keys required for TypeSystemTest
+ * API keys required for School
  */
-export interface TypeSystemTestApiKeys {
+export interface SchoolApiKeys {
     geminiApiKey: string;
 }
 
 
 /**
- * Create a type-safe TypeSystemTest agent instance
- * Auto-creates drivers based on required providers
+ * Configuration for School agent
  */
-export function createTypeSystemTest(apiKeys: TypeSystemTestApiKeys) {
-    const agent = new Agent<TypeSystemTestInput, TypeSystemTestOutput, TypeSystemTestContext, Record<string, never>>({
-        gemini: new GoogleDriver(apiKeys.geminiApiKey)
+export interface SchoolConfig {
+    apiKeys: SchoolApiKeys;
+    ir: AgentIR;
+    tools?: SchoolTools;
+}
+
+/**
+ * Create a type-safe School agent instance
+ * 
+ * @example
+ * ```typescript
+ * const agent = createSchool({
+ *     apiKeys: { geminiApiKey: '...' },
+ *     ir: agentIR,
+ *     tools: { ... },
+ * });
+ * 
+ * // Clean execution - config bound at creation
+ * const result = await agent.run({ ... });
+ * const stream = await agent.stream({ ... });
+ * ```
+ */
+export function createSchool(config: SchoolConfig) {
+    // Create agent with drivers
+    const agent = new Agent<SchoolInput, SchoolOutput, Record<string, never>, SchoolTools>({
+        gemini: new GoogleDriver(config.apiKeys.geminiApiKey)
     });
+    
+    // Load and validate IR immediately
+    agent.load(config.ir);
+
+    // Validate tools match IR requirements
+    if (config.ir.tools && config.ir.tools.length > 0) {
+        for (const toolDef of config.ir.tools) {
+            if (!config.tools?.[toolDef.name]) {
+                throw new Error(
+                    `Missing required tool: ${toolDef.name}\n` +
+                    `Expected in tools configuration`
+                );
+            }
+        }
+    }
     
     return {
         /**
-         * Load the agent IR configuration
-         */
-        load: (ir: AgentIR) => agent.load(ir),
-        
-        /**
          * Run the agent with type-safe parameters
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
          */
-        run: (input: TypeSystemTestInput, context: TypeSystemTestContext, configName?: never): Promise<TypeSystemTestOutput> => 
-            agent.run(input, { context, configName }),
+        run: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }): Promise<SchoolOutput> => 
+            agent.run(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Fluent streaming API with callbacks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
          * @example
+         * ```typescript
          * const result = await agent
          *   .stream({ request: "..." })
-         *   .onText(delta => console.log(delta))
+         *   .onChunk(delta => console.log(delta))
+         *   .onToolResult((name, result) => console.log(name, result))
          *   .run();
+         * ```
          */
-        stream: (input: TypeSystemTestInput, context: TypeSystemTestContext, configName?: never) => 
-            agent.stream(input, { context, configName })
+        stream: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.stream(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
+        
+        /**
+         * Native async iteration over stream chunks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
+         * @example
+         * ```typescript
+         * for await (const chunk of agent.streamIterable({ request: "..." })) {
+         *     if (chunk.type === 'text') console.log(chunk.delta);
+         * }
+         * ```
+         */
+        streamIterable: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.runStream(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
     };
 }
+
 /** Type for the created agent instance */
-export type TypeSystemTestAgent = ReturnType<typeof createTypeSystemTest>;
+export type SchoolAgent = ReturnType<typeof createSchool>;
