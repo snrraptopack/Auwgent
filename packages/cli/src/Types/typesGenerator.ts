@@ -337,24 +337,9 @@ export interface ${agent.name}Lifecycle {
 }
 
 /**
- * Generate factory function with conditional parameters
+ * Generate factory function with unified configuration pattern
  */
 function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, hasLifecycle: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[]): string {
-    // Build parameter list for user-facing API
-    const runParams: string[] = [`input: ${agent.name}Input`];
-
-    if (hasTools) {
-        runParams.push(`tools: ${agent.name}Tools`);
-    }
-
-    if (hasContext) {
-        runParams.push(`context: ${agent.name}Context`);
-    }
-
-    if (hasLifecycle) {
-        runParams.push(`lifecycle: ${agent.name}Lifecycle`);
-    }
-
     // Extract named config names for type-safe configName
     const namedConfigs = agent.modelConfig?.[0]?.namedConfig ?? [];
     const configNames = namedConfigs
@@ -364,22 +349,6 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     const configNameType = configNames.length > 0
         ? configNames.map((n: string) => `"${n}"`).join(' | ')
         : 'never';
-
-    runParams.push(`configName?: ${configNameType}`);
-
-    // Build config object construction for run() call
-    const configParts: string[] = [];
-    if (hasTools) {
-        configParts.push('tools');
-    }
-    if (hasContext) {
-        configParts.push('context');
-    }
-    if (hasLifecycle) {
-        configParts.push('lifecycle');
-    }
-    configParts.push('configName');
-    const configObject = `{ ${configParts.join(', ')} }`;
 
     // Type parameters for Agent generic
     const typeParams = [
@@ -392,52 +361,183 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     // Generate drivers object
     const driverEntries: string[] = [];
     if (requiredProviders.has("gemini")) {
-        driverEntries.push(`        gemini: new GoogleDriver(apiKeys.geminiApiKey)`);
+        driverEntries.push(`        gemini: new GoogleDriver(config.apiKeys.geminiApiKey)`);
     }
     if (requiredProviders.has("openai")) {
-        driverEntries.push(`        openai: new OpenAIDriver(apiKeys.openaiApiKey)`);
+        driverEntries.push(`        openai: new OpenAIDriver(config.apiKeys.openaiApiKey)`);
     }
     if (requiredProviders.has("custom")) {
-        driverEntries.push(`        custom: new OpenAIDriver(apiKeys.customApiKey, apiKeys.customUrl ?? "https://api.openai.com/v1")`);
+        driverEntries.push(`        custom: new OpenAIDriver(config.apiKeys.customApiKey, config.apiKeys.customUrl ?? "https://api.openai.com/v1")`);
     }
 
     const hasApiKeys = requiredProviders.size > 0;
-    const factoryParam = hasApiKeys ? `apiKeys: ${agent.name}ApiKeys` : '';
     const driversObject = driverEntries.length > 0
         ? `{\n${driverEntries.join(',\n')}\n    }`
         : '{}';
 
+    // Build config interface properties
+    const configProps: string[] = [];
+    if (hasApiKeys) {
+        configProps.push(`    apiKeys: ${agent.name}ApiKeys;`);
+    }
+    configProps.push(`    ir: AgentIR;`);
+    if (hasContext) {
+        configProps.push(`    context?: ${agent.name}Context;`);
+    }
+    if (hasTools) {
+        configProps.push(`    tools?: ${agent.name}Tools;`);
+    }
+    if (hasLifecycle) {
+        configProps.push(`    lifecycle?: ${agent.name}Lifecycle;`);
+    }
+
+    // Build validation checks
+    const validationChecks: string[] = [];
+    
+    if (hasTools) {
+        validationChecks.push(`
+    // Validate tools match IR requirements
+    if (config.ir.tools && config.ir.tools.length > 0) {
+        for (const toolDef of config.ir.tools) {
+            if (!config.tools?.[toolDef.name]) {
+                throw new Error(
+                    \`Missing required tool: \${toolDef.name}\\n\` +
+                    \`Expected in tools configuration\`
+                );
+            }
+        }
+    }`);
+    }
+
+    if (hasLifecycle) {
+        validationChecks.push(`
+    // Validate lifecycle hooks if required
+    if (config.ir.lifecycle?.enabled && !config.lifecycle) {
+        throw new Error(
+            \`Agent "\${config.ir.name}" requires lifecycle hooks.\\n\` +
+            \`Provide: { prune, load, save }\`
+        );
+    }`);
+    }
+
+    // Build run parameters (just input + optional overrides)
+    const runInputParam = `input: ${agent.name}Input`;
+    const runOverrideProps: string[] = [];
+    if (hasContext) runOverrideProps.push(`context?: ${agent.name}Context`);
+    if (hasTools) runOverrideProps.push(`tools?: ${agent.name}Tools`);
+    if (hasLifecycle) runOverrideProps.push(`lifecycle?: ${agent.name}Lifecycle`);
+    runOverrideProps.push(`configName?: ${configNameType}`);
+    
+    const runOverrideParam = runOverrideProps.length > 0 
+        ? `, overrides?: { ${runOverrideProps.join('; ')} }`
+        : '';
+
+    // Build config merge for run call
+    const configMergeParts: string[] = [];
+    if (hasTools) configMergeParts.push('tools: overrides?.tools ?? config.tools');
+    if (hasContext) configMergeParts.push('context: overrides?.context ?? config.context');
+    if (hasLifecycle) configMergeParts.push('lifecycle: overrides?.lifecycle ?? config.lifecycle');
+    configMergeParts.push('configName: overrides?.configName');
+    
+    const configMerge = `{ ${configMergeParts.join(', ')} }`;
+
     return `
 /**
- * Create a type-safe ${agent.name} agent instance${hasApiKeys ? '\n * Auto-creates drivers based on required providers' : ''}
+ * Configuration for ${agent.name} agent
  */
-export function create${agent.name}(${factoryParam}) {
+export interface ${agent.name}Config {
+${configProps.join('\n')}
+}
+
+/**
+ * Create a type-safe ${agent.name} agent instance
+ * 
+ * @example
+ * \`\`\`typescript
+ * const agent = create${agent.name}({
+ *     apiKeys: { geminiApiKey: '...' },
+ *     ir: agentIR,${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}${hasLifecycle ? '\n *     lifecycle: { prune, load, save }' : ''}
+ * });
+ * 
+ * // Clean execution - config bound at creation
+ * const result = await agent.run({ ... });
+ * const stream = await agent.stream({ ... });
+ * \`\`\`
+ */
+export function create${agent.name}(config: ${agent.name}Config) {
+    // Create agent with drivers
     const agent = new Agent<${typeParams}>(${driversObject});
+    
+    // Load and validate IR immediately
+    agent.load(config.ir);
+${validationChecks.join('\n')}
     
     return {
         /**
-         * Load the agent IR configuration
-         */
-        load: (ir: AgentIR) => agent.load(ir),
-        
-        /**
          * Run the agent with type-safe parameters
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
          */
-        run: (${runParams.join(', ')}): Promise<${agent.name}Output> => 
-            agent.run(input, ${configObject}),
+        run: (${runInputParam}${runOverrideParam}): Promise<${agent.name}Output> => 
+            agent.run(input, ${configMerge}),
         
         /**
          * Fluent streaming API with callbacks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
          * @example
+         * \`\`\`typescript
          * const result = await agent
          *   .stream({ request: "..." })
-         *   .onText(delta => console.log(delta))
+         *   .onChunk(delta => console.log(delta))
+         *   .onToolResult((name, result) => console.log(name, result))
          *   .run();
+         * \`\`\`
          */
-        stream: (${runParams.join(', ')}) => 
-            agent.stream(input, ${configObject})
+        stream: (${runInputParam}${runOverrideParam}) => 
+            agent.stream(input, ${configMerge}),
+        
+        /**
+         * Native async iteration over stream chunks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
+         * @example
+         * \`\`\`typescript
+         * for await (const chunk of agent.streamIterable({ request: "..." })) {
+         *     if (chunk.type === 'text') console.log(chunk.delta);
+         * }
+         * \`\`\`
+         */
+        streamIterable: (${runInputParam}${runOverrideParam}) => 
+            agent.runStream(input, ${configMerge}),${hasContext ? `
+        
+        /**
+         * Create a new agent instance with bound context
+         * Useful for multi-turn conversations with the same session
+         * 
+         * @example
+         * \`\`\`typescript
+         * const sessionAgent = agent.forContext({ sessionId: '123' });
+         * await sessionAgent.run({ message: "First" });
+         * await sessionAgent.run({ message: "Second" });
+         * \`\`\`
+         */
+        forContext: (context: ${agent.name}Context) => {
+            const boundContext = context;
+            return {
+                run: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName }),
+                stream: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName }),
+                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType} }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName })
+            };
+        }` : ''}
     };
 }
+
 /** Type for the created agent instance */
 export type ${agent.name}Agent = ReturnType<typeof create${agent.name}>;
 `;

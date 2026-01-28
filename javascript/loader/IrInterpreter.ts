@@ -329,9 +329,10 @@ export class Agent<
 
     /**
      * Internal streaming execution - yields chunks as they arrive.
-     * Use stream() for the public API.
+     * Exposed as public for direct async iteration support.
+     * For fluent API, use stream() instead.
      */
-    private async *runStream(
+    async *runStream(
         input: TInput,
         config?: RunConfig<TTools, TContext, TOutput>
     ): AsyncGenerator<StreamChunk, TOutput, unknown> {

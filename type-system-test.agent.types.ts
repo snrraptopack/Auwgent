@@ -1,10 +1,10 @@
 // Auto-generated types for TypeSystemTest
 // Do not edit manually
 // Core Runtime Imports
-import { Agent, RunConfig } from "../javascript/loader/IrInterpreter";
-import { GoogleDriver } from "../javascript/loader/drivers/GoogleDriver";
-import type { AgentIR } from "../javascript/loader/types/ir";
-import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";
+import { Agent} from "./javascript/loader/IrInterpreter";
+import { GoogleDriver } from "./javascript/loader/drivers/GoogleDriver";
+import type { AgentIR } from "./javascript/loader/types/ir";
+import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
 
 export interface Point {
 
@@ -62,9 +62,7 @@ export interface SearchResult {
 }
 
 export interface TypeSystemTestInput {
-    data: Point[];
-    user: User;
-    mode: "fast" | "thorough";
+    message: string;
 }
 
 export interface TypeSystemTestOutput {
@@ -76,13 +74,6 @@ export interface TypeSystemTestContext {
     sessionId: string;
 }
 
-export interface TypeSystemTestTools {
-    [key: string]: (args: any) => Promise<any>;
-    calculateDistance: (args: { p1: Point, p2: Point }) => Promise<number>;
-    getUserInfo: (args: { userId: string }) => Promise<User>;
-    searchWeb: (args: { query: string }) => Promise<SearchResult>;
-}
-
 /**
  * API keys required for TypeSystemTest
  */
@@ -92,37 +83,105 @@ export interface TypeSystemTestApiKeys {
 
 
 /**
- * Create a type-safe TypeSystemTest agent instance
- * Auto-creates drivers based on required providers
+ * Configuration for TypeSystemTest agent
  */
-export function createTypeSystemTest(apiKeys: TypeSystemTestApiKeys) {
-    const agent = new Agent<TypeSystemTestInput, TypeSystemTestOutput, TypeSystemTestContext, TypeSystemTestTools>({
-        gemini: new GoogleDriver(apiKeys.geminiApiKey)
+export interface TypeSystemTestConfig {
+    apiKeys: TypeSystemTestApiKeys;
+    ir: AgentIR;
+    context?: TypeSystemTestContext;
+}
+
+/**
+ * Create a type-safe TypeSystemTest agent instance
+ * 
+ * @example
+ * ```typescript
+ * const agent = createTypeSystemTest({
+ *     apiKeys: { geminiApiKey: '...' },
+ *     ir: agentIR,
+ *     context: { sessionId: "123" },
+ * });
+ * 
+ * // Clean execution - config bound at creation
+ * const result = await agent.run({ ... });
+ * const stream = await agent.stream({ ... });
+ * ```
+ */
+export function createTypeSystemTest(config: TypeSystemTestConfig) {
+    // Create agent with drivers
+    const agent = new Agent<TypeSystemTestInput, TypeSystemTestOutput, TypeSystemTestContext, Record<string, never>>({
+        gemini: new GoogleDriver(config.apiKeys.geminiApiKey)
     });
+    
+    // Load and validate IR immediately
+    agent.load(config.ir);
+
     
     return {
         /**
-         * Load the agent IR configuration
-         */
-        load: (ir: AgentIR) => agent.load(ir),
-        
-        /**
          * Run the agent with type-safe parameters
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
          */
-        run: (input: TypeSystemTestInput, tools: TypeSystemTestTools, context: TypeSystemTestContext, configName?: never): Promise<TypeSystemTestOutput> => 
-            agent.run(input, { tools, context, configName }),
+        run: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }): Promise<TypeSystemTestOutput> => 
+            agent.run(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
         
         /**
          * Fluent streaming API with callbacks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
          * @example
+         * ```typescript
          * const result = await agent
          *   .stream({ request: "..." })
-         *   .onText(delta => console.log(delta))
+         *   .onChunk(delta => console.log(delta))
+         *   .onToolResult((name, result) => console.log(name, result))
          *   .run();
+         * ```
          */
-        stream: (input: TypeSystemTestInput, tools: TypeSystemTestTools, context: TypeSystemTestContext, configName?: never) => 
-            agent.stream(input, { tools, context, configName })
+        stream: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }) => 
+            agent.stream(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
+        
+        /**
+         * Native async iteration over stream chunks
+         * @param input - Agent input
+         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * 
+         * @example
+         * ```typescript
+         * for await (const chunk of agent.streamIterable({ request: "..." })) {
+         *     if (chunk.type === 'text') console.log(chunk.delta);
+         * }
+         * ```
+         */
+        streamIterable: (input: TypeSystemTestInput, overrides?: { context?: TypeSystemTestContext; configName?: never }) => 
+            agent.runStream(input, { context: overrides?.context ?? config.context, configName: overrides?.configName }),
+        
+        /**
+         * Create a new agent instance with bound context
+         * Useful for multi-turn conversations with the same session
+         * 
+         * @example
+         * ```typescript
+         * const sessionAgent = agent.forContext({ sessionId: '123' });
+         * await sessionAgent.run({ message: "First" });
+         * await sessionAgent.run({ message: "Second" });
+         * ```
+         */
+        forContext: (context: TypeSystemTestContext) => {
+            const boundContext = context;
+            return {
+                run: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName }),
+                stream: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName }),
+                streamIterable: (input: TypeSystemTestInput, overrides?: { configName?: never }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName })
+            };
+        }
     };
 }
+
 /** Type for the created agent instance */
 export type TypeSystemTestAgent = ReturnType<typeof createTypeSystemTest>;
