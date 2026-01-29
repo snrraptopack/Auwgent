@@ -115,6 +115,24 @@ function extractInOutConfig(inputConfig: InputConfig | OutputConfig | ContextCon
             result[input.name] = { type: extractType(input.t), optional: input.isOptional }
         })
     } else if (inputConfig.$type === "OutputConfig") {
+        // Handle direct type usage: output: User @desc "..."
+        if (inputConfig.directType) {
+            const extractedType = extractType(inputConfig.directType);
+            
+            // If it's a type reference, flatten it
+            if (extractedType && typeof extractedType === 'object' && extractedType.type === 'typeRef') {
+                // Return a marker that the generator should flatten this type
+                return {
+                    __directType: extractedType.name,
+                    __description: inputConfig.directTypeDesc
+                };
+            } else {
+                // For inline types, just use them directly
+                return extractedType;
+            }
+        }
+        
+        // Handle traditional nested syntax: output { field: Type }
         inputConfig.outProperties.map(output => {
             result[output.td.name] = { 
                 type: extractType(output.td.t), 

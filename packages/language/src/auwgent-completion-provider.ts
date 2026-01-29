@@ -7,9 +7,13 @@ import { isFileImport, isNamedImports } from './generated/ast.js';
  * Provides autocomplete for import paths and imported symbols
  */
 export class AuwgentCompletionProvider extends DefaultCompletionProvider {
+    private readonly documents: LangiumServices['shared']['workspace']['LangiumDocuments'];
+    private readonly workspaceLock: LangiumServices['shared']['workspace']['WorkspaceLock'];
     
     constructor(services: LangiumServices) {
         super(services);
+        this.documents = services.shared.workspace.LangiumDocuments;
+        this.workspaceLock = services.shared.workspace.WorkspaceLock;
     }
     
     override completionFor(context: CompletionContext, next: NextFeature, acceptor: CompletionAcceptor): void {
@@ -70,9 +74,9 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
     /**
      * Provide completion for import paths
      */
-    private completeImportPath(context: CompletionContext, acceptor: CompletionAcceptor): void {
+    private async completeImportPath(context: CompletionContext, acceptor: CompletionAcceptor): Promise<void> {
         // Get all .agent files in the workspace
-        const allDocuments = this.workspaceLock.read(() => 
+        const allDocuments = await this.workspaceLock.read(() => 
             Array.from(this.documents.all)
         );
         const currentDocUri = context.document?.uri;

@@ -24,6 +24,7 @@ import {
     isBinaryExpression,
     isNamedPrompt,
     isInlinePromptBlock,
+    isMultilineStringLiteral,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -161,6 +162,29 @@ export async function generateOutput(model: Model, source: string, destination: 
 
         if (currentElement.$type === "Agent") {
             const agentIR = handleAgentConfig(currentElement) as AgentIr;
+
+            // Handle direct output type flattening
+            if (agentIR.output && typeof agentIR.output === 'object' && '__directType' in agentIR.output) {
+                const directTypeInfo = agentIR.output as any;
+                const typeName = directTypeInfo.__directType;
+                
+                // Look up the type definition
+                if (typeMap.has(typeName)) {
+                    const typeDef = typeMap.get(typeName)!;
+                    const flattened: any = {};
+                    
+                    // Flatten the type properties
+                    for (const prop of typeDef.types) {
+                        flattened[prop.name] = {
+                            type: extractType(prop.t),
+                            optional: prop.isOptional,
+                            ...(prop.description && { description: prop.description })
+                        };
+                    }
+                    
+                    agentIR.output = flattened;
+                }
+            }
 
             // Add type definitions to IR (includes imported types)
             if (typeMap.size > 0) {
@@ -338,6 +362,11 @@ export function extractExpression(express: Expression | Statement): any {
         return { value: express.value, type: "literal" }
     }
 
+    if (isMultilineStringLiteral(express)) {
+        // Process multiline string with {{}} interpolation
+        return processMultilineString(express.value);
+    }
+
     if (isArrayLiteral(express)) {
         let elements = express.elements.map(item => extractExpression(item))
         return { type: "array", value: elements }
@@ -480,3 +509,84 @@ export function buildTemplate(template: (TemplateExpr | TemplateString)[]) {
     return parts
 
 }
+
+/**
+ * Process multiline string with {{expression}} interpolation
+ * Returns an IR structure similar to template literals
+ */
+function processMultilineString(value: string): any {
+    // Remove the triple quotes from the value
+    const content = value.replace(/^"""/, '').replace(/"""$/, '');
+    
+    // Pattern to match {{...}} expressions
+    const interpolationPattern = /\{\{([^}]+)\}\}/g;
+    
+    const parts: any[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    
+    // Find all {{expression}} patterns
+    while ((match = interpolationPattern.exec(content)) !== null) {
+        // Add literal text before the expression
+        if (match.index > lastIndex) {
+            const literalText = content.substring(lastIndex, match.index);
+            if (literalText.length > 0) {
+                parts.push({ type: "literal", value: literalText });
+            }
+        }
+        
+        // Parse the expression inside {{}}
+        const expressionText = match[1].trim();
+        
+        // Create a simple expression parser for the interpolation
+        // This handles basic cases: variable refs, member access, etc.
+        const parsedExpr = parseInterpolationExpression(expressionText);
+        parts.push({ type: "expression", value: parsedExpr });
+        
+        lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining literal text after last expression
+    if (lastIndex < content.length) {
+        const literalText = content.substring(lastIndex);
+        if (literalText.length > 0) {
+            parts.push({ type: "literal", value: literalText });
+        }
+    }
+    
+    // If no interpolations found, return as simple literal
+    if (parts.length === 0) {
+        return { type: "literal", value: content };
+    }
+    
+    // If only one part and it's a literal, return it directly
+    if (parts.length === 1 && parts[0].type === "literal") {
+        return parts[0];
+    }
+    
+    // Return as template-like structure
+    return { type: "template", parts: parts };
+}
+
+/**
+ * Parse an interpolation expression from {{...}}
+ * Handles: variable refs, member access, simple literals
+ */
+function parseInterpolationExpression(expr: string): any {
+    // Handle member access: user.name or user.profile.email
+    if (expr.includes('.')) {
+        const parts = expr.split('.');
+        const objectName = parts[0];
+        const properties = parts.slice(1);
+        
+        return {
+            type: "memberAccess",
+            object: { type: "varRef", value: objectName },
+            properties: properties
+        };
+    }
+    
+    // Handle simple variable reference
+    return { type: "varRef", value: expr };
+}
+

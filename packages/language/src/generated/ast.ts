@@ -10,6 +10,7 @@ export const AuwgentTerminals = {
     WS: /\s+/,
     ID: /[_a-zA-Z][\w_]*/,
     INT: /[0-9]+(\.[0-9]+)?/,
+    MULTILINE_STRING: /"""[\s\S]*?"""/,
     STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/,
     ML_COMMENT: /\/\*[\s\S]*?\*\//,
     SL_COMMENT: /\/\/[^\n\r]*/,
@@ -144,7 +145,7 @@ export function isArrayLiteral(item: unknown): item is ArrayLiteral {
 }
 
 export interface ArrayType extends langium.AstNode {
-    readonly $container: PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
+    readonly $container: OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
     readonly $type: 'ArrayType';
     elementType: BaseType;
 }
@@ -159,7 +160,7 @@ export function isArrayType(item: unknown): item is ArrayType {
 }
 
 export interface BaseType extends langium.AstNode {
-    readonly $container: ArrayType | PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
+    readonly $container: ArrayType | OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
     readonly $type: 'BaseType';
     type?: BooleanType | NumberType | ObjectType | StringType | UnionType;
     typeRef?: langium.Reference<TypeDeclaration>;
@@ -320,7 +321,7 @@ export function isExportable(item: unknown): item is Exportable {
     return reflection.isInstance(item, Exportable.$type);
 }
 
-export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | ContextReference | FunctionCall | HelperCall | InlinePromptBlock | MemberAccess | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
+export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | ContextReference | FunctionCall | HelperCall | InlinePromptBlock | MemberAccess | MultilineStringLiteral | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -586,6 +587,21 @@ export function isModelProvider(item: unknown): item is ModelProvider {
     return reflection.isInstance(item, ModelProvider.$type);
 }
 
+export interface MultilineStringLiteral extends langium.AstNode {
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $type: 'MultilineStringLiteral';
+    value: string;
+}
+
+export const MultilineStringLiteral = {
+    $type: 'MultilineStringLiteral',
+    value: 'value'
+} as const;
+
+export function isMultilineStringLiteral(item: unknown): item is MultilineStringLiteral {
+    return reflection.isInstance(item, MultilineStringLiteral.$type);
+}
+
 export interface NamedImports extends FileImport {
     readonly $type: 'NamedImports';
     imports: Array<ImportSpecifier>;
@@ -738,11 +754,15 @@ export function isOutput(item: unknown): item is Output {
 export interface OutputConfig extends langium.AstNode {
     readonly $container: Agent | Helper;
     readonly $type: 'OutputConfig';
+    directType?: Types;
+    directTypeDesc?: string;
     outProperties: Array<Output>;
 }
 
 export const OutputConfig = {
     $type: 'OutputConfig',
+    directType: 'directType',
+    directTypeDesc: 'directTypeDesc',
     outProperties: 'outProperties'
 } as const;
 
@@ -1167,6 +1187,7 @@ export type AuwgentAstType = {
     Model: Model
     ModelConfig: ModelConfig
     ModelProvider: ModelProvider
+    MultilineStringLiteral: MultilineStringLiteral
     NamedImports: NamedImports
     NamedPrompt: NamedPrompt
     NonDefaultConfigModel: NonDefaultConfigModel
@@ -1574,6 +1595,15 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: []
         },
+        MultilineStringLiteral: {
+            name: MultilineStringLiteral.$type,
+            properties: {
+                value: {
+                    name: MultilineStringLiteral.value
+                }
+            },
+            superTypes: [Expression.$type]
+        },
         NamedImports: {
             name: NamedImports.$type,
             properties: {
@@ -1678,6 +1708,12 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
         OutputConfig: {
             name: OutputConfig.$type,
             properties: {
+                directType: {
+                    name: OutputConfig.directType
+                },
+                directTypeDesc: {
+                    name: OutputConfig.directTypeDesc
+                },
                 outProperties: {
                     name: OutputConfig.outProperties,
                     defaultValue: []

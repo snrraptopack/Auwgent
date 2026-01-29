@@ -113,8 +113,10 @@ PromptStatement:
 
 InputConfig:
     "input" "{" (inProperties+=TypeConfigDeclaration (","? inProperties+=TypeConfigDeclaration)*)? "}";
+
 OutputConfig:
-    "output" "{" (outProperties+=Output (","? outProperties+=Output)*)? "}";
+    "output" ("{" (outProperties+=Output (","? outProperties+=Output)*)? "}" | ":" directType=Types ("@desc" directTypeDesc=STRING)?);
+
 ContextConfig:
     "context" "{" (contextProperties+=TypeConfigDeclaration (","? contextProperties+=TypeConfigDeclaration)*)? "}"
 ;
@@ -193,6 +195,7 @@ AdditionExpression infers Expression:
 
 PrimaryExpression infers Expression:
     {infer StringLiteral} value=STRING
+    | {infer MultilineStringLiteral} value=MULTILINE_STRING
     | {infer NumberLiteral} value=INT
     | {infer BooleanLiteral} value=("true"|"false")
     | ArrayLiteral
@@ -273,6 +276,7 @@ terminal ID: /[_a-zA-Z][\w_]*/;
 
 
 terminal INT returns number:/[0-9]+(\.[0-9]+)?/;
+terminal MULTILINE_STRING: /"""[\s\S]*?"""/;
 terminal STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/;
 terminal TEMPLATE: /`[^`]*`/;
 
