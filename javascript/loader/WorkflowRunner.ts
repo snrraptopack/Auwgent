@@ -28,9 +28,10 @@ export class WorkflowRunner {
                 undefined,
                 this.getToolDefinitions(flow.tools)
             );
+            const ctx = context ?? {};
             const scope = new Map<string, any>([
-                ...Object.entries(context ?? {}),  // Context first
-                ...Object.entries(args)             // Workflow args override
+                ...Object.entries({ ...ctx, ctx }),
+                ...Object.entries(args)
             ]);
 
             // Execute Body Statements
@@ -87,8 +88,9 @@ export class WorkflowRunner {
                 this.streamingHelperExecutor,
                 this.getToolDefinitions(flow.tools)
             );
+            const ctx = context ?? {};
             const scope = new Map<string, any>([
-                ...Object.entries(context ?? {}),
+                ...Object.entries({ ...ctx, ctx }),
                 ...Object.entries(args)
             ]);
 

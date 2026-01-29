@@ -34,8 +34,10 @@ export class ExpressionEvaluator {
             case "contextRef":
                 return scope.get(expr.property)
 
-            case "template":
-                return this.evaluateTemplate(expr.value, scope);
+            case "template": {
+                const parts = expr.value ?? (expr as any).parts ?? [];
+                return this.evaluateTemplate(parts, scope);
+            }
 
             case "object":
                 return this.evaluateObject(expr.value, scope);
@@ -67,6 +69,14 @@ export class ExpressionEvaluator {
 
             case "memberAccess":
                 return this.evaluateMemberAccess(expr, scope);
+
+            case "concat": {
+                const left = await this.evaluate(expr.left, scope);
+                const right = await this.evaluate(expr.right, scope);
+                const leftValue = left ?? "";
+                const rightValue = right ?? "";
+                return (leftValue as any) + (rightValue as any);
+            }
 
             default:
                 throw new Error(`Unknown expression type: ${expr.type}`);

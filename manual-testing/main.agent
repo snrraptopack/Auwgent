@@ -1,0 +1,14 @@
+import {Base} from "./prompt"
+
+agent Hello{
+
+    default config{
+        model:gemini("")
+        prompt{
+            """
+            {{ctx.hello}}
+            """
+        }
+    }
+}
+

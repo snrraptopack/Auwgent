@@ -423,9 +423,8 @@ export function extractExpression(express: Expression | Statement): any {
     }
 
     if (isTemplateLiteral(express)) {
-        // const templates = {} as any  
         let result = buildTemplate(express.templates)
-        return { type: "template", parts: result }
+        return { type: "template", value: result }
     }
 
     if (isContextReference(express)) {
@@ -565,7 +564,7 @@ function processMultilineString(value: string): any {
     }
     
     // Return as template-like structure
-    return { type: "template", parts: parts };
+    return { type: "template", value: parts };
 }
 
 /**

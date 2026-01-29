@@ -94,7 +94,8 @@ export class Synthesizer {
         // Case 2: Parts with expressions/if statements
         if (prompt.type === 'parts' && Array.isArray(prompt.value)) {
             const evaluator = new ExpressionEvaluator();
-            const scope = new Map(Object.entries({ ...input, ...context }));
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
 
@@ -108,6 +109,13 @@ export class Synthesizer {
             return String(prompt.value);
         }
 
+        if (prompt.type === 'template') {
+            const evaluator = new ExpressionEvaluator();
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
+            return String(await evaluator.evaluate(prompt, scope));
+        }
+
         // Case 5: Concatenation with + operator
         if (prompt.type === 'concat') {
             const left = await this.resolvePrompt(prompt.left, input, context);
@@ -118,22 +126,32 @@ export class Synthesizer {
         // Case 6: Prompt reference (named prompt)
         if (prompt.type === 'promptRef' && Array.isArray(prompt.value)) {
             const evaluator = new ExpressionEvaluator();
-            const scope = new Map(Object.entries({ ...input, ...context }));
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
 
         // Case 7: Inline prompt block { ... }
         if (prompt.type === 'inlinePrompt' && Array.isArray(prompt.parts)) {
             const evaluator = new ExpressionEvaluator();
-            const scope = new Map(Object.entries({ ...input, ...context }));
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.parts, scope, true);
         }
 
         // Legacy case: ref type (for backwards compatibility)
         if (prompt.type === 'ref' && Array.isArray(prompt.value)) {
             const evaluator = new ExpressionEvaluator();
-            const scope = new Map(Object.entries(input));
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
+        }
+
+        if (prompt?.type) {
+            const evaluator = new ExpressionEvaluator();
+            const ctx = context ?? {};
+            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
+            return String(await evaluator.evaluate(prompt, scope));
         }
 
         return '';

@@ -63,6 +63,7 @@ export type Expression =
     | TemplateLiteral
     | ContextReference
     | MemberAccess
+    | ConcatExpression;
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -141,6 +142,12 @@ export interface MemberAccess {
     type: "memberAccess";
     object: VarRef;
     properties: string[];  // Chain of property names, e.g., ["propose"] or ["data", "result"]
+}
+
+export interface ConcatExpression {
+    type: "concat";
+    left: Expression;
+    right: Expression;
 }
 
 export interface TransferStatement {
