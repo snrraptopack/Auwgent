@@ -4,6 +4,8 @@
 import { Agent } from "./javascript/loader/IrInterpreter";
 import type { AgentIR } from "./javascript/loader/types/ir";
 import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
+import _importedIR from './test-autoreg.agent.json' with { type: 'json' };
+const agentIR = _importedIR as unknown as AgentIR;
 
 export interface Product {
 
@@ -39,7 +41,6 @@ export interface SupportTools {
  * Configuration for Support agent
  */
 export interface SupportConfig {
-    ir: AgentIR;
     context?: SupportContext;
     tools?: SupportTools;
 }
@@ -51,7 +52,6 @@ export interface SupportConfig {
  * ```typescript
  * const agent = createSupport({
  *     apiKeys: { geminiApiKey: '...' },
- *     ir: agentIR,
  *     context: { sessionId: "123" },
  *     tools: { ... },
  * });
@@ -65,32 +65,31 @@ export function createSupport(config: SupportConfig) {
     // Create agent with drivers
     const agent = new Agent<SupportInput, SupportOutput, SupportContext, SupportTools>({});
     
-    // Load and validate IR immediately
-    agent.load(config.ir);
+    // Load and validate IR from imported file
+    agent.load(agentIR);
 
-    if (config.ir) {
-        const toolMap = new Map<string, any>();
-        if (config.ir.tools && config.ir.tools.length > 0) {
-            for (const toolDef of config.ir.tools) {
-                toolMap.set(toolDef.name, toolDef);
-            }
+    // Validate tools against IR
+    const toolMap = new Map<string, any>();
+    if (agentIR.tools && agentIR.tools.length > 0) {
+        for (const toolDef of agentIR.tools) {
+            toolMap.set(toolDef.name, toolDef);
         }
-        if (config.ir.workflows && config.ir.workflows.length > 0) {
-            for (const workflow of config.ir.workflows) {
-                if (workflow.tools && workflow.tools.length > 0) {
-                    for (const toolDef of workflow.tools) {
-                        toolMap.set(toolDef.name, toolDef);
-                    }
+    }
+    if (agentIR.workflows && agentIR.workflows.length > 0) {
+        for (const workflow of agentIR.workflows) {
+            if (workflow.tools && workflow.tools.length > 0) {
+                for (const toolDef of workflow.tools) {
+                    toolMap.set(toolDef.name, toolDef);
                 }
             }
         }
-        for (const toolDef of toolMap.values()) {
-            if (!config.tools?.[toolDef.name]) {
-                throw new Error(
-                    `Missing required tool: ${toolDef.name}\n` +
-                    `Expected in tools configuration`
-                );
-            }
+    }
+    for (const toolDef of toolMap.values()) {
+        if (!config.tools?.[toolDef.name]) {
+            throw new Error(
+                `Missing required tool: ${toolDef.name}\n` +
+                `Expected in tools configuration`
+            );
         }
     }
     

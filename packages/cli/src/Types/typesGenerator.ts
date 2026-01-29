@@ -45,7 +45,7 @@ interface AgentIR {
 /**
  * Main entry point: generates the complete .agent.types.ts file
  */
-export function generateTypesFile(agent: AgentIR): string {
+export function generateTypesFile(agent: AgentIR, baseName?: string): string {
     const workflowTools = collectWorkflowTools(agent);
     const allTools = mergeToolDefs(agent.tools ?? [], workflowTools);
     const hasTools = allTools.length > 0;
@@ -55,6 +55,10 @@ export function generateTypesFile(agent: AgentIR): string {
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
     const transferredHelpers = collectTransferredHelpers(agent);
+
+    // Generate IR import statement using baseName if provided, otherwise fall back to agent.name
+    const fileName = baseName || agent.name;
+    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as unknown as AgentIR;`;
 
     const sections = [
         `// Auto-generated types for ${agent.name}`,
@@ -66,6 +70,8 @@ export function generateTypesFile(agent: AgentIR): string {
         requiredProviders.has("openai") || requiredProviders.has("custom") ? `import { OpenAIDriver } from "../javascript/loader/drivers/OpenAIDriver";` : '',
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
         `import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";`,
+        ``,
+        irImportStatement,
         ``,
         // Generate custom type interfaces
         agent.types ? generateCustomTypes(agent.types) : '',
@@ -410,7 +416,7 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     if (hasApiKeys) {
         configProps.push(`    apiKeys: ${agent.name}ApiKeys;`);
     }
-    configProps.push(`    ir: AgentIR;`);
+    // IR is now imported automatically, no need for user to provide it
     if (hasContext) {
         configProps.push(`    context?: ${agent.name}Context;`);
     }
@@ -426,29 +432,28 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     
     if (hasTools) {
         validationChecks.push(`
-    if (config.ir) {
-        const toolMap = new Map<string, any>();
-        if (config.ir.tools && config.ir.tools.length > 0) {
-            for (const toolDef of config.ir.tools) {
-                toolMap.set(toolDef.name, toolDef);
-            }
+    // Validate tools against IR
+    const toolMap = new Map<string, any>();
+    if (agentIR.tools && agentIR.tools.length > 0) {
+        for (const toolDef of agentIR.tools) {
+            toolMap.set(toolDef.name, toolDef);
         }
-        if (config.ir.workflows && config.ir.workflows.length > 0) {
-            for (const workflow of config.ir.workflows) {
-                if (workflow.tools && workflow.tools.length > 0) {
-                    for (const toolDef of workflow.tools) {
-                        toolMap.set(toolDef.name, toolDef);
-                    }
+    }
+    if (agentIR.workflows && agentIR.workflows.length > 0) {
+        for (const workflow of agentIR.workflows) {
+            if (workflow.tools && workflow.tools.length > 0) {
+                for (const toolDef of workflow.tools) {
+                    toolMap.set(toolDef.name, toolDef);
                 }
             }
         }
-        for (const toolDef of toolMap.values()) {
-            if (!config.tools?.[toolDef.name]) {
-                throw new Error(
-                    \`Missing required tool: \${toolDef.name}\\n\` +
-                    \`Expected in tools configuration\`
-                );
-            }
+    }
+    for (const toolDef of toolMap.values()) {
+        if (!config.tools?.[toolDef.name]) {
+            throw new Error(
+                \`Missing required tool: \${toolDef.name}\\n\` +
+                \`Expected in tools configuration\`
+            );
         }
     }`);
     }
@@ -456,9 +461,9 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     if (hasLifecycle) {
         validationChecks.push(`
     // Validate lifecycle hooks if required
-    if (config.ir.lifecycle?.enabled && !config.lifecycle) {
+    if (agentIR.lifecycle?.enabled && !config.lifecycle) {
         throw new Error(
-            \`Agent "\${config.ir.name}" requires lifecycle hooks.\\n\` +
+            \`Agent "\${agentIR.name}" requires lifecycle hooks.\\n\` +
             \`Provide: { prune, load, save }\`
         );
     }`);
@@ -501,8 +506,7 @@ ${configProps.join('\n')}
  * @example
  * \`\`\`typescript
  * const agent = create${agent.name}({
- *     apiKeys: { geminiApiKey: '...' },
- *     ir: agentIR,${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}${hasLifecycle ? '\n *     lifecycle: { prune, load, save }' : ''}
+ *     apiKeys: { geminiApiKey: '...' },${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}${hasLifecycle ? '\n *     lifecycle: { prune, load, save }' : ''}
  * });
  * 
  * // Clean execution - config bound at creation
@@ -514,8 +518,8 @@ export function create${agent.name}(config: ${agent.name}Config) {
     // Create agent with drivers
     const agent = new Agent<${typeParams}>(${driversObject});
     
-    // Load and validate IR immediately
-    agent.load(config.ir);
+    // Load and validate IR from imported file
+    agent.load(agentIR);
 ${validationChecks.join('\n')}
     
     return {

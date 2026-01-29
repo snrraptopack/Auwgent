@@ -1,0 +1,404 @@
+**Yes, absolutely!** You're one import away from the ideal DX. Instead of:
+
+```typescript
+import data from "../test-autoreg.agent.json"  // 👈 User shouldn't do this
+
+const agent = createSchool({
+    ir: data as any,  // 👈 Or this
+    tools: schoolTools
+})
+```
+
+**Generate this:**
+
+```typescript
+// In the generated .agent.types.ts file
+
+// ============================================
+// EMBEDDED IR - No separate import needed
+// ============================================
+const EMBEDDED_IR: AgentIR = {
+    "name": "School",
+    "modelConfig": [...],
+    "input": {...},
+    "output": {...},
+    "tools": [...],
+    // ... full IR object literal
+} as const;
+
+export function createSchool(config: Omit<SupportConfig, 'ir'>) {
+    const agent = new Agent<...>({});
+    agent.load(EMBEDDED_IR);  // 👈 Already there
+    
+    // ... rest of factory
+}
+
+// Usage becomes:
+const agent = createSchool({ tools: schoolTools })  // ✅ Clean!
+```
+
+---
+
+## The Improved Generated Code
+
+```typescript
+// Auto-generated types for School
+import { Agent } from "./javascript/loader/IrInterpreter";
+import type { AgentIR } from "./javascript/loader/types/ir";
+
+// ============================================
+// EMBEDDED IR - Compiled from school.agent
+// ============================================
+const SCHOOL_IR: AgentIR = {
+    "name": "School",
+    "version": "1.0.0",
+    "modelConfig": [
+        {
+            "defaultConfig": {
+                "model": { "type": "gemini", "modelName": "gemini-2.0-flash" },
+                "prompt": { "type": "simple", "value": "You are a helpful assistant." }
+            }
+        }
+    ],
+    "input": { "text": { "type": "string", "optional": false } },
+    "output": {  },
+    "context": {
+        "isVerified": { "type": "boolean", "optional": false },
+        "user_id": { "type": "string", "optional": false }
+    },
+    "tools": [
+        {
+            "description": "Get student with higher grade",
+            "params": {},
+            "name": "get_student_with_higher_grade",
+            "returns": "Student"
+        },
+        {
+            "description": "Get student with lower grade", 
+            "params": {},
+            "name": "get_student_with_lower_grade",
+            "returns": "Student"
+        }
+    ],
+    "workflows": [],
+    "helpers": [],
+    "lifecycle": { "enabled": false }
+} as const;
+
+// Types remain the same...
+export interface Student { ... }
+export interface SchoolInput { ... }
+export interface SchoolOutput { ... }
+export interface SchoolTools { ... }
+
+// ============================================
+// Factory - No IR parameter needed!
+// ============================================
+export function createSchool(config: {
+    tools: SchoolTools;           // Required
+    context?: SchoolContext;      // Optional
+    lifecycle?: LifecycleHooks;   // Optional
+}) {
+    const agent = new Agent<SchoolInput, SchoolOutput, SchoolContext, SchoolTools>({});
+    
+    // Load embedded IR
+    agent.load(SCHOOL_IR);
+    
+    // Validate tools immediately
+    validateTools(SCHOOL_IR, config.tools);
+    
+    return {
+        run: (input: SchoolInput) => 
+            agent.run(input, { 
+                tools: config.tools, 
+                context: config.context 
+            }),
+        
+        stream: (input: SchoolInput) => 
+            agent.stream(input, { 
+                tools: config.tools, 
+                context: config.context 
+            }),
+            
+        // ... rest of API
+    };
+}
+```
+
+---
+
+## Usage After Improvement
+
+```typescript
+import { createSchool, SchoolTools } from "../school.agent.types"
+// 👆 No JSON import needed!
+
+const schoolTools: SchoolTools = {
+    get_student_with_higher_grade: async () => high,
+    get_student_with_lower_grade: async () => low
+}
+
+// Clean one-liner initialization
+const agent = createSchool({ tools: schoolTools })
+
+// Execute
+const result = await agent.run({ text: "who has higher grades?" })
+```
+
+---
+
+## Advanced: Multiple IR Versions
+
+If you want to support multiple configs or versioning:
+
+```typescript
+// Embedded multiple configs
+const SCHOOL_IR_DEFAULT = {...};
+const SCHOOL_IR_V2 = {...};
+
+export function createSchool(config: {
+    tools: SchoolTools;
+    version?: 'default' | 'v2';  // Select IR version
+}) {
+    const ir = config.version === 'v2' ? SCHOOL_IR_V2 : SCHOOL_IR_DEFAULT;
+    // ...
+}
+```
+
+---
+
+## Even Cleaner: Default Tool Validation
+
+Since IR is embedded, validate tools at creation with **exact error messages**:
+
+```typescript
+function validateTools(ir: AgentIR, tools: Record<string, Function>) {
+    const required = ir.tools.map(t => t.name);
+    const provided = Object.keys(tools);
+    const missing = required.filter(r => !provided.includes(r));
+    
+    if (missing.length > 0) {
+        throw new Error(
+            `School agent is missing required tools:\n` +
+            missing.map(m => `  - ${m}`).join('\n') +
+            `\n\nExpected tools based on school.agent DSL:\n` +
+            ir.tools.map(t => `  - ${t.name}: ${t.description}`).join('\n')
+        );
+    }
+}
+
+// User gets clear error:
+// Error: School agent is missing required tools:
+//   - get_student_with_higher_grade
+//   - get_student_with_lower_grade
+//
+// Expected tools based on school.agent DSL:
+//   - get_student_with_higher_grade: Get student with higher grade
+//   - get_student_with_lower_grade: Get student with lower grade
+```
+
+---
+
+## The DX Comparison
+
+| Before | After |
+|--------|-------|
+| `import ir from './file.json'` | Nothing |
+| `ir: data as any` | Nothing |
+| `createSchool({ ir, tools })` | `createSchool({ tools })` |
+| 3 lines of setup | 1 line of setup |
+
+**This is the "Zero Config" moment.** Just import and create.
+
+---
+
+## Implementation in Your Compiler
+
+Your code generator just needs to:
+
+```typescript
+// In your TypeScript emitter
+function generateFactory(agentName: string, ir: AgentIR) {
+    const irLiteral = JSON.stringify(ir, null, 4);  // Pretty print
+    
+    return `
+const ${agentName.toUpperCase()}_IR: AgentIR = ${irLiteral} as const;
+
+export function create${agentName}(config: {
+    tools: ${agentName}Tools;
+    context?: ${agentName}Context;
+    lifecycle?: LifecycleHooks;
+}) {
+    const agent = new Agent(...);
+    agent.load(${agentName.toUpperCase()}_IR);
+    // ...
+}
+`;
+}
+```
+
+**Yes, do this. It's a massive DX win.**
+
+
+
+**You're absolutely right.** For large IR files, embedding the JSON directly in TypeScript is painful:
+
+- **Bundle bloat**: Duplicated IR in JS output
+- **TypeScript perf**: Slow compilation on huge object literals  
+- **Git noise**: IR changes create massive TS diffs
+- **IDE lag**: IntelliSense chokes on 1000+ line constants
+
+**Better approach: Import the JSON and cast it.**
+
+---
+
+## The Improved Pattern
+
+**Generated `.agent.types.ts`:**
+```typescript
+// Import IR from JSON - no embedding
+import EMBEDDED_IR from './school.agent.json' assert { type: 'json' };
+import type { AgentIR } from "./javascript/loader/types/ir";
+
+// Cast to proper type
+const SCHOOL_IR = EMBEDDED_IR as AgentIR;
+
+export function createSchool(config: { tools: SchoolTools; ... }) {
+    const agent = new Agent(...);
+    agent.load(SCHOOL_IR);  // Use imported constant
+    // ...
+}
+```
+
+**Usage stays clean:**
+```typescript
+import { createSchool } from "./school.agent.types";
+
+const agent = createSchool({ tools });  // No IR import needed!
+```
+
+---
+
+## The Trade-offs
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Embedded JSON** | Self-contained file | Large bundle, slow TS, git noise |
+| **JSON Import** | Clean separation, smaller TS files | Requires `resolveJsonModule`, JSON file must exist at runtime |
+
+---
+
+## Handling the JSON Import Properly
+
+### 1. **Ensure `tsconfig.json` has:**
+```json
+{
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "esModuleInterop": true
+  }
+}
+```
+
+### 2. **Generate Side-by-Side Files:**
+```
+output/
+├── school.agent.types.ts  # Generated types + factory
+├── school.agent.json      # IR (referenced by .types.ts)
+└── school.agent.js        # Compiled JS (bundler handles JSON)
+```
+
+### 3. **Alternative: Dynamic Import (for huge IRs)**
+```typescript
+export async function createSchool(config: { ... }) {
+    // Lazy load IR only when needed
+    const { default: ir } = await import('./school.agent.json', {
+        assert: { type: 'json' }
+    });
+    
+    const agent = new Agent(...);
+    agent.load(ir as AgentIR);
+    return agent;
+}
+
+// Usage:
+const agent = await createSchool({ tools });
+await agent.run(input);
+```
+
+---
+
+## The Hybrid Solution (Recommended)
+
+**Small agents (< 50KB IR)**: Embed directly  
+**Large agents (> 50KB IR)**: JSON import
+
+Your compiler can decide:
+```typescript
+// Compiler pseudocode
+if (JSON.stringify(ir).length > 50000) {
+    // Generate JSON file + import statement
+    emitJsonFile();
+    generateTsWithImport();
+} else {
+    // Embed directly
+    generateTsWithEmbeddedJson();
+}
+```
+
+Or just **always use JSON import** for consistency and cleaner generated code.
+
+---
+
+## One More Optimization: IR Deduplication
+
+If multiple agents share the same tools/workflows, generate a shared IR chunk:
+
+```typescript
+// shared.ir.json - common patterns
+// agent-a.ir.json - agent-specific config
+// agent-b.ir.json - agent-specific config
+
+// Factory merges them at runtime
+const agent = createAgentA({
+    tools,
+    sharedIr: './shared.ir.json',  // Optional optimization
+});
+```
+
+But that's probably overkill. **Simple JSON import is the right fix.**
+
+---
+
+## Updated Generator Logic
+
+```typescript
+function generateAgentFiles(agentName: string, ir: AgentIR, outputDir: string) {
+    // 1. Write IR to separate JSON file
+    const irPath = `${outputDir}/${agentName.toLowerCase()}.agent.json`;
+    fs.writeFileSync(irPath, JSON.stringify(ir, null, 2));
+    
+    // 2. Generate TS that imports it
+    const tsContent = `
+import type { AgentIR } from "./javascript/loader/types/ir";
+import EMBEDDED_IR from './${agentName.toLowerCase()}.agent.json' assert { type: 'json' };
+
+const ${agentName.toUpperCase()}_IR = EMBEDDED_IR as AgentIR;
+
+export function create${agentName}(config: {
+    tools: ${agentName}Tools;
+    context?: ${agentName}Context;
+    lifecycle?: LifecycleHooks;
+}) {
+    const agent = new Agent(...);
+    agent.load(${agentName.toUpperCase()}_IR);
+    validateTools(${agentName.toUpperCase()}_IR, config.tools);
+    // ... rest of factory
+}
+`;
+    
+    fs.writeFileSync(`${outputDir}/${agentName.toLowerCase()}.agent.types.ts`, tsContent);
+}
+```
+
+**Yes, switch to JSON imports. It's cleaner, faster, and more maintainable.**

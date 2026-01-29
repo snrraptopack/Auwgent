@@ -165,7 +165,7 @@ export function generateOutput(model: Model, source: string, destination: string
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
             const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
-            fs.writeFileSync(typesPath, generateTypesFile(agentIR));
+            fs.writeFileSync(typesPath, generateTypesFile(agentIR, baseName));
         }
 
         if (currentElement.$type === "NamedPrompt") continue;
