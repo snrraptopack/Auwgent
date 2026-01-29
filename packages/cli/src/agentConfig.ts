@@ -166,6 +166,10 @@ function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
     let description = workflowConfig.desc
     let flowParams = extractParams(workflowConfig.params)
     let returns = extractType(workflowConfig.return)
+    const workflowTools = [
+        ...(workflowConfig.workflowToolConfigs ?? []).map(extractSingleToolConfig),
+        ...(workflowConfig.workflowToolsConfigs ?? []).flatMap(extractToolsConfig)
+    ]
 
     // Extract all statements
     let allStatements = workflowConfig.body.map(bdy => extractExpression(bdy))
@@ -185,7 +189,7 @@ function extractWorkflowConfig(workflowConfig: WorkFlowConfig) {
         return true // keep other statements like if
     })
 
-    return { flowName, flowParams, returns, body, description }
+    return { flowName, flowParams, returns, body, description, tools: workflowTools }
 }
 
 function findUsedVariables(statements: any[]): Set<string> {

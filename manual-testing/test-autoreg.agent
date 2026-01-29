@@ -1,22 +1,36 @@
-type Student{
+type Product{
     name:string
-    class:string
-    age:string
+    id:string
+    price:number
 }
-output type Response{
-    student:Student
-}
+agent Support{
 
-agent School{
-    default config{
-        model:gemini("gemini-2.5-flash")
-        prompt: "you are a helpful assist"
+    input {text:string}
+    context{
+        isVerified:boolean
+        user_id:string
     }
-    input{text:string}
-    output {response:Response @desc "response of the student"}
 
-    tools{
-        get_student_with_lower_grade():Student @desc "get the student with lower grade"
-        get_student_with_higher_grade():Student @desc "get the student with higher grade"
+    tool search_product_by_name(name:string):Product @desc "for getting a product by name"
+    tool search_product_by_id(id:string):Product @desc "for getting a product by id"
+   
+    
+    workflow flow_product(id:string):{success:boolean,reason:string}{
+        description: "This workflow is responsible for buying product but with guards to ensure we reliably make transaction"
+
+        tool purchase_product(product_id:string,user_id:string):boolean @desc "used to purchase a product"
+
+        if(ctx.isVerified != true){
+            return {success:false, reason:"user is not verfied"}
+        }
+
+        let product_result = purchase_product(id,ctx.user_id)
+
+        if(product_result == true){
+            return {success:true, reason:"product bought"}
+        }
+        
+        return {success:false, reason:"could not purchase the product"}
     }
+
 }

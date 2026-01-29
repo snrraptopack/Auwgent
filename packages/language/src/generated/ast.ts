@@ -834,7 +834,7 @@ export function isTemplateString(item: unknown): item is TemplateString {
 }
 
 export interface ToolConfig extends langium.AstNode {
-    readonly $container: Agent | Helper;
+    readonly $container: Agent | Helper | WorkFlowConfig;
     readonly $type: 'ToolConfig';
     tool: ToolFunction;
 }
@@ -870,7 +870,7 @@ export function isToolFunction(item: unknown): item is ToolFunction {
 }
 
 export interface ToolsConfig extends langium.AstNode {
-    readonly $container: Agent | Helper;
+    readonly $container: Agent | Helper | WorkFlowConfig;
     readonly $type: 'ToolsConfig';
     tools: Array<ToolFunction>;
 }
@@ -1023,6 +1023,8 @@ export interface WorkFlowConfig extends langium.AstNode {
     name: string;
     params: Array<TypeConfigDeclaration>;
     return: Types;
+    workflowToolConfigs: Array<ToolConfig>;
+    workflowToolsConfigs: Array<ToolsConfig>;
 }
 
 export const WorkFlowConfig = {
@@ -1031,7 +1033,9 @@ export const WorkFlowConfig = {
     desc: 'desc',
     name: 'name',
     params: 'params',
-    return: 'return'
+    return: 'return',
+    workflowToolConfigs: 'workflowToolConfigs',
+    workflowToolsConfigs: 'workflowToolsConfigs'
 } as const;
 
 export function isWorkFlowConfig(item: unknown): item is WorkFlowConfig {
@@ -1789,6 +1793,14 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 },
                 return: {
                     name: WorkFlowConfig.return
+                },
+                workflowToolConfigs: {
+                    name: WorkFlowConfig.workflowToolConfigs,
+                    defaultValue: []
+                },
+                workflowToolsConfigs: {
+                    name: WorkFlowConfig.workflowToolsConfigs,
+                    defaultValue: []
                 }
             },
             superTypes: [AgentConfigurations.$type]

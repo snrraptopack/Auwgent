@@ -1,5 +1,6 @@
-import type { ValidationChecks } from 'langium';
-import type { AuwgentAstType } from './generated/ast.js';
+import type { ValidationAcceptor, ValidationChecks } from 'langium';
+import type { AuwgentAstType, ReturnStatement } from './generated/ast.js';
+import { isInlinePromptBlock } from './generated/ast.js';
 import type { AuwgentServices } from './auwgent-module.js';
 
 /**
@@ -9,11 +10,7 @@ export function registerValidationChecks(services: AuwgentServices) {
     const registry = services.validation.ValidationRegistry;
     const validator = services.validation.AuwgentValidator;
     const checks: ValidationChecks<AuwgentAstType> = {
-        // TODO: Declare validators for your properties
-        // See doc : https://langium.org/docs/learn/workflow/create_validations/
-        /*
-        Element: validator.checkElement
-        */
+        ReturnStatement: validator.checkReturnStatement
     };
     registry.register(checks, validator);
 }
@@ -22,12 +19,9 @@ export function registerValidationChecks(services: AuwgentServices) {
  * Implementation of custom validations.
  */
 export class AuwgentValidator {
-
-    // TODO: Add logic here for validation checks of properties
-    // See doc : https://langium.org/docs/learn/workflow/create_validations/
-    /*
-    checkElement(element: Element, accept: ValidationAcceptor): void {
-        // Always accepts
+    checkReturnStatement(statement: ReturnStatement, accept: ValidationAcceptor): void {
+        if (isInlinePromptBlock(statement.value)) {
+            accept('error', 'Inline prompt blocks are not allowed in return statements. Use an object literal instead.', { node: statement, property: 'value' });
+        }
     }
-    */
 }

@@ -8,13 +8,20 @@ interface HelperType {
     output: Record<string, any> | null;
 }
 
+interface ToolDef {
+    name: string;
+    params: Record<string, any>;
+    returns: any;
+    description: string;
+}
+
 interface AgentIR {
     name: string;
     input: Record<string, any> | null;
     output: Record<string, any> | null;
     context: Record<string, any> | null;
-    tools: Array<{ name: string; params: Record<string, any>; returns: any; description: string }>;
-    workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[] }>;
+    tools: ToolDef[];
+    workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[]; tools?: ToolDef[] }>;
     helpers: HelperType[];
     modelConfig?: Array<{
         defaultConfig?: { model: { type: string; modelName: string; url?: string }; prompt: any };
@@ -39,7 +46,9 @@ interface AgentIR {
  * Main entry point: generates the complete .agent.types.ts file
  */
 export function generateTypesFile(agent: AgentIR): string {
-    const hasTools = agent.tools && agent.tools.length > 0;
+    const workflowTools = collectWorkflowTools(agent);
+    const allTools = mergeToolDefs(agent.tools ?? [], workflowTools);
+    const hasTools = allTools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
     const hasLifecycle = agent.lifecycle?.enabled === true;
     const requiredProviders = collectRequiredProviders(agent);
@@ -65,13 +74,34 @@ export function generateTypesFile(agent: AgentIR): string {
         ...transferredHelpers.map(helper => generateHelperOutputInterface(helper)),
         generateOutputInterface(agent, transferredHelpers),
         generateContextInterface(agent),
-        hasTools ? generateToolsInterface(agent) : '',
+        hasTools ? generateToolsInterface(agent.name, allTools) : '',
         hasLifecycle ? generateLifecycleInterface(agent, hasContext ?? false) : '',
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
         generateAgentFactory(agent, hasTools, hasContext ?? false, hasLifecycle, requiredProviders, transferredHelpers),
     ];
 
     return sections.filter(Boolean).join('\n');
+}
+
+function collectWorkflowTools(agent: AgentIR): ToolDef[] {
+    const toolDefs: ToolDef[] = [];
+    for (const workflow of agent.workflows || []) {
+        if (workflow.tools && workflow.tools.length > 0) {
+            toolDefs.push(...workflow.tools);
+        }
+    }
+    return toolDefs;
+}
+
+function mergeToolDefs(base: ToolDef[], extra: ToolDef[]): ToolDef[] {
+    const toolMap = new Map<string, ToolDef>();
+    for (const tool of base) {
+        toolMap.set(tool.name, tool);
+    }
+    for (const tool of extra) {
+        toolMap.set(tool.name, tool);
+    }
+    return Array.from(toolMap.values());
 }
 
 /**
@@ -278,12 +308,12 @@ ${props}
 /**
  * Generate Tools interface
  */
-function generateToolsInterface(agent: AgentIR): string {
-    if (!agent.tools || agent.tools.length === 0) {
+function generateToolsInterface(agentName: string, tools: ToolDef[]): string {
+    if (!tools || tools.length === 0) {
         return '';
     }
 
-    const toolMethods = agent.tools.map(tool => {
+    const toolMethods = tools.map(tool => {
         const paramType = Object.entries(tool.params)
             .map(([name, typeObj]: [string, any]) => {
                 const optional = typeObj?.optional ? '?' : '';
@@ -294,7 +324,7 @@ function generateToolsInterface(agent: AgentIR): string {
         return `    ${tool.name}: (args: { ${paramType} }) => Promise<${typeToTsString(tool.returns)}>;`;
     }).join('\n');
 
-    return `export interface ${agent.name}Tools {
+    return `export interface ${agentName}Tools {
     [key: string]: (args: any) => Promise<any>;
 ${toolMethods}
 }
@@ -396,9 +426,23 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     
     if (hasTools) {
         validationChecks.push(`
-    // Validate tools match IR requirements
-    if (config.ir.tools && config.ir.tools.length > 0) {
-        for (const toolDef of config.ir.tools) {
+    if (config.ir) {
+        const toolMap = new Map<string, any>();
+        if (config.ir.tools && config.ir.tools.length > 0) {
+            for (const toolDef of config.ir.tools) {
+                toolMap.set(toolDef.name, toolDef);
+            }
+        }
+        if (config.ir.workflows && config.ir.workflows.length > 0) {
+            for (const workflow of config.ir.workflows) {
+                if (workflow.tools && workflow.tools.length > 0) {
+                    for (const toolDef of workflow.tools) {
+                        toolMap.set(toolDef.name, toolDef);
+                    }
+                }
+            }
+        }
+        for (const toolDef of toolMap.values()) {
             if (!config.tools?.[toolDef.name]) {
                 throw new Error(
                     \`Missing required tool: \${toolDef.name}\\n\` +

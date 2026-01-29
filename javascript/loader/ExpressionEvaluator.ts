@@ -11,7 +11,8 @@ export class ExpressionEvaluator {
         private ir?: AgentIR,
         private tools?: ToolMap,
         private helperExecutor?: HelperExecutor,
-        private streamingHelperExecutor?: StreamingHelperExecutor
+        private streamingHelperExecutor?: StreamingHelperExecutor,
+        private toolDefinitions?: AgentIR["tools"]
     ) { }
 
     /**
@@ -347,7 +348,8 @@ export class ExpressionEvaluator {
         const args = expr.args || [];
 
         // Find tool definition to map positional args to named params
-        const toolDef = this.ir?.tools.find(t => t.name === funcName);
+        const availableTools = this.toolDefinitions ?? this.ir?.tools ?? [];
+        const toolDef = availableTools.find(t => t.name === funcName);
         if (!toolDef) {
             throw new Error(`Tool not found: ${funcName}`);
         }

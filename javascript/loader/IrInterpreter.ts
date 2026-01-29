@@ -238,8 +238,12 @@ export class Agent<
                         }
                     } else {
                         // It must be a user tool
-                        if (!tools || !safeTools[name]) {
+                        const isDeclaredTool = this.ir.tools?.some(t => t.name === name);
+                        if (!isDeclaredTool) {
                             throw new Error(`Model tried to call unknown tool: ${name}`);
+                        }
+                        if (!tools || !safeTools[name]) {
+                            throw new Error(`Tool implementation missing for: ${name}`);
                         }
                         logger.debug(`[Agent] >>> Calling Tool: ${name}`);
                         logger.trackToolCall(name);

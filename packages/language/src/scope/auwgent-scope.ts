@@ -1,5 +1,5 @@
 import { AstNode, DefaultScopeProvider, ReferenceInfo, Scope, StreamScope, stream } from 'langium';
-import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, Helper, ToolFunction, TypeConfigDeclaration } from '../generated/ast.js';
+import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, isWorkFlowConfig, Helper, ToolFunction, TypeConfigDeclaration } from '../generated/ast.js';
 
 export class AuwgentScopeProvider extends DefaultScopeProvider {
 
@@ -62,9 +62,25 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
     private getToolFunctionsInScope(node: AstNode): ToolFunction[] {
         const tools: ToolFunction[] = [];
 
-        // Walk up to find the Agent
+        // Walk up to find workflow then agent
         let current: AstNode | undefined = node;
         while (current) {
+            if (isWorkFlowConfig(current)) {
+                if (current.workflowToolConfigs) {
+                    for (const config of current.workflowToolConfigs) {
+                        if (config.tool) {
+                            tools.push(config.tool);
+                        }
+                    }
+                }
+                if (current.workflowToolsConfigs) {
+                    for (const config of current.workflowToolsConfigs) {
+                        if (config.tools) {
+                            tools.push(...config.tools);
+                        }
+                    }
+                }
+            }
             if (isAgent(current)) {
                 // Found the agent - collect all ToolFunctions
                 for (const config of current.configs) {

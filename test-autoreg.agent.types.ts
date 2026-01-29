@@ -1,70 +1,58 @@
-// Auto-generated types for School
+// Auto-generated types for Support
 // Do not edit manually
 // Core Runtime Imports
 import { Agent } from "./javascript/loader/IrInterpreter";
-import { GoogleDriver } from "./javascript/loader/drivers/GoogleDriver";
 import type { AgentIR } from "./javascript/loader/types/ir";
 import type { SyntheticMessage, ConversationState, LifecycleHooks } from "./javascript/loader/types/protocol";
 
-export interface Student {
+export interface Product {
 
     name: string;
 
-    class: string;
+    id: string;
 
-    age: string;
+    price: number;
 }
 
-
-/** Output type */
-export interface Response {
-
-    student: Student;
-}
-
-export interface SchoolInput {
+export interface SupportInput {
     text: string;
 }
 
-export interface SchoolOutput {
-    response: Response;
-}
-
-export interface SchoolContext {
+export interface SupportOutput {
 
 }
 
-export interface SchoolTools {
+export interface SupportContext {
+    isVerified: boolean;
+    user_id: string;
+}
+
+export interface SupportTools {
     [key: string]: (args: any) => Promise<any>;
-    get_student_with_lower_grade: (args: {  }) => Promise<Student>;
-    get_student_with_higher_grade: (args: {  }) => Promise<Student>;
-}
-
-/**
- * API keys required for School
- */
-export interface SchoolApiKeys {
-    geminiApiKey: string;
+    search_product_by_name: (args: { name: string }) => Promise<Product>;
+    search_product_by_id: (args: { id: string }) => Promise<Product>;
+    purchase_product: (args: { product_id: string, user_id: string }) => Promise<boolean>;
 }
 
 
 /**
- * Configuration for School agent
+ * Configuration for Support agent
  */
-export interface SchoolConfig {
-    apiKeys: SchoolApiKeys;
+export interface SupportConfig {
     ir: AgentIR;
-    tools?: SchoolTools;
+    context?: SupportContext;
+    tools?: SupportTools;
 }
 
 /**
- * Create a type-safe School agent instance
+ * Create a type-safe Support agent instance
  * 
  * @example
  * ```typescript
- * const agent = createSchool({
+ * const agent = createSupport({
  *     apiKeys: { geminiApiKey: '...' },
  *     ir: agentIR,
+ *     context: { sessionId: "123" },
  *     tools: { ... },
  * });
  * 
@@ -73,18 +61,30 @@ export interface SchoolConfig {
  * const stream = await agent.stream({ ... });
  * ```
  */
-export function createSchool(config: SchoolConfig) {
+export function createSupport(config: SupportConfig) {
     // Create agent with drivers
-    const agent = new Agent<SchoolInput, SchoolOutput, Record<string, never>, SchoolTools>({
-        gemini: new GoogleDriver(config.apiKeys.geminiApiKey)
-    });
+    const agent = new Agent<SupportInput, SupportOutput, SupportContext, SupportTools>({});
     
     // Load and validate IR immediately
     agent.load(config.ir);
 
-    // Validate tools match IR requirements
-    if (config.ir.tools && config.ir.tools.length > 0) {
-        for (const toolDef of config.ir.tools) {
+    if (config.ir) {
+        const toolMap = new Map<string, any>();
+        if (config.ir.tools && config.ir.tools.length > 0) {
+            for (const toolDef of config.ir.tools) {
+                toolMap.set(toolDef.name, toolDef);
+            }
+        }
+        if (config.ir.workflows && config.ir.workflows.length > 0) {
+            for (const workflow of config.ir.workflows) {
+                if (workflow.tools && workflow.tools.length > 0) {
+                    for (const toolDef of workflow.tools) {
+                        toolMap.set(toolDef.name, toolDef);
+                    }
+                }
+            }
+        }
+        for (const toolDef of toolMap.values()) {
             if (!config.tools?.[toolDef.name]) {
                 throw new Error(
                     `Missing required tool: ${toolDef.name}\n` +
@@ -100,8 +100,8 @@ export function createSchool(config: SchoolConfig) {
          * @param input - Agent input
          * @param overrides - Optional overrides for context, tools, lifecycle, or configName
          */
-        run: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }): Promise<SchoolOutput> => 
-            agent.run(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
+        run: (input: SupportInput, overrides?: { context?: SupportContext; tools?: SupportTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }): Promise<SupportOutput> => 
+            agent.run(input, { tools: overrides?.tools ?? config.tools, context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Fluent streaming API with callbacks
@@ -117,8 +117,8 @@ export function createSchool(config: SchoolConfig) {
          *   .run();
          * ```
          */
-        stream: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
-            agent.stream(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
+        stream: (input: SupportInput, overrides?: { context?: SupportContext; tools?: SupportTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.stream(input, { tools: overrides?.tools ?? config.tools, context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
         
         /**
          * Native async iteration over stream chunks
@@ -132,10 +132,33 @@ export function createSchool(config: SchoolConfig) {
          * }
          * ```
          */
-        streamIterable: (input: SchoolInput, overrides?: { tools?: SchoolTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
-            agent.runStream(input, { tools: overrides?.tools ?? config.tools, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
+        streamIterable: (input: SupportInput, overrides?: { context?: SupportContext; tools?: SupportTools; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; configName?: never }) => 
+            agent.runStream(input, { tools: overrides?.tools ?? config.tools, context: overrides?.context ?? config.context, modelOverride: overrides?.modelOverride, configName: overrides?.configName }),
+        
+        /**
+         * Create a new agent instance with bound context
+         * Useful for multi-turn conversations with the same session
+         * 
+         * @example
+         * ```typescript
+         * const sessionAgent = agent.forContext({ sessionId: '123' });
+         * await sessionAgent.run({ message: "First" });
+         * await sessionAgent.run({ message: "Second" });
+         * ```
+         */
+        forContext: (context: SupportContext) => {
+            const boundContext = context;
+            return {
+                run: (input: SupportInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                stream: (input: SupportInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
+                streamIterable: (input: SupportInput, overrides?: { configName?: never; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride })
+            };
+        }
     };
 }
 
 /** Type for the created agent instance */
-export type SchoolAgent = ReturnType<typeof createSchool>;
+export type SupportAgent = ReturnType<typeof createSupport>;

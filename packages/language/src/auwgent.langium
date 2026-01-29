@@ -53,6 +53,7 @@ WorkFlowConfig:
         "(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")" 
         ":" return=Types "{"
         "description" ":" desc=STRING
+        (workflowToolConfigs+=ToolConfig | workflowToolsConfigs+=ToolsConfig)*
         (body+=Statement)*
     "}"
 ;
@@ -93,11 +94,11 @@ PromptStatement:
     Expression|IfStatement;
 
 InputConfig:
-    "input" "{" inProperties+=TypeConfigDeclaration* "}";
+    "input" "{" (inProperties+=TypeConfigDeclaration (","? inProperties+=TypeConfigDeclaration)*)? "}";
 OutputConfig:
-    "output" "{" outProperties+=(Output)* "}";
+    "output" "{" (outProperties+=Output (","? outProperties+=Output)*)? "}";
 ContextConfig:
-    "context" "{" contextProperties+=TypeConfigDeclaration* "}"
+    "context" "{" (contextProperties+=TypeConfigDeclaration (","? contextProperties+=TypeConfigDeclaration)*)? "}"
 ;
 UseLifecycle:
     "use" "lifecycle" ("{"
@@ -137,7 +138,7 @@ VariableDeclartion:
 ;
 
 TypeDeclaration:
-    (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration)* "}";
+    (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration (","? types+=TypeConfigDeclaration)*)? "}";
 
 TypeConfigDeclaration:
     name=ID (isOptional?='?')? ":" t=Types ("@desc" description=STRING)?;
@@ -243,7 +244,7 @@ UnionType:
     options+=STRING ('|' options+=STRING)*;
 
 ObjectType:
-    '{' (properties+=PropertyType)* '}';
+    '{' (properties+=PropertyType (','? properties+=PropertyType)*)? '}';
 
 PropertyType:
     name=ID (isOptional?='?')? ":" type=Types ("@desc" description=STRING)?;

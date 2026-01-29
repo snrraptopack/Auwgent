@@ -1,21 +1,28 @@
-import { describe } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { EmptyFileSystem } from "langium";
+import { parseHelper } from "langium/test";
+import type { Model } from "../src/generated/ast.js";
+import { createAuwgentServices } from "../src/auwgent-module.js";
 
-/*
 let services: ReturnType<typeof createAuwgentServices>;
-let parse:    ReturnType<typeof parseHelper<Model>>;
-let document: LangiumDocument<Model> | undefined;
+let parse: ReturnType<typeof parseHelper<Model>>;
 
-beforeAll(async () => {
+beforeAll(() => {
     services = createAuwgentServices(EmptyFileSystem);
-    const doParse = parseHelper<Model>(services.Auwgent);
-    parse = (input: string) => doParse(input, { validation: true });
-
-    // activate the following if your linking test requires elements from a built-in library, for example
-    // await services.shared.workspace.WorkspaceManager.initializeWorkspace([]);
+    parse = parseHelper<Model>(services.Auwgent);
 });
-*/
 
-describe('Validating', () => {
-
-    // TODO: Add validation tests
+describe("Validating", () => {
+    it("rejects inline prompt blocks in return statements", async () => {
+        const document = await parse(`
+agent Validate {
+  workflow w():{success:boolean}{
+    description: "w"
+    return {{success:false}}
+  }
+}
+        `, { validation: true });
+        const errors = document.diagnostics?.filter(d => d.severity === 1) ?? [];
+        expect(errors.length).toBeGreaterThan(0);
+    });
 });

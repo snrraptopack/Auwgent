@@ -42,6 +42,7 @@ export interface Workflow {
     returns: IRType;
     body: Statement[];
     description: string;
+    tools?: Tool[];
 }
 
 export type Statement =

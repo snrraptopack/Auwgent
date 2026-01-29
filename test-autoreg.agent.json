@@ -1,85 +1,206 @@
 {
-  "name": "School",
-  "modelConfig": [
-    {
-      "defaultConfig": {
-        "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
-        },
-        "prompt": {
-          "value": "you are a helpful assist",
-          "type": "literal"
-        }
-      },
-      "namedConfig": []
-    }
-  ],
+  "name": "Support",
+  "modelConfig": [],
   "input": {
     "text": {
       "type": "string",
       "optional": false
     }
   },
-  "output": {
-    "response": {
-      "type": {
-        "type": "typeRef",
-        "name": "Response"
-      },
-      "optional": false,
-      "description": "response of the student"
+  "output": null,
+  "context": {
+    "isVerified": {
+      "type": "boolean",
+      "optional": false
+    },
+    "user_id": {
+      "type": "string",
+      "optional": false
     }
   },
-  "context": null,
   "tools": [
     {
-      "description": "get the student with lower grade",
-      "params": {},
-      "name": "get_student_with_lower_grade",
+      "description": "for getting a product by name",
+      "params": {
+        "name": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "search_product_by_name",
       "returns": {
         "type": "typeRef",
-        "name": "Student"
+        "name": "Product"
       }
     },
     {
-      "description": "get the student with higher grade",
-      "params": {},
-      "name": "get_student_with_higher_grade",
+      "description": "for getting a product by id",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "search_product_by_id",
       "returns": {
         "type": "typeRef",
-        "name": "Student"
+        "name": "Product"
       }
     }
   ],
-  "workflows": [],
+  "workflows": [
+    {
+      "flowName": "flow_product",
+      "flowParams": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": {
+        "type": "object",
+        "properties": {
+          "success": "boolean",
+          "reason": "string"
+        }
+      },
+      "body": [
+        {
+          "type": "if",
+          "condition": {
+            "left": {
+              "type": "contextRef",
+              "property": "isVerified"
+            },
+            "operator": "!=",
+            "right": {
+              "value": "true",
+              "type": "literal"
+            }
+          },
+          "then": [
+            {
+              "type": "return",
+              "value": {
+                "type": "object",
+                "value": {
+                  "success": {
+                    "value": "false",
+                    "type": "literal"
+                  },
+                  "reason": {
+                    "value": "user is not verfied",
+                    "type": "literal"
+                  }
+                }
+              }
+            }
+          ],
+          "else": []
+        },
+        {
+          "name": "product_result",
+          "value": {
+            "value": "purchase_product",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "id",
+                "type": "varRef"
+              },
+              {
+                "type": "contextRef",
+                "property": "user_id"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "type": "if",
+          "condition": {
+            "left": {
+              "value": "product_result",
+              "type": "varRef"
+            },
+            "operator": "==",
+            "right": {
+              "value": "true",
+              "type": "literal"
+            }
+          },
+          "then": [
+            {
+              "type": "return",
+              "value": {
+                "type": "object",
+                "value": {
+                  "success": {
+                    "value": "true",
+                    "type": "literal"
+                  },
+                  "reason": {
+                    "value": "product bought",
+                    "type": "literal"
+                  }
+                }
+              }
+            }
+          ],
+          "else": []
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "object",
+            "value": {
+              "success": {
+                "value": "false",
+                "type": "literal"
+              },
+              "reason": {
+                "value": "could not purchase the product",
+                "type": "literal"
+              }
+            }
+          }
+        }
+      ],
+      "description": "This workflow is responsible for buying product but with guards to ensure we reliably make transaction",
+      "tools": [
+        {
+          "description": "used to purchase a product",
+          "params": {
+            "product_id": {
+              "type": "string",
+              "optional": false
+            },
+            "user_id": {
+              "type": "string",
+              "optional": false
+            }
+          },
+          "name": "purchase_product",
+          "returns": "boolean"
+        }
+      ]
+    }
+  ],
   "helpers": [],
   "types": {
-    "Student": {
+    "Product": {
       "isOutput": false,
       "properties": {
         "name": {
           "type": "string",
           "optional": false
         },
-        "class": {
+        "id": {
           "type": "string",
           "optional": false
         },
-        "age": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    },
-    "Response": {
-      "isOutput": true,
-      "properties": {
-        "student": {
-          "type": {
-            "type": "typeRef",
-            "name": "Student"
-          },
+        "price": {
+          "type": "number",
           "optional": false
         }
       }

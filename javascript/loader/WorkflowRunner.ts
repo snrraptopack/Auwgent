@@ -1,5 +1,5 @@
 import { ExpressionEvaluator, type StreamingHelperExecutor } from "./ExpressionEvaluator";
-import type { AgentIR, Statement, Expression, HelperIR } from "./types/ir";
+import type { AgentIR, Statement, Expression, HelperIR, Tool } from "./types/ir";
 import type { ToolMap } from "./types/tool";
 import type { StreamChunk } from "./types/protocol";
 import { WorkflowError } from "./types/errors";
@@ -21,7 +21,13 @@ export class WorkflowRunner {
         }
 
         try {
-            const evaluator = new ExpressionEvaluator(this.ir, this.tools, this.helperExecutor);
+            const evaluator = new ExpressionEvaluator(
+                this.ir,
+                this.tools,
+                this.helperExecutor,
+                undefined,
+                this.getToolDefinitions(flow.tools)
+            );
             const scope = new Map<string, any>([
                 ...Object.entries(context ?? {}),  // Context first
                 ...Object.entries(args)             // Workflow args override
@@ -78,7 +84,8 @@ export class WorkflowRunner {
                 this.ir,
                 this.tools,
                 this.helperExecutor,
-                this.streamingHelperExecutor
+                this.streamingHelperExecutor,
+                this.getToolDefinitions(flow.tools)
             );
             const scope = new Map<string, any>([
                 ...Object.entries(context ?? {}),
@@ -125,5 +132,19 @@ export class WorkflowRunner {
             }
             throw new WorkflowError(workflowName, undefined, error);
         }
+    }
+
+    private getToolDefinitions(workflowTools?: Tool[]): Tool[] {
+        if (!workflowTools || workflowTools.length === 0) {
+            return this.ir.tools ?? [];
+        }
+        const toolMap = new Map<string, Tool>();
+        for (const tool of this.ir.tools ?? []) {
+            toolMap.set(tool.name, tool);
+        }
+        for (const tool of workflowTools) {
+            toolMap.set(tool.name, tool);
+        }
+        return Array.from(toolMap.values());
     }
 }

@@ -1,20 +1,32 @@
-import { describe } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { EmptyFileSystem } from "langium";
+import { parseHelper } from "langium/test";
+import type { Model } from "../src/generated/ast.js";
+import { createAuwgentServices } from "../src/auwgent-module.js";
 
-/*
 let services: ReturnType<typeof createAuwgentServices>;
-let parse:    ReturnType<typeof parseHelper<Model>>;
-let document: LangiumDocument<Model> | undefined;
+let parse: ReturnType<typeof parseHelper<Model>>;
 
-beforeAll(async () => {
+beforeAll(() => {
     services = createAuwgentServices(EmptyFileSystem);
     parse = parseHelper<Model>(services.Auwgent);
-
-    // activate the following if your linking test requires elements from a built-in library, for example
-    // await services.shared.workspace.WorkspaceManager.initializeWorkspace([]);
 });
-*/
 
-describe('Parsing tests', () => {
-
-    // TODO: Add parsing tests
+describe("Parsing tests", () => {
+    it("parses workflow tools and comma-separated object types", async () => {
+        const document = await parse(`
+agent Shop {
+  workflow flow_product(id:string):{success:boolean, reason:string}{
+    description: "buy flow"
+    tools {
+      purchase_product(id:string, user_id:string):boolean
+    }
+    let result = purchase_product(id, "u1")
+    return {success: result, reason: "ok"}
+  }
+}
+        `);
+        expect(document.parseResult.parserErrors.length).toBe(0);
+        expect(document.diagnostics?.length ?? 0).toBe(0);
+    });
 });
