@@ -1,0 +1,87 @@
+{
+  "name": "TestTransitive",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "openai",
+          "modelName": "gpt-4"
+        },
+        "prompt": null
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": {
+    "text": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "output": {
+    "result": {
+      "type": "string",
+      "optional": false,
+      "description": "no description"
+    }
+  },
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [
+    {
+      "name": "HelperWithInternalDeps",
+      "description": "Uses internal prompt",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "openai",
+              "modelName": "gpt-4"
+            },
+            "prompt": {
+              "type": "parts",
+              "value": [
+                {
+                  "type": "promptRef",
+                  "name": "InternalPrompt",
+                  "value": [
+                    {
+                      "value": "This is an internal prompt",
+                      "type": "literal"
+                    },
+                    {
+                      "value": "Used only within this file",
+                      "type": "literal"
+                    }
+                  ]
+                },
+                {
+                  "value": "Additional text",
+                  "type": "literal"
+                }
+              ]
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "data": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "output": {
+        "result": {
+          "type": "string",
+          "optional": false,
+          "description": "no description"
+        }
+      },
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ]
+}

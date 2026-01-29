@@ -1,9 +1,21 @@
-import { AstNode, DefaultScopeProvider, ReferenceInfo, Scope, StreamScope, stream } from 'langium';
-import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, isWorkFlowConfig, Helper, ToolFunction, TypeConfigDeclaration } from '../generated/ast.js';
+import { AstNode, DefaultScopeProvider, ReferenceInfo, Scope, StreamScope, stream, AstNodeDescription, AstUtils, LangiumCoreServices } from 'langium';
+import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, isWorkFlowConfig, Helper, ToolFunction, TypeConfigDeclaration, Model, isHelper, isTypeDeclaration, isNamedPrompt } from '../generated/ast.js';
+import { AuwgentUriResolver } from '../auwgent-uri-resolver.js';
 
 export class AuwgentScopeProvider extends DefaultScopeProvider {
+    private uriResolver: AuwgentUriResolver;
+
+    constructor(services: LangiumCoreServices) {
+        super(services);
+        this.uriResolver = new AuwgentUriResolver();
+    }
 
     override getScope(context: ReferenceInfo): Scope {
+        // Handle references to importable symbols (Helper, TypeDeclaration, NamedPrompt)
+        if (this.isImportableReference(context)) {
+            return this.getImportedScope(context);
+        }
+
         // Handle FunctionCall.func references
         if (context.property === 'func') {
             // Find all ToolFunctions in the containing Agent
@@ -53,6 +65,93 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
         }
 
         return super.getScope(context);
+    }
+
+    /**
+     * Check if this reference is to an importable type
+     */
+    private isImportableReference(context: ReferenceInfo): boolean {
+        const refType = this.reflection.getReferenceType(context);
+        return refType === 'Helper' || refType === 'TypeDeclaration' || refType === 'NamedPrompt';
+    }
+
+    /**
+     * Get scope including both local and imported symbols
+     */
+    private getImportedScope(context: ReferenceInfo): Scope {
+        const document = AstUtils.getDocument(context.container);
+        const model = document.parseResult.value as Model;
+        
+        // Collect local scope (current file)
+        const localDescriptions: AstNodeDescription[] = [];
+        for (const element of model.elements) {
+            if (isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element)) {
+                localDescriptions.push(
+                    this.descriptions.createDescription(element, element.name, document)
+                );
+            }
+        }
+        
+        // Collect imported scope
+        const importedDescriptions: AstNodeDescription[] = [];
+        
+        for (const importStmt of model.imports) {
+            const targetUri = this.uriResolver.resolveImportUri(
+                importStmt.importPath,
+                document.uri
+            );
+            
+            if (!targetUri) continue;
+            
+            // Handle wildcard imports
+            if (importStmt.$type === 'WildcardImport') {
+                const namespace = (importStmt as any).namespace;
+                const exports = this.indexManager.allElements(
+                    this.getExportableType(context),
+                    new Set([targetUri.toString()])
+                );
+                
+                for (const exp of exports) {
+                    const qualifiedName = `${namespace}.${exp.name}`;
+                    importedDescriptions.push({
+                        ...exp,
+                        name: qualifiedName
+                    });
+                }
+            }
+            // Handle named imports
+            else if (importStmt.$type === 'NamedImports') {
+                const namedImports = (importStmt as any).imports;
+                for (const spec of namedImports) {
+                    const symbolName = spec.imported.$refText;
+                    const localName = spec.alias || symbolName;
+                    
+                    const exports = this.indexManager.allElements(
+                        this.getExportableType(context),
+                        new Set([targetUri.toString()])
+                    );
+                    
+                    const matchingExport = Array.from(exports).find(e => e.name === symbolName);
+                    if (matchingExport) {
+                        importedDescriptions.push({
+                            ...matchingExport,
+                            name: localName
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Combine local and imported scopes (local takes precedence)
+        return this.createScope(importedDescriptions, this.createScope(localDescriptions));
+    }
+
+    /**
+     * Get the exportable type name for querying the index
+     */
+    private getExportableType(context: ReferenceInfo): string {
+        const refType = this.reflection.getReferenceType(context);
+        return refType;
     }
 
     /**

@@ -1,0 +1,30 @@
+// Test file to demonstrate import validation
+
+// Valid import
+import { helper DataFetcher, type User } from "./helpers"
+
+// This should error: wrong kind (User is a type, not a helper)
+// import { helper User } from "./helpers"
+
+// This should error: non-existent symbol
+// import { type NonExistent } from "./helpers"
+
+// This should error: non-exported symbol
+// import { helper InternalHelper } from "./helpers"
+
+// This should error: invalid path
+// import { type User } from "./nonexistent"
+
+agent TestAgent {
+    default config {
+        model: openai("gpt-4")
+    }
+    
+    input {
+        user: User
+    }
+    
+    helpers {
+        DataFetcher
+    }
+}

@@ -1,0 +1,28 @@
+// Shared helpers and types
+
+export type User {
+    name: string,
+    email: string,
+    age?: number
+}
+
+export helper DataFetcher {
+    description: "Fetches data from external sources"
+    
+    input {
+        url: string
+    }
+    output {
+        data: string @desc "The fetched data"
+    }
+}
+
+export prompt WelcomePrompt {
+    "Welcome to the system!"
+    "Please provide your information."
+}
+
+// Non-exported helper (should not be importable)
+helper InternalHelper {
+    description: "Internal use only"
+}

@@ -36,7 +36,8 @@ import {
     isHelperCall,
     Helper,
     TypeDeclaration,
-    isTypeDeclaration
+    isTypeDeclaration,
+    createAuwgentServices
 } from "auwgent-language"
 
 
@@ -44,6 +45,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { handleAgentConfig } from "./agentConfig.js";
 import { generateTypesFile } from "./Types/typesGenerator.js";
+import { CrossFileResolver } from "./cross-file-resolver.js";
+import { NodeFileSystem } from 'langium/node';
+import { URI } from 'langium';
 
 
 type AgentIr = {
@@ -87,7 +91,7 @@ type HelperType = {
 } /// returns: string | undefined, has be removed requires changes in the loader too
 
 
-export function generateOutput(model: Model, source: string, destination: string) {
+export async function generateOutput(model: Model, source: string, destination: string) {
 
     const destDir = path.dirname(destination);
     if (!fs.existsSync(destDir)) {
@@ -98,11 +102,52 @@ export function generateOutput(model: Model, source: string, destination: string
     const baseName = path.basename(source, '.agent');
     const outputPath = path.join(destDir, `${baseName}.agent.json`);
 
-    // Collect all type definitions
-    const typeMap = collectTypes(model);
+    // Initialize cross-file resolver
+    const resolver = new CrossFileResolver();
+    const services = createAuwgentServices(NodeFileSystem).Auwgent;
+    
+    // Create a parser function for the resolver
+    const parseFile = async (filePath: string): Promise<Model | null> => {
+        try {
+            const document = await services.shared.workspace.LangiumDocuments.getOrCreateDocument(URI.file(filePath));
+            await services.shared.workspace.DocumentBuilder.build([document], { validation: false });
+            return document.parseResult?.value as Model;
+        } catch (error) {
+            console.error(`Error parsing file ${filePath}:`, error);
+            return null;
+        }
+    };
 
-    // First pass: collect all helpers into a map by name
+    // Resolve all imports and collect dependencies
+    const absoluteSourcePath = path.resolve(source);
+    const { helpers: importedHelpers, types: importedTypes } = 
+        await resolver.resolveImports(model, absoluteSourcePath, parseFile);
+
+    // Collect all type definitions (local + imported)
+    const typeMap = new Map<string, TypeDeclaration>();
+    
+    // Add imported types
+    for (const [name, type] of importedTypes) {
+        typeMap.set(name, type);
+    }
+    
+    // Add local types (override imported if same name)
+    for (const element of model.elements) {
+        if (isTypeDeclaration(element)) {
+            typeMap.set(element.name, element);
+        }
+    }
+
+    // First pass: collect all helpers (local + imported)
     const helperMap = new Map<string, HelperType>();
+    
+    // Add imported helpers
+    for (const [name, helper] of importedHelpers) {
+        const helperIR = handleHelper(helper);
+        helperMap.set(name, helperIR);
+    }
+    
+    // Add local helpers (override imported if same name)
     for (const element of model.elements) {
         if (element.$type === "Helper") {
             const helperIR = handleHelper(element);
@@ -117,7 +162,7 @@ export function generateOutput(model: Model, source: string, destination: string
         if (currentElement.$type === "Agent") {
             const agentIR = handleAgentConfig(currentElement) as AgentIr;
 
-            // Add type definitions to IR
+            // Add type definitions to IR (includes imported types)
             if (typeMap.size > 0) {
                 agentIR.types = extractTypeDefinitions(typeMap);
             }
@@ -191,24 +236,6 @@ function handleHelper(helper: Helper): HelperType {
         tools: baseConfig.tools || [],
         workflows: baseConfig.workflows || []
     };
-}
-
-/**
- * Collect all type declarations from the model
- */
-function collectTypes(model: Model): Map<string, TypeDeclaration> {
-    const typeMap = new Map<string, TypeDeclaration>();
-    
-    for (const element of model.elements) {
-        if (isTypeDeclaration(element)) {
-            if (typeMap.has(element.name)) {
-                throw new Error(`Duplicate type declaration: ${element.name}`);
-            }
-            typeMap.set(element.name, element);
-        }
-    }
-    
-    return typeMap;
 }
 
 /**

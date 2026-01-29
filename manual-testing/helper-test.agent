@@ -3,7 +3,7 @@ helper DeepThink {
     description: "A specialist for complex reasoning and analysis. Use for questions requiring deep thought."
     
     default config {
-        model: "gemini-2.5-flash"
+        model: gemini("")
         prompt: "You are a deep thinker. Take your time to analyze thoroughly. Provide detailed reasoning."
     }
     
@@ -16,7 +16,6 @@ helper DeepThink {
         conclusion: string @desc "The final conclusion"
     }
     
-    returns: back
 }
 
 // Main agent that can delegate to DeepThink
@@ -26,7 +25,7 @@ agent Manager {
     }
     
     default config {
-        model: "kimi-k2-0905-preview"
+        model: custom("","")
         prompt {
             "You are a helpful manager. For simple questions, answer directly."
             "For complex questions requiring deep analysis, delegate to the DeepThink helper."

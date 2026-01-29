@@ -1,0 +1,21 @@
+// Main agent importing helper with internal dependencies
+
+import { HelperWithInternalDeps } from "./test-transitive-deps"
+
+agent TestTransitive {
+    default config {
+        model: openai("gpt-4")
+    }
+    
+    input {
+        text: string
+    }
+    
+    output {
+        result: string
+    }
+    
+    helpers {
+        HelperWithInternalDeps
+    }
+}

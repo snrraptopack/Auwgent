@@ -17,7 +17,26 @@ export async function extractDocument(fileName: string, services: LangiumCoreSer
     }
 
     const document = await services.shared.workspace.LangiumDocuments.getOrCreateDocument(URI.file(path.resolve(fileName)));
-    await services.shared.workspace.DocumentBuilder.build([document], { validation: true });
+    
+    // Also load imported documents
+    const model = document.parseResult?.value as any;
+    const importedDocs: LangiumDocument[] = [];
+    
+    if (model && model.imports) {
+        for (const importStmt of model.imports) {
+            const importPath = importStmt.importPath.replace(/['"]/g, '');
+            const pathWithExtension = importPath.endsWith('.agent') ? importPath : `${importPath}.agent`;
+            const resolvedPath = path.resolve(path.dirname(fileName), pathWithExtension);
+            
+            if (fs.existsSync(resolvedPath)) {
+                const importedDoc = await services.shared.workspace.LangiumDocuments.getOrCreateDocument(URI.file(resolvedPath));
+                importedDocs.push(importedDoc);
+            }
+        }
+    }
+    
+    // Build all documents together
+    await services.shared.workspace.DocumentBuilder.build([document, ...importedDocs], { validation: true });
 
     const validationErrors = (document.diagnostics ?? []).filter(e => e.severity === 1);
     if (validationErrors.length > 0) {

@@ -1,58 +1,16 @@
-// Test the new type system
-
-// Regular data type
-type Point {
-    x: number
-    y: number
+output type ExtractedResume {
+    name:string
+    title?:string
+    experience:string // Experience but because it not provided let use string
+    skills:string[]
 }
 
-// Nested type reference
-type Address {
-    street: string
-    city: string
-    zipCode?: string
-}
+agent ExtractResume{
+    input{text:string}
+    output {response: ExtractedResume @desc "The resume extracted"}
 
-type User {
-    id: string
-    name: string
-    address: Address
-}
-
-// Output type with descriptions
-output type AnalysisResult {
-    summary: string @desc "High-level summary of findings"
-    confidence: number @desc "Confidence score between 0 and 1"
-    keyFindings: string[] @desc "List of key findings"
-}
-
-output type SearchResult {
-    query: string @desc "The original search query"
-    results: {
-        title: string @desc "Result title"
-        url: string @desc "Result URL"
-        snippet: string @desc "Brief excerpt"
-    }[] @desc "Array of search results"
-    totalCount: number @desc "Total number of results found"
-}
-
-agent TypeSystemTest {
-    input {
-       message:string
-    }
-    
-    output {
-        analysis: AnalysisResult @desc "The complete analysis"
-        searchResults: SearchResult @desc "Related search results"
-    }
-    
-    context {
-        sessionId: string
-    }
-    
-    
-    default config {
-        model: gemini("gemini-2.0-flash")
-        prompt: "You are a data analysis assistant."
+    default config{
+        model:openai("openai/gpt-40")
+        prompt: "You are resume parser extract the following resume text attached by the user"
     }
 }

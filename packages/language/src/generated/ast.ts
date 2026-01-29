@@ -21,6 +21,7 @@ export type AuwgentKeywordNames =
     | "!="
     | "("
     | ")"
+    | "*"
     | "+"
     | ","
     | "."
@@ -36,6 +37,7 @@ export type AuwgentKeywordNames =
     | "`"
     | "agent"
     | "all"
+    | "as"
     | "boolean"
     | "config"
     | "context"
@@ -45,12 +47,15 @@ export type AuwgentKeywordNames =
     | "default"
     | "description"
     | "else"
+    | "export"
     | "false"
+    | "from"
     | "gemini"
     | "helper"
     | "helpers"
     | "hlp"
     | "if"
+    | "import"
     | "input"
     | "let"
     | "lifecycle"
@@ -305,6 +310,16 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
+export type Exportable = Helper | NamedPrompt | TypeDeclaration;
+
+export const Exportable = {
+    $type: 'Exportable'
+} as const;
+
+export function isExportable(item: unknown): item is Exportable {
+    return reflection.isInstance(item, Exportable.$type);
+}
+
 export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | ContextReference | FunctionCall | HelperCall | InlinePromptBlock | MemberAccess | NumberLiteral | ObjectLiteral | StringLiteral | TemplateLiteral | VariableRef;
 
 export const Expression = {
@@ -313,6 +328,20 @@ export const Expression = {
 
 export function isExpression(item: unknown): item is Expression {
     return reflection.isInstance(item, Expression.$type);
+}
+
+export interface FileImport extends langium.AstNode {
+    readonly $type: 'FileImport' | 'NamedImports' | 'WildcardImport';
+    importPath: string;
+}
+
+export const FileImport = {
+    $type: 'FileImport',
+    importPath: 'importPath'
+} as const;
+
+export function isFileImport(item: unknown): item is FileImport {
+    return reflection.isInstance(item, FileImport.$type);
 }
 
 export interface FunctionCall extends langium.AstNode {
@@ -352,6 +381,7 @@ export interface Helper extends langium.AstNode {
     readonly $type: 'Helper';
     configs: Array<AgentConfigurations>;
     desc: string;
+    exported: boolean;
     name: string;
 }
 
@@ -359,6 +389,7 @@ export const Helper = {
     $type: 'Helper',
     configs: 'configs',
     desc: 'desc',
+    exported: 'exported',
     name: 'name'
 } as const;
 
@@ -436,6 +467,31 @@ export function isIfStatement(item: unknown): item is IfStatement {
     return reflection.isInstance(item, IfStatement.$type);
 }
 
+export type ImportKind = 'helper' | 'prompt' | 'type';
+
+export function isImportKind(item: unknown): item is ImportKind {
+    return item === 'helper' || item === 'type' || item === 'prompt';
+}
+
+export interface ImportSpecifier extends langium.AstNode {
+    readonly $container: NamedImports;
+    readonly $type: 'ImportSpecifier';
+    alias?: string;
+    imported: langium.Reference<Exportable>;
+    kind?: ImportKind;
+}
+
+export const ImportSpecifier = {
+    $type: 'ImportSpecifier',
+    alias: 'alias',
+    imported: 'imported',
+    kind: 'kind'
+} as const;
+
+export function isImportSpecifier(item: unknown): item is ImportSpecifier {
+    return reflection.isInstance(item, ImportSpecifier.$type);
+}
+
 export interface InlinePromptBlock extends langium.AstNode {
     readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'InlinePromptBlock';
@@ -488,11 +544,13 @@ export function isMemberAccess(item: unknown): item is MemberAccess {
 export interface Model extends langium.AstNode {
     readonly $type: 'Model';
     elements: Array<Element>;
+    imports: Array<FileImport>;
 }
 
 export const Model = {
     $type: 'Model',
-    elements: 'elements'
+    elements: 'elements',
+    imports: 'imports'
 } as const;
 
 export function isModel(item: unknown): item is Model {
@@ -528,15 +586,32 @@ export function isModelProvider(item: unknown): item is ModelProvider {
     return reflection.isInstance(item, ModelProvider.$type);
 }
 
+export interface NamedImports extends FileImport {
+    readonly $type: 'NamedImports';
+    imports: Array<ImportSpecifier>;
+}
+
+export const NamedImports = {
+    $type: 'NamedImports',
+    importPath: 'importPath',
+    imports: 'imports'
+} as const;
+
+export function isNamedImports(item: unknown): item is NamedImports {
+    return reflection.isInstance(item, NamedImports.$type);
+}
+
 export interface NamedPrompt extends langium.AstNode {
     readonly $container: Model;
     readonly $type: 'NamedPrompt';
+    exported: boolean;
     name: string;
     parts: Array<PromptStatement>;
 }
 
 export const NamedPrompt = {
     $type: 'NamedPrompt',
+    exported: 'exported',
     name: 'name',
     parts: 'parts'
 } as const;
@@ -925,6 +1000,7 @@ export function isTypeConfigDeclaration(item: unknown): item is TypeConfigDeclar
 export interface TypeDeclaration extends langium.AstNode {
     readonly $container: Model;
     readonly $type: 'TypeDeclaration';
+    exported: boolean;
     isOutput: boolean;
     name: string;
     types: Array<TypeConfigDeclaration>;
@@ -932,6 +1008,7 @@ export interface TypeDeclaration extends langium.AstNode {
 
 export const TypeDeclaration = {
     $type: 'TypeDeclaration',
+    exported: 'exported',
     isOutput: 'isOutput',
     name: 'name',
     types: 'types'
@@ -1015,6 +1092,21 @@ export function isVariableRef(item: unknown): item is VariableRef {
     return reflection.isInstance(item, VariableRef.$type);
 }
 
+export interface WildcardImport extends FileImport {
+    readonly $type: 'WildcardImport';
+    namespace: string;
+}
+
+export const WildcardImport = {
+    $type: 'WildcardImport',
+    importPath: 'importPath',
+    namespace: 'namespace'
+} as const;
+
+export function isWildcardImport(item: unknown): item is WildcardImport {
+    return reflection.isInstance(item, WildcardImport.$type);
+}
+
 export interface WorkFlowConfig extends langium.AstNode {
     readonly $container: Agent | Helper;
     readonly $type: 'WorkFlowConfig';
@@ -1058,7 +1150,9 @@ export type AuwgentAstType = {
     CustomProvider: CustomProvider
     DefaultConfigModel: DefaultConfigModel
     Element: Element
+    Exportable: Exportable
     Expression: Expression
+    FileImport: FileImport
     FunctionCall: FunctionCall
     GeminiProvider: GeminiProvider
     Helper: Helper
@@ -1066,12 +1160,14 @@ export type AuwgentAstType = {
     HelperRef: HelperRef
     HelpersConfig: HelpersConfig
     IfStatement: IfStatement
+    ImportSpecifier: ImportSpecifier
     InlinePromptBlock: InlinePromptBlock
     InputConfig: InputConfig
     MemberAccess: MemberAccess
     Model: Model
     ModelConfig: ModelConfig
     ModelProvider: ModelProvider
+    NamedImports: NamedImports
     NamedPrompt: NamedPrompt
     NonDefaultConfigModel: NonDefaultConfigModel
     NumberLiteral: NumberLiteral
@@ -1103,6 +1199,7 @@ export type AuwgentAstType = {
     UseLifecycle: UseLifecycle
     VariableDeclartion: VariableDeclartion
     VariableRef: VariableRef
+    WildcardImport: WildcardImport
     WorkFlowConfig: WorkFlowConfig
 }
 
@@ -1264,11 +1361,26 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: []
         },
+        Exportable: {
+            name: Exportable.$type,
+            properties: {
+            },
+            superTypes: []
+        },
         Expression: {
             name: Expression.$type,
             properties: {
             },
             superTypes: [PromptStatement.$type]
+        },
+        FileImport: {
+            name: FileImport.$type,
+            properties: {
+                importPath: {
+                    name: FileImport.importPath
+                }
+            },
+            superTypes: []
         },
         FunctionCall: {
             name: FunctionCall.$type,
@@ -1303,11 +1415,15 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 desc: {
                     name: Helper.desc
                 },
+                exported: {
+                    name: Helper.exported,
+                    defaultValue: false
+                },
                 name: {
                     name: Helper.name
                 }
             },
-            superTypes: [Element.$type]
+            superTypes: [Element.$type, Exportable.$type]
         },
         HelperCall: {
             name: HelperCall.$type,
@@ -1369,6 +1485,22 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: [PromptStatement.$type, Statement.$type]
         },
+        ImportSpecifier: {
+            name: ImportSpecifier.$type,
+            properties: {
+                alias: {
+                    name: ImportSpecifier.alias
+                },
+                imported: {
+                    name: ImportSpecifier.imported,
+                    referenceType: Exportable.$type
+                },
+                kind: {
+                    name: ImportSpecifier.kind
+                }
+            },
+            superTypes: []
+        },
         InlinePromptBlock: {
             name: InlinePromptBlock.$type,
             properties: {
@@ -1412,6 +1544,10 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 elements: {
                     name: Model.elements,
                     defaultValue: []
+                },
+                imports: {
+                    name: Model.imports,
+                    defaultValue: []
                 }
             },
             superTypes: []
@@ -1438,9 +1574,26 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: []
         },
+        NamedImports: {
+            name: NamedImports.$type,
+            properties: {
+                importPath: {
+                    name: NamedImports.importPath
+                },
+                imports: {
+                    name: NamedImports.imports,
+                    defaultValue: []
+                }
+            },
+            superTypes: [FileImport.$type]
+        },
         NamedPrompt: {
             name: NamedPrompt.$type,
             properties: {
+                exported: {
+                    name: NamedPrompt.exported,
+                    defaultValue: false
+                },
                 name: {
                     name: NamedPrompt.name
                 },
@@ -1449,7 +1602,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     defaultValue: []
                 }
             },
-            superTypes: [Element.$type, Referenceable.$type]
+            superTypes: [Element.$type, Exportable.$type, Referenceable.$type]
         },
         NonDefaultConfigModel: {
             name: NonDefaultConfigModel.$type,
@@ -1710,6 +1863,10 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
         TypeDeclaration: {
             name: TypeDeclaration.$type,
             properties: {
+                exported: {
+                    name: TypeDeclaration.exported,
+                    defaultValue: false
+                },
                 isOutput: {
                     name: TypeDeclaration.isOutput,
                     defaultValue: false
@@ -1722,7 +1879,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     defaultValue: []
                 }
             },
-            superTypes: [Element.$type]
+            superTypes: [Element.$type, Exportable.$type]
         },
         Types: {
             name: Types.$type,
@@ -1773,6 +1930,18 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: [Expression.$type]
+        },
+        WildcardImport: {
+            name: WildcardImport.$type,
+            properties: {
+                importPath: {
+                    name: WildcardImport.importPath
+                },
+                namespace: {
+                    name: WildcardImport.namespace
+                }
+            },
+            superTypes: [FileImport.$type]
         },
         WorkFlowConfig: {
             name: WorkFlowConfig.$type,

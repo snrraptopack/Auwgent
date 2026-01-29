@@ -3,6 +3,8 @@ import { createDefaultModule, createDefaultSharedModule, type DefaultSharedModul
 import { AuwgentGeneratedModule, AuwgentGeneratedSharedModule } from './generated/module.js';
 import { AuwgentValidator, registerValidationChecks } from './auwgent-validator.js';
 import { AuwgentScopeProvider } from './scope/auwgent-scope.js';
+import { AuwgentScopeComputation } from './scope/auwgent-scope-computation.js';
+import { AuwgentCompletionProvider } from './auwgent-completion-provider.js';
 
 
 /**
@@ -27,11 +29,19 @@ export type AuwgentServices = LangiumServices & AuwgentAddedServices
  */
 export const AuwgentModule: Module<AuwgentServices, PartialLangiumServices & AuwgentAddedServices> = {
     validation: {
-        AuwgentValidator: () => new AuwgentValidator()
+        AuwgentValidator: (services) => {
+            const validator = new AuwgentValidator();
+            validator.setServices(services);
+            return validator;
+        }
     },
     references: {
-        ScopeProvider: (service) => new AuwgentScopeProvider(service)
+        ScopeProvider: (service) => new AuwgentScopeProvider(service),
+        ScopeComputation: (services) => new AuwgentScopeComputation(services)
     },
+    lsp: {
+        CompletionProvider: (services) => new AuwgentCompletionProvider(services)
+    }
 };
 
 /**

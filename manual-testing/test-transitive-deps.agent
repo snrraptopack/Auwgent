@@ -1,0 +1,28 @@
+// Test transitive dependencies
+
+// Non-exported prompt (private)
+prompt InternalPrompt {
+    "This is an internal prompt"
+    "Used only within this file"
+}
+
+// Exported helper that uses the non-exported prompt
+export helper HelperWithInternalDeps {
+    description: "Uses internal prompt"
+    
+    default config {
+        model: openai("gpt-4")
+        prompt {
+            InternalPrompt
+            "Additional text"
+        }
+    }
+    
+    input {
+        data: string
+    }
+    
+    output {
+        result: string
+    }
+}

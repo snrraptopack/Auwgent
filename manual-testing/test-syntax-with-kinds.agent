@@ -1,0 +1,16 @@
+// Test import with explicit type annotations
+import { helper DataFetcher, type User, prompt WelcomePrompt } from "./helpers"
+
+agent TestWithKinds {
+    default config {
+        model: openai("gpt-4")
+    }
+    
+    input {
+        user: User
+    }
+    
+    helpers {
+        DataFetcher
+    }
+}

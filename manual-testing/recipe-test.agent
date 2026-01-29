@@ -3,7 +3,7 @@ helper IngredientAnalyzer {
     description: "Analyzes available ingredients and suggests what can be made. Use this first before creating recipes."
     
     default config {
-        model: "kimi-k2-0905-preview"
+        model: gemini("kimi-k2-0905-preview")
         prompt: "You analyze ingredients and suggest what types of dishes could be made with them. Be concise."
     }
     
@@ -16,7 +16,6 @@ helper IngredientAnalyzer {
         cuisineType: string @desc "Suggested cuisine type"
     }
     
-    returns: back
 }
 
 // Helper 2: Recipe creator
@@ -24,7 +23,7 @@ helper RecipeCreator {
     description: "Creates detailed recipes based on cuisine type and ingredients. Only use after analyzing ingredients."
     
     default config {
-        model: "kimi-k2-0905-preview"
+        model: gemini("kimi-k2-0905-preview")
         prompt: "You are a professional chef. Create detailed, step-by-step recipes. Include cooking times and tips."
     }
     
@@ -39,7 +38,6 @@ helper RecipeCreator {
         cookingTime: string @desc "Total cooking time"
     }
     
-    returns: back
 }
 
 // Main agent with workflow
@@ -50,7 +48,7 @@ agent Chef {
     }
     
     default config {
-        model: "kimi-k2-0905-preview"
+        model: gemini("kimi-k2-0905-preview")
         prompt {
             "You are a helpful cooking assistant."
             "You have access to two helpers and one workflow:"

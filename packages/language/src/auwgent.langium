@@ -2,13 +2,31 @@ grammar Auwgent
 
 
 entry Model:
+    (imports+=FileImport)*
     (elements+=Element)*;
+
+FileImport:
+    'import' (NamedImports | WildcardImport) 'from' importPath=STRING;
+
+NamedImports:
+    '{' imports+=ImportSpecifier (',' imports+=ImportSpecifier)* '}';
+
+ImportSpecifier:
+    (kind=ImportKind)? imported=[Exportable:ID] ('as' alias=ID)?;
+
+ImportKind returns string:
+    'helper' | 'type' | 'prompt';
+
+WildcardImport:
+    '*' 'as' namespace=ID;
 
 Element:
     Agent | NamedPrompt | Helper | TypeDeclaration;
 
+type Exportable = Helper | TypeDeclaration | NamedPrompt;
+
 Helper:
-    "helper" name=ID "{"
+    exported?="export"? "helper" name=ID "{"
         "description" ":" desc=STRING
         configs+=AgentConfigurations* 
     "}"
@@ -88,7 +106,7 @@ CustomProvider:
 ;
 
 NamedPrompt:
-    "prompt" name=ID  "{" (parts+=PromptStatement)* "}";
+    exported?="export"? "prompt" name=ID  "{" (parts+=PromptStatement)* "}";
 
 PromptStatement:
     Expression|IfStatement;
@@ -138,7 +156,7 @@ VariableDeclartion:
 ;
 
 TypeDeclaration:
-    (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration (","? types+=TypeConfigDeclaration)*)? "}";
+    exported?="export"? (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration (","? types+=TypeConfigDeclaration)*)? "}";
 
 TypeConfigDeclaration:
     name=ID (isOptional?='?')? ":" t=Types ("@desc" description=STRING)?;
