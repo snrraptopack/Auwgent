@@ -2,7 +2,9 @@ import { Base } from "./prompt"
 
 type User {
     name: string
+    age : number
 }
+
 
 agent IRFixes {
     default config {
@@ -14,10 +16,10 @@ agent IRFixes {
 
     input { message: string }
     context { user: User }
-    
-    workflow combine(a: string, b: string): string {
+
+    workflow combine(a: string, b: string): User {
         description: "Combine strings"
         let c = a + b
-        return c
+        return {name:"", age:10}
     }
 }
