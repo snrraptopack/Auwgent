@@ -393,10 +393,19 @@ export function extractExpression(express: Expression | Statement): any {
     }
 
     if (isFunctionCall(express)) {
-        let name = express.func.ref?.name
-        let args = express.args.map(arg => extractExpression(arg))
-
-        return { value: name, type: "functionCall", args: args }
+        const ref = express.func.ref;
+        const args = express.args.map(arg => extractExpression(arg));
+        if (ref && isNamedPrompt(ref)) {
+            return {
+                type: "promptRef",
+                name: ref.name,
+                params: ref.params?.map(param => param.name) ?? [],
+                args,
+                value: ref.parts?.map(part => extractExpression(part)) ?? []
+            }
+        }
+        const name = ref?.name ?? express.func.$refText;
+        return { value: name, type: "functionCall", args }
     }
 
     if (isPromptCall(express)) {

@@ -24,6 +24,7 @@ Element:
     Agent | NamedPrompt | Helper | TypeDeclaration;
 
 type Exportable = Helper | TypeDeclaration | NamedPrompt;
+type Callable = ToolFunction | NamedPrompt;
 
 Helper:
     exported?="export"? "helper" name=ID "{"
@@ -222,7 +223,7 @@ MemberAccess:
 ;
 
 FunctionCall:
-    func=[ToolFunction:ID] "(" 
+    func=[Callable:ID] "(" 
         (args+=Expression  ("," args+=Expression)*)?
     ")"
 ;

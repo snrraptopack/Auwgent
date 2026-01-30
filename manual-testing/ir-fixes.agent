@@ -7,7 +7,7 @@ type User {
 agent IRFixes {
     default config {
         model: gemini("")
-        prompt: Base + """Hello {{ctx.user.name}}
+        prompt: Base("") + """Hello {{ctx.user.name}}
             Input: {{input.message}}
         """ 
     }
@@ -15,7 +15,6 @@ agent IRFixes {
     input { message: string }
     context { user: User }
     
-
     workflow combine(a: string, b: string): string {
         description: "Combine strings"
         let c = a + b

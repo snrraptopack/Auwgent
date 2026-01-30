@@ -225,6 +225,16 @@ export function isBooleanType(item: unknown): item is BooleanType {
     return reflection.isInstance(item, BooleanType.$type);
 }
 
+export type Callable = NamedPrompt | ToolFunction;
+
+export const Callable = {
+    $type: 'Callable'
+} as const;
+
+export function isCallable(item: unknown): item is Callable {
+    return reflection.isInstance(item, Callable.$type);
+}
+
 export interface Condition extends langium.AstNode {
     readonly $container: IfStatement;
     readonly $type: 'Condition';
@@ -349,7 +359,7 @@ export interface FunctionCall extends langium.AstNode {
     readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PromptCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'FunctionCall';
     args: Array<Expression>;
-    func: langium.Reference<ToolFunction>;
+    func: langium.Reference<Callable>;
 }
 
 export const FunctionCall = {
@@ -1183,6 +1193,7 @@ export type AuwgentAstType = {
     BinaryExpression: BinaryExpression
     BooleanLiteral: BooleanLiteral
     BooleanType: BooleanType
+    Callable: Callable
     Condition: Condition
     ContextConfig: ContextConfig
     ContextReference: ContextReference
@@ -1343,6 +1354,12 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: []
         },
+        Callable: {
+            name: Callable.$type,
+            properties: {
+            },
+            superTypes: []
+        },
         Condition: {
             name: Condition.$type,
             properties: {
@@ -1432,7 +1449,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 },
                 func: {
                     name: FunctionCall.func,
-                    referenceType: ToolFunction.$type
+                    referenceType: Callable.$type
                 }
             },
             superTypes: [Expression.$type]
@@ -1656,7 +1673,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     defaultValue: []
                 }
             },
-            superTypes: [Element.$type, Exportable.$type, Referenceable.$type]
+            superTypes: [Callable.$type, Element.$type, Exportable.$type, Referenceable.$type]
         },
         NonDefaultConfigModel: {
             name: NonDefaultConfigModel.$type,
@@ -1890,7 +1907,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     name: ToolFunction.returns
                 }
             },
-            superTypes: []
+            superTypes: [Callable.$type]
         },
         ToolsConfig: {
             name: ToolsConfig.$type,

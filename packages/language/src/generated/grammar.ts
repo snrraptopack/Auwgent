@@ -2688,7 +2688,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                 "terminal": {
                   "$type": "CrossReference",
                   "type": {
-                    "$ref": "#/types@1"
+                    "$ref": "#/types@2"
                   },
                   "deprecatedSyntax": false,
                   "isMulti": false
@@ -2810,7 +2810,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "CrossReference",
               "type": {
-                "$ref": "#/types@1"
+                "$ref": "#/types@2"
               },
               "deprecatedSyntax": false,
               "isMulti": false
@@ -2873,7 +2873,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "terminal": {
               "$type": "CrossReference",
               "type": {
-                "$ref": "#/rules@32"
+                "$ref": "#/types@1"
               },
               "terminal": {
                 "$type": "RuleCall",
@@ -3805,6 +3805,27 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
             "$type": "SimpleType",
             "typeRef": {
               "$ref": "#/rules@35"
+            }
+          },
+          {
+            "$type": "SimpleType",
+            "typeRef": {
+              "$ref": "#/rules@22"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "$type": "Type",
+      "name": "Callable",
+      "type": {
+        "$type": "UnionType",
+        "types": [
+          {
+            "$type": "SimpleType",
+            "typeRef": {
+              "$ref": "#/rules@32"
             }
           },
           {
