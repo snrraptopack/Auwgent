@@ -128,6 +128,17 @@ export class Synthesizer {
             const evaluator = new ExpressionEvaluator();
             const ctx = context ?? {};
             const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
+            if (Array.isArray(prompt.args) && Array.isArray(prompt.params) && prompt.params.length > 0) {
+                const argValues = [] as any;
+                for (const arg of prompt.args) {
+                    argValues.push(await evaluator.evaluate(arg, scope));
+                }
+                const promptScope = new Map(scope);
+                prompt.params.forEach((param: string, index: number) => {
+                    promptScope.set(param, argValues[index]);
+                });
+                return await evaluator.evaluateStatements(prompt.value, promptScope, true);
+            }
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
 

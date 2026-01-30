@@ -58,6 +58,7 @@ export type Expression =
     | VarRef
     | FunctionCall
     | HelperCall
+    | PromptRef
     | ObjectLiteral
     | ArrayLiteral
     | TemplateLiteral
@@ -112,6 +113,14 @@ export interface HelperCall {
     type: "helperCall";
     value: string; // Helper name
     args: Expression[];
+}
+
+export interface PromptRef {
+    type: "promptRef";
+    name?: string;
+    params?: string[];
+    args?: Expression[];
+    value: Expression[];
 }
 
 export interface ObjectLiteral {

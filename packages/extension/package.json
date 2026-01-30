@@ -30,7 +30,8 @@
     "scripts": {
         "clean": "shx rm -fr *.tsbuildinfo out syntaxes",
         "vscode:prepublish": "npm run build",
-        "build:prepare": "shx mkdir -p ./syntaxes/ && shx cp -f ../language/syntaxes/auwgent.tmLanguage.json ./syntaxes/auwgent.tmLanguage.json",
+        "build:prepare": "shx mkdir -p ./syntaxes/ && shx test -f ./syntaxes/auwgent.tmLanguage.json || shx cp -f ../language/syntaxes/auwgent.tmLanguage.json ./syntaxes/auwgent.tmLanguage.json",
+        "sync:grammar": "node -e \"const fs=require('fs');const basePath='../language/syntaxes/auwgent.tmLanguage.json';const extPath='syntaxes/auwgent.tmLanguage.json';const base=JSON.parse(fs.readFileSync(basePath,'utf8'));const ext=JSON.parse(fs.readFileSync(extPath,'utf8'));const basePatterns=Array.isArray(base.patterns)?base.patterns:[];const extPatterns=Array.isArray(ext.patterns)?ext.patterns:[];const baseNames=new Set(basePatterns.map(p=>p&&p.name).filter(Boolean));const customPatterns=extPatterns.filter(p=>p&&p.name&&!baseNames.has(p.name));const keywordIndex=basePatterns.findIndex(p=>p&&p.name==='keyword.control.auwgent');const mergedPatterns=[...basePatterns];customPatterns.forEach(p=>{const exists=mergedPatterns.some(mp=>mp&&mp.name===p.name);if(!exists){if(keywordIndex>=0){mergedPatterns.splice(keywordIndex+1,0,p);}else{mergedPatterns.push(p);}}});const mergedRepo={...(base.repository||{})};const extRepo=ext.repository||{};Object.keys(extRepo).forEach(key=>{if(!mergedRepo[key]){mergedRepo[key]=extRepo[key];}});const merged={...base,patterns:mergedPatterns,repository:mergedRepo};fs.writeFileSync(extPath,JSON.stringify(merged,null,2));\"",
         "build": "npm run build:prepare && tsc -b tsconfig.json && node esbuild.mjs",
         "build:clean": "npm run clean && npm run build",
         "watch": "npm run build:prepare && concurrently -n tsc,esbuild -c blue,yellow \"tsc -b tsconfig.json --watch\" \"node esbuild.mjs --watch\""

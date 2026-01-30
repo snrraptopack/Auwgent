@@ -106,7 +106,9 @@ CustomProvider:
 ;
 
 NamedPrompt:
-    exported?="export"? "prompt" name=ID  "{" (parts+=PromptStatement)* "}";
+    exported?="export"? "prompt" name=ID 
+        ("(" (params+=TypeConfigDeclaration ("," params+=TypeConfigDeclaration)*)? ")")?
+        "{" (parts+=PromptStatement)* "}";
 
 PromptStatement:
     Expression|IfStatement;
@@ -202,6 +204,7 @@ PrimaryExpression infers Expression:
     | ObjectLiteral
     | MemberAccess
     | {infer VariableRef} variable=[Referenceable]
+    | PromptCall
     | FunctionCall
     | TemplateLiteral
     | ContextReference
@@ -221,6 +224,12 @@ MemberAccess:
 FunctionCall:
     func=[ToolFunction:ID] "(" 
         (args+=Expression  ("," args+=Expression)*)?
+    ")"
+;
+
+PromptCall:
+    "prompt" prompt=[NamedPrompt:ID] "("
+        (args+=Expression ("," args+=Expression)*)?
     ")"
 ;
 

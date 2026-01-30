@@ -1,7 +1,7 @@
 import type { ValidationAcceptor, ValidationChecks } from 'langium';
 import { AstUtils, URI } from 'langium';
-import type { AuwgentAstType, ReturnStatement, FileImport, NamedImports, ImportSpecifier, Model, Exportable } from './generated/ast.js';
-import { isInlinePromptBlock, isHelper, isTypeDeclaration, isNamedPrompt } from './generated/ast.js';
+import type { AuwgentAstType, ReturnStatement, FileImport, NamedImports, ImportSpecifier, Model, Exportable, MultilineStringLiteral } from './generated/ast.js';
+import { isInlinePromptBlock, isHelper, isTypeDeclaration, isNamedPrompt, isMultilineStringLiteral, isAgent, isHelper as isHelperNode, isInputConfig, isContextConfig } from './generated/ast.js';
 import type { AuwgentServices } from './auwgent-module.js';
 import { AuwgentUriResolver } from './auwgent-uri-resolver.js';
 
@@ -17,7 +17,8 @@ export function registerValidationChecks(services: AuwgentServices) {
         Model: [validator.checkCircularDependencies, validator.checkImportOrdering],
         Helper: validator.checkExportDependencies,
         TypeDeclaration: validator.checkExportDependencies,
-        NamedPrompt: validator.checkExportDependencies
+        NamedPrompt: validator.checkExportDependencies,
+        MultilineStringLiteral: validator.checkTemplateInterpolations
     };
     registry.register(checks, validator);
 }
@@ -40,6 +41,43 @@ export class AuwgentValidator {
     checkReturnStatement(statement: ReturnStatement, accept: ValidationAcceptor): void {
         if (isInlinePromptBlock(statement.value)) {
             accept('error', 'Inline prompt blocks are not allowed in return statements. Use an object literal instead.', { node: statement, property: 'value' });
+        }
+    }
+
+    checkTemplateInterpolations(node: MultilineStringLiteral, accept: ValidationAcceptor): void {
+        if (!isMultilineStringLiteral(node)) return;
+        const raw = node.value ?? '';
+        const content = raw.replace(/^"""/, '').replace(/"""$/, '');
+        const interpolationPattern = /\{\{([^}]+)\}\}/g;
+        const inputProps = this.getInputPropertiesInScope(node);
+        const contextProps = this.getContextPropertiesInScope(node);
+        const promptParams = this.getPromptParamsInScope(node);
+        const hasKnownScope = inputProps.length > 0 || contextProps.length > 0 || promptParams.length > 0;
+
+        let match: RegExpExecArray | null;
+        while ((match = interpolationPattern.exec(content)) !== null) {
+            const expr = match[1].trim();
+            if (!this.isSimpleTemplateExpression(expr)) {
+                accept('error', `Invalid template expression: ${expr}`, { node, property: 'value' });
+                continue;
+            }
+            const [root, ...rest] = expr.split('.');
+            if (!root) continue;
+            if (root === 'input') {
+                if (rest.length > 0 && inputProps.length > 0 && !inputProps.includes(rest[0])) {
+                    accept('error', `Unknown input property '${rest[0]}' in template expression`, { node, property: 'value' });
+                }
+                continue;
+            }
+            if (root === 'ctx') {
+                if (rest.length > 0 && contextProps.length > 0 && !contextProps.includes(rest[0])) {
+                    accept('error', `Unknown context property '${rest[0]}' in template expression`, { node, property: 'value' });
+                }
+                continue;
+            }
+            if (hasKnownScope && !inputProps.includes(root) && !contextProps.includes(root) && !promptParams.includes(root)) {
+                accept('error', `Unknown template reference '${root}'`, { node, property: 'value' });
+            }
         }
     }
 
@@ -334,5 +372,52 @@ export class AuwgentValidator {
      */
     private isExportable(element: any): element is Exportable {
         return isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element);
+    }
+
+    private isSimpleTemplateExpression(expr: string): boolean {
+        return /^[_a-zA-Z][\w_]*(\.[_a-zA-Z][\w_]*)*$/.test(expr);
+    }
+
+    private getInputPropertiesInScope(node: any): string[] {
+        let current = node as any;
+        while (current) {
+            if (isAgent(current) || isHelperNode(current)) {
+                const configs = current.configs ?? [];
+                for (const config of configs) {
+                    if (isInputConfig(config)) {
+                        return (config.inProperties ?? []).map((p: any) => p.name);
+                    }
+                }
+            }
+            current = current.$container;
+        }
+        return [];
+    }
+
+    private getContextPropertiesInScope(node: any): string[] {
+        let current = node as any;
+        while (current) {
+            if (isAgent(current) || isHelperNode(current)) {
+                const configs = current.configs ?? [];
+                for (const config of configs) {
+                    if (isContextConfig(config)) {
+                        return (config.contextProperties ?? []).map((p: any) => p.name);
+                    }
+                }
+            }
+            current = current.$container;
+        }
+        return [];
+    }
+
+    private getPromptParamsInScope(node: any): string[] {
+        let current = node as any;
+        while (current) {
+            if (isNamedPrompt(current)) {
+                return (current as any).params?.map((p: any) => p.name) ?? [];
+            }
+            current = current.$container;
+        }
+        return [];
     }
 }

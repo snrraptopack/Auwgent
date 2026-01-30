@@ -14,6 +14,7 @@ agent IRFixes {
 
     input { message: string }
     context { user: User }
+    
 
     workflow combine(a: string, b: string): string {
         description: "Combine strings"

@@ -38,7 +38,8 @@ import {
     Helper,
     TypeDeclaration,
     isTypeDeclaration,
-    createAuwgentServices
+    createAuwgentServices,
+    isPromptCall
 } from "auwgent-language"
 
 
@@ -379,6 +380,8 @@ export function extractExpression(express: Expression | Statement): any {
             return {
                 type: "promptRef",
                 name: ref.name,
+                params: ref.params?.map(param => param.name) ?? [],
+                args: [],
                 value: ref.parts?.map(part => extractExpression(part)) ?? []
             }
         }
@@ -394,6 +397,17 @@ export function extractExpression(express: Expression | Statement): any {
         let args = express.args.map(arg => extractExpression(arg))
 
         return { value: name, type: "functionCall", args: args }
+    }
+
+    if (isPromptCall(express)) {
+        const ref = express.prompt.ref;
+        return {
+            type: "promptRef",
+            name: ref?.name ?? express.prompt.$refText,
+            params: ref?.params?.map(param => param.name) ?? [],
+            args: express.args.map(arg => extractExpression(arg)),
+            value: ref?.parts?.map(part => extractExpression(part)) ?? []
+        }
     }
 
     if (isIfStatement(express)) {

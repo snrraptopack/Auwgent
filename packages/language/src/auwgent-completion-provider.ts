@@ -1,6 +1,6 @@
 import { CompletionAcceptor, CompletionContext, CompletionValueItem, DefaultCompletionProvider, NextFeature, LangiumServices } from 'langium/lsp';
 import { AstNode } from 'langium';
-import { isFileImport, isNamedImports } from './generated/ast.js';
+import { isFileImport, isNamedImports, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt } from './generated/ast.js';
 
 /**
  * Custom completion provider for Auwgent
@@ -17,6 +17,11 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
     }
     
     override completionFor(context: CompletionContext, next: NextFeature, acceptor: CompletionAcceptor): void {
+        if (this.isTemplateInterpolationContext(context)) {
+            this.completeTemplateInterpolation(context, acceptor);
+            return;
+        }
+
         // Check if we're completing an import path
         if (this.isImportPathContext(context)) {
             this.completeImportPath(context, acceptor);
@@ -31,6 +36,63 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
         
         // Fall back to default completion
         super.completionFor(context, next, acceptor);
+    }
+
+    private isTemplateInterpolationContext(context: CompletionContext): boolean {
+        const textDocument = context.document?.textDocument;
+        if (!textDocument) return false;
+        const offset = textDocument.offsetAt(context.position);
+        const text = textDocument.getText();
+        const openIndex = text.lastIndexOf('{{', offset);
+        if (openIndex === -1) return false;
+        const closeIndex = text.lastIndexOf('}}', offset);
+        return openIndex > closeIndex;
+    }
+
+    private completeTemplateInterpolation(context: CompletionContext, acceptor: CompletionAcceptor): void {
+        const textDocument = context.document?.textDocument;
+        if (!textDocument) return;
+        const offset = textDocument.offsetAt(context.position);
+        const text = textDocument.getText();
+        const openIndex = text.lastIndexOf('{{', offset);
+        if (openIndex === -1) return;
+
+        const current = text.slice(openIndex + 2, offset);
+        const token = current.trim();
+        const dotIndex = token.indexOf('.');
+        const rootToken = dotIndex === -1 ? token : token.slice(0, dotIndex);
+
+        const inputProps = this.getInputPropertiesInScope(context.node);
+        const contextProps = this.getContextPropertiesInScope(context.node);
+        const promptParams = this.getPromptParamsInScope(context.node);
+
+        if (dotIndex !== -1) {
+            if (rootToken === 'input') {
+                this.acceptList(context, acceptor, inputProps, 'Input property');
+                return;
+            }
+            if (rootToken === 'ctx') {
+                this.acceptList(context, acceptor, contextProps, 'Context property');
+                return;
+            }
+        }
+
+        this.acceptList(context, acceptor, ['input', 'ctx'], 'Template root');
+        this.acceptList(context, acceptor, inputProps, 'Input property');
+        this.acceptList(context, acceptor, contextProps, 'Context property');
+        this.acceptList(context, acceptor, promptParams, 'Prompt parameter');
+    }
+
+    private acceptList(context: CompletionContext, acceptor: CompletionAcceptor, values: string[], detail: string): void {
+        const unique = Array.from(new Set(values));
+        for (const value of unique) {
+            const item: CompletionValueItem = {
+                label: value,
+                kind: 6,
+                detail
+            };
+            acceptor(context, item);
+        }
     }
     
     /**
@@ -69,6 +131,49 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
         }
         
         return false;
+    }
+
+    private getInputPropertiesInScope(node?: AstNode): string[] {
+        let current: AstNode | undefined = node;
+        while (current) {
+            if (isAgent(current) || isHelper(current)) {
+                const configs = (current as any).configs ?? [];
+                for (const config of configs) {
+                    if (isInputConfig(config)) {
+                        return (config.inProperties ?? []).map(p => p.name);
+                    }
+                }
+            }
+            current = current.$container;
+        }
+        return [];
+    }
+
+    private getContextPropertiesInScope(node?: AstNode): string[] {
+        let current: AstNode | undefined = node;
+        while (current) {
+            if (isAgent(current) || isHelper(current)) {
+                const configs = (current as any).configs ?? [];
+                for (const config of configs) {
+                    if (isContextConfig(config)) {
+                        return (config.contextProperties ?? []).map(p => p.name);
+                    }
+                }
+            }
+            current = current.$container;
+        }
+        return [];
+    }
+
+    private getPromptParamsInScope(node?: AstNode): string[] {
+        let current: AstNode | undefined = node;
+        while (current) {
+            if (isNamedPrompt(current)) {
+                return (current as any).params?.map((p: any) => p.name) ?? [];
+            }
+            current = current.$container;
+        }
+        return [];
     }
     
     /**
