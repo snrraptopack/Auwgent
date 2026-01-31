@@ -1,7 +1,7 @@
 import type { ValidationAcceptor } from 'langium';
 import { AstUtils } from 'langium';
-import type { MultilineStringLiteral } from '../generated/ast.js';
-import { isMultilineStringLiteral, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt } from '../generated/ast.js';
+import type { MultilineStringLiteral, TypeConfigDeclaration, NamedPrompt, Model } from '../generated/ast.js';
+import { isMultilineStringLiteral, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt, isFunctionCall, isPromptCall } from '../generated/ast.js';
 
 export class TemplateValidation {
     checkTemplateInterpolations(node: MultilineStringLiteral, accept: ValidationAcceptor): void {
@@ -24,13 +24,21 @@ export class TemplateValidation {
             const [root, ...rest] = expr.split('.');
             if (!root) continue;
             if (root === 'input') {
-                if (rest.length > 0 && inputProps.length > 0 && !inputProps.includes(rest[0])) {
+                if (inputProps.length === 0) {
+                    accept('error', `Input is not available in this prompt scope`, { node, property: 'value', range: this.getMatchRange(node, match.index, match[0].length) });
+                    continue;
+                }
+                if (rest.length > 0 && !inputProps.includes(rest[0])) {
                     accept('error', `Unknown input property '${rest[0]}' in template expression`, { node, property: 'value', range: this.getMatchRange(node, match.index, match[0].length) });
                 }
                 continue;
             }
             if (root === 'ctx') {
-                if (rest.length > 0 && contextProps.length > 0 && !contextProps.includes(rest[0])) {
+                if (contextProps.length === 0) {
+                    accept('error', `Context is not available in this prompt scope`, { node, property: 'value', range: this.getMatchRange(node, match.index, match[0].length) });
+                    continue;
+                }
+                if (rest.length > 0 && !contextProps.includes(rest[0])) {
                     accept('error', `Unknown context property '${rest[0]}' in template expression`, { node, property: 'value', range: this.getMatchRange(node, match.index, match[0].length) });
                 }
                 continue;
@@ -46,6 +54,35 @@ export class TemplateValidation {
     }
 
     private getInputPropertiesInScope(node: any): string[] {
+        const direct = this.getInputPropertiesFromContainer(node);
+        if (direct.length) return direct;
+        const prompt = this.getPromptContainer(node);
+        if (!prompt) return [];
+        const props = this.getPropertiesFromPromptUsages(prompt, 'input');
+        return props.map(p => p.name);
+    }
+
+    private getContextPropertiesInScope(node: any): string[] {
+        const direct = this.getContextPropertiesFromContainer(node);
+        if (direct.length) return direct;
+        const prompt = this.getPromptContainer(node);
+        if (!prompt) return [];
+        const props = this.getPropertiesFromPromptUsages(prompt, 'context');
+        return props.map(p => p.name);
+    }
+
+    private getPromptParamsInScope(node: any): string[] {
+        let current = node as any;
+        while (current) {
+            if (isNamedPrompt(current)) {
+                return (current as any).params?.map((p: any) => p.name) ?? [];
+            }
+            current = current.$container;
+        }
+        return [];
+    }
+
+    private getInputPropertiesFromContainer(node: any): string[] {
         let current = node as any;
         while (current) {
             if (isAgent(current) || isHelper(current)) {
@@ -61,7 +98,7 @@ export class TemplateValidation {
         return [];
     }
 
-    private getContextPropertiesInScope(node: any): string[] {
+    private getContextPropertiesFromContainer(node: any): string[] {
         let current = node as any;
         while (current) {
             if (isAgent(current) || isHelper(current)) {
@@ -77,15 +114,64 @@ export class TemplateValidation {
         return [];
     }
 
-    private getPromptParamsInScope(node: any): string[] {
+    private getPromptContainer(node: any): NamedPrompt | undefined {
         let current = node as any;
         while (current) {
             if (isNamedPrompt(current)) {
-                return (current as any).params?.map((p: any) => p.name) ?? [];
+                return current;
             }
             current = current.$container;
         }
-        return [];
+        return undefined;
+    }
+
+    private getPropertiesFromPromptUsages(prompt: NamedPrompt, kind: 'input' | 'context'): TypeConfigDeclaration[] {
+        const document = AstUtils.getDocument(prompt);
+        const root = document.parseResult?.value as Model | undefined;
+        if (!root) return [];
+        const collected = new Map<string, TypeConfigDeclaration>();
+        for (const node of AstUtils.streamAllContents(root)) {
+            if (isFunctionCall(node) && node.func?.ref === prompt) {
+                const container = this.getAgentOrHelperContainer(node);
+                if (container) {
+                    this.collectProperties(container, kind, collected);
+                }
+            }
+            if (isPromptCall(node) && node.prompt?.ref === prompt) {
+                const container = this.getAgentOrHelperContainer(node);
+                if (container) {
+                    this.collectProperties(container, kind, collected);
+                }
+            }
+        }
+        return Array.from(collected.values());
+    }
+
+    private getAgentOrHelperContainer(node: any): any | undefined {
+        let current = node as any;
+        while (current) {
+            if (isAgent(current) || isHelper(current)) {
+                return current;
+            }
+            current = current.$container;
+        }
+        return undefined;
+    }
+
+    private collectProperties(container: any, kind: 'input' | 'context', collected: Map<string, TypeConfigDeclaration>): void {
+        const configs = container.configs ?? [];
+        for (const config of configs) {
+            if (kind === 'input' && isInputConfig(config)) {
+                for (const prop of config.inProperties ?? []) {
+                    collected.set(prop.name, prop);
+                }
+            }
+            if (kind === 'context' && isContextConfig(config)) {
+                for (const prop of config.contextProperties ?? []) {
+                    collected.set(prop.name, prop);
+                }
+            }
+        }
     }
 
     private getMatchRange(node: MultilineStringLiteral, matchIndex: number, matchLength: number) {

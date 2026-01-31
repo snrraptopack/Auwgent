@@ -4,7 +4,7 @@ import { AuwgentGeneratedModule, AuwgentGeneratedSharedModule } from './generate
 import { AuwgentValidator, registerValidationChecks } from './auwgent-validator.js';
 import { AuwgentScopeProvider } from './scope/auwgent-scope.js';
 import { AuwgentScopeComputation } from './scope/auwgent-scope-computation.js';
-import { AuwgentCompletionProvider } from './auwgent-completion-provider.js';
+import { AuwgentCompletionProvider, AuwgentHoverProvider } from './auwgent-completion-provider.js';
 
 
 /**
@@ -40,7 +40,8 @@ export const AuwgentModule: Module<AuwgentServices, PartialLangiumServices & Auw
         ScopeComputation: (services) => new AuwgentScopeComputation(services)
     },
     lsp: {
-        CompletionProvider: (services) => new AuwgentCompletionProvider(services)
+        CompletionProvider: (services) => new AuwgentCompletionProvider(services),
+        HoverProvider: (services) => new AuwgentHoverProvider(services)
     }
 };
 

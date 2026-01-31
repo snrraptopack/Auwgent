@@ -1,6 +1,8 @@
-import { CompletionAcceptor, CompletionContext, CompletionValueItem, DefaultCompletionProvider, NextFeature, LangiumServices } from 'langium/lsp';
-import { AstNode } from 'langium';
-import { isFileImport, isNamedImports, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt } from './generated/ast.js';
+import { CompletionAcceptor, CompletionContext, CompletionValueItem, DefaultCompletionProvider, NextFeature, LangiumServices, AstNodeHoverProvider } from 'langium/lsp';
+import { AstNode, AstUtils } from 'langium';
+import type { Hover } from 'vscode-languageserver';
+import type { BaseType, Model, MultilineStringLiteral, NamedPrompt, TypeConfigDeclaration, TypeDeclaration, Types } from './generated/ast.js';
+import { isFileImport, isNamedImports, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt, isFunctionCall, isPromptCall, isMultilineStringLiteral, isArrayType, isBaseType, isObjectType, isUnionType } from './generated/ast.js';
 
 /**
  * Custom completion provider for Auwgent
@@ -62,9 +64,9 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
         const dotIndex = token.indexOf('.');
         const rootToken = dotIndex === -1 ? token : token.slice(0, dotIndex);
 
-        const inputProps = this.getInputPropertiesInScope(context.node);
-        const contextProps = this.getContextPropertiesInScope(context.node);
-        const promptParams = this.getPromptParamsInScope(context.node);
+        const inputProps = getInputPropertiesInScope(context.node);
+        const contextProps = getContextPropertiesInScope(context.node);
+        const promptParams = getPromptParamsInScope(context.node);
 
         if (dotIndex !== -1) {
             if (rootToken === 'input') {
@@ -133,49 +135,6 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
         return false;
     }
 
-    private getInputPropertiesInScope(node?: AstNode): string[] {
-        let current: AstNode | undefined = node;
-        while (current) {
-            if (isAgent(current) || isHelper(current)) {
-                const configs = (current as any).configs ?? [];
-                for (const config of configs) {
-                    if (isInputConfig(config)) {
-                        return (config.inProperties ?? []).map(p => p.name);
-                    }
-                }
-            }
-            current = current.$container;
-        }
-        return [];
-    }
-
-    private getContextPropertiesInScope(node?: AstNode): string[] {
-        let current: AstNode | undefined = node;
-        while (current) {
-            if (isAgent(current) || isHelper(current)) {
-                const configs = (current as any).configs ?? [];
-                for (const config of configs) {
-                    if (isContextConfig(config)) {
-                        return (config.contextProperties ?? []).map(p => p.name);
-                    }
-                }
-            }
-            current = current.$container;
-        }
-        return [];
-    }
-
-    private getPromptParamsInScope(node?: AstNode): string[] {
-        let current: AstNode | undefined = node;
-        while (current) {
-            if (isNamedPrompt(current)) {
-                return (current as any).params?.map((p: any) => p.name) ?? [];
-            }
-            current = current.$container;
-        }
-        return [];
-    }
-    
     /**
      * Provide completion for import paths
      */
@@ -288,3 +247,278 @@ export class AuwgentCompletionProvider extends DefaultCompletionProvider {
         return `../${fileName}`;
     }
 }
+
+export class AuwgentHoverProvider extends AstNodeHoverProvider {
+    constructor(services: LangiumServices) {
+        super(services);
+    }
+
+    override async getHoverContent(document: any, params: any): Promise<Hover | undefined> {
+        const templateHover = this.getTemplateInterpolationHover(document, params);
+        if (templateHover) return templateHover;
+        return super.getHoverContent(document, params);
+    }
+
+    protected getAstNodeHoverContent(): string | undefined {
+        return undefined;
+    }
+
+    private getTemplateInterpolationHover(document: any, params: any): Hover | undefined {
+        const textDocument = document?.textDocument;
+        if (!textDocument) return undefined;
+        const offset = textDocument.offsetAt(params.position);
+        const container = this.getMultilineStringAtOffset(document, offset);
+        if (!container) return undefined;
+        const cstNode = container.$cstNode;
+        if (!cstNode) return undefined;
+        const fullText = textDocument.getText();
+        const nodeText = fullText.slice(cstNode.offset, cstNode.offset + cstNode.length);
+        const localOffset = offset - cstNode.offset;
+        const openIndex = nodeText.lastIndexOf('{{', localOffset);
+        if (openIndex === -1) return undefined;
+        const closeIndex = nodeText.indexOf('}}', openIndex + 2);
+        if (closeIndex === -1 || localOffset > closeIndex + 2) return undefined;
+        const rawExpr = nodeText.slice(openIndex + 2, closeIndex);
+        const expr = rawExpr.trim();
+        if (!expr) return undefined;
+        if (!/^[_a-zA-Z][\w_]*(\.[_a-zA-Z][\w_]*)*$/.test(expr)) return undefined;
+        const parts = expr.split('.');
+        const root = parts[0];
+        const rest = parts.slice(1);
+        const inputProps = getInputPropertyMap(container);
+        const contextProps = getContextPropertyMap(container);
+        const promptParams = getPromptParamMap(container);
+        if (root === 'input') {
+            const typeText = resolveHoverTypeForPath(inputProps, rest, buildObjectTypeFromConfigs(inputProps));
+            if (!typeText) return undefined;
+            return { contents: { kind: 'markdown', value: `input${rest.length ? '.' + rest.join('.') : ''}: ${typeText}` } };
+        }
+        if (root === 'ctx') {
+            const typeText = resolveHoverTypeForPath(contextProps, rest, buildObjectTypeFromConfigs(contextProps));
+            if (!typeText) return undefined;
+            return { contents: { kind: 'markdown', value: `ctx${rest.length ? '.' + rest.join('.') : ''}: ${typeText}` } };
+        }
+        if (promptParams.has(root)) {
+            const param = promptParams.get(root);
+            if (!param?.t) return undefined;
+            const typeText = resolveHoverTypeForPath(promptParams, rest, formatTypes(param.t));
+            if (!typeText) return undefined;
+            return { contents: { kind: 'markdown', value: `${root}${rest.length ? '.' + rest.join('.') : ''}: ${typeText}` } };
+        }
+        return undefined;
+    }
+
+    private getMultilineStringAtOffset(document: any, offset: number): MultilineStringLiteral | undefined {
+        const root = document.parseResult?.value as Model | undefined;
+        if (!root) return undefined;
+        let best: MultilineStringLiteral | undefined;
+        for (const node of AstUtils.streamAllContents(root)) {
+            if (!isMultilineStringLiteral(node)) continue;
+            const cstNode = node.$cstNode;
+            if (!cstNode) continue;
+            const start = cstNode.offset;
+            const end = cstNode.offset + cstNode.length;
+            if (offset >= start && offset <= end) {
+                if (!best || cstNode.length < (best.$cstNode?.length ?? Infinity)) {
+                    best = node;
+                }
+            }
+        }
+        return best;
+    }
+}
+
+const getInputPropertiesInScope = (node?: AstNode): string[] => {
+    const props = getPropertiesInScope(node, 'input');
+    return props.map(p => p.name);
+};
+
+const getContextPropertiesInScope = (node?: AstNode): string[] => {
+    const props = getPropertiesInScope(node, 'context');
+    return props.map(p => p.name);
+};
+
+const getPromptParamsInScope = (node?: AstNode): string[] => {
+    const prompt = getPromptContainer(node);
+    return prompt?.params?.map((p: any) => p.name) ?? [];
+};
+
+const getInputPropertyMap = (node?: AstNode): Map<string, TypeConfigDeclaration> => {
+    return toPropertyMap(getPropertiesInScope(node, 'input'));
+};
+
+const getContextPropertyMap = (node?: AstNode): Map<string, TypeConfigDeclaration> => {
+    return toPropertyMap(getPropertiesInScope(node, 'context'));
+};
+
+const getPromptParamMap = (node?: AstNode): Map<string, TypeConfigDeclaration> => {
+    const prompt = getPromptContainer(node);
+    const params = prompt?.params ?? [];
+    return toPropertyMap(params);
+};
+
+const getPropertiesInScope = (node: AstNode | undefined, kind: 'input' | 'context'): TypeConfigDeclaration[] => {
+    const direct = getPropertiesFromContainer(node, kind);
+    if (direct.length) return direct;
+    const prompt = getPromptContainer(node);
+    if (!prompt) return [];
+    return getPropertiesFromPromptUsages(prompt, kind);
+};
+
+const getPropertiesFromContainer = (node: AstNode | undefined, kind: 'input' | 'context'): TypeConfigDeclaration[] => {
+    let current: AstNode | undefined = node;
+    while (current) {
+        if (isAgent(current) || isHelper(current)) {
+            const configs = (current as any).configs ?? [];
+            for (const config of configs) {
+                if (kind === 'input' && isInputConfig(config)) {
+                    return (config.inProperties ?? []) as TypeConfigDeclaration[];
+                }
+                if (kind === 'context' && isContextConfig(config)) {
+                    return (config.contextProperties ?? []) as TypeConfigDeclaration[];
+                }
+            }
+        }
+        current = current.$container;
+    }
+    return [];
+};
+
+const getPromptContainer = (node?: AstNode): NamedPrompt | undefined => {
+    let current: AstNode | undefined = node;
+    while (current) {
+        if (isNamedPrompt(current)) return current;
+        current = current.$container;
+    }
+    return undefined;
+};
+
+const getPropertiesFromPromptUsages = (prompt: NamedPrompt, kind: 'input' | 'context'): TypeConfigDeclaration[] => {
+    const document = AstUtils.getDocument(prompt);
+    const root = document.parseResult?.value as Model | undefined;
+    if (!root) return [];
+    const collected = new Map<string, TypeConfigDeclaration>();
+    for (const node of AstUtils.streamAllContents(root)) {
+        if (isFunctionCall(node) && node.func?.ref === prompt) {
+            const container = getAgentOrHelperContainer(node);
+            if (container) collectProperties(container, kind, collected);
+        }
+        if (isPromptCall(node) && node.prompt?.ref === prompt) {
+            const container = getAgentOrHelperContainer(node);
+            if (container) collectProperties(container, kind, collected);
+        }
+    }
+    return Array.from(collected.values());
+};
+
+const getAgentOrHelperContainer = (node: AstNode | undefined): AstNode | undefined => {
+    let current: AstNode | undefined = node;
+    while (current) {
+        if (isAgent(current) || isHelper(current)) return current;
+        current = current.$container;
+    }
+    return undefined;
+};
+
+const collectProperties = (container: AstNode, kind: 'input' | 'context', collected: Map<string, TypeConfigDeclaration>): void => {
+    const configs = (container as any).configs ?? [];
+    for (const config of configs) {
+        if (kind === 'input' && isInputConfig(config)) {
+            for (const prop of config.inProperties ?? []) {
+                collected.set(prop.name, prop);
+            }
+        }
+        if (kind === 'context' && isContextConfig(config)) {
+            for (const prop of config.contextProperties ?? []) {
+                collected.set(prop.name, prop);
+            }
+        }
+    }
+};
+
+const toPropertyMap = (properties: TypeConfigDeclaration[]): Map<string, TypeConfigDeclaration> => {
+    const map = new Map<string, TypeConfigDeclaration>();
+    for (const prop of properties) {
+        map.set(prop.name, prop);
+    }
+    return map;
+};
+
+const buildObjectTypeFromConfigs = (props: Map<string, TypeConfigDeclaration>): string => {
+    if (props.size === 0) return '{}';
+    const entries = Array.from(props.values()).map(prop => `${prop.name}${prop.isOptional ? '?' : ''}: ${formatTypes(prop.t)}`);
+    return `{ ${entries.join(', ')} }`;
+};
+
+const resolveHoverTypeForPath = (
+    props: Map<string, TypeConfigDeclaration>,
+    path: string[],
+    defaultType: string
+): string | undefined => {
+    if (path.length === 0) return defaultType;
+    const first = props.get(path[0]);
+    if (!first) return undefined;
+    const resolved = resolveTypePath(first.t, path.slice(1));
+    return resolved ? formatTypes(resolved) : undefined;
+};
+
+const resolveTypePath = (type: Types, path: string[]): Types | undefined => {
+    let current: Types | undefined = type;
+    for (const segment of path) {
+        if (!current) return undefined;
+        const next = resolvePropertyType(current, segment);
+        if (!next) return undefined;
+        current = next;
+    }
+    return current;
+};
+
+const resolvePropertyType = (type: Types, prop: string): Types | undefined => {
+    if (isArrayType(type)) {
+        return undefined;
+    }
+    if (isBaseType(type)) {
+        const concrete = type.type;
+        if ((type as any).typeRef?.ref) {
+            const decl = (type as any).typeRef?.ref as TypeDeclaration;
+            const match = decl.types.find(p => p.name === prop);
+            return match?.t;
+        }
+        if (concrete && isObjectType(concrete)) {
+            const match = concrete.properties.find(p => p.name === prop);
+            return match?.type;
+        }
+    }
+    return undefined;
+};
+
+const formatTypes = (node: Types): string => {
+    if (isArrayType(node)) {
+        return `${formatBaseType(node.elementType)}[]`;
+    }
+    if (isBaseType(node)) {
+        return formatBaseType(node);
+    }
+    return 'unknown';
+};
+
+const formatBaseType = (node: BaseType): string => {
+    if ((node as any).typeRef?.ref) {
+        return (node as any).typeRef.ref.name;
+    }
+    const concrete = node.type;
+    if (!concrete) return 'unknown';
+    if ((concrete as any).$type === 'StringType') return 'string';
+    if ((concrete as any).$type === 'NumberType') return 'number';
+    if ((concrete as any).$type === 'BooleanType') return 'boolean';
+    if (isObjectType(concrete)) return formatObjectType(concrete);
+    if (isUnionType(concrete)) return concrete.options.join(' | ');
+    return 'unknown';
+};
+
+const formatObjectType = (node: any): string => {
+    const props = (node.properties ?? []) as Array<{ name: string; type: Types; isOptional?: boolean }>;
+    if (props.length === 0) return '{}';
+    const fields = props.map(p => `${p.name}${p.isOptional ? '?' : ''}: ${formatTypes(p.type)}`);
+    return `{ ${fields.join(', ')} }`;
+};
