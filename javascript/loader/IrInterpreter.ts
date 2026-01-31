@@ -21,6 +21,8 @@ export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>,
         modelName?: string;
         temperature?: number;
     };
+    modelToolCalls?: "serial" | "parallel";
+    modelToolCallFailure?: "fail" | "settle";
     middleware?: AgentMiddleware<any, any, any>[];
     middlewareState?: Record<string, any>;
     runId?: string;
@@ -77,7 +79,7 @@ export class Agent<
         const ir = this.ir;
 
         // Destructure config
-        const { tools, context, configName, modelOverride } = config ?? {};
+        const { tools, context, configName, modelOverride, modelToolCalls, modelToolCallFailure } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
         const runContext = context as TContext | undefined;
 
@@ -140,29 +142,24 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                if (finalResult.toolCall) {
-                    const { id, name, args } = finalResult.toolCall;
-                    const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                    if (completedCalls.has(callSignature)) {
-                        logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
-                        currentMessages.push({
-                            role: 'user',
-                            content: this.textBlocks(`[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
-                        });
-                        continue;
+                if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
+                    const toolCalls = finalResult.toolCalls;
+                    const modelToolCalls = config?.modelToolCalls ?? "serial";
+                    const modelToolCallFailure = config?.modelToolCallFailure ?? "settle";
+                    if (toolCalls.length > 1) {
+                        logger.debug(`[Agent] Model returned ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
                     }
 
                     currentMessages.push({
                         role: 'assistant',
-                        content: [{ type: 'tool_use', id, name, input: args }],
-                        toolCalls: [finalResult.toolCall]
+                        content: toolCalls.map(call => ({ type: 'tool_use', id: call.id, name: call.name, input: call.args })),
+                        toolCalls
                     });
 
-                    const workflow = ir.workflows?.find(w => w.flowName === name);
-                    const helper = ir.helpers?.find(h => h.name === name);
-
-                    try {
-                        const toolCall: ToolCall = { id, name, args };
+                    const executeToolCall = async (call: ToolCall) => {
+                        const { id, name, args } = call;
+                        const workflow = ir.workflows?.find(w => w.flowName === name);
+                        const helper = ir.helpers?.find(h => h.name === name);
                         const toolUseBlock = { type: 'tool_use', id, name, input: args } as const;
                         const shouldContinue = await runOnBeforeTool(middlewares, ctx, toolUseBlock);
                         if (shouldContinue === false) {
@@ -203,24 +200,90 @@ export class Agent<
                                 logger.debug(`[Agent] <<< Tool ${name} completed.`);
                                 return result;
                             });
-                            return wrappedTool(toolCall.args);
+                            return wrappedTool(args);
                         });
 
                         await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
-
                         const transfer = workflow
                             ? this.getTransferSignal(toolResult)
                             : this.getHelperHandoffSignal(helper?.name, toolResult);
+                        return { call, toolResult, transfer, workflow, helper };
+                    };
+
+                    const results: Array<{ call: ToolCall; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
+
+                    const pendingCalls: ToolCall[] = [];
+                    for (const call of toolCalls) {
+                        const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
+                        if (completedCalls.has(callSignature)) {
+                            logger.debug(`[Agent] BLOCKED: Duplicate call to "${call.name}" - already completed.`);
+                            currentMessages.push({
+                                role: 'user',
+                                content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
+                            });
+                            results.push({ call, error: new Error("Duplicate tool call") });
+                            if (modelToolCallFailure === "fail") {
+                                throw new Error(`Duplicate tool call: ${call.name}`);
+                            }
+                            continue;
+                        }
+                        pendingCalls.push(call);
+                    }
+
+                    if (modelToolCalls === "parallel") {
+                        if (modelToolCallFailure === "fail") {
+                            const parallelResults = await Promise.all(pendingCalls.map(call => executeToolCall(call)));
+                            results.push(...parallelResults);
+                        } else {
+                            const settled = await Promise.all(pendingCalls.map(call => executeToolCall(call).catch(error => ({ call, error }))));
+                            results.push(...settled);
+                        }
+                    } else {
+                        for (const call of pendingCalls) {
+                            try {
+                                const output = await executeToolCall(call);
+                                results.push(output);
+                            } catch (error: any) {
+                                if (modelToolCallFailure === "fail") {
+                                    throw error;
+                                }
+                                results.push({ call, error });
+                            }
+                        }
+                    }
+
+                    if (results.some(result => result.transfer) && toolCalls.length > 1) {
+                        throw new Error("Transfer is not supported when multiple tool calls are returned by the model");
+                    }
+
+                    for (const entry of results) {
+                        const { call, toolResult, error, transfer, workflow, helper } = entry;
+                        if (error) {
+                            currentMessages.push({
+                                role: 'user',
+                                content: [{
+                                    type: 'tool_result',
+                                    toolUseId: call.id,
+                                    content: `Tool Error: ${error.message}`,
+                                    isError: true
+                                }]
+                            });
+                            if (modelToolCallFailure === "fail") {
+                                throw error;
+                            }
+                            continue;
+                        }
+
                         if (transfer) {
                             logger.debug(`[Agent] Transfer detected (mode: ${transfer.mode})`);
-
                             if (transfer.mode === "direct") {
                                 return await complete(transfer.value as TOutput, finalResult);
                             }
                             if (transfer.mode === "thenContinue") {
+                                const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
                                 completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
-                                const source = workflow ? `workflow "${name}"` : `helper "${name}"`;
+                                const source = workflow ? `workflow "${call.name}"` : `helper "${call.name}"`;
                                 currentMessages.push({
                                     role: 'user',
                                     content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
@@ -231,35 +294,22 @@ export class Agent<
                         }
 
                         const resultPrefix = helper
-                            ? `Helper Result [${name}]`
+                            ? `Helper Result [${call.name}]`
                             : workflow
-                                ? `Workflow Result [${name}]`
-                                : `Tool Result [${name}]`;
+                                ? `Workflow Result [${call.name}]`
+                                : `Tool Result [${call.name}]`;
 
                         currentMessages.push({
                             role: 'user',
                             content: [{
                                 type: 'tool_result',
-                                toolUseId: id,
+                                toolUseId: call.id,
                                 content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
                             }]
                         });
-
-                        toolsStillAvailable = false;
-                    } catch (e: any) {
-                        console.error(`[Agent] Execution Error:`, e);
-                        currentMessages.push({
-                            role: 'user',
-                            content: [{
-                                type: 'tool_result',
-                                toolUseId: id,
-                                content: `Tool Error: ${e.message}`,
-                                isError: true
-                            }]
-                        });
-                        toolsStillAvailable = false;
                     }
 
+                    toolsStillAvailable = false;
                     continue;
                 }
 
@@ -320,7 +370,7 @@ export class Agent<
         const ir = this.ir;
 
         // Destructure config
-        const { tools, context, configName, modelOverride } = config ?? {};
+        const { tools, context, configName, modelOverride, modelToolCalls, modelToolCallFailure } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
         const runContext = context as TContext | undefined;
 
@@ -423,94 +473,141 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                if (finalResult.toolCall) {
-                    const { id, name, args } = finalResult.toolCall;
-                    const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                    if (completedCalls.has(callSignature)) {
-                        logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
-                        currentMessages.push({
-                            role: 'user',
-                            content: this.textBlocks(`[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
-                        });
-                        continue;
+                if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
+                    const toolCalls = finalResult.toolCalls;
+                    const toolCallMode = modelToolCalls ?? "serial";
+                    const toolCallFailureMode = modelToolCallFailure ?? "settle";
+                    if (toolCalls.length > 1) {
+                        logger.debug(`[Agent] Model returned ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
                     }
 
                     currentMessages.push({
                         role: 'assistant',
-                        content: [{ type: 'tool_use', id, name, input: args }],
-                        toolCalls: [finalResult.toolCall]
+                        content: toolCalls.map(call => ({ type: 'tool_use', id: call.id, name: call.name, input: call.args })),
+                        toolCalls
                     });
 
-                    const workflow = ir.workflows?.find(w => w.flowName === name);
-                    const helper = ir.helpers?.find(h => h.name === name);
-
-                    try {
-                        const toolCall: ToolCall = { id, name, args };
+                    const executeToolCallStream = async (call: ToolCall, emit: (chunk: StreamChunk) => void) => {
+                        const { id, name, args } = call;
+                        const workflow = ir.workflows?.find(w => w.flowName === name);
+                        const helper = ir.helpers?.find(h => h.name === name);
                         const toolUseBlock = { type: 'tool_use', id, name, input: args } as const;
                         const shouldContinue = await runOnBeforeTool(middlewares, ctx, toolUseBlock);
                         if (shouldContinue === false) {
                             throw new Error("Tool execution blocked");
                         }
 
-                        const toolQueue = this.createStreamQueue<StreamChunk>();
-                        const toolResultPromise = runWithRetries(middlewares, ctx, "tool", async () => {
-                            try {
-                                const wrappedTool = wrapToolCall(middlewares, ctx, toolUseBlock, async (toolArgs: ToolArgs) => {
-                                    if (workflow) {
-                                        logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
-                                        logger.trackWorkflowCall(name);
-                                        const workflowStream = this.executeWorkflowStream(name, toolArgs, safeTools, runContext);
-                                        let workflowResult: any;
-                                        while (true) {
-                                            const { value, done } = await workflowStream.next();
-                                            if (done) {
-                                                workflowResult = value;
-                                                break;
-                                            }
-                                            toolQueue.push(value);
+                        const toolResult = await runWithRetries(middlewares, ctx, "tool", async () => {
+                            const wrappedTool = wrapToolCall(middlewares, ctx, toolUseBlock, async (toolArgs: ToolArgs) => {
+                                if (workflow) {
+                                    logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
+                                    logger.trackWorkflowCall(name);
+                                    const workflowStream = this.executeWorkflowStream(name, toolArgs, safeTools, runContext);
+                                    let workflowResult: any;
+                                    while (true) {
+                                        const { value, done } = await workflowStream.next();
+                                        if (done) {
+                                            workflowResult = value;
+                                            break;
                                         }
-                                        logger.debug(`[Agent] <<< Workflow ${name} completed.`);
-                                        return workflowResult;
+                                        emit(value);
                                     }
-                                    if (helper) {
-                                        logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
-                                        logger.trackHelperCall(name);
-                                        const helperStream = this.executeHelperStream(helper, toolArgs);
-                                        let helperResult: any;
-                                        while (true) {
-                                            const { value, done } = await helperStream.next();
-                                            if (done) {
-                                                helperResult = value;
-                                                break;
-                                            }
-                                            toolQueue.push(value);
+                                    logger.debug(`[Agent] <<< Workflow ${name} completed.`);
+                                    return workflowResult;
+                                }
+                                if (helper) {
+                                    logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
+                                    logger.trackHelperCall(name);
+                                    const helperStream = this.executeHelperStream(helper, toolArgs);
+                                    let helperResult: any;
+                                    while (true) {
+                                        const { value, done } = await helperStream.next();
+                                        if (done) {
+                                            helperResult = value;
+                                            break;
                                         }
-                                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
-                                        return helperResult;
+                                        emit(value);
                                     }
-                                    const isDeclaredTool = ir.tools?.some(t => t.name === name);
-                                    if (!isDeclaredTool) {
-                                        throw new Error(`Model tried to call unknown tool: ${name}`);
-                                    }
-                                    if (!tools || !safeTools[name]) {
-                                        throw new Error(`Tool implementation missing for: ${name}`);
-                                    }
-                                    logger.debug(`[Agent] >>> Calling Tool: ${name}`);
-                                    logger.trackToolCall(name);
-                                    const result = await safeTools[name](toolArgs);
-                                    logger.debug(`[Agent] <<< Tool ${name} completed.`);
-                                    return result;
-                                });
-                                const result = await wrappedTool(toolCall.args);
-                                toolQueue.close();
+                                    logger.debug(`[Agent] <<< Helper ${name} completed.`);
+                                    return helperResult;
+                                }
+                                const isDeclaredTool = ir.tools?.some(t => t.name === name);
+                                if (!isDeclaredTool) {
+                                    throw new Error(`Model tried to call unknown tool: ${name}`);
+                                }
+                                if (!tools || !safeTools[name]) {
+                                    throw new Error(`Tool implementation missing for: ${name}`);
+                                }
+                                logger.debug(`[Agent] >>> Calling Tool: ${name}`);
+                                logger.trackToolCall(name);
+                                const result = await safeTools[name](toolArgs);
+                                logger.debug(`[Agent] <<< Tool ${name} completed.`);
                                 return result;
-                            } catch (error: any) {
-                                toolQueue.fail(error);
-                                throw error;
-                            }
+                            });
+                            return wrappedTool(args);
                         });
-                        let toolResult: ToolResult;
-                        try {
+
+                        await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
+                        const transfer = workflow
+                            ? this.getTransferSignal(toolResult)
+                            : this.getHelperHandoffSignal(helper?.name, toolResult);
+                        return { call, toolResult, transfer, workflow, helper };
+                    };
+
+                    const results: Array<{ call: ToolCall; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
+                    const pendingCalls: ToolCall[] = [];
+                    for (const call of toolCalls) {
+                        const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
+                        if (completedCalls.has(callSignature)) {
+                            logger.debug(`[Agent] BLOCKED: Duplicate call to "${call.name}" - already completed.`);
+                            currentMessages.push({
+                                role: 'user',
+                                content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
+                            });
+                            results.push({ call, error: new Error("Duplicate tool call") });
+                            if (toolCallFailureMode === "fail") {
+                                throw new Error(`Duplicate tool call: ${call.name}`);
+                            }
+                            continue;
+                        }
+                        pendingCalls.push(call);
+                    }
+
+                    if (toolCallMode === "parallel") {
+                        const toolQueue = this.createStreamQueue<StreamChunk>();
+                        const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
+                        const completion = (async () => {
+                            try {
+                                if (toolCallFailureMode === "fail") {
+                                    const outputs = await Promise.all(pendingCalls.map(call => executeToolCallStream(call, emit)));
+                                    results.push(...outputs);
+                                } else {
+                                    const outputs = await Promise.all(pendingCalls.map(call => executeToolCallStream(call, emit).catch(error => ({ call, error }))));
+                                    results.push(...outputs);
+                                }
+                            } finally {
+                                toolQueue.close();
+                            }
+                        })();
+                        while (true) {
+                            const { value, done } = await toolQueue.next();
+                            if (done) {
+                                break;
+                            }
+                            yield value;
+                        }
+                        await completion;
+                    } else {
+                        for (const call of pendingCalls) {
+                            const toolQueue = this.createStreamQueue<StreamChunk>();
+                            const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
+                            const execPromise = (async () => {
+                                try {
+                                    return await executeToolCallStream(call, emit);
+                                } finally {
+                                    toolQueue.close();
+                                }
+                            })();
                             while (true) {
                                 const { value, done } = await toolQueue.next();
                                 if (done) {
@@ -518,31 +615,55 @@ export class Agent<
                                 }
                                 yield value;
                             }
-                            toolResult = await toolResultPromise;
-                        } catch (error: any) {
-                            toolQueue.fail(error);
-                            throw error;
+                            try {
+                                const output = await execPromise;
+                                results.push(output);
+                            } catch (error: any) {
+                                if (toolCallFailureMode === "fail") {
+                                    throw error;
+                                }
+                                results.push({ call, error });
+                            }
+                        }
+                    }
+
+                    if (results.some(result => result.transfer) && toolCalls.length > 1) {
+                        throw new Error("Transfer is not supported when multiple tool calls are returned by the model");
+                    }
+
+                    for (const entry of results) {
+                        const { call, toolResult, error, transfer, workflow, helper } = entry;
+                        if (error) {
+                            currentMessages.push({
+                                role: 'user',
+                                content: [{
+                                    type: 'tool_result',
+                                    toolUseId: call.id,
+                                    content: `Tool Error: ${error.message}`,
+                                    isError: true
+                                }]
+                            });
+                            if (toolCallFailureMode === "fail") {
+                                throw error;
+                            }
+                            continue;
                         }
 
-                        await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
-
-                        const transfer = workflow
-                            ? this.getTransferSignal(toolResult)
-                            : this.getHelperHandoffSignal(helper?.name, toolResult);
                         if (transfer) {
                             yield {
                                 type: 'transfer',
                                 mode: transfer.mode,
-                                helperName: transfer.helperName || name
+                                helperName: transfer.helperName || call.name
                             };
 
                             if (transfer.mode === "direct") {
                                 return await complete(transfer.value as TOutput, finalResult);
                             }
                             if (transfer.mode === "thenContinue") {
+                                const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
                                 completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
-                                const source = workflow ? `workflow "${name}"` : `helper "${name}"`;
+                                const source = workflow ? `workflow "${call.name}"` : `helper "${call.name}"`;
                                 currentMessages.push({
                                     role: 'user',
                                     content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
@@ -552,37 +673,27 @@ export class Agent<
                             }
                         }
 
-                        yield { type: 'tool_result', name, result: toolResult };
+                        const streamResult = toolResult ?? null;
+                        yield { type: 'tool_result', name: call.name, result: streamResult };
 
                         const resultPrefix = helper
-                            ? `Helper Result [${name}]`
+                            ? `Helper Result [${call.name}]`
                             : workflow
-                                ? `Workflow Result [${name}]`
-                                : `Tool Result [${name}]`;
+                                ? `Workflow Result [${call.name}]`
+                                : `Tool Result [${call.name}]`;
 
                         currentMessages.push({
                             role: 'user',
                             content: [{
                                 type: 'tool_result',
-                                toolUseId: id,
-                                content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
+                                toolUseId: call.id,
+                                    content: `${resultPrefix}: ${JSON.stringify(streamResult)}`
                             }]
                         });
-                        toolsStillAvailable = false;
-                        continue;
-                    } catch (e: any) {
-                        currentMessages.push({
-                            role: 'user',
-                            content: [{
-                                type: 'tool_result',
-                                toolUseId: id,
-                                content: `Tool Error: ${e.message}`,
-                                isError: true
-                            }]
-                        });
-                        toolsStillAvailable = false;
-                        continue;
                     }
+
+                    toolsStillAvailable = false;
+                    continue;
                 }
 
                 const textOutput = this.extractText(finalResult);

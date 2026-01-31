@@ -67,6 +67,7 @@ export type AuwgentKeywordNames =
     | "number"
     | "openai"
     | "output"
+    | "parallel"
     | "prompt"
     | "provider"
     | "return"
@@ -471,7 +472,7 @@ export function isHelpersConfig(item: unknown): item is HelpersConfig {
 }
 
 export interface IfStatement extends langium.AstNode {
-    readonly $container: IfStatement | InlinePromptBlock | ModelConfig | NamedPrompt | WorkFlowConfig;
+    readonly $container: IfStatement | InlinePromptBlock | ModelConfig | NamedPrompt | ParallelStatement | WorkFlowConfig;
     readonly $type: 'IfStatement';
     condition: Condition;
     elseBlock: Array<Statement>;
@@ -839,6 +840,21 @@ export function isOutputConfig(item: unknown): item is OutputConfig {
     return reflection.isInstance(item, OutputConfig.$type);
 }
 
+export interface ParallelStatement extends langium.AstNode {
+    readonly $container: IfStatement | ParallelStatement | WorkFlowConfig;
+    readonly $type: 'ParallelStatement';
+    body: Array<Statement>;
+}
+
+export const ParallelStatement = {
+    $type: 'ParallelStatement',
+    body: 'body'
+} as const;
+
+export function isParallelStatement(item: unknown): item is ParallelStatement {
+    return reflection.isInstance(item, ParallelStatement.$type);
+}
+
 export interface PromptCall extends langium.AstNode {
     readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PromptCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'PromptCall';
@@ -915,7 +931,7 @@ export function isReferenceable(item: unknown): item is Referenceable {
 }
 
 export interface ReturnStatement extends langium.AstNode {
-    readonly $container: IfStatement | WorkFlowConfig;
+    readonly $container: IfStatement | ParallelStatement | WorkFlowConfig;
     readonly $type: 'ReturnStatement';
     value: Expression;
 }
@@ -929,7 +945,7 @@ export function isReturnStatement(item: unknown): item is ReturnStatement {
     return reflection.isInstance(item, ReturnStatement.$type);
 }
 
-export type Statement = IfStatement | ReturnStatement | TransferStatement | VariableDeclartion;
+export type Statement = IfStatement | ParallelStatement | ReturnStatement | TransferStatement | VariableDeclartion;
 
 export const Statement = {
     $type: 'Statement'
@@ -1066,7 +1082,7 @@ export function isToolsConfig(item: unknown): item is ToolsConfig {
 }
 
 export interface TransferStatement extends langium.AstNode {
-    readonly $container: IfStatement | WorkFlowConfig;
+    readonly $container: IfStatement | ParallelStatement | WorkFlowConfig;
     readonly $type: 'TransferStatement';
     call: HelperCall;
     thenContinue: boolean;
@@ -1167,7 +1183,7 @@ export function isUseLifecycle(item: unknown): item is UseLifecycle {
 }
 
 export interface VariableDeclartion extends langium.AstNode {
-    readonly $container: IfStatement | WorkFlowConfig;
+    readonly $container: IfStatement | ParallelStatement | WorkFlowConfig;
     readonly $type: 'VariableDeclartion';
     name: string;
     value: Expression;
@@ -1288,6 +1304,7 @@ export type AuwgentAstType = {
     OpenAIProvider: OpenAIProvider
     Output: Output
     OutputConfig: OutputConfig
+    ParallelStatement: ParallelStatement
     PromptCall: PromptCall
     PromptStatement: PromptStatement
     PropertyType: PropertyType
@@ -1870,6 +1887,16 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 }
             },
             superTypes: [AgentConfigurations.$type]
+        },
+        ParallelStatement: {
+            name: ParallelStatement.$type,
+            properties: {
+                body: {
+                    name: ParallelStatement.body,
+                    defaultValue: []
+                }
+            },
+            superTypes: [Statement.$type]
         },
         PromptCall: {
             name: PromptCall.$type,

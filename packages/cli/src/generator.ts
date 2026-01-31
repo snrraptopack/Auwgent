@@ -24,6 +24,7 @@ import {
     isNamedPrompt,
     isInlinePromptBlock,
     isMultilineStringLiteral,
+    isParallelStatement,
     Model,
     Statement,
     TypeConfigDeclaration,
@@ -437,6 +438,11 @@ export function extractExpression(express: Expression | Statement): any {
         const elseBlock = express.elseBlock?.map(stmt => extractExpression(stmt)) || []
 
         return { type: "if", condition, then: thenBlock, else: elseBlock }
+    }
+
+    if (isParallelStatement(express)) {
+        const body = express.body.map(stmt => extractExpression(stmt))
+        return { type: "parallel", body }
     }
 
     if (isReturnStatement(express)) {

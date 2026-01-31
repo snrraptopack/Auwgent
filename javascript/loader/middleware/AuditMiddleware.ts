@@ -41,7 +41,7 @@ export type AuditEvent =
     | (AuditEventBase & {
         type: "after_model";
         stopReason?: string;
-        toolCall?: { id: string; name: string };
+        toolCalls?: { id: string; name: string }[];
         usage?: {
             input: number;
             response: number;
@@ -239,7 +239,7 @@ export const createAuditMiddleware = <TInput, TContext>(
                 agentName: ctx.agentName,
                 attempt: ctx.attempt,
                 stopReason: res.stopReason,
-                toolCall: res.toolCall ? { id: res.toolCall.id, name: res.toolCall.name } : undefined,
+                toolCalls: res.toolCalls?.map(call => ({ id: call.id, name: call.name })),
                 usage: res.usage,
                 responsePreview
             });
@@ -296,7 +296,7 @@ export const createAuditMiddleware = <TInput, TContext>(
                         agentName: ctx.agentName,
                         attempt: ctx.attempt,
                         stopReason: response.stopReason,
-                        toolCall: response.toolCall ? { id: response.toolCall.id, name: response.toolCall.name } : undefined,
+                        toolCalls: response.toolCalls?.map(call => ({ id: call.id, name: call.name })),
                         usage: response.usage,
                         responsePreview: preview
                     });

@@ -54,6 +54,9 @@ export class ExpressionEvaluator {
             case "if":
                 return this.evaluateIf(expr, scope);
 
+            case "parallel":
+                return this.evaluateParallel(expr, scope);
+
 
             case "variableDeclaration":
                 const value = await this.evaluate(expr.value, scope);
@@ -104,6 +107,9 @@ export class ExpressionEvaluator {
 
             case "if":
                 return yield* this.evaluateIfStream(expr, scope);
+
+            case "parallel":
+                return await this.evaluateParallel(expr, scope);
 
             case "variableDeclaration": {
                 // Variable declarations might contain streaming helper calls
@@ -451,6 +457,44 @@ export class ExpressionEvaluator {
                     return result;
                 }
             }
+        }
+
+        return undefined;
+    }
+
+    private async evaluateParallel(expr: any, scope: Map<string, any>): Promise<any> {
+        const baseScope = new Map(scope);
+        const updates = new Map<string, any>();
+
+        await Promise.all(expr.body.map(async (stmt: any) => {
+            const localScope = new Map(baseScope);
+            const result = await this.evaluate(stmt, localScope);
+
+            if (result && typeof result === "object") {
+                if (result.__type === "ReturnSignal") {
+                    throw new Error("Return is not supported inside parallel blocks");
+                }
+                if (result.__type === "TransferSignal") {
+                    throw new Error("Transfer is not supported inside parallel blocks");
+                }
+            }
+
+            for (const [key, value] of localScope.entries()) {
+                const baseValue = baseScope.get(key);
+                const changed = !baseScope.has(key) || !Object.is(baseValue, value);
+                if (changed) {
+                    if (updates.has(key)) {
+                        throw new Error(`Parallel block writes to "${key}" more than once`);
+                    }
+                    updates.set(key, value);
+                }
+            }
+
+            return result;
+        }));
+
+        for (const [key, value] of updates.entries()) {
+            scope.set(key, value);
         }
 
         return undefined;

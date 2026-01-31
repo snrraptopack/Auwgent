@@ -46,15 +46,17 @@ export const createShortMemoryMiddleware = <TInput, TContext>(
         if (res.content) {
             contentBlocks.push(...res.content);
         }
-        if (includeToolCall && res.toolCall) {
-            const hasToolUse = contentBlocks.some(block => block.type === "tool_use" && block.id === res.toolCall?.id);
-            if (!hasToolUse) {
-                contentBlocks.push({
-                    type: "tool_use",
-                    id: res.toolCall.id,
-                    name: res.toolCall.name,
-                    input: res.toolCall.args
-                });
+        if (includeToolCall && res.toolCalls) {
+            for (const call of res.toolCalls) {
+                const hasToolUse = contentBlocks.some(block => block.type === "tool_use" && block.id === call.id);
+                if (!hasToolUse) {
+                    contentBlocks.push({
+                        type: "tool_use",
+                        id: call.id,
+                        name: call.name,
+                        input: call.args
+                    });
+                }
             }
         }
         const assistantMessage: SyntheticMessage | undefined = contentBlocks.length > 0

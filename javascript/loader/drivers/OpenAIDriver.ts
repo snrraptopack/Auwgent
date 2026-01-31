@@ -102,17 +102,19 @@ export class OpenAIDriver implements AgentDriver {
 
             // Check for tool calls
             if (choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
-                const toolCall = choice.message.tool_calls[0] as any;
-                const name = toolCall.function?.name || toolCall.name;
-                const args = toolCall.function?.arguments || toolCall.arguments;
-                const parsedArgs = this.parseToolArgs(args);
-
-                return {
-                    toolCall: {
-                        id: toolCall.id ?? `tool_${Date.now()}`,
+                const toolCalls = choice.message.tool_calls.map((toolCall: any, index: number) => {
+                    const name = toolCall.function?.name || toolCall.name;
+                    const args = toolCall.function?.arguments || toolCall.arguments;
+                    const parsedArgs = this.parseToolArgs(args);
+                    return {
+                        id: toolCall.id ?? `tool_${Date.now()}_${index}`,
                         name,
                         args: parsedArgs
-                    },
+                    };
+                });
+
+                return {
+                    toolCalls,
                     usage
                 };
             }
@@ -194,11 +196,12 @@ export class OpenAIDriver implements AgentDriver {
             }) as any);
 
             let fullText = '';
-            let toolCall: { id: string; name: string; args: any } | undefined;
+            let toolCalls: { id: string; name: string; args: any }[] | undefined;
             let usage: ModelUsage | undefined;
             const toolArgsBuffer: Record<string, string> = {};
             const toolNameBuffer: Record<string, string> = {};  // Track tool names
             const activeToolIds: Record<number, string> = {}; // Track index -> id mapping
+            const toolOrder: string[] = [];
 
             for await (const chunk of stream) {
                 const delta = chunk.choices[0]?.delta;
@@ -230,6 +233,9 @@ export class OpenAIDriver implements AgentDriver {
                                 toolNameBuffer[id] = toolDelta.function.name;
                                 yield { type: 'tool_start', name: toolDelta.function.name, id };
                                 toolArgsBuffer[id] = '';
+                                if (!toolOrder.includes(id)) {
+                                    toolOrder.push(id);
+                                }
                             }
 
                             // Tool arguments streaming
@@ -248,15 +254,11 @@ export class OpenAIDriver implements AgentDriver {
                         yield { type: 'tool_end', id };
                     }
 
-                    // Capture first tool for return (TODO: support returning multiple)
-                    const firstToolId = Object.keys(toolArgsBuffer)[0];
-                    if (firstToolId && toolNameBuffer[firstToolId]) {
-                        toolCall = {
-                            id: firstToolId,
-                            name: toolNameBuffer[firstToolId],
-                            args: this.parseToolArgs(toolArgsBuffer[firstToolId])
-                        };
-                    }
+                    toolCalls = toolOrder.map(id => ({
+                        id,
+                        name: toolNameBuffer[id] || '',
+                        args: this.parseToolArgs(toolArgsBuffer[id])
+                    })).filter(call => call.name);
                 }
 
                 // Track token usage from final chunk (OpenAI sends it with stream_options)
@@ -275,20 +277,20 @@ export class OpenAIDriver implements AgentDriver {
             }
 
             // Return final result
-            if (toolCall) {
-                return { toolCall, usage };
+            if (toolCalls && toolCalls.length > 0) {
+                return { toolCalls, usage };
             }
 
             // Fallback: If we have a buffered tool call that wasn't captured (e.g. missed finish_reason)
-            const firstToolId = Object.keys(toolNameBuffer)[0];
-            if (firstToolId) {
+            const bufferedIds = Object.keys(toolNameBuffer);
+            if (bufferedIds.length > 0) {
                 try {
                     return {
-                        toolCall: {
-                            id: firstToolId,
-                            name: toolNameBuffer[firstToolId] || '',
-                            args: this.parseToolArgs(toolArgsBuffer[firstToolId])
-                        },
+                        toolCalls: bufferedIds.map(id => ({
+                            id,
+                            name: toolNameBuffer[id] || '',
+                            args: this.parseToolArgs(toolArgsBuffer[id])
+                        })).filter(call => call.name),
                         usage
                     };
                 } catch (e) {

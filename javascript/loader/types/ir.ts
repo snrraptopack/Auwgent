@@ -44,6 +44,7 @@ export type Statement =
     | ReturnStatement
     | IfStatement
     | TransferStatement
+    | ParallelStatement
     | Expression;
 
 export type Expression =
@@ -80,6 +81,11 @@ export interface IfStatement {
     };
     then: Statement[];
     else: Statement[];
+}
+
+export interface ParallelStatement {
+    type: "parallel";
+    body: Statement[];
 }
 
 export interface Literal {

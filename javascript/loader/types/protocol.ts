@@ -141,7 +141,7 @@ export interface SyntheticRequest {
  */
 export interface DriverResult {
     content?: ContentBlock[];
-    toolCall?: ToolCall;
+    toolCalls?: ToolCall[];
     usage?: ModelUsage;
     thinking?: ThinkingBlock;
     stopReason?: string;

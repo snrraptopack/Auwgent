@@ -76,11 +76,11 @@ export class GoogleDriver implements AgentDriver {
             // Check for function call
             if (firstPart?.functionCall) {
                 return {
-                    toolCall: {
+                    toolCalls: [{
                         id: `google_tool_${Date.now()}`,
                         name: firstPart.functionCall.name ?? "unknown_tool",
                         args: this.parseToolArgs(firstPart.functionCall.args)
-                    },
+                    }],
                     usage
                 };
             }
@@ -150,7 +150,7 @@ export class GoogleDriver implements AgentDriver {
             });
 
             let fullText = '';
-            let toolCall: { id: string; name: string; args: any } | undefined;
+            let toolCalls: { id: string; name: string; args: any }[] | undefined;
             let usage: ModelUsage | undefined;
             let toolCallId = 0;
 
@@ -169,7 +169,7 @@ export class GoogleDriver implements AgentDriver {
                     yield { type: 'tool_args', id, delta: JSON.stringify(args) };
                     yield { type: 'tool_end', id };
 
-                    toolCall = { id, name, args };
+                    toolCalls = [{ id, name, args }];
                     continue;
                 }
 
@@ -187,8 +187,8 @@ export class GoogleDriver implements AgentDriver {
             }
 
             // Return final result
-            if (toolCall) {
-                return { toolCall, usage };
+            if (toolCalls && toolCalls.length > 0) {
+                return { toolCalls, usage };
             }
             return { content: this.textBlocks(fullText), usage };
         } catch (error: any) {

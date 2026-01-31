@@ -169,7 +169,7 @@ ToolFunction:
 ;
 
 Statement:
-    VariableDeclartion | ReturnStatement | IfStatement | TransferStatement
+    VariableDeclartion | ReturnStatement | IfStatement | TransferStatement | ParallelStatement
 ;
 
 VariableDeclartion:
@@ -200,6 +200,12 @@ Operators returns string:
 
 ReturnStatement:
     "return" value=Expression
+;
+
+ParallelStatement:
+    "parallel" "{"
+        (body+=Statement)*
+    "}"
 ;
 
 // NamedPrompt is included so prompt names can be referenced directly (e.g., myPrompt + "text")
