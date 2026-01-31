@@ -20,6 +20,7 @@ export class Synthesizer {
         const tools = this.buildTools()
 
         const modelProvider = this.getModelProvider(configName);
+        const providerConfig = await this.resolveProviderConfig(modelProvider?.config, input, context);
         return {
             messages,
             responseSchema,
@@ -27,7 +28,8 @@ export class Synthesizer {
             config: {
                 model: modelProvider.type,  // Provider type: "gemini", "openai", "custom"
                 modelName: modelProvider.modelName,
-                temperature: 0
+                temperature: 0,
+                providerConfig
             }
         };
     }
@@ -62,6 +64,20 @@ export class Synthesizer {
             return this.ir.modelConfig[0]?.namedConfig?.find(c => c.configName === configName) || this.ir.modelConfig[0]?.defaultConfig;
         }
         return this.ir.modelConfig[0]?.defaultConfig;
+    }
+
+    private async resolveProviderConfig(config: any, input: Record<string, any>, context?: Record<string, any>): Promise<Record<string, any> | undefined> {
+        if (!config) {
+            return undefined;
+        }
+        const evaluator = new ExpressionEvaluator();
+        const ctx = context ?? {};
+        const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
+        const resolved = await evaluator.evaluate(config, scope);
+        if (resolved && typeof resolved === "object") {
+            return resolved;
+        }
+        return undefined;
     }
 
     private async buildMessages(input: Record<string, any>, context?: Record<string, any>, configName?: string): Promise<SyntheticMessage[]> {

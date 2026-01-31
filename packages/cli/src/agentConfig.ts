@@ -17,7 +17,8 @@ import {
     WorkFlowConfig,
     isGeminiProvider,
     isOpenAIProvider,
-    isCustomProvider
+    isCustomProvider,
+    isModelRef
 } from "auwgent-language";
 
 import {
@@ -74,14 +75,35 @@ export function handleAgentConfig(agent: Agent) {
 }
 
 function extractModelProvider(provider: any) {
+    if (isModelRef(provider)) {
+        const resolved = provider.ref?.ref;
+        if (resolved?.provider) {
+            return extractModelProvider(resolved.provider);
+        }
+        const refName = provider.ref?.$refText ?? "unknown";
+        throw new Error(`Unknown model reference: ${refName}`);
+    }
     if (isGeminiProvider(provider)) {
-        return { type: "gemini", modelName: provider.modelName };
+        return {
+            type: "gemini",
+            modelName: provider.modelName,
+            config: provider.config ? extractExpression(provider.config) : undefined
+        };
     }
     if (isOpenAIProvider(provider)) {
-        return { type: "openai", modelName: provider.modelName };
+        return {
+            type: "openai",
+            modelName: provider.modelName,
+            config: provider.config ? extractExpression(provider.config) : undefined
+        };
     }
     if (isCustomProvider(provider)) {
-        return { type: "custom", url: provider.url, modelName: provider.modelName };
+        return {
+            type: "custom",
+            url: provider.url,
+            modelName: provider.modelName,
+            config: provider.config ? extractExpression(provider.config) : undefined
+        };
     }
     throw new Error("Unknown model provider type");
 }

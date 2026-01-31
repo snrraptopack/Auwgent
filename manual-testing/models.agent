@@ -1,0 +1,13 @@
+
+export model GeminiModel{
+    provider:gemini("gemini-2.5-flash",{
+        temperature:0.7,
+        thinkingConfig: {
+            includeThoughts: false
+        }
+    })
+}
+
+export model KimiModel{
+    provider:custom("https://api.moonshot.ai/v1","kimi-k2.5")
+}

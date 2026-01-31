@@ -72,8 +72,11 @@ export class OpenAIDriver implements AgentDriver {
             }
 
 
+            const providerConfig = request.config.providerConfig ?? {};
+
             // Execute - Force tool use with 'required' when tools are available
             const completion = await this.client.chat.completions.create({
+                ...providerConfig,
                 model,
                 messages,
                 tools: hasTools ? tools : undefined,
@@ -175,8 +178,11 @@ export class OpenAIDriver implements AgentDriver {
             // Log tools being sent
             logger.debug(`[OpenAI] Streaming with ${hasTools ? tools?.length : 0} tools`);
 
+            const providerConfig = request.config.providerConfig ?? {};
+
             // Use streaming API with usage tracking
             const stream = await (this.client.chat.completions.create({
+                ...providerConfig,
                 model,
                 messages,
                 tools: hasTools ? tools : undefined,

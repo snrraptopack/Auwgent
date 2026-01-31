@@ -15,15 +15,15 @@ ImportSpecifier:
     (kind=ImportKind)? imported=[Exportable:ID] ('as' alias=ID)?;
 
 ImportKind returns string:
-    'helper' | 'type' | 'prompt';
+    'helper' | 'type' | 'prompt' | 'model';
 
 WildcardImport:
     '*' 'as' namespace=ID;
 
 Element:
-    Agent | NamedPrompt | Helper | TypeDeclaration;
+    Agent | NamedPrompt | Helper | TypeDeclaration | ModelDefinition;
 
-type Exportable = Helper | TypeDeclaration | NamedPrompt;
+type Exportable = Helper | TypeDeclaration | NamedPrompt | ModelDefinition;
 type Callable = ToolFunction | NamedPrompt;
 
 Helper:
@@ -85,25 +85,39 @@ NonDefaultConfigModel:
 ;
 
 ModelConfig:
-    "model" ":" model=ModelProvider
+    "model" ":" model=ModelProviderRef
     ("prompt" "{" (parts+=PromptStatement)* "}")?
     ("prompt" ":" promptExpr=Expression)?
+;
+
+ModelProviderRef:
+    ModelProvider | ModelRef
 ;
 
 ModelProvider:
     GeminiProvider | OpenAIProvider | CustomProvider
 ;
 
+ModelRef:
+    ref=[ModelDefinition:ID]
+;
+
 GeminiProvider:
-    "gemini" "(" modelName=STRING ")"
+    "gemini" "(" modelName=STRING ("," config=ObjectLiteral)? ")"
 ;
 
 OpenAIProvider:
-    "openai" "(" modelName=STRING ")"
+    "openai" "(" modelName=STRING ("," config=ObjectLiteral)? ")"
 ;
 
 CustomProvider:
-    "custom" "(" url=STRING "," modelName=STRING ")"
+    "custom" "(" url=STRING "," modelName=STRING ("," config=ObjectLiteral)? ")"
+;
+
+ModelDefinition:
+    exported?="export"? "model" name=ID "{"
+        "provider" ":" provider=ModelProvider
+    "}"
 ;
 
 NamedPrompt:

@@ -1,5 +1,5 @@
 import { AstNode, AstNodeDescription, DefaultScopeComputation, LangiumDocument } from 'langium';
-import { isHelper, isTypeDeclaration, isNamedPrompt, Model, Exportable } from '../generated/ast.js';
+import { isHelper, isTypeDeclaration, isNamedPrompt, isModelDefinition, Model, Exportable } from '../generated/ast.js';
 
 /**
  * Custom scope computation for Auwgent that handles export collection
@@ -37,6 +37,6 @@ export class AuwgentScopeComputation extends DefaultScopeComputation {
      * Type guard to check if an element is exportable
      */
     private isExportable(element: AstNode): element is Exportable {
-        return isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element);
+        return isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element) || isModelDefinition(element);
     }
 }

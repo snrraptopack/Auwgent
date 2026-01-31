@@ -1,0 +1,18 @@
+import {model GeminiModel, model KimiModel} from "./models"
+import {prompt ArchitecturePrompt, prompt SecurityPrompt} from "./prompt"
+
+export helper ArchitectureHelper{
+    description: "Is responsible for handling any architecture related issues"
+    default config{
+        model:GeminiModel
+        prompt:ArchitecturePrompt
+    }
+}
+
+export helper SecurityHelper{
+    description: "Is responsible for handling any security related issues"
+    default config{
+        model:KimiModel
+        prompt:SecurityPrompt
+    }
+}

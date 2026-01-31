@@ -1,5 +1,5 @@
 import { AstNode, DefaultScopeProvider, ReferenceInfo, Scope, StreamScope, stream, AstNodeDescription, AstUtils, LangiumCoreServices } from 'langium';
-import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, isWorkFlowConfig, Helper, ToolFunction, TypeConfigDeclaration, Model, isHelper, isTypeDeclaration, isNamedPrompt } from '../generated/ast.js';
+import { isAgent, isContextConfig, isContextReference, isHelpersConfig, isHelperCall, isToolConfig, isToolsConfig, isWorkFlowConfig, Helper, ToolFunction, TypeConfigDeclaration, Model, isHelper, isTypeDeclaration, isNamedPrompt, isModelDefinition } from '../generated/ast.js';
 import { AuwgentUriResolver } from '../auwgent-uri-resolver.js';
 
 export class AuwgentScopeProvider extends DefaultScopeProvider {
@@ -72,7 +72,7 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
      */
     private isImportableReference(context: ReferenceInfo): boolean {
         const refType = this.reflection.getReferenceType(context);
-        return refType === 'Helper' || refType === 'TypeDeclaration' || refType === 'NamedPrompt';
+        return refType === 'Helper' || refType === 'TypeDeclaration' || refType === 'NamedPrompt' || refType === 'ModelDefinition';
     }
 
     /**
@@ -85,7 +85,7 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
         // Collect local scope (current file)
         const localDescriptions: AstNodeDescription[] = [];
         for (const element of model.elements) {
-            if (isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element)) {
+            if (isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element) || isModelDefinition(element)) {
                 localDescriptions.push(
                     this.descriptions.createDescription(element, element.name, document)
                 );

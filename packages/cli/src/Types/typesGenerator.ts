@@ -24,8 +24,8 @@ interface AgentIR {
     workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[]; tools?: ToolDef[] }>;
     helpers: HelperType[];
     modelConfig?: Array<{
-        defaultConfig?: { model: { type: string; modelName: string; url?: string }; prompt: any };
-        namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string }; prompt: any }>;
+        defaultConfig?: { model: { type: string; modelName: string; url?: string; config?: any }; prompt: any };
+        namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string; config?: any }; prompt: any }>;
     }>;
     types?: Record<string, {
         isOutput: boolean;

@@ -164,9 +164,9 @@ export type ModelConfig = {
 }
 
 export type ModelProvider =
-    | { type: "gemini"; modelName: string }
-    | { type: "openai"; modelName: string }
-    | { type: "custom"; url: string; modelName: string };
+    | { type: "gemini"; modelName: string; config?: Expression }
+    | { type: "openai"; modelName: string; config?: Expression }
+    | { type: "custom"; url: string; modelName: string; config?: Expression };
 
 export type Config = {
     configName?: string;

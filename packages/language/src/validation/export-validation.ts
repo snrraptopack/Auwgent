@@ -1,6 +1,6 @@
 import type { ValidationAcceptor } from 'langium';
 import type { Exportable } from '../generated/ast.js';
-import { isHelper, isTypeDeclaration, isNamedPrompt } from '../generated/ast.js';
+import { isHelper, isTypeDeclaration, isNamedPrompt, isModelDefinition } from '../generated/ast.js';
 
 export class ExportValidation {
     checkExportDependencies(element: Exportable, accept: ValidationAcceptor): void {
@@ -77,6 +77,6 @@ export class ExportValidation {
     }
 
     private isExportable(element: any): element is Exportable {
-        return isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element);
+        return isHelper(element) || isTypeDeclaration(element) || isNamedPrompt(element) || isModelDefinition(element);
     }
 }

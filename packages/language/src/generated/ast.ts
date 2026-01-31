@@ -67,6 +67,7 @@ export type AuwgentKeywordNames =
     | "openai"
     | "output"
     | "prompt"
+    | "provider"
     | "return"
     | "string"
     | "then"
@@ -285,14 +286,16 @@ export function isContextReference(item: unknown): item is ContextReference {
 }
 
 export interface CustomProvider extends langium.AstNode {
-    readonly $container: ModelConfig;
+    readonly $container: ModelConfig | ModelDefinition;
     readonly $type: 'CustomProvider';
+    config?: ObjectLiteral;
     modelName: string;
     url: string;
 }
 
 export const CustomProvider = {
     $type: 'CustomProvider',
+    config: 'config',
     modelName: 'modelName',
     url: 'url'
 } as const;
@@ -311,7 +314,7 @@ export function isDefaultConfigModel(item: unknown): item is DefaultConfigModel 
     return reflection.isInstance(item, DefaultConfigModel.$type);
 }
 
-export type Element = Agent | Helper | NamedPrompt | TypeDeclaration;
+export type Element = Agent | Helper | ModelDefinition | NamedPrompt | TypeDeclaration;
 
 export const Element = {
     $type: 'Element'
@@ -321,7 +324,7 @@ export function isElement(item: unknown): item is Element {
     return reflection.isInstance(item, Element.$type);
 }
 
-export type Exportable = Helper | NamedPrompt | TypeDeclaration;
+export type Exportable = Helper | ModelDefinition | NamedPrompt | TypeDeclaration;
 
 export const Exportable = {
     $type: 'Exportable'
@@ -373,13 +376,15 @@ export function isFunctionCall(item: unknown): item is FunctionCall {
 }
 
 export interface GeminiProvider extends langium.AstNode {
-    readonly $container: ModelConfig;
+    readonly $container: ModelConfig | ModelDefinition;
     readonly $type: 'GeminiProvider';
+    config?: ObjectLiteral;
     modelName: string;
 }
 
 export const GeminiProvider = {
     $type: 'GeminiProvider',
+    config: 'config',
     modelName: 'modelName'
 } as const;
 
@@ -478,10 +483,10 @@ export function isIfStatement(item: unknown): item is IfStatement {
     return reflection.isInstance(item, IfStatement.$type);
 }
 
-export type ImportKind = 'helper' | 'prompt' | 'type';
+export type ImportKind = 'helper' | 'model' | 'prompt' | 'type';
 
 export function isImportKind(item: unknown): item is ImportKind {
-    return item === 'helper' || item === 'type' || item === 'prompt';
+    return item === 'helper' || item === 'type' || item === 'prompt' || item === 'model';
 }
 
 export interface ImportSpecifier extends langium.AstNode {
@@ -571,7 +576,7 @@ export function isModel(item: unknown): item is Model {
 export interface ModelConfig extends langium.AstNode {
     readonly $container: AgentConfig | NonDefaultConfigModel;
     readonly $type: 'ModelConfig';
-    model: ModelProvider;
+    model: ModelProviderRef;
     parts: Array<PromptStatement>;
     promptExpr?: Expression;
 }
@@ -587,6 +592,25 @@ export function isModelConfig(item: unknown): item is ModelConfig {
     return reflection.isInstance(item, ModelConfig.$type);
 }
 
+export interface ModelDefinition extends langium.AstNode {
+    readonly $container: Model;
+    readonly $type: 'ModelDefinition';
+    exported: boolean;
+    name: string;
+    provider: ModelProvider;
+}
+
+export const ModelDefinition = {
+    $type: 'ModelDefinition',
+    exported: 'exported',
+    name: 'name',
+    provider: 'provider'
+} as const;
+
+export function isModelDefinition(item: unknown): item is ModelDefinition {
+    return reflection.isInstance(item, ModelDefinition.$type);
+}
+
 export type ModelProvider = CustomProvider | GeminiProvider | OpenAIProvider;
 
 export const ModelProvider = {
@@ -595,6 +619,31 @@ export const ModelProvider = {
 
 export function isModelProvider(item: unknown): item is ModelProvider {
     return reflection.isInstance(item, ModelProvider.$type);
+}
+
+export type ModelProviderRef = ModelProvider | ModelRef;
+
+export const ModelProviderRef = {
+    $type: 'ModelProviderRef'
+} as const;
+
+export function isModelProviderRef(item: unknown): item is ModelProviderRef {
+    return reflection.isInstance(item, ModelProviderRef.$type);
+}
+
+export interface ModelRef extends langium.AstNode {
+    readonly $container: ModelConfig;
+    readonly $type: 'ModelRef';
+    ref: langium.Reference<ModelDefinition>;
+}
+
+export const ModelRef = {
+    $type: 'ModelRef',
+    ref: 'ref'
+} as const;
+
+export function isModelRef(item: unknown): item is ModelRef {
+    return reflection.isInstance(item, ModelRef.$type);
 }
 
 export interface MultilineStringLiteral extends langium.AstNode {
@@ -696,7 +745,7 @@ export function isNumberType(item: unknown): item is NumberType {
 }
 
 export interface ObjectLiteral extends langium.AstNode {
-    readonly $container: ArrayLiteral | BinaryExpression | Condition | FunctionCall | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | PromptCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
+    readonly $container: ArrayLiteral | BinaryExpression | Condition | CustomProvider | FunctionCall | GeminiProvider | HelperCall | InlinePromptBlock | ModelConfig | NamedPrompt | OpenAIProvider | PromptCall | PropertyValue | ReturnStatement | TemplateExpr | VariableDeclartion;
     readonly $type: 'ObjectLiteral';
     properties: Array<PropertyValue>;
 }
@@ -726,13 +775,15 @@ export function isObjectType(item: unknown): item is ObjectType {
 }
 
 export interface OpenAIProvider extends langium.AstNode {
-    readonly $container: ModelConfig;
+    readonly $container: ModelConfig | ModelDefinition;
     readonly $type: 'OpenAIProvider';
+    config?: ObjectLiteral;
     modelName: string;
 }
 
 export const OpenAIProvider = {
     $type: 'OpenAIProvider',
+    config: 'config',
     modelName: 'modelName'
 } as const;
 
@@ -1216,7 +1267,10 @@ export type AuwgentAstType = {
     MemberAccess: MemberAccess
     Model: Model
     ModelConfig: ModelConfig
+    ModelDefinition: ModelDefinition
     ModelProvider: ModelProvider
+    ModelProviderRef: ModelProviderRef
+    ModelRef: ModelRef
     MultilineStringLiteral: MultilineStringLiteral
     NamedImports: NamedImports
     NamedPrompt: NamedPrompt
@@ -1398,6 +1452,9 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
         CustomProvider: {
             name: CustomProvider.$type,
             properties: {
+                config: {
+                    name: CustomProvider.config
+                },
                 modelName: {
                     name: CustomProvider.modelName
                 },
@@ -1457,6 +1514,9 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
         GeminiProvider: {
             name: GeminiProvider.$type,
             properties: {
+                config: {
+                    name: GeminiProvider.config
+                },
                 modelName: {
                     name: GeminiProvider.modelName
                 }
@@ -1626,11 +1686,43 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
             },
             superTypes: [DefaultConfigModel.$type]
         },
+        ModelDefinition: {
+            name: ModelDefinition.$type,
+            properties: {
+                exported: {
+                    name: ModelDefinition.exported,
+                    defaultValue: false
+                },
+                name: {
+                    name: ModelDefinition.name
+                },
+                provider: {
+                    name: ModelDefinition.provider
+                }
+            },
+            superTypes: [Element.$type, Exportable.$type]
+        },
         ModelProvider: {
             name: ModelProvider.$type,
             properties: {
             },
+            superTypes: [ModelProviderRef.$type]
+        },
+        ModelProviderRef: {
+            name: ModelProviderRef.$type,
+            properties: {
+            },
             superTypes: []
+        },
+        ModelRef: {
+            name: ModelRef.$type,
+            properties: {
+                ref: {
+                    name: ModelRef.ref,
+                    referenceType: ModelDefinition.$type
+                }
+            },
+            superTypes: [ModelProviderRef.$type]
         },
         MultilineStringLiteral: {
             name: MultilineStringLiteral.$type,
@@ -1728,6 +1820,9 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
         OpenAIProvider: {
             name: OpenAIProvider.$type,
             properties: {
+                config: {
+                    name: OpenAIProvider.config
+                },
                 modelName: {
                     name: OpenAIProvider.modelName
                 }

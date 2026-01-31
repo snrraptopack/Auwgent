@@ -132,6 +132,7 @@ export interface SyntheticRequest {
         model?: string;  // Provider type: "gemini", "openai", "custom"
         modelName?: string;  // Actual model name
         temperature?: number;
+        providerConfig?: Record<string, any>;
     };
 }
 

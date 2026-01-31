@@ -83,6 +83,7 @@ export class ImportValidation {
             case 'helper': return 'Helper';
             case 'type': return 'TypeDeclaration';
             case 'prompt': return 'NamedPrompt';
+            case 'model': return 'ModelDefinition';
             default: return '';
         }
     }
@@ -92,6 +93,7 @@ export class ImportValidation {
             case 'Helper': return 'helper';
             case 'TypeDeclaration': return 'type';
             case 'NamedPrompt': return 'prompt';
+            case 'ModelDefinition': return 'model';
             default: return 'unknown';
         }
     }

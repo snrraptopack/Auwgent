@@ -55,11 +55,14 @@ export class GoogleDriver implements AgentDriver {
                 generationConfig.responseMimeType = "application/json";
             }
 
+            const providerConfig = request.config.providerConfig ?? {};
+
             // 5. Execute
             const result = await this.client.models.generateContent({
                 model,
                 contents,
                 config: {
+                    ...providerConfig,
                     systemInstruction,
                     ...generationConfig,
                     tools: toolsConfig.length > 0 ? toolsConfig : undefined
@@ -132,11 +135,14 @@ export class GoogleDriver implements AgentDriver {
                 generationConfig.responseMimeType = "application/json";
             }
 
+            const providerConfig = request.config.providerConfig ?? {};
+
             // Use streaming API
             const stream = await this.client.models.generateContentStream({
                 model,
                 contents,
                 config: {
+                    ...providerConfig,
                     systemInstruction,
                     ...generationConfig,
                     tools: toolsConfig.length > 0 ? toolsConfig : undefined
