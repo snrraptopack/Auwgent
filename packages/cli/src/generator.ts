@@ -61,6 +61,7 @@ type AgentIr = {
     workflows: any[],
     helpers: HelperType[],
     helperToolGrants?: Record<string, string[] | "all">,
+    helperHandoff?: Record<string, "user" | "thenContinue">,
     lifecycle?: {
         enabled: true,
         maxTokens?: number,
@@ -194,6 +195,7 @@ export async function generateOutput(model: Model, source: string, destination: 
             // Also extract tool grants for each helper
             const declaredHelpers: HelperType[] = [];
             const helperToolGrants: Record<string, string[] | "all"> = {};
+            const helperHandoff: Record<string, "user" | "thenContinue"> = {};
 
             for (const config of currentElement.configs) {
                 if (config.$type === "HelpersConfig" && config.helpers) {
@@ -210,6 +212,9 @@ export async function generateOutput(model: Model, source: string, destination: 
                                     .map(t => t.ref?.name)
                                     .filter((n): n is string => !!n);
                             }
+                            if (helperRef.handoffUser) {
+                                helperHandoff[helperName] = helperRef.handoffThenContinue ? "thenContinue" : "user";
+                            }
                         }
                     }
                 }
@@ -217,6 +222,9 @@ export async function generateOutput(model: Model, source: string, destination: 
             agentIR.helpers = declaredHelpers;
             if (Object.keys(helperToolGrants).length > 0) {
                 agentIR.helperToolGrants = helperToolGrants;
+            }
+            if (Object.keys(helperHandoff).length > 0) {
+                agentIR.helperHandoff = helperHandoff;
             }
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));

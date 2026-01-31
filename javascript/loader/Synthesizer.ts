@@ -250,12 +250,21 @@ export class Synthesizer {
         // 3. Convert Helpers (Exposed as special agent-tools)
         // Note: Transfer semantics are now controlled at call-site in workflows,
         // not as a static property of the helper
-        const helperDefs = (this.ir.helpers || []).map(helper => ({
-            name: helper.name,
-            description: `[HELPER AGENT] ${helper.description}`,
-            parameters: this.paramsToSchema(helper.input || {}),
-            _meta: { isHelper: true }
-        }));
+        const helperHandoff = this.ir.helperHandoff || {};
+        const helperDefs = (this.ir.helpers || []).map(helper => {
+            const handoff = helperHandoff[helper.name];
+            const handoffLabel = handoff === "user"
+                ? " [HANDOFF: user]"
+                : handoff === "thenContinue"
+                    ? " [HANDOFF: user then continue]"
+                    : "";
+            return {
+                name: helper.name,
+                description: `[HELPER AGENT] ${helper.description}${handoffLabel}`,
+                parameters: this.paramsToSchema(helper.input || {}),
+                _meta: { isHelper: true }
+            };
+        });
 
         const allTools = [...toolDefs, ...workflowDefs, ...helperDefs];
 

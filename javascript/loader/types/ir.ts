@@ -8,6 +8,7 @@ export interface AgentIR {
     workflows: Workflow[];
     helpers: HelperIR[];
     helperToolGrants?: Record<string, string[] | "all">;
+    helperHandoff?: Record<string, "user" | "thenContinue">;
     types?: Record<string, TypeDefinition>;
 }
 

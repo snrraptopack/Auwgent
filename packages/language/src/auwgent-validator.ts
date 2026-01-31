@@ -1,5 +1,7 @@
 import type { ValidationAcceptor, ValidationChecks } from 'langium';
+import { AstUtils } from 'langium';
 import type { AuwgentAstType, ReturnStatement, FileImport, Model, Exportable, MultilineStringLiteral, VariableRef, PromptCall, FunctionCall, ToolFunction, WorkFlowConfig, NamedPrompt, ModelConfig } from './generated/ast.js';
+import { isAgent, isHelperCall, isHelpersConfig } from './generated/ast.js';
 import type { AuwgentServices } from './auwgent-module.js';
 import { AuwgentUriResolver } from './auwgent-uri-resolver.js';
 import { ReturnValidation } from './validation/return-validation.js';
@@ -29,7 +31,7 @@ export function registerValidationChecks(services: AuwgentServices) {
         PromptCall: validator.checkPromptCall,
         FunctionCall: validator.checkFunctionCall,
         ToolFunction: validator.checkToolReturn,
-        WorkFlowConfig: [validator.checkWorkflowReturn, validator.checkWorkflowTypes],
+        WorkFlowConfig: [validator.checkWorkflowReturn, validator.checkWorkflowTypes, validator.checkWorkflowHelperUsage],
         ModelConfig: validator.checkModelConfigTypes
     };
     registry.register(checks, validator);
@@ -127,11 +129,52 @@ export class AuwgentValidator {
         this.typeCheckValidation.checkWorkflowTypes(node, accept);
     }
 
+    checkWorkflowHelperUsage(node: WorkFlowConfig, accept: ValidationAcceptor): void {
+        const container = this.getAgentContainer(node);
+        if (!container) {
+            return;
+        }
+        const allowedHelpers = new Set<string>();
+        for (const config of container.configs) {
+            if (isHelpersConfig(config)) {
+                for (const helperRef of config.helpers) {
+                    const name = helperRef.helper?.ref?.name;
+                    if (name) {
+                        allowedHelpers.add(name);
+                    }
+                }
+            }
+        }
+        const stream = AstUtils.streamAst(node);
+        for (const child of stream) {
+            if (isHelperCall(child)) {
+                const name = child.helper?.ref?.name;
+                if (name && !allowedHelpers.has(name)) {
+                    accept('error', `Helper "${name}" is not declared in helpers { }`, {
+                        node: child,
+                        property: 'helper'
+                    });
+                }
+            }
+        }
+    }
+
     checkPromptTypes(node: NamedPrompt, accept: ValidationAcceptor): void {
         this.typeCheckValidation.checkPromptTypes(node, accept);
     }
 
     checkModelConfigTypes(node: ModelConfig, accept: ValidationAcceptor): void {
         this.typeCheckValidation.checkModelConfigTypes(node, accept);
+    }
+
+    private getAgentContainer(node: any): any | undefined {
+        let current = node;
+        while (current) {
+            if (isAgent(current)) {
+                return current;
+            }
+            current = current.$container;
+        }
+        return undefined;
     }
 }

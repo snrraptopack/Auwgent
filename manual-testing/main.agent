@@ -5,7 +5,7 @@ import {GeminiModel} from "./models"
 agent ProjectCoordinator{
 
     helpers {
-        SecurityHelper 
+        SecurityHelper handoff user then continue
         ArchitectureHelper
     }
 

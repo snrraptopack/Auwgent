@@ -208,9 +208,11 @@ export class Agent<
 
                         await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
 
-                        const transfer = this.getTransferSignal(toolResult);
-                        if (workflow && transfer) {
-                            logger.debug(`[Agent] Transfer detected from workflow (mode: ${transfer.mode})`);
+                        const transfer = workflow
+                            ? this.getTransferSignal(toolResult)
+                            : this.getHelperHandoffSignal(helper?.name, toolResult);
+                        if (transfer) {
+                            logger.debug(`[Agent] Transfer detected (mode: ${transfer.mode})`);
 
                             if (transfer.mode === "direct") {
                                 return await complete(transfer.value as TOutput, finalResult);
@@ -218,9 +220,10 @@ export class Agent<
                             if (transfer.mode === "thenContinue") {
                                 completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
+                                const source = workflow ? `workflow "${name}"` : `helper "${name}"`;
                                 currentMessages.push({
                                     role: 'user',
-                                    content: this.textBlocks(`[System] The workflow "${name}" completed via helper "${transfer.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
+                                    content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
                                 });
                                 toolsStillAvailable = false;
                                 continue;
@@ -523,8 +526,10 @@ export class Agent<
 
                         await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
 
-                        const transfer = this.getTransferSignal(toolResult);
-                        if (workflow && transfer) {
+                        const transfer = workflow
+                            ? this.getTransferSignal(toolResult)
+                            : this.getHelperHandoffSignal(helper?.name, toolResult);
+                        if (transfer) {
                             yield {
                                 type: 'transfer',
                                 mode: transfer.mode,
@@ -537,9 +542,10 @@ export class Agent<
                             if (transfer.mode === "thenContinue") {
                                 completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
+                                const source = workflow ? `workflow "${name}"` : `helper "${name}"`;
                                 currentMessages.push({
                                     role: 'user',
-                                    content: this.textBlocks(`[System] The workflow "${name}" completed via helper "${transfer.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
+                                    content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
                                 });
                                 toolsStillAvailable = false;
                                 continue;
@@ -635,6 +641,22 @@ export class Agent<
             __type: "TransferSignal",
             value: record.value,
             mode,
+            helperName
+        };
+    }
+
+    private getHelperHandoffSignal(helperName: string | undefined, value: unknown): { __type: "TransferSignal"; value: unknown; mode: "direct" | "thenContinue"; helperName?: string } | null {
+        if (!helperName || !this.ir?.helperHandoff) {
+            return null;
+        }
+        const mode = this.ir.helperHandoff[helperName];
+        if (!mode) {
+            return null;
+        }
+        return {
+            __type: "TransferSignal",
+            value,
+            mode: mode === "thenContinue" ? "thenContinue" : "direct",
             helperName
         };
     }

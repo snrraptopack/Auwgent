@@ -62,7 +62,9 @@ HelpersConfig:
     "helpers" "{" helpers+=HelperRef* "}";
 
 HelperRef:
-    helper=[Helper] ("with" "tools" "{" (withAllTools?="all" | grantedTools+=[ToolFunction]* ) "}")?;
+    helper=[Helper]
+    ("with" "tools" "{" (withAllTools?="all" | grantedTools+=[ToolFunction]* ) "}")?
+    ("handoff" handoffUser?="user" (handoffThenContinue?="then" "continue")?)?;
 
 HelperCall:
     "hlp" "." helper=[Helper:ID] "(" (args+=Expression ("," args+=Expression)*)? ")";

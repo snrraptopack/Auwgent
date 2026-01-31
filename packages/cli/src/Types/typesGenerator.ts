@@ -23,6 +23,7 @@ interface AgentIR {
     tools: ToolDef[];
     workflows: Array<{ flowName: string; flowParams: Record<string, any>; returns: any; body: any[]; tools?: ToolDef[] }>;
     helpers: HelperType[];
+    helperHandoff?: Record<string, "user" | "thenContinue">;
     modelConfig?: Array<{
         defaultConfig?: { model: { type: string; modelName: string; url?: string; config?: any }; prompt: any };
         namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string; config?: any }; prompt: any }>;
@@ -49,6 +50,8 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
     const transferredHelpers = collectTransferredHelpers(agent);
+    const handoffHelpers = collectHandoffHelpers(agent);
+    const outputHelpers = mergeHelpers(transferredHelpers, handoffHelpers);
 
     // Generate IR import statement using baseName if provided, otherwise fall back to agent.name
     const fileName = baseName || agent.name;
@@ -71,12 +74,12 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         agent.types ? generateCustomTypes(agent.types) : '',
         generateInputInterface(agent),
         // Generate output interfaces for transferred helpers
-        ...transferredHelpers.map(helper => generateHelperOutputInterface(helper)),
-        generateOutputInterface(agent, transferredHelpers),
+        ...outputHelpers.map(helper => generateHelperOutputInterface(helper)),
+        generateOutputInterface(agent, outputHelpers),
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent.name, allTools) : '',
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, transferredHelpers),
+        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, outputHelpers),
     ];
 
     return sections.filter(Boolean).join('\n');
@@ -116,6 +119,23 @@ function collectTransferredHelpers(agent: AgentIR): HelperType[] {
 
     // Map names to actual helper definitions
     return (agent.helpers || []).filter(h => transferredNames.has(h.name));
+}
+
+function collectHandoffHelpers(agent: AgentIR): HelperType[] {
+    const handoff = agent.helperHandoff || {};
+    const handoffNames = new Set<string>(Object.keys(handoff));
+    return (agent.helpers || []).filter(h => handoffNames.has(h.name));
+}
+
+function mergeHelpers(a: HelperType[], b: HelperType[]): HelperType[] {
+    const map = new Map<string, HelperType>();
+    for (const helper of a) {
+        map.set(helper.name, helper);
+    }
+    for (const helper of b) {
+        map.set(helper.name, helper);
+    }
+    return Array.from(map.values());
 }
 
 /**

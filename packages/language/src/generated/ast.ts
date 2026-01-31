@@ -52,6 +52,7 @@ export type AuwgentKeywordNames =
     | "false"
     | "from"
     | "gemini"
+    | "handoff"
     | "helper"
     | "helpers"
     | "hlp"
@@ -78,6 +79,7 @@ export type AuwgentKeywordNames =
     | "true"
     | "type"
     | "use"
+    | "user"
     | "with"
     | "workflow"
     | "{"
@@ -434,6 +436,8 @@ export interface HelperRef extends langium.AstNode {
     readonly $container: HelpersConfig;
     readonly $type: 'HelperRef';
     grantedTools: Array<langium.Reference<ToolFunction>>;
+    handoffThenContinue: boolean;
+    handoffUser: boolean;
     helper: langium.Reference<Helper>;
     withAllTools: boolean;
 }
@@ -441,6 +445,8 @@ export interface HelperRef extends langium.AstNode {
 export const HelperRef = {
     $type: 'HelperRef',
     grantedTools: 'grantedTools',
+    handoffThenContinue: 'handoffThenContinue',
+    handoffUser: 'handoffUser',
     helper: 'helper',
     withAllTools: 'withAllTools'
 } as const;
@@ -1564,6 +1570,14 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     name: HelperRef.grantedTools,
                     defaultValue: [],
                     referenceType: ToolFunction.$type
+                },
+                handoffThenContinue: {
+                    name: HelperRef.handoffThenContinue,
+                    defaultValue: false
+                },
+                handoffUser: {
+                    name: HelperRef.handoffUser,
+                    defaultValue: false
                 },
                 helper: {
                     name: HelperRef.helper,

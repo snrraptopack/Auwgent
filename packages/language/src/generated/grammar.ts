@@ -675,6 +675,44 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
               }
             ],
             "cardinality": "?"
+          },
+          {
+            "$type": "Group",
+            "elements": [
+              {
+                "$type": "Keyword",
+                "value": "handoff"
+              },
+              {
+                "$type": "Assignment",
+                "feature": "handoffUser",
+                "operator": "?=",
+                "terminal": {
+                  "$type": "Keyword",
+                  "value": "user"
+                }
+              },
+              {
+                "$type": "Group",
+                "elements": [
+                  {
+                    "$type": "Assignment",
+                    "feature": "handoffThenContinue",
+                    "operator": "?=",
+                    "terminal": {
+                      "$type": "Keyword",
+                      "value": "then"
+                    }
+                  },
+                  {
+                    "$type": "Keyword",
+                    "value": "continue"
+                  }
+                ],
+                "cardinality": "?"
+              }
+            ],
+            "cardinality": "?"
           }
         ]
       },
