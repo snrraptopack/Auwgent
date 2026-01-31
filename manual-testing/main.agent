@@ -1,14 +1,28 @@
-import {Base} from "./prompt"
+
+prompt SimplePrompt(id:number,name:string){
+    """
+        Your a helpful AI assistant please reply politely
+        The user name is : {{name}} with an id {{id}}
+    """
+}
+
+type User{
+    name:string
+    age:number
+    location:string
+    school:string
+}
 
 agent Hello{
-
     default config{
-        model:gemini("")
-        prompt{
-            """
-            {{ctx.hello}}
-            """
-        }
+        model:gemini("gemini-2.5-flash")
+        prompt: SimplePrompt(ctx.id,ctx.user_name)
     }
+    context{
+        user_name:string
+        id:number
+    }
+    input{text:string}
+    tool get_user_details(id:string):User @desc "resturns the user deatails including ther location and school"
 }
 

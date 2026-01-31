@@ -1,12 +1,13 @@
 import { Synthesizer } from "./Synthesizer";
 import type { AgentIR, HelperIR } from "./types/ir";
-import type { AgentDriver, StreamChunk, SyntheticMessage, LifecycleHooks, ConversationState } from "./types/protocol";
+import type { AgentDriver, AgentMiddleware, ContentBlock, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult } from "./types/protocol";
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
 import { DriverRegistry } from "./DriverRegistry";
 import { logger } from "./Logger";
-import { LifecycleError, ConfigurationError } from "./types/errors";
+import { ConfigurationError } from "./types/errors";
+import { createMiddlewareContext, runOnAfterModel, runOnAfterTool, runOnAgentEnd, runOnAgentStart, runOnBeforeModel, runOnBeforeTool, runOnThinking, runWithRetries, sortMiddlewares, wrapModelCall, wrapToolCall } from "./IrMiddleware";
 
 /**
  * Configuration object for agent.run()
@@ -15,12 +16,14 @@ export interface RunConfig<TTools = ToolMap, TContext = Record<string, unknown>,
     tools?: TTools;
     context?: TContext;
     configName?: string;
-    lifecycle?: LifecycleHooks<TContext, TOutput>;
     modelOverride?: {
         providerType?: string;
         modelName?: string;
         temperature?: number;
     };
+    middleware?: AgentMiddleware<any, any, any>[];
+    middlewareState?: Record<string, any>;
+    runId?: string;
 }
 
 export class Agent<
@@ -70,51 +73,16 @@ export class Agent<
         config?: RunConfig<TTools, TContext, TOutput>
     ): Promise<TOutput> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
+        const synthesizer = this.synthesizer;
+        const ir = this.ir;
 
         // Destructure config
-        const { tools, context, configName, lifecycle, modelOverride } = config ?? {};
+        const { tools, context, configName, modelOverride } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
-        const runContext = context as Record<string, any> | undefined;
-
-        // LIFECYCLE: Validate hooks if lifecycle enabled in IR
-        if (this.ir.lifecycle?.enabled && !lifecycle) {
-            throw new ConfigurationError(
-                `Agent "${this.ir.name}" has lifecycle enabled. ` +
-                `You must provide lifecycle hooks: { prune, load, save }`
-            );
-        }
-
-        // LIFECYCLE: Prune + Load (before synthesis)
-        let loadedMessages: SyntheticMessage[] = [];
-        if (lifecycle) {
-            try {
-                // Calculate usage for prune
-                const usage = {
-                    currentTokens: 0,  // Will be updated after load
-                    maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
-                    currentMessages: 0,
-                    maxMessages: this.ir.lifecycle?.maxMessages ?? 100
-                };
-
-                // Run prune (decides what to keep in context)
-                await lifecycle.prune({
-                    context: context as TContext,
-                    agent: this,
-                    usage
-                });
-
-                // Run load (fetch prepared messages)
-                const state = await lifecycle.load({
-                    context: context as TContext
-                });
-                loadedMessages = state.messages;
-            } catch (error: any) {
-                throw new LifecycleError('load', error);
-            }
-        }
+        const runContext = context as TContext | undefined;
 
         // 1. Initial Synthesis
-        const request = await this.synthesizer.synthesize(input, context, configName);
+        const request = await synthesizer.synthesize(input, context, configName);
         if (modelOverride?.providerType) {
             request.config.model = modelOverride.providerType;
         }
@@ -125,209 +93,195 @@ export class Agent<
             request.config.temperature = modelOverride.temperature;
         }
 
-        // RESOLVE DRIVER (cached)
         const providerType = request.config.model ?? "";
         const driver = this.getDriver(providerType, request.config.modelName);
+        const middlewares = sortMiddlewares(config?.middleware);
+        const ctx = createMiddlewareContext(this.ir?.name || "unknown", input, runContext, request, config?.middlewareState, config?.runId);
+        let ended = false;
+        const complete = async (output: TOutput, result?: DriverResult) => {
+            if (!ended) {
+                ended = true;
+                await runOnAgentEnd(middlewares, ctx, result);
+            }
+            return output;
+        };
 
-        // Prepend loaded messages from lifecycle
-        let currentMessages: SyntheticMessage[] = [...loadedMessages, ...request.messages];
-        const messagesBeforeRun = currentMessages.length;
-        let turnCount = 0;
-        let toolsStillAvailable = true; // Track if tools should be sent to model
-        const completedCalls = new Set<string>();
+        try {
+            await runOnAgentStart(middlewares, ctx);
 
-        // 2. The Loop
-        while (turnCount < this.maxTurns) {
-            turnCount++;
+            let currentMessages: SyntheticMessage[] = [...request.messages];
+            let turnCount = 0;
+            let toolsStillAvailable = true;
+            const completedCalls = new Set<string>();
 
-            // Build the current request
-            const currentRequest = {
-                ...request,
-                messages: currentMessages,
-                // Remove tools after first tool call to enable structured output
-                tools: toolsStillAvailable ? request.tools : undefined
-            };
+            while (turnCount < this.maxTurns) {
+                turnCount++;
 
-            // Execute Driver
-            const result = await driver.execute(currentRequest);
+                const currentRequest = {
+                    ...request,
+                    messages: currentMessages,
+                    tools: toolsStillAvailable ? request.tools : undefined
+                };
 
-            // CASE A: Tool Call
-            if (result.toolParams) {
-                const { name, args } = result.toolParams;
-
-                // GUARD: Check if this exact call was already completed via thenContinue
-                const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                if (completedCalls.has(callSignature)) {
-                    logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
-                    currentMessages.push({
-                        role: 'user',
-                        content: `[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`
-                    });
-                    continue; // Skip execution, let model see error
+                ctx.request = currentRequest;
+                const modifiedRequest = await runOnBeforeModel(middlewares, ctx);
+                if (modifiedRequest) {
+                    ctx.request = modifiedRequest;
                 }
 
-                // Add model's tool call to history
-                currentMessages.push({
-                    role: 'assistant',
-                    content: `Call ${name} with ${JSON.stringify(args)}`
+                const result = await runWithRetries(middlewares, ctx, "model", async () => {
+                    const wrapped = wrapModelCall(middlewares, ctx, () => driver.execute(ctx.request));
+                    return wrapped();
                 });
 
-                const workflow = this.ir.workflows?.find(w => w.flowName === name);
-                const helper = this.ir.helpers?.find(h => h.name === name);
+                ctx.response = result;
+                const afterThinking = await runOnThinking(middlewares, ctx, result);
+                const afterModel = await runOnAfterModel(middlewares, ctx, afterThinking);
+                const finalResult = afterModel ?? afterThinking;
+                ctx.response = finalResult;
 
-                try {
-                    let toolResult: any;
-
-                    // 1. Check if it's a Helper (sub-agent) - called directly by model
-                    if (helper) {
-                        logger.debug(`[Agent] >>> Delegating to Helper Agent: ${name}`);
-                        logger.trackHelperCall(name);
-                        toolResult = await this.executeHelper(helper, args);
-                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
-                        // Helper called directly by model always returns to model
+                if (finalResult.toolCall) {
+                    const { id, name, args } = finalResult.toolCall;
+                    const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
+                    if (completedCalls.has(callSignature)) {
+                        logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
+                        currentMessages.push({
+                            role: 'user',
+                            content: this.textBlocks(`[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
+                        });
+                        continue;
                     }
-                    // 2. Check if it's a Workflow
-                    else if (workflow) {
-                        logger.debug(`[Agent] >>> Dispatching to Workflow: ${name}`);
-                        logger.trackWorkflowCall(name);
-                        const runner = new WorkflowRunner(
-                            this.ir,
-                            safeTools,
-                            (helper, args) => this.executeHelper(helper, args)
-                        );
-                        toolResult = await runner.run(name, args, runContext);
-                        logger.debug(`[Agent] <<< Workflow ${name} completed.`);
 
-                        // Handle TransferSignal from workflow
-                        if (toolResult && typeof toolResult === 'object' && toolResult.__type === 'TransferSignal') {
-                            logger.debug(`[Agent] Transfer detected from workflow (mode: ${toolResult.mode})`);
+                    currentMessages.push({
+                        role: 'assistant',
+                        content: [{ type: 'tool_use', id, name, input: args }],
+                        toolCalls: [finalResult.toolCall]
+                    });
 
-                            if (toolResult.mode === "direct") {
-                                // Direct transfer: return helper result to user immediately
-                                logger.debug(`[Agent] Returning transferred result directly to user.`);
-                                // LIFECYCLE: Save before returning
-                                if (lifecycle) {
-                                    try {
-                                        const newMessages = currentMessages.slice(messagesBeforeRun);
-                                        await lifecycle.save({
-                                            newMessages,
-                                            context: context as TContext,
-                                            output: toolResult.value as TOutput
-                                        });
-                                    } catch (error: any) {
-                                        throw new LifecycleError('save', error);
-                                    }
+                    const workflow = ir.workflows?.find(w => w.flowName === name);
+                    const helper = ir.helpers?.find(h => h.name === name);
+
+                    try {
+                        const toolCall: ToolCall = { id, name, args };
+                        const toolUseBlock = { type: 'tool_use', id, name, input: args } as const;
+                        const shouldContinue = await runOnBeforeTool(middlewares, ctx, toolUseBlock);
+                        if (shouldContinue === false) {
+                            throw new Error("Tool execution blocked");
+                        }
+
+                        const toolResult = await runWithRetries(middlewares, ctx, "tool", async () => {
+                            const wrappedTool = wrapToolCall(middlewares, ctx, toolUseBlock, async (toolArgs: ToolArgs) => {
+                                if (helper) {
+                                    logger.debug(`[Agent] >>> Delegating to Helper Agent: ${name}`);
+                                    logger.trackHelperCall(name);
+                                    const result = await this.executeHelper(helper, toolArgs);
+                                    logger.debug(`[Agent] <<< Helper ${name} completed.`);
+                                    return result;
                                 }
-                                return toolResult.value as TOutput;
-                            } else if (toolResult.mode === "thenContinue") {
-                                // thenContinue: result already sent to user, model can optionally add summary
-                                logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
+                                if (workflow) {
+                                    logger.debug(`[Agent] >>> Dispatching to Workflow: ${name}`);
+                                    logger.trackWorkflowCall(name);
+                                    const runner = new WorkflowRunner(
+                                        ir,
+                                        safeTools,
+                                        (helperTool, helperArgs) => this.executeHelper(helperTool, helperArgs)
+                                    );
+                                    const workflowResult = await runner.run(name, toolArgs, runContext);
+                                    logger.debug(`[Agent] <<< Workflow ${name} completed.`);
+                                    return workflowResult;
+                                }
+                                const isDeclaredTool = ir.tools?.some(t => t.name === name);
+                                if (!isDeclaredTool) {
+                                    throw new Error(`Model tried to call unknown tool: ${name}`);
+                                }
+                                if (!tools || !safeTools[name]) {
+                                    throw new Error(`Tool implementation missing for: ${name}`);
+                                }
+                                logger.debug(`[Agent] >>> Calling Tool: ${name}`);
+                                logger.trackToolCall(name);
+                                const result = await safeTools[name](toolArgs);
+                                logger.debug(`[Agent] <<< Tool ${name} completed.`);
+                                return result;
+                            });
+                            return wrappedTool(toolCall.args);
+                        });
 
-                                // GUARD: Track this call to prevent re-execution
+                        await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
+
+                        const transfer = this.getTransferSignal(toolResult);
+                        if (workflow && transfer) {
+                            logger.debug(`[Agent] Transfer detected from workflow (mode: ${transfer.mode})`);
+
+                            if (transfer.mode === "direct") {
+                                return await complete(transfer.value as TOutput, finalResult);
+                            }
+                            if (transfer.mode === "thenContinue") {
                                 completedCalls.add(callSignature);
                                 logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
-
                                 currentMessages.push({
                                     role: 'user',
-                                    content: `[System] The workflow "${name}" completed via helper "${toolResult.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`
+                                    content: this.textBlocks(`[System] The workflow "${name}" completed via helper "${transfer.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
                                 });
-                                // toolsStillAvailable = false so model can only respond with text
                                 toolsStillAvailable = false;
                                 continue;
                             }
                         }
-                    } else {
-                        // It must be a user tool
-                        const isDeclaredTool = this.ir.tools?.some(t => t.name === name);
-                        if (!isDeclaredTool) {
-                            throw new Error(`Model tried to call unknown tool: ${name}`);
-                        }
-                        if (!tools || !safeTools[name]) {
-                            throw new Error(`Tool implementation missing for: ${name}`);
-                        }
-                        logger.debug(`[Agent] >>> Calling Tool: ${name}`);
-                        logger.trackToolCall(name);
-                        toolResult = await safeTools[name](args);
-                        logger.debug(`[Agent] <<< Tool ${name} completed.`);
+
+                        const resultPrefix = helper
+                            ? `Helper Result [${name}]`
+                            : workflow
+                                ? `Workflow Result [${name}]`
+                                : `Tool Result [${name}]`;
+
+                        currentMessages.push({
+                            role: 'user',
+                            content: [{
+                                type: 'tool_result',
+                                toolUseId: id,
+                                content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
+                            }]
+                        });
+
+                        toolsStillAvailable = false;
+                    } catch (e: any) {
+                        console.error(`[Agent] Execution Error:`, e);
+                        currentMessages.push({
+                            role: 'user',
+                            content: [{
+                                type: 'tool_result',
+                                toolUseId: id,
+                                content: `Tool Error: ${e.message}`,
+                                isError: true
+                            }]
+                        });
+                        toolsStillAvailable = false;
                     }
 
-                    // 3. Add result to history with distinguishable prefix
-                    let resultPrefix: string;
-                    if (helper) {
-                        resultPrefix = `Helper Result [${name}]`;
-                    } else if (workflow) {
-                        resultPrefix = `Workflow Result [${name}]`;
-                    } else {
-                        resultPrefix = `Tool Result [${name}]`;
-                    }
-                    currentMessages.push({
-                        role: 'user',
-                        content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
-                    });
-
-                    // 4. IMPORTANT: Remove tools for next turn so model can return structured output
-                    toolsStillAvailable = false;
-
-                } catch (e: any) {
-                    console.error(`[Agent] Execution Error:`, e);
-                    currentMessages.push({
-                        role: 'user',
-                        content: `Tool Error: ${e.message}`
-                    });
-                    // Still remove tools even on error
-                    toolsStillAvailable = false;
+                    continue;
                 }
 
-                // Continue loop -> Model sees result -> Decides next step
-                continue;
-            }
-
-            // CASE B: Final Text Result
-
-            if (result.toolParams === undefined) {
-                // Model didn't call a tool - it's giving a final response
-                let output: TOutput;
-
-                // If we expect JSON but got plain text, and tools were still available,
-                // the model chose not to use tools. We should still try to get JSON.
+                const textOutput = this.extractText(finalResult);
                 if (request.responseSchema) {
                     try {
-                        output = JSON.parse(result.text ?? "{}") as TOutput;
+                        const parsed = JSON.parse(textOutput ?? "{}") as TOutput;
+                        return await complete(parsed, finalResult);
                     } catch (e) {
-                        console.error("Failed to parse JSON response:", result.text);
+                        console.error("Failed to parse JSON response:", textOutput);
                         throw new Error("Model failed to return valid JSON");
                     }
-                } else {
-                    output = (result.text ?? "") as TOutput;
                 }
 
-                // LIFECYCLE: Save after successful run
-                if (lifecycle) {
-                    try {
-                        // Add the assistant response to messages
-                        currentMessages.push({
-                            role: 'assistant',
-                            content: typeof output === 'string' ? output : JSON.stringify(output)
-                        });
-                        const newMessages = currentMessages.slice(messagesBeforeRun);
-                        await lifecycle.save({
-                            newMessages,
-                            context: context as TContext,
-                            output
-                        });
-                    } catch (error: any) {
-                        throw new LifecycleError('save', error);
-                    }
-                }
-
-                return output;
+                return await complete((textOutput ?? "") as TOutput, finalResult);
             }
 
-
-            return (result.text ?? "") as TOutput;
+            throw new Error("Agent exceeded maximum turns");
+        } catch (error: any) {
+            if (!ended) {
+                ended = true;
+                await runOnAgentEnd(middlewares, ctx, ctx.response, error);
+            }
+            throw error;
         }
-
-        throw new Error("Agent exceeded maximum turns");
     }
 
     /**
@@ -359,47 +313,15 @@ export class Agent<
         config?: RunConfig<TTools, TContext, TOutput>
     ): AsyncGenerator<StreamChunk, TOutput, unknown> {
         if (!this.synthesizer || !this.ir) throw new Error("Agent not loaded");
+        const synthesizer = this.synthesizer;
+        const ir = this.ir;
 
         // Destructure config
-        const { tools, context, configName, lifecycle, modelOverride } = config ?? {};
+        const { tools, context, configName, modelOverride } = config ?? {};
         const safeTools = tools as unknown as ToolMap;
-        const runContext = context as Record<string, any> | undefined;
+        const runContext = context as TContext | undefined;
 
-        // LIFECYCLE: Validate hooks if lifecycle enabled in IR
-        if (this.ir.lifecycle?.enabled && !lifecycle) {
-            throw new ConfigurationError(
-                `Agent "${this.ir.name}" has lifecycle enabled. ` +
-                `You must provide lifecycle hooks: { prune, load, save }`
-            );
-        }
-
-        // LIFECYCLE: Prune + Load (before synthesis)
-        let loadedMessages: SyntheticMessage[] = [];
-        if (lifecycle) {
-            try {
-                const usage = {
-                    currentTokens: 0,
-                    maxTokens: this.ir.lifecycle?.maxTokens ?? 100000,
-                    currentMessages: 0,
-                    maxMessages: this.ir.lifecycle?.maxMessages ?? 100
-                };
-
-                await lifecycle.prune({
-                    context: context as TContext,
-                    agent: this,
-                    usage
-                });
-
-                const state = await lifecycle.load({
-                    context: context as TContext
-                });
-                loadedMessages = state.messages;
-            } catch (error: any) {
-                throw new LifecycleError('load', error);
-            }
-        }
-
-        const request = await this.synthesizer.synthesize(input, context, configName);
+        const request = await synthesizer.synthesize(input, context, configName);
         if (modelOverride?.providerType) {
             request.config.model = modelOverride.providerType;
         }
@@ -411,202 +333,310 @@ export class Agent<
         }
         const providerType = request.config.model ?? "";
         const driver = this.getDriver(providerType, request.config.modelName);
+        const middlewares = sortMiddlewares(config?.middleware);
+        const ctx = createMiddlewareContext(this.ir?.name || "unknown", input, runContext, request, config?.middlewareState, config?.runId);
+        let ended = false;
+        const complete = async (output: TOutput, result?: DriverResult) => {
+            if (!ended) {
+                ended = true;
+                await runOnAgentEnd(middlewares, ctx, result);
+            }
+            return output;
+        };
 
-        // Check if driver supports streaming
         if (!driver.executeStream) {
-            // Fallback to non-streaming
             console.warn(`[Agent] Driver ${driver.name} does not support streaming, falling back to non-streaming`);
             const result = await this.run(input, config);
             return result;
         }
 
-        let currentMessages: SyntheticMessage[] = [...loadedMessages, ...request.messages];
-        const messagesBeforeRun = currentMessages.length;
-        let turnCount = 0;
-        let toolsStillAvailable = true;
-        const completedCalls = new Set<string>();
+        try {
+            await runOnAgentStart(middlewares, ctx);
 
-        while (turnCount < this.maxTurns) {
-            turnCount++;
+            let currentMessages: SyntheticMessage[] = [...request.messages];
+            let turnCount = 0;
+            let toolsStillAvailable = true;
+            const completedCalls = new Set<string>();
 
-            const currentRequest = {
-                ...request,
-                messages: currentMessages,
-                tools: toolsStillAvailable ? request.tools : undefined
-            };
+            while (turnCount < this.maxTurns) {
+                turnCount++;
 
-            // Use streaming execution
-            const stream = driver.executeStream(currentRequest);
-            let result: any;
+                const currentRequest = {
+                    ...request,
+                    messages: currentMessages,
+                    tools: toolsStillAvailable ? request.tools : undefined
+                };
 
-            // Yield chunks and capture final result
-            while (true) {
-                const { value, done } = await stream.next();
-                if (done) {
-                    result = value;
-                    break;
+                ctx.request = currentRequest;
+                const modifiedRequest = await runOnBeforeModel(middlewares, ctx);
+                if (modifiedRequest) {
+                    ctx.request = modifiedRequest;
                 }
-                yield value;  // Forward chunk to caller
-            }
 
-            // Handle tool calls
-            if (result.toolParams) {
-                const { name, args } = result.toolParams;
-                let toolResult: any;
-
-                // GUARD: Check if this exact call was already completed via thenContinue
-                const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
-                if (completedCalls.has(callSignature)) {
-                    logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
-                    currentMessages.push({
-                        role: 'user',
-                        content: `[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`
+                const queue = this.createStreamQueue<StreamChunk>();
+                const resultPromise = runWithRetries(middlewares, ctx, "model", async () => {
+                    const wrapped = wrapModelCall(middlewares, ctx, async () => {
+                        const stream = driver.executeStream!(ctx.request);
+                        let finalResult: DriverResult | undefined;
+                        try {
+                            while (true) {
+                                const { value, done } = await stream.next();
+                                if (done) {
+                                    finalResult = value;
+                                    break;
+                                }
+                                queue.push(value);
+                            }
+                            queue.close();
+                            if (!finalResult) {
+                                throw new Error("Stream ended without a final result");
+                            }
+                            return finalResult;
+                        } catch (error: any) {
+                            queue.fail(error);
+                            throw error;
+                        }
                     });
-                    continue; // Skip execution, let model see error
-                }
-
-                // Add model's tool call to history - THIS WAS THE BUG (MISSING IN STREAMING)
-                currentMessages.push({
-                    role: 'assistant',
-                    content: `Call ${name} with ${JSON.stringify(args)}`
+                    return wrapped();
                 });
-
-                // Check workflows first
-                const workflow = this.ir.workflows?.find(w => w.flowName === name);
-                if (workflow) {
-                    logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
-                    logger.trackWorkflowCall(name);
-
-                    // Use async generator - yields chunks immediately!
-                    const workflowStream = this.executeWorkflowStream(name, args, safeTools, runContext);
-                    let workflowResult: any;
-
+                let result: DriverResult;
+                try {
                     while (true) {
-                        const { value, done } = await workflowStream.next();
+                        const { value, done } = await queue.next();
                         if (done) {
-                            workflowResult = value;
                             break;
                         }
-                        yield value;  // Forward chunks immediately!
+                        yield value;
                     }
-
-                    logger.debug(`[Agent] <<< Workflow ${name} completed.`);
-
-                    // Handle TransferSignal from workflow
-                    if (workflowResult && typeof workflowResult === 'object' && workflowResult.__type === 'TransferSignal') {
-                        // Yield transfer event to client
-                        yield {
-                            type: 'transfer',
-                            mode: workflowResult.mode,
-                            helperName: workflowResult.helperName || name
-                        };
-
-                        if (workflowResult.mode === "direct") {
-                            logger.debug(`[Agent] Transfer detected from workflow (mode: direct)`);
-                            return workflowResult.value as TOutput;
-                        } else if (workflowResult.mode === "thenContinue") {
-                            // thenContinue: result already sent to user, model can optionally add summary
-                            logger.debug(`[Agent] Transfer with thenContinue - model can wrap up.`);
-
-                            // GUARD: Track this call to prevent re-execution
-                            completedCalls.add(callSignature);
-                            logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
-
-                            currentMessages.push({
-                                role: 'user',
-                                content: `[System] The workflow "${name}" completed via helper "${workflowResult.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`
-                            });
-                            // toolsStillAvailable = false so model can only respond with text
-                            toolsStillAvailable = false;
-                            continue;
-                        }
-                    }
-                    toolResult = workflowResult;
-                } else {
-                    // Check helpers
-                    const helper = this.ir.helpers?.find(h => h.name === name);
-                    if (helper) {
-                        logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
-                        logger.trackHelperCall(name);
-                        // Use streaming helper execution
-                        const helperStream = this.executeHelperStream(helper, args);
-                        while (true) {
-                            const { value, done } = await helperStream.next();
-                            if (done) {
-                                toolResult = value;
-                                break;
-                            }
-                            yield value;  // Forward helper chunks to caller
-                        }
-                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
-                    } else {
-                        // User tool
-                        if (!safeTools || !safeTools[name]) {
-                            throw new Error(`Unknown tool: ${name}`);
-                        }
-                        logger.debug(`[Agent] >>> Calling Tool: ${name}`);
-                        logger.trackToolCall(name);
-                        toolResult = await safeTools[name](args);
-                        logger.debug(`[Agent] <<< Tool ${name} completed.`);
-                    }
+                    result = await resultPromise;
+                } catch (error: any) {
+                    queue.fail(error);
+                    throw error;
                 }
 
-                // Yield tool result to client
-                yield { type: 'tool_result', name, result: toolResult };
+                ctx.response = result;
+                const afterThinking = await runOnThinking(middlewares, ctx, result);
+                const afterModel = await runOnAfterModel(middlewares, ctx, afterThinking);
+                const finalResult = afterModel ?? afterThinking;
+                ctx.response = finalResult;
 
-                // Add result to history with distinguishable prefix
-                const isWorkflow = this.ir.workflows?.some(w => w.flowName === name);
-                const isHelper = this.ir.helpers?.some(h => h.name === name);
-                let resultPrefix: string;
-                if (isHelper) {
-                    resultPrefix = `Helper Result [${name}]`;
-                } else if (isWorkflow) {
-                    resultPrefix = `Workflow Result [${name}]`;
-                } else {
-                    resultPrefix = `Tool Result [${name}]`;
-                }
-                currentMessages.push({
-                    role: 'user',
-                    content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
-                });
-                toolsStillAvailable = false;
-                continue;
-            }
+                if (finalResult.toolCall) {
+                    const { id, name, args } = finalResult.toolCall;
+                    const callSignature = `${name}::${JSON.stringify(args, Object.keys(args).sort())}`;
+                    if (completedCalls.has(callSignature)) {
+                        logger.debug(`[Agent] BLOCKED: Duplicate call to "${name}" - already completed.`);
+                        currentMessages.push({
+                            role: 'user',
+                            content: this.textBlocks(`[SYSTEM ERROR] You already completed "${name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
+                        });
+                        continue;
+                    }
 
-            // Final response
-            let output: TOutput;
-            if (request.responseSchema) {
-                try {
-                    output = JSON.parse(result.text ?? "{}") as TOutput;
-                } catch (e) {
-                    throw new Error("Model failed to return valid JSON");
-                }
-            } else {
-                output = (result.text ?? "") as TOutput;
-            }
-
-            // LIFECYCLE: Save after successful run
-            if (lifecycle) {
-                try {
                     currentMessages.push({
                         role: 'assistant',
-                        content: typeof output === 'string' ? output : JSON.stringify(output)
+                        content: [{ type: 'tool_use', id, name, input: args }],
+                        toolCalls: [finalResult.toolCall]
                     });
-                    const newMessages = currentMessages.slice(messagesBeforeRun);
-                    await lifecycle.save({
-                        newMessages,
-                        context: context as TContext,
-                        output
-                    });
-                } catch (error: any) {
-                    throw new LifecycleError('save', error);
+
+                    const workflow = ir.workflows?.find(w => w.flowName === name);
+                    const helper = ir.helpers?.find(h => h.name === name);
+
+                    try {
+                        const toolCall: ToolCall = { id, name, args };
+                        const toolUseBlock = { type: 'tool_use', id, name, input: args } as const;
+                        const shouldContinue = await runOnBeforeTool(middlewares, ctx, toolUseBlock);
+                        if (shouldContinue === false) {
+                            throw new Error("Tool execution blocked");
+                        }
+
+                        const toolQueue = this.createStreamQueue<StreamChunk>();
+                        const toolResultPromise = runWithRetries(middlewares, ctx, "tool", async () => {
+                            try {
+                                const wrappedTool = wrapToolCall(middlewares, ctx, toolUseBlock, async (toolArgs: ToolArgs) => {
+                                    if (workflow) {
+                                        logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
+                                        logger.trackWorkflowCall(name);
+                                        const workflowStream = this.executeWorkflowStream(name, toolArgs, safeTools, runContext);
+                                        let workflowResult: any;
+                                        while (true) {
+                                            const { value, done } = await workflowStream.next();
+                                            if (done) {
+                                                workflowResult = value;
+                                                break;
+                                            }
+                                            toolQueue.push(value);
+                                        }
+                                        logger.debug(`[Agent] <<< Workflow ${name} completed.`);
+                                        return workflowResult;
+                                    }
+                                    if (helper) {
+                                        logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
+                                        logger.trackHelperCall(name);
+                                        const helperStream = this.executeHelperStream(helper, toolArgs);
+                                        let helperResult: any;
+                                        while (true) {
+                                            const { value, done } = await helperStream.next();
+                                            if (done) {
+                                                helperResult = value;
+                                                break;
+                                            }
+                                            toolQueue.push(value);
+                                        }
+                                        logger.debug(`[Agent] <<< Helper ${name} completed.`);
+                                        return helperResult;
+                                    }
+                                    const isDeclaredTool = ir.tools?.some(t => t.name === name);
+                                    if (!isDeclaredTool) {
+                                        throw new Error(`Model tried to call unknown tool: ${name}`);
+                                    }
+                                    if (!tools || !safeTools[name]) {
+                                        throw new Error(`Tool implementation missing for: ${name}`);
+                                    }
+                                    logger.debug(`[Agent] >>> Calling Tool: ${name}`);
+                                    logger.trackToolCall(name);
+                                    const result = await safeTools[name](toolArgs);
+                                    logger.debug(`[Agent] <<< Tool ${name} completed.`);
+                                    return result;
+                                });
+                                const result = await wrappedTool(toolCall.args);
+                                toolQueue.close();
+                                return result;
+                            } catch (error: any) {
+                                toolQueue.fail(error);
+                                throw error;
+                            }
+                        });
+                        let toolResult: ToolResult;
+                        try {
+                            while (true) {
+                                const { value, done } = await toolQueue.next();
+                                if (done) {
+                                    break;
+                                }
+                                yield value;
+                            }
+                            toolResult = await toolResultPromise;
+                        } catch (error: any) {
+                            toolQueue.fail(error);
+                            throw error;
+                        }
+
+                        await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
+
+                        const transfer = this.getTransferSignal(toolResult);
+                        if (workflow && transfer) {
+                            yield {
+                                type: 'transfer',
+                                mode: transfer.mode,
+                                helperName: transfer.helperName || name
+                            };
+
+                            if (transfer.mode === "direct") {
+                                return await complete(transfer.value as TOutput, finalResult);
+                            }
+                            if (transfer.mode === "thenContinue") {
+                                completedCalls.add(callSignature);
+                                logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
+                                currentMessages.push({
+                                    role: 'user',
+                                    content: this.textBlocks(`[System] The workflow "${name}" completed via helper "${transfer.helperName}". The result was already delivered to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
+                                });
+                                toolsStillAvailable = false;
+                                continue;
+                            }
+                        }
+
+                        yield { type: 'tool_result', name, result: toolResult };
+
+                        const resultPrefix = helper
+                            ? `Helper Result [${name}]`
+                            : workflow
+                                ? `Workflow Result [${name}]`
+                                : `Tool Result [${name}]`;
+
+                        currentMessages.push({
+                            role: 'user',
+                            content: [{
+                                type: 'tool_result',
+                                toolUseId: id,
+                                content: `${resultPrefix}: ${JSON.stringify(toolResult)}`
+                            }]
+                        });
+                        toolsStillAvailable = false;
+                        continue;
+                    } catch (e: any) {
+                        currentMessages.push({
+                            role: 'user',
+                            content: [{
+                                type: 'tool_result',
+                                toolUseId: id,
+                                content: `Tool Error: ${e.message}`,
+                                isError: true
+                            }]
+                        });
+                        toolsStillAvailable = false;
+                        continue;
+                    }
                 }
+
+                const textOutput = this.extractText(finalResult);
+                if (request.responseSchema) {
+                    try {
+                        const parsed = JSON.parse(textOutput ?? "{}") as TOutput;
+                        return await complete(parsed, finalResult);
+                    } catch (e) {
+                        throw new Error("Model failed to return valid JSON");
+                    }
+                }
+                return await complete((textOutput ?? "") as TOutput, finalResult);
             }
 
-            return output;
+            throw new Error("Agent exceeded maximum turns");
+        } catch (error: any) {
+            if (!ended) {
+                ended = true;
+                await runOnAgentEnd(middlewares, ctx, ctx.response, error);
+            }
+            throw error;
         }
+    }
 
-        throw new Error("Agent exceeded maximum turns");
+    private textBlocks(text: string): ContentBlock[] {
+        if (!text) {
+            return [];
+        }
+        return [{ type: "text", text }];
+    }
+
+    private extractText(result: DriverResult): string | undefined {
+        if (!result.content || result.content.length === 0) {
+            return undefined;
+        }
+        return result.content
+            .filter(block => block.type === "text")
+            .map(block => block.type === "text" ? block.text : "")
+            .join("");
+    }
+
+    private getTransferSignal(value: unknown): { __type: "TransferSignal"; value: unknown; mode: "direct" | "thenContinue"; helperName?: string } | null {
+        if (!value || typeof value !== "object") {
+            return null;
+        }
+        const record = value as Record<string, unknown>;
+        if (record.__type !== "TransferSignal") {
+            return null;
+        }
+        const mode = record.mode;
+        if (mode !== "direct" && mode !== "thenContinue") {
+            return null;
+        }
+        const helperName = typeof record.helperName === "string" ? record.helperName : undefined;
+        return {
+            __type: "TransferSignal",
+            value: record.value,
+            mode,
+            helperName
+        };
     }
 
     /**
@@ -739,6 +769,62 @@ export class Agent<
         yield { type: 'helper_end', name: helper.name, result };
 
         return result;
+    }
+
+    private createStreamQueue<T>() {
+        let closed = false;
+        let error: any;
+        const buffer: T[] = [];
+        let pending: { resolve: (value: IteratorResult<T>) => void; reject: (error: any) => void } | null = null;
+
+        const push = (item: T) => {
+            if (closed) return;
+            if (pending) {
+                const { resolve } = pending;
+                pending = null;
+                resolve({ value: item, done: false });
+                return;
+            }
+            buffer.push(item);
+        };
+
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            if (pending) {
+                const { resolve } = pending;
+                pending = null;
+                resolve({ value: undefined as any, done: true });
+            }
+        };
+
+        const fail = (err: any) => {
+            if (closed) return;
+            closed = true;
+            error = err;
+            if (pending) {
+                const { reject } = pending;
+                pending = null;
+                reject(err);
+            }
+        };
+
+        const next = async (): Promise<IteratorResult<T>> => {
+            if (error) {
+                throw error;
+            }
+            if (buffer.length > 0) {
+                return { value: buffer.shift() as T, done: false };
+            }
+            if (closed) {
+                return { value: undefined as any, done: true };
+            }
+            return new Promise<IteratorResult<T>>((resolve, reject) => {
+                pending = { resolve, reject };
+            });
+        };
+
+        return { push, close, fail, next };
     }
 
     /**

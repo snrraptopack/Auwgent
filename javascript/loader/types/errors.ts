@@ -76,24 +76,6 @@ export class SchemaValidationError extends Error {
 }
 
 /**
- * Error thrown when lifecycle hooks fail
- */
-export class LifecycleError extends Error {
-    constructor(
-        public readonly hook: 'prune' | 'load' | 'save',
-        public readonly originalError: Error
-    ) {
-        super(`Lifecycle hook "${hook}" failed: ${originalError.message}`);
-        this.name = 'LifecycleError';
-        Object.setPrototypeOf(this, LifecycleError.prototype);
-    }
-
-    getUserMessage(): string {
-        return `Lifecycle error in ${this.hook}: ${this.originalError.message}`;
-    }
-}
-
-/**
  * Error thrown when workflow execution fails
  */
 export class WorkflowError extends Error {

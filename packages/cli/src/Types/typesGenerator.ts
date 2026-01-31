@@ -27,11 +27,6 @@ interface AgentIR {
         defaultConfig?: { model: { type: string; modelName: string; url?: string }; prompt: any };
         namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string }; prompt: any }>;
     }>;
-    lifecycle?: {
-        enabled: true;
-        maxTokens?: number;
-        maxMessages?: number;
-    };
     types?: Record<string, {
         isOutput: boolean;
         properties: Record<string, {
@@ -50,7 +45,6 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
     const allTools = mergeToolDefs(agent.tools ?? [], workflowTools);
     const hasTools = allTools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
-    const hasLifecycle = agent.lifecycle?.enabled === true;
     const requiredProviders = collectRequiredProviders(agent);
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
@@ -65,11 +59,11 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         `// Do not edit manually`,
         ``,
         `// Core Runtime Imports`,
-        `import { Agent, RunConfig } from "../javascript/loader/IrInterpreter";`,
+        `import { Agent } from "../javascript/loader/IrInterpreter";`,
         requiredProviders.has("gemini") ? `import { GoogleDriver } from "../javascript/loader/drivers/GoogleDriver";` : '',
         requiredProviders.has("openai") || requiredProviders.has("custom") ? `import { OpenAIDriver } from "../javascript/loader/drivers/OpenAIDriver";` : '',
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
-        `import type { SyntheticMessage, ConversationState, LifecycleHooks } from "../javascript/loader/types/protocol";`,
+        `import type { AgentMiddleware } from "../javascript/loader/types/protocol";`,
         ``,
         irImportStatement,
         ``,
@@ -81,9 +75,8 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         generateOutputInterface(agent, transferredHelpers),
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent.name, allTools) : '',
-        hasLifecycle ? generateLifecycleInterface(agent, hasContext ?? false) : '',
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false, hasLifecycle, requiredProviders, transferredHelpers),
+        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, transferredHelpers),
     ];
 
     return sections.filter(Boolean).join('\n');
@@ -155,7 +148,7 @@ function generateCustomTypes(types: Record<string, any>): string {
             .join('\n');
 
         const comment = typeDef.isOutput ? '\n/** Output type */\n' : '\n';
-        return `${comment}export interface ${typeName} {
+        return `${comment}export type ${typeName} = {
 ${props}
 }
 `;
@@ -209,7 +202,7 @@ function generateApiKeysInterface(agent: AgentIR, providers: Set<string>): strin
     return `/**
  * API keys required for ${agent.name}
  */
-export interface ${agent.name}ApiKeys {
+export type ${agent.name}ApiKeys = {
 ${keys.join('\n')}
 }
 `;
@@ -228,7 +221,7 @@ function generateInputInterface(agent: AgentIR): string {
             .join('\n')
         : '';
 
-    return `export interface ${agent.name}Input {
+    return `export type ${agent.name}Input = {
 ${props}
 }
 `;
@@ -247,7 +240,7 @@ function generateHelperOutputInterface(helper: HelperType): string {
             .join('\n')
         : '';
 
-    return `export interface ${helper.name}Output {
+    return `export type ${helper.name}Output = {
 ${props}
 }
 `;
@@ -267,14 +260,14 @@ function generateOutputInterface(agent: AgentIR, transferredHelpers: HelperType[
         : '';
 
     // Base output interface
-    const baseInterface = `export interface ${agent.name}BaseOutput {
+    const baseInterface = `export type ${agent.name}BaseOutput = {
 ${props}
 }
 `;
 
     // If no transfers, just use the base interface with the normal name
     if (transferredHelpers.length === 0) {
-        return `export interface ${agent.name}Output {
+        return `export type ${agent.name}Output = {
 ${props}
 }
 `;
@@ -305,7 +298,7 @@ function generateContextInterface(agent: AgentIR): string {
             .join('\n')
         : '';
 
-    return `export interface ${agent.name}Context {
+    return `export type ${agent.name}Context = {
 ${props}
 }
 `;
@@ -330,44 +323,8 @@ function generateToolsInterface(agentName: string, tools: ToolDef[]): string {
         return `    ${tool.name}: (args: { ${paramType} }) => Promise<${typeToTsString(tool.returns)}>;`;
     }).join('\n');
 
-    return `export interface ${agentName}Tools {
-    [key: string]: (args: any) => Promise<any>;
+    return `export type ${agentName}Tools = {
 ${toolMethods}
-}
-`;
-}
-
-/**
- * Generate Lifecycle interface for agents with lifecycle enabled
- */
-function generateLifecycleInterface(agent: AgentIR, hasContext: boolean): string {
-    const contextType = hasContext ? `${agent.name}Context` : 'Record<string, any>';
-
-    return `/**
- * Lifecycle hooks for ${agent.name}
- * Implement these to manage conversation history and memory
- */
-export interface ${agent.name}Lifecycle {
-    prune: (args: {
-        context: ${contextType};
-        agent: any;
-        usage: {
-            currentTokens: number;
-            maxTokens: number;
-            currentMessages: number;
-            maxMessages: number;
-        };
-    }) => Promise<ConversationState>;
-    
-    load: (args: {
-        context: ${contextType};
-    }) => Promise<ConversationState>;
-    
-    save: (args: {
-        newMessages: SyntheticMessage[];
-        context: ${contextType};
-        output: ${agent.name}Output;
-    }) => Promise<void>;
 }
 `;
 }
@@ -375,7 +332,7 @@ export interface ${agent.name}Lifecycle {
 /**
  * Generate factory function with unified configuration pattern
  */
-function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, hasLifecycle: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[]): string {
+function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[]): string {
     // Extract named config names for type-safe configName
     const namedConfigs = agent.modelConfig?.[0]?.namedConfig ?? [];
     const configNames = namedConfigs
@@ -418,15 +375,14 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     }
     // IR is now imported automatically, no need for user to provide it
     if (hasContext) {
-        configProps.push(`    context?: ${agent.name}Context;`);
+        configProps.push(`    context: ${agent.name}Context;`);
     }
     if (hasTools) {
-        configProps.push(`    tools?: ${agent.name}Tools;`);
+        configProps.push(`    tools: ${agent.name}Tools;`);
     }
-    if (hasLifecycle) {
-        configProps.push(`    lifecycle?: ${agent.name}Lifecycle;`);
-    }
-
+    configProps.push(`    middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[];`);
+    configProps.push(`    middlewareState?: Record<string, any>;`);
+    configProps.push(`    runId?: string;`);
     // Build validation checks
     const validationChecks: string[] = [];
     
@@ -448,8 +404,9 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
             }
         }
     }
+    const toolsConfig = config.tools as Record<string, any>;
     for (const toolDef of toolMap.values()) {
-        if (!config.tools?.[toolDef.name]) {
+        if (!toolsConfig[toolDef.name]) {
             throw new Error(
                 \`Missing required tool: \${toolDef.name}\\n\` +
                 \`Expected in tools configuration\`
@@ -458,25 +415,16 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     }`);
     }
 
-    if (hasLifecycle) {
-        validationChecks.push(`
-    // Validate lifecycle hooks if required
-    if (agentIR.lifecycle?.enabled && !config.lifecycle) {
-        throw new Error(
-            \`Agent "\${agentIR.name}" requires lifecycle hooks.\\n\` +
-            \`Provide: { prune, load, save }\`
-        );
-    }`);
-    }
-
     // Build run parameters (just input + optional overrides)
     const runInputParam = `input: ${agent.name}Input`;
     const runOverrideProps: string[] = [];
     if (hasContext) runOverrideProps.push(`context?: ${agent.name}Context`);
     if (hasTools) runOverrideProps.push(`tools?: ${agent.name}Tools`);
-    if (hasLifecycle) runOverrideProps.push(`lifecycle?: ${agent.name}Lifecycle`);
     runOverrideProps.push(`modelOverride?: { providerType?: string; modelName?: string; temperature?: number }`);
     runOverrideProps.push(`configName?: ${configNameType}`);
+    runOverrideProps.push(`middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]`);
+    runOverrideProps.push(`middlewareState?: Record<string, any>`);
+    runOverrideProps.push(`runId?: string`);
     
     const runOverrideParam = runOverrideProps.length > 0 
         ? `, overrides?: { ${runOverrideProps.join('; ')} }`
@@ -486,9 +434,11 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     const configMergeParts: string[] = [];
     if (hasTools) configMergeParts.push('tools: overrides?.tools ?? config.tools');
     if (hasContext) configMergeParts.push('context: overrides?.context ?? config.context');
-    if (hasLifecycle) configMergeParts.push('lifecycle: overrides?.lifecycle ?? config.lifecycle');
     configMergeParts.push('modelOverride: overrides?.modelOverride');
     configMergeParts.push('configName: overrides?.configName');
+    configMergeParts.push('middleware: overrides?.middleware ?? config.middleware');
+    configMergeParts.push('middlewareState: overrides?.middlewareState ?? config.middlewareState');
+    configMergeParts.push('runId: overrides?.runId ?? config.runId');
     
     const configMerge = `{ ${configMergeParts.join(', ')} }`;
 
@@ -496,7 +446,7 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
 /**
  * Configuration for ${agent.name} agent
  */
-export interface ${agent.name}Config {
+export type ${agent.name}Config = {
 ${configProps.join('\n')}
 }
 
@@ -506,7 +456,7 @@ ${configProps.join('\n')}
  * @example
  * \`\`\`typescript
  * const agent = create${agent.name}({
- *     apiKeys: { geminiApiKey: '...' },${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}${hasLifecycle ? '\n *     lifecycle: { prune, load, save }' : ''}
+ *     apiKeys: { geminiApiKey: '...' },${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}
  * });
  * 
  * // Clean execution - config bound at creation
@@ -526,7 +476,7 @@ ${validationChecks.join('\n')}
         /**
          * Run the agent with type-safe parameters
          * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * @param overrides - Optional overrides for context, tools, or configName
          */
         run: (${runInputParam}${runOverrideParam}): Promise<${agent.name}Output> => 
             agent.run(input, ${configMerge}),
@@ -534,7 +484,7 @@ ${validationChecks.join('\n')}
         /**
          * Fluent streaming API with callbacks
          * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * @param overrides - Optional overrides for context, tools, or configName
          * 
          * @example
          * \`\`\`typescript
@@ -551,7 +501,7 @@ ${validationChecks.join('\n')}
         /**
          * Native async iteration over stream chunks
          * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, lifecycle, or configName
+         * @param overrides - Optional overrides for context, tools, or configName
          * 
          * @example
          * \`\`\`typescript
@@ -577,12 +527,12 @@ ${validationChecks.join('\n')}
         forContext: (context: ${agent.name}Context) => {
             const boundContext = context;
             return {
-                run: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
-                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
-                stream: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
-                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride }),
-                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number } }) => 
-                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride })
+                run: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
+                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId }),
+                stream: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
+                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId }),
+                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
+                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId })
             };
         }` : ''}
     };

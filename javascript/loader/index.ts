@@ -23,8 +23,13 @@ export type {
     SyntheticRequest,
     SyntheticToolDef,
     JsonSchema,
-    LifecycleHooks,
-    ConversationState
+    ModelUsage,
+    ThinkingBlock,
+    ToolArgs,
+    ToolResult,
+    ToolCall,
+    MiddlewareContext,
+    AgentMiddleware
 } from './types/protocol';
 
 export type {
@@ -38,11 +43,15 @@ export type {
 
 export type { ToolMap, ToolImplementation } from './types/tool';
 
+export { createAuditMiddleware } from './middleware/AuditMiddleware';
+export type { AuditEvent, AuditEventBase, AuditMiddlewareOptions, AuditState } from './middleware/AuditMiddleware';
+export { createShortMemoryMiddleware } from './middleware/ShortMemoryMiddleware';
+export type { ShortMemoryState } from './middleware/ShortMemoryMiddleware';
+
 // Error types
 export {
     DriverError,
     SchemaValidationError,
-    LifecycleError,
     WorkflowError,
     StreamError,
     ConfigurationError

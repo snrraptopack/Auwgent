@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { AgentDriver, DriverResult, StreamChunk, SyntheticRequest } from "../types/protocol";
+import type { AgentDriver, ContentBlock, DriverResult, StreamChunk, SyntheticMessage, SyntheticRequest, ModelUsage, ToolArgs } from "../types/protocol";
 import { DriverError, type ErrorType } from "../types/errors";
 
 export class GoogleDriver implements AgentDriver {
@@ -17,14 +17,13 @@ export class GoogleDriver implements AgentDriver {
 
             // 2. Map Messages to Google Content Format
             const contents = request.messages
-                .filter(m => m.role !== 'system') // System prompts go in config
+                .filter(m => m.role !== 'system')
                 .map(m => ({
                     role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content }]
+                    parts: [{ text: this.contentToText(m.content) }]
                 }));
 
-            let systemInstruction = request.messages
-                .find(m => m.role === 'system')?.content ?? "";
+            let systemInstruction = this.contentToText(request.messages.find(m => m.role === 'system')?.content ?? "");
 
             // 3. Map Tools
             let toolsConfig: any[] = [];
@@ -44,9 +43,16 @@ export class GoogleDriver implements AgentDriver {
             // Note: When JSON schema is enabled, streaming will output raw JSON tokens
             // like {"reply": "... This is a Gemini API limitation - the model generates
             // JSON structure token-by-token. There's no way to stream just the values.
-            if (request.responseSchema && !hasTools) {
+            const responseSchema = request.responseFormat?.type === "json_schema"
+                ? request.responseFormat.schema
+                : request.responseSchema;
+            const jsonObjectOnly = request.responseFormat?.type === "json_object";
+
+            if (responseSchema && !hasTools) {
                 generationConfig.responseMimeType = "application/json";
-                generationConfig.responseJsonSchema = request.responseSchema;
+                generationConfig.responseJsonSchema = responseSchema;
+            } else if (jsonObjectOnly && !hasTools) {
+                generationConfig.responseMimeType = "application/json";
             }
 
             // 5. Execute
@@ -62,20 +68,23 @@ export class GoogleDriver implements AgentDriver {
 
             const candidates = result.candidates;
             const firstPart = candidates && candidates[0]?.content?.parts ? candidates[0].content.parts[0] : null;
+            const usage = this.extractUsage((result as any).usageMetadata);
 
             // Check for function call
             if (firstPart?.functionCall) {
                 return {
-                    toolParams: {
+                    toolCall: {
+                        id: `google_tool_${Date.now()}`,
                         name: firstPart.functionCall.name ?? "unknown_tool",
-                        args: firstPart.functionCall.args
-                    }
+                        args: this.parseToolArgs(firstPart.functionCall.args)
+                    },
+                    usage
                 };
             }
 
-            // Return text response
             return {
-                text: result.text ?? ""
+                content: this.textBlocks(result.text ?? ""),
+                usage
             };
         } catch (error: any) {
             throw this.handleError(error);
@@ -93,11 +102,10 @@ export class GoogleDriver implements AgentDriver {
                 .filter(m => m.role !== 'system')
                 .map(m => ({
                     role: m.role === 'assistant' ? 'model' : 'user',
-                    parts: [{ text: m.content }]
+                    parts: [{ text: this.contentToText(m.content) }]
                 }));
 
-            let systemInstruction = request.messages
-                .find(m => m.role === 'system')?.content ?? "";
+            let systemInstruction = this.contentToText(request.messages.find(m => m.role === 'system')?.content ?? "");
 
             let toolsConfig: any[] = [];
             if (request.tools && request.tools.length > 0) {
@@ -112,9 +120,16 @@ export class GoogleDriver implements AgentDriver {
 
             let generationConfig: any = {};
             const hasTools = toolsConfig.length > 0;
-            if (request.responseSchema && !hasTools) {
+            const responseSchema = request.responseFormat?.type === "json_schema"
+                ? request.responseFormat.schema
+                : request.responseSchema;
+            const jsonObjectOnly = request.responseFormat?.type === "json_object";
+
+            if (responseSchema && !hasTools) {
                 generationConfig.responseMimeType = "application/json";
-                generationConfig.responseJsonSchema = request.responseSchema;
+                generationConfig.responseJsonSchema = responseSchema;
+            } else if (jsonObjectOnly && !hasTools) {
+                generationConfig.responseMimeType = "application/json";
             }
 
             // Use streaming API
@@ -129,7 +144,8 @@ export class GoogleDriver implements AgentDriver {
             });
 
             let fullText = '';
-            let toolParams: { name: string; args: any } | undefined;
+            let toolCall: { id: string; name: string; args: any } | undefined;
+            let usage: ModelUsage | undefined;
             let toolCallId = 0;
 
             for await (const chunk of stream) {
@@ -140,15 +156,20 @@ export class GoogleDriver implements AgentDriver {
                 if (firstPart?.functionCall) {
                     const id = `google_tool_${toolCallId++}`;
                     const name = firstPart.functionCall.name ?? "unknown_tool";
-                    const args = firstPart.functionCall.args;
+                    const args = this.parseToolArgs(firstPart.functionCall.args);
 
                     // Emit full tool call lifecycle (Google doesn't stream args incrementally)
                     yield { type: 'tool_start', name, id };
                     yield { type: 'tool_args', id, delta: JSON.stringify(args) };
                     yield { type: 'tool_end', id };
 
-                    toolParams = { name, args };
+                    toolCall = { id, name, args };
                     continue;
+                }
+
+                const chunkUsage = this.extractUsage((chunk as any).usageMetadata);
+                if (chunkUsage) {
+                    usage = chunkUsage;
                 }
 
                 // Stream text delta
@@ -160,13 +181,69 @@ export class GoogleDriver implements AgentDriver {
             }
 
             // Return final result
-            if (toolParams) {
-                return { toolParams };
+            if (toolCall) {
+                return { toolCall, usage };
             }
-            return { text: fullText };
+            return { content: this.textBlocks(fullText), usage };
         } catch (error: any) {
             throw this.handleError(error);
         }
+    }
+
+    private extractUsage(usageMetadata: any): ModelUsage | undefined {
+        if (!usageMetadata) {
+            return undefined;
+        }
+        const input = usageMetadata.promptTokenCount ?? usageMetadata.prompt_token_count;
+        const response = usageMetadata.candidatesTokenCount ?? usageMetadata.candidates_token_count;
+        const total = usageMetadata.totalTokenCount ?? usageMetadata.total_token_count;
+        const thinking = usageMetadata.thoughtsTokenCount ?? usageMetadata.thoughts_token_count;
+        if (typeof input !== "number" || typeof response !== "number" || typeof total !== "number") {
+            return undefined;
+        }
+        return {
+            input,
+            response,
+            thinking: typeof thinking === "number" ? thinking : undefined,
+            total
+        };
+    }
+
+    private parseToolArgs(args: unknown): ToolArgs {
+        if (typeof args === "string") {
+            try {
+                const parsed = JSON.parse(args);
+                if (parsed && typeof parsed === "object") {
+                    return parsed as ToolArgs;
+                }
+            } catch {
+                return {};
+            }
+            return {};
+        }
+        if (args && typeof args === "object") {
+            return args as ToolArgs;
+        }
+        return {};
+    }
+
+    private contentToText(content: ContentBlock[] | string): string {
+        if (typeof content === "string") return content;
+        const parts = content.map(block => {
+            if (block.type === "text") return block.text;
+            if (block.type === "thinking") return block.summary ?? block.text ?? "";
+            if (block.type === "tool_use") return `Call ${block.name} with ${JSON.stringify(block.input)}`;
+            if (block.type === "tool_result") {
+                if (typeof block.content === "string") return block.content;
+                return this.contentToText(block.content);
+            }
+            return "";
+        });
+        return parts.join("");
+    }
+
+    private textBlocks(text: string): ContentBlock[] {
+        return [{ type: "text", text }];
     }
 
     /**

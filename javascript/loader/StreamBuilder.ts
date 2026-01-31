@@ -1,4 +1,4 @@
-import type { StreamChunk } from "./types/protocol";
+import type { StreamChunk, ToolResult } from "./types/protocol";
 import { StreamError } from "./types/errors";
 
 /**
@@ -9,7 +9,7 @@ export interface StreamHandlers {
     onToolStart?: (name: string, id: string) => void;
     onToolArgs?: (name: string, id: string, delta: string) => void;
     onToolEnd?: (name: string, id: string) => void;
-    onToolResult?: (name: string, result: any) => void;
+    onToolResult?: (name: string, result: ToolResult) => void;
     onHelperStart?: (name: string) => void;
     onHelperEnd?: (name: string, result: any) => void;
     onHelperChunk?: (name: string, chunk: StreamChunk) => void;

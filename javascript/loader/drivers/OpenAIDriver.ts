@@ -7,7 +7,7 @@
  * - Any OpenAI API-compatible provider
  */
 import OpenAI from "openai";
-import type { AgentDriver, DriverResult, StreamChunk, SyntheticRequest } from "../types/protocol";
+import type { AgentDriver, ContentBlock, DriverResult, StreamChunk, SyntheticRequest, SyntheticMessage, ToolArgs, ModelUsage } from "../types/protocol";
 import { DriverError, type ErrorType } from "../types/errors";
 import { logger } from "../Logger";
 
@@ -27,10 +27,7 @@ export class OpenAIDriver implements AgentDriver {
             const model = request.config.modelName || request.config.model || "gpt-4o-mini";
 
             // Build messages
-            const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => ({
-                role: m.role as "user" | "assistant" | "system",
-                content: m.content
-            }));
+            const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => this.toOpenAiMessage(m));
 
             // Build tools
             const tools: any[] | undefined = request.tools?.map(t => ({
@@ -44,9 +41,25 @@ export class OpenAIDriver implements AgentDriver {
 
             const hasTools = tools && tools.length > 0;
 
+            const responseSchema = request.responseFormat?.type === "json_schema"
+                ? request.responseFormat.schema
+                : request.responseSchema;
+            const jsonObjectOnly = request.responseFormat?.type === "json_object";
+
             // Add schema instruction ONLY when no tools (final response turn)
-            if (request.responseSchema && !hasTools) {
-                const schemaInstruction = `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(request.responseSchema)}`;
+            if (responseSchema && !hasTools) {
+                const schemaInstruction = `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(responseSchema)}`;
+                const systemMsgIndex = messages.findIndex(m => m.role === 'system');
+                if (systemMsgIndex >= 0) {
+                    (messages[systemMsgIndex] as any).content += schemaInstruction;
+                } else {
+                    messages.unshift({
+                        role: 'system',
+                        content: `You are a helpful assistant.${schemaInstruction}`
+                    });
+                }
+            } else if (jsonObjectOnly && !hasTools) {
+                const schemaInstruction = `\n\nYou must respond with valid JSON.`;
                 const systemMsgIndex = messages.findIndex(m => m.role === 'system');
                 if (systemMsgIndex >= 0) {
                     (messages[systemMsgIndex] as any).content += schemaInstruction;
@@ -74,14 +87,14 @@ export class OpenAIDriver implements AgentDriver {
                 throw new Error("No response from OpenAI");
             }
 
-            // Track token usage
-            if (completion.usage) {
+            const usage = this.extractUsage(completion.usage);
+            if (usage) {
                 logger.trackTokens({
-                    promptTokens: completion.usage.prompt_tokens,
-                    completionTokens: completion.usage.completion_tokens,
-                    totalTokens: completion.usage.total_tokens
+                    promptTokens: usage.input,
+                    completionTokens: usage.response,
+                    totalTokens: usage.total
                 });
-                logger.debug(`[OpenAI] Tokens: ${completion.usage.total_tokens} (${completion.usage.prompt_tokens}+${completion.usage.completion_tokens})`);
+                logger.debug(`[OpenAI] Tokens: ${usage.total} (${usage.input}+${usage.response})`);
             }
 
             // Check for tool calls
@@ -89,18 +102,21 @@ export class OpenAIDriver implements AgentDriver {
                 const toolCall = choice.message.tool_calls[0] as any;
                 const name = toolCall.function?.name || toolCall.name;
                 const args = toolCall.function?.arguments || toolCall.arguments;
+                const parsedArgs = this.parseToolArgs(args);
 
                 return {
-                    toolParams: {
+                    toolCall: {
+                        id: toolCall.id ?? `tool_${Date.now()}`,
                         name,
-                        args: typeof args === 'string' ? JSON.parse(args) : args
-                    }
+                        args: parsedArgs
+                    },
+                    usage
                 };
             }
 
-            // Return text response
             return {
-                text: choice.message?.content ?? ""
+                content: this.textBlocks(choice.message?.content ?? ""),
+                usage
             };
         } catch (error: any) {
             throw this.handleError(error);
@@ -114,10 +130,7 @@ export class OpenAIDriver implements AgentDriver {
         try {
             const model = request.config.modelName || request.config.model || "gpt-4o-mini";
 
-            const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => ({
-                role: m.role as "user" | "assistant" | "system",
-                content: m.content
-            }));
+            const messages: OpenAI.Chat.ChatCompletionMessageParam[] = request.messages.map(m => this.toOpenAiMessage(m));
 
             const tools: any[] | undefined = request.tools?.map(t => ({
                 type: "function",
@@ -130,8 +143,24 @@ export class OpenAIDriver implements AgentDriver {
 
             const hasTools = tools && tools.length > 0;
 
-            if (request.responseSchema && !hasTools) {
-                const schemaInstruction = `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(request.responseSchema)}`;
+            const responseSchema = request.responseFormat?.type === "json_schema"
+                ? request.responseFormat.schema
+                : request.responseSchema;
+            const jsonObjectOnly = request.responseFormat?.type === "json_object";
+
+            if (responseSchema && !hasTools) {
+                const schemaInstruction = `\n\nYou must respond with valid JSON matching this schema: ${JSON.stringify(responseSchema)}`;
+                const systemMsgIndex = messages.findIndex(m => m.role === 'system');
+                if (systemMsgIndex >= 0) {
+                    (messages[systemMsgIndex] as any).content += schemaInstruction;
+                } else {
+                    messages.unshift({
+                        role: 'system',
+                        content: `You are a helpful assistant.${schemaInstruction}`
+                    });
+                }
+            } else if (jsonObjectOnly && !hasTools) {
+                const schemaInstruction = `\n\nYou must respond with valid JSON.`;
                 const systemMsgIndex = messages.findIndex(m => m.role === 'system');
                 if (systemMsgIndex >= 0) {
                     (messages[systemMsgIndex] as any).content += schemaInstruction;
@@ -159,7 +188,8 @@ export class OpenAIDriver implements AgentDriver {
             }) as any);
 
             let fullText = '';
-            let toolParams: { name: string; args: any } | undefined;
+            let toolCall: { id: string; name: string; args: any } | undefined;
+            let usage: ModelUsage | undefined;
             const toolArgsBuffer: Record<string, string> = {};
             const toolNameBuffer: Record<string, string> = {};  // Track tool names
             const activeToolIds: Record<number, string> = {}; // Track index -> id mapping
@@ -215,28 +245,32 @@ export class OpenAIDriver implements AgentDriver {
                     // Capture first tool for return (TODO: support returning multiple)
                     const firstToolId = Object.keys(toolArgsBuffer)[0];
                     if (firstToolId && toolNameBuffer[firstToolId]) {
-                        toolParams = {
+                        toolCall = {
+                            id: firstToolId,
                             name: toolNameBuffer[firstToolId],
-                            args: JSON.parse(toolArgsBuffer[firstToolId] || '{}')
+                            args: this.parseToolArgs(toolArgsBuffer[firstToolId])
                         };
                     }
                 }
 
                 // Track token usage from final chunk (OpenAI sends it with stream_options)
                 if ((chunk as any).usage) {
-                    const usage = (chunk as any).usage;
-                    logger.trackTokens({
-                        promptTokens: usage.prompt_tokens,
-                        completionTokens: usage.completion_tokens,
-                        totalTokens: usage.total_tokens
-                    });
-                    logger.debug(`[OpenAI] Tokens: ${usage.total_tokens} (${usage.prompt_tokens}+${usage.completion_tokens})`);
+                    const chunkUsage = this.extractUsage((chunk as any).usage);
+                    if (chunkUsage) {
+                        usage = chunkUsage;
+                        logger.trackTokens({
+                            promptTokens: chunkUsage.input,
+                            completionTokens: chunkUsage.response,
+                            totalTokens: chunkUsage.total
+                        });
+                        logger.debug(`[OpenAI] Tokens: ${chunkUsage.total} (${chunkUsage.input}+${chunkUsage.response})`);
+                    }
                 }
             }
 
             // Return final result
-            if (toolParams) {
-                return { toolParams };
+            if (toolCall) {
+                return { toolCall, usage };
             }
 
             // Fallback: If we have a buffered tool call that wasn't captured (e.g. missed finish_reason)
@@ -244,10 +278,12 @@ export class OpenAIDriver implements AgentDriver {
             if (firstToolId) {
                 try {
                     return {
-                        toolParams: {
+                        toolCall: {
+                            id: firstToolId,
                             name: toolNameBuffer[firstToolId] || '',
-                            args: JSON.parse(toolArgsBuffer[firstToolId] || '{}')
-                        }
+                            args: this.parseToolArgs(toolArgsBuffer[firstToolId])
+                        },
+                        usage
                     };
                 } catch (e) {
                     logger.warn("[OpenAI] Failed to parse buffered tool args", e);
@@ -256,7 +292,7 @@ export class OpenAIDriver implements AgentDriver {
                 }
             }
 
-            return { text: fullText };
+            return { content: this.textBlocks(fullText), usage };
         } catch (error: any) {
             throw this.handleError(error);
         }
@@ -304,6 +340,76 @@ export class OpenAIDriver implements AgentDriver {
             retryable,
             statusCode
         );
+    }
+
+    private extractUsage(usage: any): ModelUsage | undefined {
+        if (!usage) {
+            return undefined;
+        }
+        const input = usage.prompt_tokens;
+        const response = usage.completion_tokens;
+        const total = usage.total_tokens;
+        const thinking = usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens;
+        if (typeof input !== "number" || typeof response !== "number" || typeof total !== "number") {
+            return undefined;
+        }
+        return {
+            input,
+            response,
+            thinking: typeof thinking === "number" ? thinking : undefined,
+            total
+        };
+    }
+
+    private parseToolArgs(args: unknown): ToolArgs {
+        if (typeof args === "string") {
+            try {
+                const parsed = JSON.parse(args);
+                if (parsed && typeof parsed === "object") {
+                    return parsed as ToolArgs;
+                }
+            } catch {
+                return {};
+            }
+            return {};
+        }
+        if (args && typeof args === "object") {
+            return args as ToolArgs;
+        }
+        return {};
+    }
+
+    private toOpenAiMessage(message: SyntheticMessage): OpenAI.Chat.ChatCompletionMessageParam {
+        if (message.role === "tool") {
+            return {
+                role: "tool",
+                content: this.contentToText(message.content),
+                tool_call_id: message.toolCallId
+            };
+        }
+        return {
+            role: message.role,
+            content: this.contentToText(message.content)
+        };
+    }
+
+    private contentToText(content: ContentBlock[] | string): string {
+        if (typeof content === "string") return content;
+        const parts = content.map(block => {
+            if (block.type === "text") return block.text;
+            if (block.type === "thinking") return block.summary ?? block.text ?? "";
+            if (block.type === "tool_use") return `Call ${block.name} with ${JSON.stringify(block.input)}`;
+            if (block.type === "tool_result") {
+                if (typeof block.content === "string") return block.content;
+                return this.contentToText(block.content);
+            }
+            return "";
+        });
+        return parts.join("");
+    }
+
+    private textBlocks(text: string): ContentBlock[] {
+        return [{ type: "text", text }];
     }
 }
 

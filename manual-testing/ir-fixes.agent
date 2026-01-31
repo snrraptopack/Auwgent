@@ -1,25 +1,20 @@
-import { Base } from "./prompt"
 
-type User {
-    name: string
-    age : number
-}
-
-
-agent IRFixes {
-    default config {
-        model: gemini("")
-        prompt: Base("") + """Hello {{ctx.user.name}}
-            Input: {{input.message}}
-        """ 
+agent Issues{
+    input{issue:string}
+    output:{
+        summary:string
+        category:"bug" |"performance" |"feature_request" | "question" | "unknown"
+        suspectedCause:string
+        nextStep:string
     }
 
-    input { message: string }
-    context { user: User }
-
-    workflow combine(a: string, b: string): User {
-        description: "Combine strings"
-        let c = a + b
-        return {name:"", age:10}
+    default config{
+        model:openai("gpt")
+        prompt{
+            """
+            Analyze the following software issue and return a structured response.
+            Issue:{{input.issue}}
+            """
+        }
     }
 }

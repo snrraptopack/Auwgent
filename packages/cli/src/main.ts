@@ -30,7 +30,7 @@ export default function (): void {
     program
         .command('generate')
         .argument('<file>', `source file (possible file extensions: ${fileExtensions})`)
-        .argument('<destination>', 'destination file')
+        .argument('<destination>', 'destination file or directory')
         .description('Generates code for a provided source file.')
         .action(generateAction);
 

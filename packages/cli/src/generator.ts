@@ -20,7 +20,6 @@ import {
     isVariableRef,
     isTransferStatement,
     isMemberAccess,
-    isUseLifecycle,
     isBinaryExpression,
     isNamedPrompt,
     isInlinePromptBlock,
@@ -94,8 +93,7 @@ type HelperType = {
 
 
 export async function generateOutput(model: Model, source: string, destination: string) {
-
-    const destDir = path.dirname(destination);
+    const destDir = resolveDestinationDir(destination);
     if (!fs.existsSync(destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
     }
@@ -221,18 +219,6 @@ export async function generateOutput(model: Model, source: string, destination: 
                 agentIR.helperToolGrants = helperToolGrants;
             }
 
-            // Extract lifecycle configuration
-            for (const config of currentElement.configs) {
-                if (isUseLifecycle(config)) {
-                    agentIR.lifecycle = {
-                        enabled: true,
-                        maxTokens: config.maxTokens,
-                        maxMessages: config.maxMessages
-                    };
-                    break;
-                }
-            }
-
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
             const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
             fs.writeFileSync(typesPath, generateTypesFile(agentIR, baseName));
@@ -242,6 +228,19 @@ export async function generateOutput(model: Model, source: string, destination: 
     }
     return outputPath;
 }
+
+const resolveDestinationDir = (destination: string): string => {
+    if (fs.existsSync(destination)) {
+        const stat = fs.statSync(destination);
+        if (stat.isDirectory()) {
+            return destination;
+        }
+    }
+    if (!path.extname(destination)) {
+        return destination;
+    }
+    return path.dirname(destination);
+};
 
 
 /**

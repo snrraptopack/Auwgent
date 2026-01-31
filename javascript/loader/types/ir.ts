@@ -8,14 +8,7 @@ export interface AgentIR {
     workflows: Workflow[];
     helpers: HelperIR[];
     helperToolGrants?: Record<string, string[] | "all">;
-    lifecycle?: LifecycleConfig;
     types?: Record<string, TypeDefinition>;
-}
-
-export interface LifecycleConfig {
-    enabled: true;
-    maxTokens?: number;
-    maxMessages?: number;
 }
 
 export interface HelperIR {

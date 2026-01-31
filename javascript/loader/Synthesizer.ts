@@ -1,6 +1,6 @@
 import { ExpressionEvaluator } from './ExpressionEvaluator';
 import type { AgentIR } from './types/ir';
-import type { JsonSchema, SyntheticRequest, SyntheticMessage, SyntheticToolDef } from './types/protocol';
+import type { ContentBlock, JsonSchema, SyntheticRequest, SyntheticMessage, SyntheticToolDef } from './types/protocol';
 
 export class Synthesizer {
     constructor(private ir: AgentIR) { }
@@ -77,12 +77,16 @@ export class Synthesizer {
         if (promptConfig) {
             const systemContent = this.resolvePrompt(promptConfig, input, context);
             if (systemContent) {
-                messages.push({ role: 'system', content: await systemContent });
+                messages.push({ role: 'system', content: this.textBlocks(await systemContent) });
             }
         }
 
-        messages.push({ role: 'user', content: userMessage });
+        messages.push({ role: 'user', content: this.textBlocks(userMessage) });
         return messages;
+    }
+
+    private textBlocks(text: string): ContentBlock[] {
+        return [{ type: 'text', text }];
     }
 
     private async resolvePrompt(prompt: any, input: Record<string, any>, context?: Record<string, any>): Promise<string> {
