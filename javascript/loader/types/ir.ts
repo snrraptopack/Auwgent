@@ -10,6 +10,7 @@ export interface AgentIR {
     helperToolGrants?: Record<string, string[] | "all">;
     helperHandoff?: Record<string, "user" | "thenContinue">;
     types?: Record<string, TypeDefinition>;
+    tests?: AgentTest[];
 }
 
 export interface HelperIR {
@@ -37,6 +38,36 @@ export interface Workflow {
     body: Statement[];
     description: string;
     tools?: Tool[];
+}
+
+export interface AgentTest {
+    name: string;
+    configName?: string;
+    input?: Expression;
+    toolStubs?: TestToolStub[];
+    expectations?: TestExpectation[];
+    model?: TestModel;
+}
+
+export interface TestToolStub {
+    name: string;
+    returns?: Expression;
+    error?: string;
+}
+
+export type TestExpectation =
+    | { type: "output"; path: string[]; value: Expression }
+    | { type: "tool_error"; error: string }
+    | { type: "prompt_contains"; contains: string };
+
+export interface TestModel {
+    toolCalls?: TestToolCall[];
+    finalText?: string;
+}
+
+export interface TestToolCall {
+    name: string;
+    args?: Expression;
 }
 
 export type Statement =

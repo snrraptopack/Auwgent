@@ -36,6 +36,7 @@ interface AgentIR {
             description?: string;
         }>;
     }>;
+    tests?: Array<{ name: string }>;
 }
 
 /**
@@ -47,6 +48,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
     const hasTools = allTools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
     const requiredProviders = collectRequiredProviders(agent);
+    const hasTests = (agent.tests ?? []).length > 0;
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
     const transferredHelpers = collectTransferredHelpers(agent);
@@ -67,6 +69,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         requiredProviders.has("openai") || requiredProviders.has("custom") ? `import { OpenAIDriver } from "../javascript/loader/drivers/OpenAIDriver";` : '',
         `import type { AgentIR } from "../javascript/loader/types/ir";`,
         `import type { AgentMiddleware } from "../javascript/loader/types/protocol";`,
+        hasTests ? `import { AgentTestRunner } from "../javascript/testing/AgentTestRunner";` : '',
         ``,
         irImportStatement,
         ``,
@@ -79,7 +82,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent.name, allTools) : '',
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, outputHelpers),
+        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, outputHelpers, hasTests),
     ];
 
     return sections.filter(Boolean).join('\n');
@@ -352,7 +355,7 @@ ${toolMethods}
 /**
  * Generate factory function with unified configuration pattern
  */
-function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[]): string {
+function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[], hasTests: boolean): string {
     // Extract named config names for type-safe configName
     const namedConfigs = agent.modelConfig?.[0]?.namedConfig ?? [];
     const configNames = namedConfigs
@@ -387,6 +390,11 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
     const driversObject = driverEntries.length > 0
         ? `{\n${driverEntries.join(',\n')}\n    }`
         : '{}';
+
+    const testNames = (agent.tests ?? []).map(t => t.name);
+    const testNameType = testNames.length > 0
+        ? testNames.map(name => `"${name}"`).join(" | ")
+        : "never";
 
     // Build config interface properties
     const configProps: string[] = [];
@@ -491,7 +499,7 @@ export function create${agent.name}(config: ${agent.name}Config) {
     // Load and validate IR from imported file
     agent.load(agentIR);
 ${validationChecks.join('\n')}
-    
+    const testRunner = ${hasTests ? `new AgentTestRunner(agentIR);` : `null;`}
     return {
         /**
          * Run the agent with type-safe parameters
@@ -554,7 +562,9 @@ ${validationChecks.join('\n')}
                 streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
                     agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId })
             };
-        }` : ''}
+        }` : ''}${hasTests ? `,
+        test: (name: ${testNameType}) => testRunner!.runTest(name),
+        testAll: () => testRunner!.runAllTests()` : ''}
     };
 }
 

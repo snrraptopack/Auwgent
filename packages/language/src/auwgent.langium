@@ -52,6 +52,7 @@ AgentConfigurations:
     | WorkFlowConfig
     | HelpersConfig
     | UseLifecycle
+    | TestConfig
 ;
 
 AgentConfig:
@@ -65,6 +66,35 @@ HelperRef:
     helper=[Helper]
     ("with" "tools" "{" (withAllTools?="all" | grantedTools+=[ToolFunction]* ) "}")?
     ("handoff" handoffUser?="user" (handoffThenContinue?="then" "continue")?)?;
+
+TestConfig:
+    "test" name=STRING "{"
+        ("config" ":" configName=ID)?
+        ("input" input=ObjectLiteral)?
+        ("tools" "{" toolStubs+=ToolStub* "}")?
+        ("expect" "{" expectations+=TestExpectation* "}")?
+        ("model" "{" model=TestModel "}")?
+    "}"
+;
+
+ToolStub:
+    name=ID ":" ("returns" value=Expression | "error" error=STRING)
+;
+
+TestExpectation:
+    "output" "." path+=ID ("." path+=ID)* ":" value=Expression
+    | "tool_error" ":" error=STRING
+    | "prompt_contains" ":" contains=STRING
+;
+
+TestModel:
+    ("toolCalls" "{" toolCalls+=TestToolCall* "}")?
+    ("finalText" ":" finalText=STRING)?
+;
+
+TestToolCall:
+    name=ID "(" (args+=PropertyValue ("," args+=PropertyValue)*)? ")"
+;
 
 HelperCall:
     "hlp" "." helper=[Helper:ID] "(" (args+=Expression ("," args+=Expression)*)? ")";
@@ -128,7 +158,15 @@ NamedPrompt:
         "{" (parts+=PromptStatement)* "}";
 
 PromptStatement:
-    Expression|IfStatement;
+    ExampleBlock | Expression | IfStatement;
+
+ExampleBlock:
+    "example" "{"
+        (messages+=ExampleMessage)*
+    "}";
+
+ExampleMessage:
+    role=("user"|"assistant") ":" text=STRING;
 
 InputConfig:
     "input" "{" (inProperties+=TypeConfigDeclaration (","? inProperties+=TypeConfigDeclaration)*)? "}";

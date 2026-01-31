@@ -39,7 +39,8 @@ import {
     TypeDeclaration,
     isTypeDeclaration,
     createAuwgentServices,
-    isPromptCall
+    isPromptCall,
+    isExampleBlock
 } from "auwgent-language"
 
 
@@ -390,7 +391,7 @@ export function extractExpression(express: Expression | Statement): any {
                 name: ref.name,
                 params: ref.params?.map(param => param.name) ?? [],
                 args: [],
-                value: ref.parts?.map(part => extractExpression(part)) ?? []
+                value: ref.parts?.map(part => extractPromptStatement(part)).filter((part): part is any => part !== null) ?? []
             }
         }
         return { value: ref?.name, type: "varRef" }
@@ -409,7 +410,7 @@ export function extractExpression(express: Expression | Statement): any {
                 name: ref.name,
                 params: ref.params?.map(param => param.name) ?? [],
                 args,
-                value: ref.parts?.map(part => extractExpression(part)) ?? []
+                value: ref.parts?.map(part => extractPromptStatement(part)).filter((part): part is any => part !== null) ?? []
             }
         }
         const name = ref?.name ?? express.func.$refText;
@@ -423,7 +424,7 @@ export function extractExpression(express: Expression | Statement): any {
             name: ref?.name ?? express.prompt.$refText,
             params: ref?.params?.map(param => param.name) ?? [],
             args: express.args.map(arg => extractExpression(arg)),
-            value: ref?.parts?.map(part => extractExpression(part)) ?? []
+            value: ref?.parts?.map(part => extractPromptStatement(part)).filter((part): part is any => part !== null) ?? []
         }
     }
 
@@ -505,11 +506,18 @@ export function extractExpression(express: Expression | Statement): any {
     if (isInlinePromptBlock(express)) {
         return {
             type: "inlinePrompt",
-            parts: express.parts.map(part => extractExpression(part))
+            parts: express.parts.map(part => extractPromptStatement(part)).filter((part): part is any => part !== null)
         }
     }
 
     return null
+}
+
+export function extractPromptStatement(statement: any): any | null {
+    if (isExampleBlock(statement)) {
+        return null;
+    }
+    return extractExpression(statement);
 }
 
 //for building the template pattern

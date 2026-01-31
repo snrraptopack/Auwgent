@@ -10,15 +10,20 @@ import {
     isToolConfig,
     isToolsConfig,
     isWorkFlowConfig,
+    isTestConfig,
     ModelConfig,
     OutputConfig,
     ToolConfig,
     ToolsConfig,
     WorkFlowConfig,
+    TestConfig,
+    TestExpectation,
+    PropertyValue,
     isGeminiProvider,
     isOpenAIProvider,
     isCustomProvider,
-    isModelRef
+    isModelRef,
+    isExampleBlock
 } from "auwgent-language";
 
 import {
@@ -37,7 +42,8 @@ export function handleAgentConfig(agent: Agent) {
         context: null,
         tools: [] as any,
         workflows: [] as any,
-        helpers: [] as any
+        helpers: [] as any,
+        tests: [] as any
     }
 
     for (let config of agent.configs) {
@@ -70,8 +76,77 @@ export function handleAgentConfig(agent: Agent) {
         if (isContextConfig(config)) {
             agentIR.context = extractInOutConfig(config)
         }
+
+        if (isTestConfig(config)) {
+            agentIR.tests.push(extractTestConfig(config))
+        }
     }
     return agentIR
+}
+
+function extractTestConfig(testConfig: TestConfig) {
+    return {
+        name: testConfig.name,
+        configName: testConfig.configName,
+        input: testConfig.input ? extractExpression(testConfig.input) : undefined,
+        toolStubs: (testConfig.toolStubs ?? []).map(stub => ({
+            name: stub.name,
+            returns: stub.value ? extractExpression(stub.value) : undefined,
+            error: stub.error
+        })),
+        expectations: (testConfig.expectations ?? [])
+            .map(exp => extractTestExpectation(exp))
+            .filter((exp): exp is NonNullable<ReturnType<typeof extractTestExpectation>> => !!exp),
+        model: testConfig.model
+            ? {
+                toolCalls: (testConfig.model.toolCalls ?? []).map(call => ({
+                    name: call.name,
+                    args: call.args && call.args.length > 0
+                        ? extractPropertyValues(call.args)
+                        : undefined
+                })),
+                finalText: testConfig.model.finalText
+            }
+            : undefined
+    }
+}
+
+function extractTestExpectation(expectation: TestExpectation) {
+    if (expectation.path && expectation.value) {
+        return {
+            type: "output",
+            path: expectation.path.map(p => p),
+            value: extractExpression(expectation.value)
+        };
+    }
+    if (expectation.error) {
+        return {
+            type: "tool_error",
+            error: expectation.error
+        };
+    }
+    if (expectation.contains) {
+        return {
+            type: "prompt_contains",
+            contains: expectation.contains
+        };
+    }
+    return null;
+}
+
+function extractPromptPart(part: any): any | null {
+    if (isExampleBlock(part)) {
+        return null;
+    }
+    return extractExpression(part);
+}
+
+function extractPropertyValues(args: PropertyValue[]) {
+    const props: Record<string, any> = {};
+    for (const prop of args) {
+        props[prop.name] = prop.value ? extractExpression(prop.value) : { type: "varRef", value: prop.name };
+    }
+    return { type: "object", value: props };
 }
 
 function extractModelProvider(provider: any) {
@@ -190,7 +265,7 @@ function extractPrompt(modelConfig: ModelConfig) {
 
     // Case 1: Inline parts - prompt { ... }
     if (modelConfig.parts && modelConfig.parts.length > 0) {
-        return { type: "parts", value: modelConfig.parts.map(part => extractExpression(part)) }
+        return { type: "parts", value: modelConfig.parts.map(part => extractPromptPart(part)).filter((part): part is any => part !== null) }
     }
 
     // Case 2: Expression (concatenation, reference, string, etc.)
