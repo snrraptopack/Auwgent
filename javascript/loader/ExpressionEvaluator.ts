@@ -34,11 +34,6 @@ export class ExpressionEvaluator {
             case "contextRef":
                 return scope.get(expr.property)
 
-            case "template": {
-                const parts = expr.value ?? (expr as any).parts ?? [];
-                return this.evaluateTemplate(parts, scope);
-            }
-
             case "object":
                 return this.evaluateObject(expr.value, scope);
 
@@ -88,7 +83,7 @@ export class ExpressionEvaluator {
 
     /**
      * STREAMING VERSION: Evaluate expression/statement, yielding chunks for helper calls.
-     * For expressions that don't stream (literals, templates, etc.), returns value via generator return.
+    * For expressions that don't stream (literals, etc.), returns value via generator return.
      * For helperCall/transfer, yields chunks from the streaming helper executor.
      */
     async *evaluateStream(
@@ -286,24 +281,6 @@ export class ExpressionEvaluator {
         }
 
         return undefined;
-    }
-
-    /**
-     * Evaluate template literal parts into a string
-     */
-    private async evaluateTemplate(parts: any[], scope: Map<string, any>): Promise<string> {
-        let result = "";
-
-        for (const part of parts) {
-            if (part.type === "literal") {
-                result += part.value;
-            } else if (part.type === "expression") {
-                const value = await this.evaluate(part.value, scope);
-                result += String(value ?? "");
-            }
-        }
-
-        return result;
     }
 
     /**

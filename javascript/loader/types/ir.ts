@@ -87,7 +87,6 @@ export type Expression =
     | PromptRef
     | ObjectLiteral
     | ArrayLiteral
-    | TemplateLiteral
     | ContextReference
     | MemberAccess
     | ConcatExpression;
@@ -163,15 +162,6 @@ export interface ArrayLiteral {
     type: "array";
     value: Expression[];  // Array of expressions
 }
-
-export interface TemplateLiteral {
-    type: "template";
-    value: TemplatePart[];
-}
-
-export type TemplatePart =
-    | { type: "literal"; value: string }
-    | { type: "expression"; value: Expression };
 
 export interface ContextReference {
     type: "contextRef",

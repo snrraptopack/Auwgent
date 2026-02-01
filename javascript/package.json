@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "echo 'No build step'",
+    "test": "bun test",
     "validate-schema": "bun run validate-schema-generation.ts",
     "test-schema": "bun run test-output-schema.ts"
   },

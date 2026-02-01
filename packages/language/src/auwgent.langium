@@ -267,7 +267,6 @@ PrimaryExpression infers Expression:
     | {infer VariableRef} variable=[Referenceable]
     | PromptCall
     | FunctionCall
-    | TemplateLiteral
     | ContextReference
     | HelperCall
     | InlinePromptBlock
@@ -304,16 +303,6 @@ ObjectLiteral:
     '{' (properties+=PropertyValue (',' properties+=PropertyValue)*)? '}';
 
 
-TemplateLiteral:
-    "`"  templates+=(TemplateString|TemplateExpr)*  "`"
-;
-
-TemplateString:
-    value=(ID|STRING);
-
-TemplateExpr:
-    "{" expr=Expression "}";
-
 PropertyValue:
     name=ID (':' value=Expression)?;
 
@@ -348,7 +337,6 @@ terminal ID: /[_a-zA-Z][\w_]*/;
 terminal INT returns number:/[0-9]+(\.[0-9]+)?/;
 terminal MULTILINE_STRING: /"""[\s\S]*?"""/;
 terminal STRING: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/;
-terminal TEMPLATE: /`[^`]*`/;
 
 hidden terminal ML_COMMENT: /\/\*[\s\S]*?\*\//;
 hidden terminal SL_COMMENT: /\/\/[^\n\r]*/;

@@ -15,7 +15,7 @@
         "build:clean": "npm run clean && npm run build",
         "langium:generate": "npm run --workspace packages/language langium:generate",
         "langium:watch": "npm run --workspace packages/language langium:watch",
-        "test": "npm run --workspace packages/language test"
+        "test": "npm run --workspace packages/language test && npm run --workspace javascript test"
     },
     "type": "module",
     "volta": {

@@ -13,8 +13,6 @@ import {
     isReturnStatement,
     isStringLiteral,
     isStringType,
-    isTemplateLiteral,
-    isTemplateString,
     isUnionType,
     isVariableDeclartion,
     isVariableRef,
@@ -31,8 +29,6 @@ import {
     Types,
     BaseType,
     isBaseType,
-    TemplateExpr,
-    TemplateString,
     isContextReference,
     isHelperCall,
     Helper,
@@ -459,11 +455,6 @@ export function extractExpression(express: Expression | Statement): any {
         return { type: "object", value: props };
     }
 
-    if (isTemplateLiteral(express)) {
-        let result = buildTemplate(express.templates)
-        return { type: "template", value: result }
-    }
-
     if (isContextReference(express)) {
         return { type: "contextRef", property: express.property.ref?.name }
     }
@@ -520,42 +511,9 @@ export function extractPromptStatement(statement: any): any | null {
     return extractExpression(statement);
 }
 
-//for building the template pattern
-
-export function buildTemplate(template: (TemplateExpr | TemplateString)[]) {
-    let stringBuilder = ""
-
-    const parts = [] as any
-
-    for (let i = 0; i < template.length; i++) {
-        let current = template[i]
-
-        if (isTemplateString(current)) {
-            stringBuilder += " " + current.value
-        } else {
-            let expr = extractExpression(current.expr)
-            if (stringBuilder.trim().length > 0) {
-                parts.push({ type: "literal", value: stringBuilder })
-                parts.push({ type: "expression", value: expr })
-                stringBuilder = ""
-            } else {
-                parts.push({ type: "expression", value: expr })
-            }
-        }
-    }
-
-    if (stringBuilder.trim().length > 0) {
-        parts.push({ type: "literal", value: stringBuilder })
-        stringBuilder = ""
-    }
-
-    return parts
-
-}
-
 /**
  * Process multiline string with {{expression}} interpolation
- * Returns an IR structure similar to template literals
+ * Converts into literals and concat expressions understood by the runtime.
  */
 function processMultilineString(value: string): any {
     // Remove the triple quotes from the value
@@ -564,7 +522,7 @@ function processMultilineString(value: string): any {
     // Pattern to match {{...}} expressions
     const interpolationPattern = /\{\{([^}]+)\}\}/g;
     
-    const parts: any[] = [];
+    const segments: any[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
     
@@ -574,7 +532,7 @@ function processMultilineString(value: string): any {
         if (match.index > lastIndex) {
             const literalText = content.substring(lastIndex, match.index);
             if (literalText.length > 0) {
-                parts.push({ type: "literal", value: literalText });
+                segments.push({ type: "literal", value: literalText });
             }
         }
         
@@ -584,7 +542,7 @@ function processMultilineString(value: string): any {
         // Create a simple expression parser for the interpolation
         // This handles basic cases: variable refs, member access, etc.
         const parsedExpr = parseInterpolationExpression(expressionText);
-        parts.push({ type: "expression", value: parsedExpr });
+        segments.push(parsedExpr);
         
         lastIndex = match.index + match[0].length;
     }
@@ -593,22 +551,21 @@ function processMultilineString(value: string): any {
     if (lastIndex < content.length) {
         const literalText = content.substring(lastIndex);
         if (literalText.length > 0) {
-            parts.push({ type: "literal", value: literalText });
+            segments.push({ type: "literal", value: literalText });
         }
     }
     
     // If no interpolations found, return as simple literal
-    if (parts.length === 0) {
+    if (segments.length === 0) {
         return { type: "literal", value: content };
     }
     
-    // If only one part and it's a literal, return it directly
-    if (parts.length === 1 && parts[0].type === "literal") {
-        return parts[0];
+    if (segments.length === 1) {
+        return segments[0];
     }
     
-    // Return as template-like structure
-    return { type: "template", value: parts };
+    // Reduce to concat chain preserving order
+    return segments.reduce((acc, current) => ({ type: "concat", left: acc, right: current }));
 }
 
 /**

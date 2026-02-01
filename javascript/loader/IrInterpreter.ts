@@ -113,8 +113,13 @@ export class Agent<
 
             let currentMessages: SyntheticMessage[] = [...request.messages];
             let turnCount = 0;
-            let toolsStillAvailable = true;
             const completedCalls = new Set<string>();
+
+            const getCallSignature = (call: ToolCall) => {
+                const args = call.args ?? {};
+                const sortedKeys = Object.keys(args).sort();
+                return `${call.name}::${JSON.stringify(args, sortedKeys)}`;
+            };
 
             while (turnCount < this.maxTurns) {
                 turnCount++;
@@ -122,7 +127,7 @@ export class Agent<
                 const currentRequest = {
                     ...request,
                     messages: currentMessages,
-                    tools: toolsStillAvailable ? request.tools : undefined
+                    tools: request.tools
                 };
 
                 ctx.request = currentRequest;
@@ -156,7 +161,7 @@ export class Agent<
                         toolCalls
                     });
 
-                    const executeToolCall = async (call: ToolCall) => {
+                    const executeToolCall = async (call: ToolCall, signature: string) => {
                         const { id, name, args } = call;
                         const workflow = ir.workflows?.find(w => w.flowName === name);
                         const helper = ir.helpers?.find(h => h.name === name);
@@ -210,44 +215,63 @@ export class Agent<
                         return { call, toolResult, transfer, workflow, helper };
                     };
 
-                    const results: Array<{ call: ToolCall; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
-
-                    const pendingCalls: ToolCall[] = [];
+                    const results: Array<{ call: ToolCall; signature: string; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
+                    const pendingCalls: Array<{ call: ToolCall; signature: string }> = [];
                     for (const call of toolCalls) {
-                        const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
-                        if (completedCalls.has(callSignature)) {
+                        const signature = getCallSignature(call);
+                        if (completedCalls.has(signature)) {
                             logger.debug(`[Agent] BLOCKED: Duplicate call to "${call.name}" - already completed.`);
                             currentMessages.push({
                                 role: 'user',
                                 content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
                             });
-                            results.push({ call, error: new Error("Duplicate tool call") });
+                            results.push({ call, signature, error: new Error("Duplicate tool call") });
                             if (modelToolCallFailure === "fail") {
                                 throw new Error(`Duplicate tool call: ${call.name}`);
                             }
                             continue;
                         }
-                        pendingCalls.push(call);
-                    }
+                        pendingCalls.push({ call, signature });
+                    };
 
                     if (modelToolCalls === "parallel") {
                         if (modelToolCallFailure === "fail") {
-                            const parallelResults = await Promise.all(pendingCalls.map(call => executeToolCall(call)));
+                            const parallelResults = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
+                                try {
+                                    const output = await executeToolCall(call, signature);
+                                    completedCalls.add(signature);
+                                    return { ...output, signature };
+                                } catch (error) {
+                                    completedCalls.add(signature);
+                                    throw error;
+                                }
+                            }));
                             results.push(...parallelResults);
                         } else {
-                            const settled = await Promise.all(pendingCalls.map(call => executeToolCall(call).catch(error => ({ call, error }))));
+                            const settled = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
+                                try {
+                                    const output = await executeToolCall(call, signature);
+                                    completedCalls.add(signature);
+                                    return { ...output, signature };
+                                } catch (error: any) {
+                                    completedCalls.add(signature);
+                                    return { call, signature, error };
+                                }
+                            }));
                             results.push(...settled);
                         }
                     } else {
-                        for (const call of pendingCalls) {
+                        for (const { call, signature } of pendingCalls) {
                             try {
-                                const output = await executeToolCall(call);
-                                results.push(output);
+                                const output = await executeToolCall(call, signature);
+                                completedCalls.add(signature);
+                                results.push({ ...output, signature });
                             } catch (error: any) {
+                                completedCalls.add(signature);
                                 if (modelToolCallFailure === "fail") {
                                     throw error;
                                 }
-                                results.push({ call, error });
+                                results.push({ call, signature, error });
                             }
                         }
                     }
@@ -280,15 +304,11 @@ export class Agent<
                                 return await complete(transfer.value as TOutput, finalResult);
                             }
                             if (transfer.mode === "thenContinue") {
-                                const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
-                                completedCalls.add(callSignature);
-                                logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
                                 const source = workflow ? `workflow "${call.name}"` : `helper "${call.name}"`;
                                 currentMessages.push({
                                     role: 'user',
                                     content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
                                 });
-                                toolsStillAvailable = false;
                                 continue;
                             }
                         }
@@ -308,8 +328,6 @@ export class Agent<
                             }]
                         });
                     }
-
-                    toolsStillAvailable = false;
                     continue;
                 }
 
@@ -408,8 +426,13 @@ export class Agent<
 
             let currentMessages: SyntheticMessage[] = [...request.messages];
             let turnCount = 0;
-            let toolsStillAvailable = true;
             const completedCalls = new Set<string>();
+
+            const getCallSignature = (call: ToolCall) => {
+                const args = call.args ?? {};
+                const sortedKeys = Object.keys(args).sort();
+                return `${call.name}::${JSON.stringify(args, sortedKeys)}`;
+            };
 
             while (turnCount < this.maxTurns) {
                 turnCount++;
@@ -417,7 +440,7 @@ export class Agent<
                 const currentRequest = {
                     ...request,
                     messages: currentMessages,
-                    tools: toolsStillAvailable ? request.tools : undefined
+                    tools: request.tools
                 };
 
                 ctx.request = currentRequest;
@@ -487,7 +510,7 @@ export class Agent<
                         toolCalls
                     });
 
-                    const executeToolCallStream = async (call: ToolCall, emit: (chunk: StreamChunk) => void) => {
+                    const executeToolCallStream = async (call: ToolCall, signature: string, emit: (chunk: StreamChunk) => void) => {
                         const { id, name, args } = call;
                         const workflow = ir.workflows?.find(w => w.flowName === name);
                         const helper = ir.helpers?.find(h => h.name === name);
@@ -554,23 +577,23 @@ export class Agent<
                         return { call, toolResult, transfer, workflow, helper };
                     };
 
-                    const results: Array<{ call: ToolCall; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
-                    const pendingCalls: ToolCall[] = [];
+                    const results: Array<{ call: ToolCall; signature: string; toolResult?: ToolResult; error?: Error; transfer?: any; workflow?: any; helper?: any }> = [];
+                    const pendingCalls: Array<{ call: ToolCall; signature: string }> = [];
                     for (const call of toolCalls) {
-                        const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
+                        const callSignature = getCallSignature(call);
                         if (completedCalls.has(callSignature)) {
                             logger.debug(`[Agent] BLOCKED: Duplicate call to "${call.name}" - already completed.`);
                             currentMessages.push({
                                 role: 'user',
                                 content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
                             });
-                            results.push({ call, error: new Error("Duplicate tool call") });
+                            results.push({ call, signature: callSignature, error: new Error("Duplicate tool call") });
                             if (toolCallFailureMode === "fail") {
                                 throw new Error(`Duplicate tool call: ${call.name}`);
                             }
                             continue;
                         }
-                        pendingCalls.push(call);
+                        pendingCalls.push({ call, signature: callSignature });
                     }
 
                     if (toolCallMode === "parallel") {
@@ -579,10 +602,28 @@ export class Agent<
                         const completion = (async () => {
                             try {
                                 if (toolCallFailureMode === "fail") {
-                                    const outputs = await Promise.all(pendingCalls.map(call => executeToolCallStream(call, emit)));
+                                    const outputs = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
+                                        try {
+                                            const output = await executeToolCallStream(call, signature, emit);
+                                            completedCalls.add(signature);
+                                            return { ...output, signature };
+                                        } catch (error) {
+                                            completedCalls.add(signature);
+                                            throw error;
+                                        }
+                                    }));
                                     results.push(...outputs);
                                 } else {
-                                    const outputs = await Promise.all(pendingCalls.map(call => executeToolCallStream(call, emit).catch(error => ({ call, error }))));
+                                    const outputs = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
+                                        try {
+                                            const output = await executeToolCallStream(call, signature, emit);
+                                            completedCalls.add(signature);
+                                            return { ...output, signature };
+                                        } catch (error: any) {
+                                            completedCalls.add(signature);
+                                            return { call, signature, error };
+                                        }
+                                    }));
                                     results.push(...outputs);
                                 }
                             } finally {
@@ -598,12 +639,12 @@ export class Agent<
                         }
                         await completion;
                     } else {
-                        for (const call of pendingCalls) {
+                        for (const { call, signature } of pendingCalls) {
                             const toolQueue = this.createStreamQueue<StreamChunk>();
                             const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
                             const execPromise = (async () => {
                                 try {
-                                    return await executeToolCallStream(call, emit);
+                                    return await executeToolCallStream(call, signature, emit);
                                 } finally {
                                     toolQueue.close();
                                 }
@@ -617,12 +658,14 @@ export class Agent<
                             }
                             try {
                                 const output = await execPromise;
-                                results.push(output);
+                                completedCalls.add(signature);
+                                results.push({ ...output, signature });
                             } catch (error: any) {
+                                completedCalls.add(signature);
                                 if (toolCallFailureMode === "fail") {
                                     throw error;
                                 }
-                                results.push({ call, error });
+                                results.push({ call, signature, error });
                             }
                         }
                     }
@@ -660,15 +703,11 @@ export class Agent<
                                 return await complete(transfer.value as TOutput, finalResult);
                             }
                             if (transfer.mode === "thenContinue") {
-                                const callSignature = `${call.name}::${JSON.stringify(call.args, Object.keys(call.args).sort())}`;
-                                completedCalls.add(callSignature);
-                                logger.debug(`[Agent] Added to completed calls: ${callSignature}`);
                                 const source = workflow ? `workflow "${call.name}"` : `helper "${call.name}"`;
                                 currentMessages.push({
                                     role: 'user',
                                     content: this.textBlocks(`[System] The ${source} delivered its result to the user. This specific task is done. If the user's request has additional parts requiring a DIFFERENT task, you may proceed. Otherwise, provide a brief acknowledgment and finish.`)
                                 });
-                                toolsStillAvailable = false;
                                 continue;
                             }
                         }
@@ -691,8 +730,6 @@ export class Agent<
                             }]
                         });
                     }
-
-                    toolsStillAvailable = false;
                     continue;
                 }
 

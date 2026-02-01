@@ -32,8 +32,6 @@ import {
     isObjectLiteral, 
     isStringLiteral, 
     isMultilineStringLiteral, 
-    isTemplateLiteral, 
-    isTemplateString, 
     isVariableRef, 
     isMemberAccess, 
     isContextReference, 
@@ -158,7 +156,7 @@ export class TypeChecker {
     }
 
     private inferExpression(node: Expression, env: TypeEnv, issues: TypeIssue[]): Type {
-        if (isStringLiteral(node) || isMultilineStringLiteral(node) || isTemplateLiteral(node) || isTemplateString(node)) {
+        if (isStringLiteral(node) || isMultilineStringLiteral(node)) {
             return tConst('string');
         }
         if (isNumberLiteral(node)) {

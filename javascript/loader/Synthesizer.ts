@@ -1,5 +1,5 @@
 import { ExpressionEvaluator } from './ExpressionEvaluator';
-import type { AgentIR } from './types/ir';
+import type { AgentIR, ModelConfig } from './types/ir';
 import type { ContentBlock, JsonSchema, SyntheticRequest, SyntheticMessage, SyntheticToolDef } from './types/protocol';
 
 export class Synthesizer {
@@ -39,16 +39,18 @@ export class Synthesizer {
     public getRequiredModels(): string[] {
         const providers = new Set<string>();
 
-        if (this.ir.modelConfig[0]?.defaultConfig?.model) {
-            providers.add(this.ir.modelConfig[0].defaultConfig.model.type);
-        }
-
-        if (this.ir.modelConfig[0]?.namedConfig) {
-            for (const config of this.ir.modelConfig[0].namedConfig) {
-                if (config.model) {
-                    providers.add(config.model.type);
+        const collectFromConfigBlock = (configs?: ModelConfig[]) => {
+            for (const block of configs ?? []) {
+                this.addProvider(providers, block?.defaultConfig?.model);
+                for (const named of block?.namedConfig ?? []) {
+                    this.addProvider(providers, named?.model);
                 }
             }
+        };
+
+        collectFromConfigBlock(this.ir.modelConfig);
+        for (const helper of this.ir.helpers ?? []) {
+            collectFromConfigBlock(helper.modelConfig);
         }
 
         return Array.from(providers);
@@ -85,7 +87,7 @@ export class Synthesizer {
         const promptConfig = config?.prompt;
 
         const userMessage = Object.entries(input)
-            .map(([k, v]) => `${k}: ${v}`)
+            .map(([key, value]) => this.formatInputLine(key, value))
             .join("\n");
 
         const messages: SyntheticMessage[] = [];
@@ -103,6 +105,42 @@ export class Synthesizer {
 
     private textBlocks(text: string): ContentBlock[] {
         return [{ type: 'text', text }];
+    }
+
+    private addProvider(set: Set<string>, provider?: { type?: string | undefined } | null): void {
+        if (!provider || !provider.type) {
+            return;
+        }
+        set.add(provider.type);
+    }
+
+    private formatInputLine(key: string, value: unknown): string {
+        const serialized = this.serializeValue(value);
+        if (!serialized.includes('\n')) {
+            return `${key}: ${serialized}`;
+        }
+        const indented = serialized
+            .split('\n')
+            .map((line, index) => (index === 0 ? line : `  ${line}`))
+            .join('\n');
+        return `${key}: ${indented}`;
+    }
+
+    private serializeValue(value: unknown): string {
+        if (typeof value === 'string') {
+            return value;
+        }
+        if (value === undefined) {
+            return 'undefined';
+        }
+        if (typeof value === 'number' || typeof value === 'boolean' || value === null) {
+            return String(value);
+        }
+        try {
+            return JSON.stringify(value, null, 2);
+        } catch (error) {
+            return String(value);
+        }
     }
 
     private async resolvePrompt(prompt: any, input: Record<string, any>, context?: Record<string, any>): Promise<string> {
@@ -127,13 +165,6 @@ export class Synthesizer {
         // Case 4: Literal (string or number from grammar)
         if (prompt.type === 'literal') {
             return String(prompt.value);
-        }
-
-        if (prompt.type === 'template') {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
-            return String(await evaluator.evaluate(prompt, scope));
         }
 
         // Case 5: Concatenation with + operator
