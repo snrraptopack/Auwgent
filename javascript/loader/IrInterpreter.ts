@@ -1,6 +1,6 @@
 import { Synthesizer } from "./Synthesizer";
 import type { AgentIR, HelperIR } from "./types/ir";
-import type { AgentDriver, AgentMiddleware, ContentBlock, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult, YamlIntent, YamlOutput } from "./types/protocol";
+import type { AgentDriver, AgentMiddleware, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult, YamlOutput } from "./types/protocol";
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
@@ -8,8 +8,23 @@ import { DriverRegistry } from "./DriverRegistry";
 import { logger } from "./Logger";
 import { ConfigurationError } from "./types/errors";
 import { createMiddlewareContext, runOnAfterModel, runOnAfterTool, runOnAgentEnd, runOnAgentStart, runOnBeforeModel, runOnBeforeTool, runOnThinking, runWithRetries, sortMiddlewares, wrapModelCall, wrapToolCall } from "./IrMiddleware";
-import { createStreamingParser, parseToJSON } from "auwgent-yaml-lite";
+import { createStreamingParser } from "auwgent-yaml-lite";
 import { randomUUID } from "crypto";
+
+// Modular interpreter components
+import {
+    formatStreamingPreview,
+    parseYamlOutput,
+    buildToolCallsFromYaml,
+    getCallSignature,
+    getTransferSignal,
+    getHelperHandoffSignal,
+    extractText,
+    resolveFinalOutput,
+    buildAssistantContent,
+    createStreamQueue,
+    formatToolArgsForStream
+} from "./interpreter";
 
 /**
  * Configuration object for agent.run()
@@ -150,15 +165,15 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                const textOutput = this.extractText(finalResult);
-                const yamlOutput = this.parseYamlOutput(textOutput);
+                const textOutput = extractText(finalResult);
+                const yamlOutput = parseYamlOutput(textOutput);
 
-                const assistantContent = this.buildAssistantContent(finalResult, yamlOutput, textOutput);
+                const assistantContent = buildAssistantContent(finalResult, yamlOutput, textOutput);
                 if (assistantContent.length > 0) {
                     currentMessages.push({ role: 'assistant', content: assistantContent });
                 }
 
-                const toolCalls = this.buildToolCallsFromYaml(yamlOutput);
+                const toolCalls = buildToolCallsFromYaml(yamlOutput, ir);
                 if (toolCalls.length > 0) {
                     const resolvedModelToolCalls = yamlOutput?.parallel === true ? "parallel" : (modelToolCalls ?? "serial");
                     const failureMode = modelToolCallFailure ?? "settle";
@@ -221,8 +236,8 @@ export class Agent<
 
                         await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
                         const transfer = workflow
-                            ? this.getTransferSignal(toolResult)
-                            : this.getHelperHandoffSignal(helper?.name, toolResult);
+                            ? getTransferSignal(toolResult)
+                            : getHelperHandoffSignal(helper?.name, toolResult, ir);
                         return { call, toolResult, transfer, workflow, helper };
                     };
 
@@ -342,7 +357,7 @@ export class Agent<
                     continue;
                 }
 
-                const finalOutput = this.resolveFinalOutput<TOutput>(yamlOutput, textOutput);
+                const finalOutput = resolveFinalOutput<TOutput>(yamlOutput, textOutput, ir);
                 return await complete(finalOutput, finalResult);
             }
 
@@ -451,7 +466,7 @@ export class Agent<
                     ctx.request = modifiedRequest;
                 }
 
-                const queue = this.createStreamQueue<StreamChunk>();
+                const queue = createStreamQueue<StreamChunk>();
                 const resultPromise = runWithRetries(middlewares, ctx, "model", async () => {
                     const wrapped = wrapModelCall(middlewares, ctx, async () => {
                         const parser = createStreamingParser();
@@ -473,7 +488,7 @@ export class Agent<
                                     } catch {
                                         // ignore partial parse errors during streaming
                                     }
-                                    const preview = this.formatStreamingPreview(inFlightYaml);
+                                    const preview = formatStreamingPreview(inFlightYaml);
                                     if (preview.display && preview.display !== lastPreview) {
                                         queue.push({ type: 'text', delta: preview.display, format: 'json', raw: preview.raw });
                                         lastPreview = preview.display;
@@ -487,7 +502,7 @@ export class Agent<
                             } catch {
                                 // final parse failed - fall back to text parsing later
                             }
-                            const finalPreview = this.formatStreamingPreview(inFlightYaml);
+                            const finalPreview = formatStreamingPreview(inFlightYaml);
                             if (finalPreview.display && finalPreview.display !== lastPreview) {
                                 queue.push({ type: 'text', delta: finalPreview.display, format: 'json', raw: finalPreview.raw });
                                 lastPreview = finalPreview.display;
@@ -526,15 +541,15 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                const textOutput = this.extractText(finalResult);
-                const yamlOutput = streamingYaml ?? this.parseYamlOutput(textOutput);
+                const textOutput = extractText(finalResult);
+                const yamlOutput = streamingYaml ?? parseYamlOutput(textOutput);
 
-                const assistantContent = this.buildAssistantContent(finalResult, yamlOutput, textOutput);
+                const assistantContent = buildAssistantContent(finalResult, yamlOutput, textOutput);
                 if (assistantContent.length > 0) {
                     currentMessages.push({ role: 'assistant', content: assistantContent });
                 }
 
-                const toolCalls = this.buildToolCallsFromYaml(yamlOutput, (_intent, index) => randomUUID());
+                const toolCalls = buildToolCallsFromYaml(yamlOutput, ir, (_intent, index) => randomUUID());
                 if (toolCalls.length > 0) {
                     const resolvedModelToolCalls = yamlOutput?.parallel === true ? "parallel" : (modelToolCalls ?? "serial");
                     const failureMode = modelToolCallFailure ?? "settle";
@@ -559,7 +574,7 @@ export class Agent<
                         }
 
                         const emitToolStart = () => emit({ type: 'tool_start', name, id });
-                        const emitToolArgs = () => emit({ type: 'tool_args', id, delta: this.formatToolArgsForStream(args) });
+                        const emitToolArgs = () => emit({ type: 'tool_args', id, delta: formatToolArgsForStream(args) });
                         let toolEnded = false;
                         const emitToolEnd = () => {
                             if (toolEnded) {
@@ -636,8 +651,8 @@ export class Agent<
                         }
                         emitToolEnd();
                         const transfer = workflow
-                            ? this.getTransferSignal(toolResult)
-                            : this.getHelperHandoffSignal(helper?.name, toolResult);
+                            ? getTransferSignal(toolResult)
+                            : getHelperHandoffSignal(helper?.name, toolResult, ir);
                         return { call, toolResult, transfer, workflow, helper };
                     };
 
@@ -661,7 +676,7 @@ export class Agent<
                     }
 
                     if (resolvedModelToolCalls === "parallel") {
-                        const toolQueue = this.createStreamQueue<StreamChunk>();
+                        const toolQueue = createStreamQueue<StreamChunk>();
                         const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
                         const completion = (async () => {
                             try {
@@ -704,7 +719,7 @@ export class Agent<
                         await completion;
                     } else {
                         for (const { call, signature } of pendingCalls) {
-                            const toolQueue = this.createStreamQueue<StreamChunk>();
+                            const toolQueue = createStreamQueue<StreamChunk>();
                             const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
                             const execPromise = (async () => {
                                 try {
@@ -797,7 +812,8 @@ export class Agent<
                     continue;
                 }
 
-                const finalOutput = this.resolveFinalOutput<TOutput>(yamlOutput, textOutput);
+                // Final output - streaming already emitted the preview, just return
+                const finalOutput = resolveFinalOutput<TOutput>(yamlOutput, textOutput, ir);
                 return await complete(finalOutput, finalResult);
             }
 
@@ -811,170 +827,11 @@ export class Agent<
         }
     }
 
-    private textBlocks(text: string): ContentBlock[] {
+    private textBlocks(text: string): { type: "text"; text: string }[] {
         if (!text) {
             return [];
         }
         return [{ type: "text", text }];
-    }
-
-    private buildAssistantContent(result: DriverResult, yaml: YamlOutput | null, rawText: string | undefined): ContentBlock[] {
-        if (result.content && result.content.length > 0) {
-            const hasNonText = result.content.some(block => block.type !== "text");
-            if (hasNonText) {
-                return result.content;
-            }
-            const combined = result.content
-                .filter(block => block.type === "text")
-                .map(block => (block.type === "text" ? block.text : ""))
-                .join("");
-            const formattedFromContent = this.formatAssistantDisplay(yaml, combined);
-            if (formattedFromContent) {
-                return this.textBlocks(formattedFromContent);
-            }
-            if (combined.trim().length > 0) {
-                return this.textBlocks(combined);
-            }
-        }
-
-        const formatted = this.formatAssistantDisplay(yaml, rawText);
-        if (formatted) {
-            return this.textBlocks(formatted);
-        }
-
-        return this.textBlocks(rawText ?? "");
-    }
-
-    private extractText(result: DriverResult): string | undefined {
-        if (!result.content || result.content.length === 0) {
-            return undefined;
-        }
-        return result.content
-            .filter(block => block.type === "text")
-            .map(block => block.type === "text" ? block.text : "")
-            .join("");
-    }
-
-    private resolveFinalOutput<TOutput>(yamlOutput: YamlOutput | null, textOutput: string | undefined): TOutput {
-        const hasOutput = !!this.ir?.output && Object.keys(this.ir.output).length > 0;
-        if (hasOutput) {
-            if (!yamlOutput || typeof yamlOutput !== "object") {
-                throw new Error("Model failed to return valid YAML");
-            }
-            const output = yamlOutput.output ?? yamlOutput;
-            if (!output || typeof output !== "object") {
-                throw new Error("Model returned malformed YAML output block");
-            }
-            return output as TOutput;
-        }
-        if (yamlOutput) {
-            if (yamlOutput.output && typeof yamlOutput.output === "object") {
-                return yamlOutput.output as unknown as TOutput;
-            }
-            if (yamlOutput.text !== undefined) {
-                return String(yamlOutput.text ?? "") as TOutput;
-            }
-        }
-        return (textOutput ?? "") as TOutput;
-    }
-
-    private parseYamlOutput(textOutput: string | undefined): YamlOutput | null {
-        if (!textOutput) {
-            return null;
-        }
-        const trimmed = textOutput.trim();
-        if (!trimmed) {
-            return { text: "" };
-        }
-        try {
-            const parsed = parseToJSON(trimmed) as YamlOutput;
-            if (parsed && typeof parsed === "object") {
-                return parsed;
-            }
-        } catch {
-            try {
-                const streamingParser = createStreamingParser();
-                streamingParser.write(trimmed);
-                const parsed = streamingParser.end() as YamlOutput;
-                if (parsed && typeof parsed === "object") {
-                    return parsed;
-                }
-            } catch {
-                // ignore and fall back to raw text
-            }
-        }
-        return { text: textOutput };
-    }
-
-    private buildToolCallsFromYaml(yamlOutput: YamlOutput | null, idResolver?: (intent: YamlIntent, index: number) => string): ToolCall[] {
-        if (!yamlOutput?.intents || yamlOutput.intents.length === 0) {
-            return [];
-        }
-        const calls: ToolCall[] = [];
-        yamlOutput.intents.forEach((intent, index) => {
-            if (!intent || !intent.name) {
-                return;
-            }
-            if (intent.type !== "tool_call" && intent.type !== "workflow" && intent.type !== "helper") {
-                return;
-            }
-            if (intent.type === "helper") {
-                const helperDeclared = this.ir?.helpers?.some(helper => helper.name === intent.name) ?? false;
-                if (!helperDeclared) {
-                    if (intent.name === "respond") {
-                        logger.debug(`[Agent] Ignoring implicit respond helper intent.`);
-                        return;
-                    }
-                    logger.warn(`[Agent] Model requested unknown helper "${intent.name}" - intent skipped.`);
-                    return;
-                }
-            }
-            const args = intent.args && typeof intent.args === "object" ? intent.args : {};
-            const id = idResolver ? idResolver(intent, index) : randomUUID();
-            calls.push({
-                id,
-                name: intent.name,
-                args
-            });
-        });
-        return calls;
-    }
-
-    private getTransferSignal(value: unknown): { __type: "TransferSignal"; value: unknown; mode: "direct" | "thenContinue"; helperName?: string } | null {
-        if (!value || typeof value !== "object") {
-            return null;
-        }
-        const record = value as Record<string, unknown>;
-        if (record.__type !== "TransferSignal") {
-            return null;
-        }
-        const mode = record.mode;
-        if (mode !== "direct" && mode !== "thenContinue") {
-            return null;
-        }
-        const helperName = typeof record.helperName === "string" ? record.helperName : undefined;
-        return {
-            __type: "TransferSignal",
-            value: record.value,
-            mode,
-            helperName
-        };
-    }
-
-    private getHelperHandoffSignal(helperName: string | undefined, value: unknown): { __type: "TransferSignal"; value: unknown; mode: "direct" | "thenContinue"; helperName?: string } | null {
-        if (!helperName || !this.ir?.helperHandoff) {
-            return null;
-        }
-        const mode = this.ir.helperHandoff[helperName];
-        if (!mode) {
-            return null;
-        }
-        return {
-            __type: "TransferSignal",
-            value,
-            mode: mode === "thenContinue" ? "thenContinue" : "direct",
-            helperName
-        };
     }
 
     /**
@@ -1107,223 +964,6 @@ export class Agent<
         yield { type: 'helper_end', name: helper.name, result };
 
         return result;
-    }
-
-    private formatToolArgsForStream(args: ToolArgs | undefined): string {
-        if (!args || Object.keys(args).length === 0) {
-            return "{}";
-        }
-        const sorted = Object.keys(args)
-            .sort()
-            .reduce<Record<string, any>>((acc, key) => {
-                acc[key] = args[key];
-                return acc;
-            }, {});
-        try {
-            return JSON.stringify(sorted, null, 2);
-        } catch (error) {
-            return String(args);
-        }
-    }
-
-    private createStreamQueue<T>() {
-        let closed = false;
-        let error: any;
-        const buffer: T[] = [];
-        let pending: { resolve: (value: IteratorResult<T>) => void; reject: (error: any) => void } | null = null;
-
-        const push = (item: T) => {
-            if (closed) return;
-            if (pending) {
-                const { resolve } = pending;
-                pending = null;
-                resolve({ value: item, done: false });
-                return;
-            }
-            buffer.push(item);
-        };
-
-        const close = () => {
-            if (closed) return;
-            closed = true;
-            if (pending) {
-                const { resolve } = pending;
-                pending = null;
-                resolve({ value: undefined as any, done: true });
-            }
-        };
-
-        const fail = (err: any) => {
-            if (closed) return;
-            closed = true;
-            error = err;
-            if (pending) {
-                const { reject } = pending;
-                pending = null;
-                reject(err);
-            }
-        };
-
-        const next = async (): Promise<IteratorResult<T>> => {
-            if (error) {
-                throw error;
-            }
-            if (buffer.length > 0) {
-                return { value: buffer.shift() as T, done: false };
-            }
-            if (closed) {
-                return { value: undefined as any, done: true };
-            }
-            return new Promise<IteratorResult<T>>((resolve, reject) => {
-                pending = { resolve, reject };
-            });
-        };
-
-        return { push, close, fail, next };
-    }
-
-    private formatStreamingPreview(yaml: YamlOutput | null): { display: string | null; raw?: string } {
-        const summary = this.buildAssistantSummary(yaml, undefined);
-        const hasIntents = Array.isArray(summary.intents) && summary.intents.length > 0;
-        const done = !hasIntents;
-
-        const preview: Record<string, any> = {
-            stage: done ? "final" : "plan",
-            done
-        };
-
-        if (done) {
-            if (summary.text) {
-                preview.text = summary.text;
-            }
-            if (summary.output !== undefined) {
-                preview.output = summary.output;
-            }
-            if (summary.question) {
-                preview.question = summary.question;
-            }
-        } else {
-            if (summary.intents && summary.intents.length > 0) {
-                preview.intents = summary.intents;
-            }
-            if (summary.question) {
-                preview.question = summary.question;
-            }
-        }
-
-        const meaningfulKeys = Object.keys(preview).filter(key => !["stage", "done"].includes(key));
-        if (meaningfulKeys.length === 0) {
-            return { display: null };
-        }
-
-        return {
-            display: JSON.stringify(preview, null, 2),
-            raw: done && summary.text ? summary.text : undefined
-        };
-    }
-
-    private formatAssistantDisplay(yaml: YamlOutput | null, rawText: string | undefined): string | null {
-        const summary = this.buildAssistantSummary(yaml, rawText);
-        const segments: string[] = [];
-        if (summary.text) {
-            segments.push(summary.text);
-        }
-        if (summary.output) {
-            segments.push(`Output:\n${JSON.stringify(summary.output, null, 2)}`);
-        }
-        if (summary.question) {
-            segments.push(`Question: ${summary.question}`);
-        }
-        if (summary.intents && summary.intents.length > 0) {
-            segments.push(`Intents:\n${JSON.stringify(summary.intents, null, 2)}`);
-        }
-        if (segments.length === 0) {
-            return null;
-        }
-        return segments.join("\n\n");
-    }
-
-    private extractTextFromRawYaml(raw: string | undefined): string | null {
-        if (!raw) {
-            return null;
-        }
-        const lines = raw.split(/\r?\n/);
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.toLowerCase().startsWith("text:")) {
-                continue;
-            }
-            let value = trimmed.slice(5).trim();
-            if (value.length === 0) {
-                continue;
-            }
-            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                value = value.slice(1, -1);
-            }
-            return value.length > 0 ? value : null;
-        }
-        return null;
-    }
-
-    private extractQuestionFromRawYaml(raw: string | undefined): string | null {
-        if (!raw) {
-            return null;
-        }
-        const lines = raw.split(/\r?\n/);
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.toLowerCase().startsWith("question:")) {
-                continue;
-            }
-            let value = trimmed.slice(9).trim();
-            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-                value = value.slice(1, -1);
-            }
-            if (value.toLowerCase() === "null") {
-                return null;
-            }
-            return value.length > 0 ? value : null;
-        }
-        return null;
-    }
-
-    private buildAssistantSummary(yaml: YamlOutput | null, rawText: string | undefined): { text?: string; question?: string; output?: Record<string, any>; intents?: YamlIntent[] } {
-        const summary: { text?: string; question?: string; output?: Record<string, any>; intents?: YamlIntent[] } = {};
-
-        if (yaml && typeof yaml === "object") {
-            if (typeof yaml.text === "string" && yaml.text.trim().length > 0) {
-                summary.text = yaml.text.trim();
-            }
-            if (yaml.output !== undefined) {
-                summary.output = yaml.output;
-            }
-            if (typeof yaml.question === "string" && yaml.question.trim().length > 0 && yaml.question.trim().toLowerCase() !== "null") {
-                summary.question = yaml.question.trim();
-            }
-            const actionableIntents = yaml.intents?.filter(intent => {
-                if (!intent || typeof intent !== "object") {
-                    return false;
-                }
-                const normalizedType = typeof intent.type === "string" ? intent.type.trim().toLowerCase() : "";
-                return normalizedType.length > 0 && normalizedType !== "respond";
-            });
-            if (actionableIntents && actionableIntents.length > 0) {
-                summary.intents = actionableIntents;
-            }
-            if (summary.text || summary.question || summary.output || (summary.intents && summary.intents.length > 0)) {
-                return summary;
-            }
-        }
-
-        const textFromRaw = this.extractTextFromRawYaml(rawText);
-        if (textFromRaw) {
-            summary.text = textFromRaw;
-        }
-        const questionFromRaw = this.extractQuestionFromRawYaml(rawText);
-        if (questionFromRaw) {
-            summary.question = questionFromRaw;
-        }
-        return summary;
     }
 
     /**

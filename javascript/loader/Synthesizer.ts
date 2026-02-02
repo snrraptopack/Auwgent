@@ -222,24 +222,12 @@ export class Synthesizer {
         const hasTooling = this.hasTooling();
 
         if (!hasOutput && !hasTooling) {
-            return [
-                "Respond in plain text only.",
-                "Do not wrap replies in code fences.",
-                "If the user asks for JSON or YAML, still respond in plain text.",
-                "Be concise."
-            ].join("\n");
+            return "Respond in plain text. No code fences. Be concise.";
         }
 
         const lines: string[] = [];
-        const schemaLines: string[] = [];
 
-        if (hasTooling) {
-            lines.push("You are an AI agent. Output YAML only.");
-        } else {
-            lines.push("Output YAML only.");
-        }
-        lines.push("Do not use code fences.");
-        lines.push("If the user asks for JSON or another format, still output YAML.");
+        lines.push(hasTooling ? "You are an AI agent. Output YAML only. No code fences." : "Output YAML only. No code fences.");
 
         const toolLines = this.renderToolSignatures();
         if (toolLines.length > 0) {
@@ -249,9 +237,8 @@ export class Synthesizer {
 
         const helperLines = this.renderHelperSignatures();
         if (helperLines.length > 0) {
-            lines.push("", "Helpers:");
+            lines.push("", "Helpers (sub-agents that handle tasks autonomously):");
             lines.push(...helperLines);
-            lines.push("", "Helpers are specialized reasoning tools. Use them when their domain expertise applies—they can plan and deliver tailored results.");
         }
 
         const workflowLines = this.renderWorkflowSignatures();
@@ -260,31 +247,62 @@ export class Synthesizer {
             lines.push(...workflowLines);
         }
 
+        // Add constraint once at the end
+        if (toolLines.length > 0 || helperLines.length > 0 || workflowLines.length > 0) {
+            lines.push("", "Only use names listed above.");
+        }
+
         lines.push("", "Schema:");
 
         if (hasTooling) {
-            schemaLines.push("text: string");
-            schemaLines.push("parallel: boolean");
-            schemaLines.push("question: string");
-            schemaLines.push("intents:");
-            schemaLines.push("  - type: tool_call|workflow|helper|respond|question");
-            schemaLines.push("    name: string");
-            schemaLines.push("    args: { key: value }");
+            const intentTypes = this.buildAvailableIntentTypes();
+            lines.push("text: string");
+            lines.push("question: string");
+            lines.push("intents:");
+            lines.push(`  - type: ${intentTypes.join("|")}`);
+            lines.push("    name: string");
+            lines.push("    args: {}");
+            lines.push("parallel: boolean");
         }
 
         if (hasOutput) {
-            schemaLines.push("output:");
-            schemaLines.push(...this.renderOutputSchemaLines(2));
+            lines.push("output:");
+            lines.push(...this.renderOutputSchemaLines(2));
         }
 
-        if (schemaLines.length === 0) {
-            schemaLines.push("{}");
-        }
-
-        lines.push(...schemaLines);
         lines.push("", "Be concise.");
 
         return lines.join("\n");
+    }
+
+    /**
+     * Build the list of available intent types based on what the agent has defined.
+     * Only includes types that the model can actually use.
+     */
+    private buildAvailableIntentTypes(): string[] {
+        const types: string[] = [];
+        
+        // Only add tool_call if there are tools
+        if (this.ir.tools && this.ir.tools.length > 0) {
+            types.push("tool_call");
+        }
+        
+        // Only add workflow if there are workflows
+        if (this.ir.workflows && this.ir.workflows.length > 0) {
+            types.push("workflow");
+        }
+        
+        // Only add helper if there are helpers
+        if (this.ir.helpers && this.ir.helpers.length > 0) {
+            types.push("helper");
+        }
+        
+        // If no tooling at all, this shouldn't be called, but fallback
+        if (types.length === 0) {
+            types.push("tool_call");
+        }
+        
+        return types;
     }
 
     private hasOutput(): boolean {
