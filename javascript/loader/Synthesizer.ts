@@ -1,6 +1,6 @@
 import { ExpressionEvaluator } from './ExpressionEvaluator';
 import type { AgentIR, ModelConfig } from './types/ir';
-import type { ContentBlock, JsonSchema, SyntheticRequest, SyntheticMessage, SyntheticToolDef } from './types/protocol';
+import type { ContentBlock, JsonSchema, SyntheticRequest, SyntheticMessage } from './types/protocol';
 
 export class Synthesizer {
     constructor(private ir: AgentIR) { }
@@ -10,21 +10,15 @@ export class Synthesizer {
      * Takes runtime inputs and converts them into a standardized request.
      */
     public async synthesize(input: Record<string, any>, context?: Record<string, any>, configName?: string): Promise<SyntheticRequest> {
-        // 1. Build Messages
+        // Build messages with embedded tool/output schema in system prompt
         const messages = await this.buildMessages(input, context, configName);
-
-        // 2. Build Output Schema
-        const responseSchema = this.buildOutputSchema();
-
-        // Build Tools
-        const tools = this.buildTools()
 
         const modelProvider = this.getModelProvider(configName);
         const providerConfig = await this.resolveProviderConfig(modelProvider?.config, input, context);
+
+        // No tools field - everything is in the prompt, model outputs YAML
         return {
             messages,
-            responseSchema,
-            tools,
             config: {
                 model: modelProvider.type,  // Provider type: "gemini", "openai", "custom"
                 modelName: modelProvider.modelName,
@@ -92,11 +86,9 @@ export class Synthesizer {
 
         const messages: SyntheticMessage[] = [];
 
-        if (promptConfig) {
-            const systemContent = this.resolvePrompt(promptConfig, input, context);
-            if (systemContent) {
-                messages.push({ role: 'system', content: this.textBlocks(await systemContent) });
-            }
+        const systemContent = this.buildSystemPrompt(promptConfig, input, context);
+        if (systemContent) {
+            messages.push({ role: 'system', content: this.textBlocks(await systemContent) });
         }
 
         messages.push({ role: 'user', content: this.textBlocks(userMessage) });
@@ -219,271 +211,331 @@ export class Synthesizer {
         return '';
     }
 
-
-    /**
-     * Converts the IR 'output' definition into strict JSON Schema
-     */
-    private buildOutputSchema(): JsonSchema | undefined {
-        if (!this.ir.output || Object.keys(this.ir.output).length === 0) {
-            return undefined;
-        }
-
-        const properties: Record<string, JsonSchema> = {};
-        const requiredFields: string[] = [];
-
-        for (const [key, typeInfo] of Object.entries(this.ir.output)) {
-            // Convert IRType to JSON Schema
-            properties[key] = this.convertTypeToSchema(typeInfo.type);
-
-            // Add description if present
-            if (typeInfo.description) {
-                properties[key].description = typeInfo.description;
-            }
-
-            // Only add to required if NOT optional
-            if (!typeInfo.optional) {
-                requiredFields.push(key);
-            }
-        }
-
-        return {
-            type: "object",
-            properties,
-            required: requiredFields
-        };
+    private async buildSystemPrompt(promptConfig: any, input: Record<string, any>, context?: Record<string, any>): Promise<string> {
+        const userPrompt = promptConfig ? await this.resolvePrompt(promptConfig, input, context) : "";
+        const defaultPrompt = this.buildDefaultPrompt();
+        return [userPrompt?.trim(), defaultPrompt?.trim()].filter(Boolean).join("\n\n");
     }
 
-    private buildTools(): SyntheticToolDef[] | undefined {
-        // 1. Convert regular Tools
-        const toolDefs = (this.ir.tools || []).map(tool => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: this.paramsToSchema(tool.params)
-        }));
+    private buildDefaultPrompt(): string {
+        const hasOutput = this.hasOutput();
+        const hasTooling = this.hasTooling();
 
-        // 2. Convert Workflows (The Model sees them as tools too!)
-        const workflowDefs = (this.ir.workflows || []).map(wf => {
-            const usesThenContinue = this.workflowUsesThenContinue(wf);
-            const baseDesc = wf.description || '';
-
-            // Add awareness about thenContinue pattern
-            const continueMeta = usesThenContinue
-                ? ' [CONTINUES AFTER DELIVERY: This workflow automatically delivers its result to the user. After completion, do NOT call this workflow again unless there is a genuinely different task. If there is nothing else to do, simply notify the user that the task is complete.]'
-                : '';
-
-            return {
-                name: wf.flowName,
-                description: baseDesc + continueMeta,
-                parameters: this.paramsToSchema(wf.flowParams)
-            };
-        });
-
-        // 3. Convert Helpers (Exposed as special agent-tools)
-        // Note: Transfer semantics are now controlled at call-site in workflows,
-        // not as a static property of the helper
-        const helperHandoff = this.ir.helperHandoff || {};
-        const helperDefs = (this.ir.helpers || []).map(helper => {
-            const handoff = helperHandoff[helper.name];
-            const handoffLabel = handoff === "user"
-                ? " [HANDOFF: user]"
-                : handoff === "thenContinue"
-                    ? " [HANDOFF: user then continue]"
-                    : "";
-            return {
-                name: helper.name,
-                description: `[HELPER AGENT] ${helper.description}${handoffLabel}`,
-                parameters: this.paramsToSchema(helper.input || {}),
-                _meta: { isHelper: true }
-            };
-        });
-
-        const allTools = [...toolDefs, ...workflowDefs, ...helperDefs];
-
-        if (allTools.length === 0) {
-            return undefined;
+        if (!hasOutput && !hasTooling) {
+            return [
+                "Respond in plain text only.",
+                "Do not wrap replies in code fences.",
+                "If the user asks for JSON or YAML, still respond in plain text.",
+                "Be concise."
+            ].join("\n");
         }
-        return allTools;
-    }
 
-    /**
-     * Check if a workflow contains a transfer statement with thenContinue mode
-     */
-    private workflowUsesThenContinue(wf: any): boolean {
-        return this.scanForThenContinue(wf.body || []);
-    }
+        const lines: string[] = [];
+        const schemaLines: string[] = [];
 
-    private scanForThenContinue(statements: any[]): boolean {
-        for (const stmt of statements) {
-            if (stmt.type === 'transfer' && stmt.mode === 'thenContinue') {
-                return true;
-            }
-            // Recurse into if statements
-            if (stmt.type === 'if') {
-                if (stmt.then && this.scanForThenContinue(stmt.then)) return true;
-                if (stmt.else && this.scanForThenContinue(stmt.else)) return true;
-            }
+        if (hasTooling) {
+            lines.push("You are an AI agent. Output YAML only.");
+        } else {
+            lines.push("Output YAML only.");
         }
-        return false;
+        lines.push("Do not use code fences.");
+        lines.push("If the user asks for JSON or another format, still output YAML.");
+
+        const toolLines = this.renderToolSignatures();
+        if (toolLines.length > 0) {
+            lines.push("", "Tools:");
+            lines.push(...toolLines);
+        }
+
+        const helperLines = this.renderHelperSignatures();
+        if (helperLines.length > 0) {
+            lines.push("", "Helpers:");
+            lines.push(...helperLines);
+            lines.push("", "Helpers are specialized reasoning tools. Use them when their domain expertise applies—they can plan and deliver tailored results.");
+        }
+
+        const workflowLines = this.renderWorkflowSignatures();
+        if (workflowLines.length > 0) {
+            lines.push("", "Workflows:");
+            lines.push(...workflowLines);
+        }
+
+        lines.push("", "Schema:");
+
+        if (hasTooling) {
+            schemaLines.push("text: string");
+            schemaLines.push("parallel: boolean");
+            schemaLines.push("question: string");
+            schemaLines.push("intents:");
+            schemaLines.push("  - type: tool_call|workflow|helper|respond|question");
+            schemaLines.push("    name: string");
+            schemaLines.push("    args: { key: value }");
+        }
+
+        if (hasOutput) {
+            schemaLines.push("output:");
+            schemaLines.push(...this.renderOutputSchemaLines(2));
+        }
+
+        if (schemaLines.length === 0) {
+            schemaLines.push("{}");
+        }
+
+        lines.push(...schemaLines);
+        lines.push("", "Be concise.");
+
+        return lines.join("\n");
     }
 
-    private paramsToSchema(params: Record<string, any>): JsonSchema {
-        const properties: Record<string, JsonSchema> = {};
-        const requiredFields: string[] = [];
+    private hasOutput(): boolean {
+        return !!this.ir.output && Object.keys(this.ir.output).length > 0;
+    }
 
-        for (const [key, typeInfo] of Object.entries(params)) {
-            // Convert IRType to JSON Schema
-            properties[key] = this.convertTypeToSchema(typeInfo.type);
-
-            if (!typeInfo.optional) {
-                requiredFields.push(key);
+    private renderToolsSection(): string[] {
+        const tools = this.ir.tools ?? [];
+        const helpers = this.ir.helpers ?? [];
+        if (tools.length === 0 && helpers.length === 0) {
+            return [];
+        }
+        const lines: string[] = ["Tools:"];
+        for (const tool of tools) {
+            lines.push(`- name: ${tool.name}`);
+            if (tool.description) {
+                lines.push(`  description: ${tool.description}`);
+            }
+            lines.push("  args:");
+            lines.push(...this.renderParamSchemaLines(tool.params, 4));
+            lines.push(`  returns: ${this.formatInlineType(tool.returns)}`);
+        }
+        for (const helper of helpers) {
+            lines.push(`- name: ${helper.name}`);
+            if (helper.description) {
+                lines.push(`  description: ${helper.description}`);
+            }
+            lines.push("  args:");
+            lines.push(...this.renderParamSchemaLines(helper.input || {}, 4));
+            if (helper.output && Object.keys(helper.output).length > 0) {
+                lines.push("  returns:");
+                lines.push(...this.renderOutputSchemaLines(4, helper.output));
             }
         }
-        return {
-            type: "object",
-            properties,
-            required: requiredFields
-        };
+        return lines;
     }
 
-    // Helper to unwrap nested type structures - DEPRECATED, kept for compatibility
-    private unwrapType(typeVal: any): any {
-        if (typeof typeVal === 'string') {
-            return typeVal;
+    private renderWorkflowsSection(): string[] {
+        const workflows = this.ir.workflows ?? [];
+        if (workflows.length === 0) {
+            return [];
         }
-        if (typeVal && typeof typeVal.type === 'object') {
-            return this.unwrapType(typeVal.type);
+        const lines: string[] = ["Workflows:"];
+        for (const workflow of workflows) {
+            lines.push(`- name: ${workflow.flowName}`);
+            if (workflow.description) {
+                lines.push(`  description: ${workflow.description}`);
+            }
+            lines.push("  args:");
+            lines.push(...this.renderParamSchemaLines(workflow.flowParams, 4));
+            lines.push(`  returns: ${this.formatInlineType(workflow.returns)}`);
         }
-        if (typeVal && typeof typeVal.type === 'string') {
-            return typeVal.type;
-        }
-        return typeVal;
+        return lines;
     }
 
+    private renderParamSchemaLines(params: Record<string, any>, indent: number): string[] {
+        const entries = Object.entries(params);
+        if (entries.length === 0) {
+            return [`${" ".repeat(indent)}{}`];
+        }
+        const lines: string[] = [];
+        for (const [name, typeInfo] of entries) {
+            lines.push(...this.renderFieldLines(name, typeInfo, indent));
+        }
+        return lines;
+    }
 
-    /**
-     * Converts an IRType to JSON Schema
-     * Handles: primitives, arrays, type references, unions, and inline objects
-     */
-    private convertTypeToSchema(irType: any): JsonSchema {
-        // Case 1: Primitive string types
-        if (typeof irType === 'string') {
-            // Handle legacy array syntax "string[]"
+    private renderOutputSchemaLines(indent: number, output?: Record<string, any>): string[] {
+        const source = output ?? this.ir.output ?? {};
+        const lines: string[] = [];
+        for (const [name, typeInfo] of Object.entries(source)) {
+            lines.push(...this.renderFieldLines(name, typeInfo as any, indent));
+        }
+        return lines;
+    }
+
+    private renderFieldLines(name: string, typeInfo: any, indent: number): string[] {
+        const lines: string[] = [];
+        const optionalSuffix = typeInfo.optional ? "?" : "";
+        const key = `${name}${optionalSuffix}`;
+        const desc = typeInfo.description ? ` # ${typeInfo.description}` : "";
+        const type = typeInfo.type;
+        const arrayItem = this.getArrayItemType(type);
+        if (arrayItem) {
+            lines.push(`${" ".repeat(indent)}${key}:${desc}`);
+            lines.push(...this.renderArrayItemLines(arrayItem, indent + 2));
+            return lines;
+        }
+        const objectProps = this.getObjectProperties(type);
+        if (objectProps) {
+            lines.push(`${" ".repeat(indent)}${key}:${desc}`);
+            for (const [propName, propInfo] of Object.entries(objectProps)) {
+                lines.push(...this.renderFieldLines(propName, propInfo, indent + 2));
+            }
+            return lines;
+        }
+        lines.push(`${" ".repeat(indent)}${key}: ${this.formatInlineType(type)}${desc}`);
+        return lines;
+    }
+
+    private renderArrayItemLines(itemType: any, indent: number): string[] {
+        const lines: string[] = [];
+        const nestedArrayItem = this.getArrayItemType(itemType);
+        if (nestedArrayItem) {
+            lines.push(`${" ".repeat(indent)}-`);
+            lines.push(...this.renderArrayItemLines(nestedArrayItem, indent + 2));
+            return lines;
+        }
+        const objectProps = this.getObjectProperties(itemType);
+        if (objectProps) {
+            lines.push(`${" ".repeat(indent)}-`);
+            for (const [propName, propInfo] of Object.entries(objectProps)) {
+                lines.push(...this.renderFieldLines(propName, propInfo, indent + 2));
+            }
+            return lines;
+        }
+        lines.push(`${" ".repeat(indent)}- ${this.formatInlineType(itemType)}`);
+        return lines;
+    }
+
+    private getArrayItemType(irType: any): any | null {
+        if (typeof irType === "string" && irType.endsWith("[]")) {
+            return irType.slice(0, -2);
+        }
+        if (typeof irType === "object" && irType.type === "array") {
+            return irType.items;
+        }
+        return null;
+    }
+
+    private hasTooling(): boolean {
+        return (this.ir.tools?.length ?? 0) > 0 || (this.ir.helpers?.length ?? 0) > 0 || (this.ir.workflows?.length ?? 0) > 0;
+    }
+
+    private renderToolSignatures(): string[] {
+        const tools = this.ir.tools ?? [];
+        const entries: string[] = [];
+
+        for (const tool of tools) {
+            const params = this.formatParamSignature(tool.params);
+            const suffix = tool.description ? `  # ${tool.description}` : "";
+            entries.push(`- ${tool.name}${params ? `(${params})` : "()"}${suffix}`);
+        }
+
+        return entries;
+    }
+
+    private renderHelperSignatures(): string[] {
+        const helpers = this.ir.helpers ?? [];
+        const entries: string[] = [];
+
+        for (const helper of helpers) {
+            const params = this.formatParamSignature(helper.input ?? {});
+            const suffix = helper.description ? `  # ${helper.description}` : "";
+            entries.push(`- ${helper.name}${params ? `(${params})` : "()"}${suffix}`);
+        }
+
+        return entries;
+    }
+
+    private renderWorkflowSignatures(): string[] {
+        const workflows = this.ir.workflows ?? [];
+        const lines: string[] = [];
+        for (const workflow of workflows) {
+            const params = this.formatParamSignature(workflow.flowParams ?? {});
+            const suffix = workflow.description ? `  # ${workflow.description}` : "";
+            lines.push(`- ${workflow.flowName}${params ? `(${params})` : "()"}${suffix}`);
+        }
+        return lines;
+    }
+
+    private formatParamSignature(params: Record<string, any>): string {
+        const entries = Object.entries(params ?? {});
+        if (entries.length === 0) {
+            return "";
+        }
+        return entries
+            .map(([name, info]) => {
+                const optional = info?.optional ? "?" : "";
+                const typeName = this.formatInlineType(info?.type ?? info);
+                return `${name}${optional}: ${typeName}`;
+            })
+            .join(", ");
+    }
+
+    private getObjectProperties(irType: any): Record<string, any> | null {
+        if (typeof irType === "object" && irType.type === "object" && irType.properties) {
+            return Object.fromEntries(
+                Object.entries(irType.properties).map(([key, value]) => [
+                    key,
+                    { type: value, optional: false }
+                ])
+            );
+        }
+        if (typeof irType === "object" && irType.type === "typeRef") {
+            const typeDef = this.ir.types?.[irType.name];
+            if (typeDef?.properties) {
+                return typeDef.properties;
+            }
+        }
+        return null;
+    }
+
+    private formatInlineType(irType: any): string {
+        if (typeof irType === "string") {
             if (irType.endsWith("[]")) {
                 const innerType = irType.slice(0, -2);
-                return {
-                    type: "array",
-                    items: {
-                        type: this.normalizeType(innerType)
-                    }
-                };
+                return `array<${this.normalizeType(innerType)}>`;
             }
-            return {
-                type: this.normalizeType(irType)
-            };
+            return this.normalizeType(irType);
         }
-
-        // Case 2: Array type object { type: "array", items: ... }
-        if (typeof irType === 'object' && irType.type === 'array') {
-            return {
-                type: "array",
-                items: this.convertTypeToSchema(irType.items)
-            };
+        if (typeof irType === "object" && irType.type === "union" && Array.isArray(irType.options)) {
+            return irType.options.map((o: string) => o.replace(/^["']|["']$/g, '')).join(" | ");
         }
-
-        // Case 3: Type reference { type: "typeRef", name: "TypeName" }
-        if (typeof irType === 'object' && irType.type === 'typeRef') {
-            return this.typeDefToSchema(irType.name);
+        if (typeof irType === "object" && irType.type === "array") {
+            return `array<${this.formatInlineType(irType.items)}>`;
         }
-
-        // Case 4: Union type { type: "union", options: [...] }
-        if (typeof irType === 'object' && irType.type === 'union' && Array.isArray(irType.options)) {
-            return {
-                type: 'string',
-                enum: irType.options.map((o: string) => o.replace(/^["']|["']$/g, ''))
-            };
+        if (typeof irType === "object" && irType.type === "typeRef") {
+            return irType.name;
         }
-
-        // Case 5: Inline object type { type: "object", properties: {...} }
-        if (typeof irType === 'object' && irType.type === 'object' && irType.properties) {
-            return this.objectTypeToSchema(irType.properties);
+        if (typeof irType === "object" && irType.type === "object") {
+            return "object";
         }
-
-        // Fallback: treat as string
-        return { type: 'string' };
+        return "string";
     }
 
-    /**
-     * Resolves a type reference to its JSON Schema definition
-     * Recursively resolves nested type references
-     */
-    private typeDefToSchema(typeName: string): JsonSchema {
-        if (!this.ir.types || !this.ir.types[typeName]) {
-            // Type not found, return generic object
-            return { type: 'object' };
-        }
-
-        const typeDef = this.ir.types[typeName];
-        const properties: Record<string, JsonSchema> = {};
-        const required: string[] = [];
-
-        for (const [propName, propInfo] of Object.entries(typeDef.properties)) {
-            // Recursively convert property type
-            properties[propName] = this.convertTypeToSchema(propInfo.type);
-
-            // Add description if present
-            if (propInfo.description) {
-                properties[propName].description = propInfo.description;
-            }
-
-            // Track required fields
-            if (!propInfo.optional) {
-                required.push(propName);
-            }
-        }
-
-        return {
-            type: "object",
-            properties,
-            required
-        };
-    }
-
-
-    /**
-     * Converts an inline object type definition to JSON Schema
-     * Input: { title: "string", url: "string", snippet: "string" }
-     * Output: JSON Schema with nested properties
-     */
-    private objectTypeToSchema(properties: Record<string, any>): JsonSchema {
-        const schemaProps: Record<string, JsonSchema> = {};
-        const required: string[] = [];
-
-        for (const [key, irType] of Object.entries(properties)) {
-            // Recursively convert each property type
-            schemaProps[key] = this.convertTypeToSchema(irType);
-            
-            // For inline objects, all properties are required by default
-            // (optional handling is done at the PropertyInfo level in type definitions)
-            required.push(key);
-        }
-
-        return {
-            type: "object",
-            properties: schemaProps,
-            required
-        };
-    }
-
-
-    private normalizeType(irType: string): string {
-        switch (irType.toLowerCase()) {
-            case 'int':
-            case 'float':
-            case 'number': return 'number';
-            case 'bool':
-            case 'boolean': return 'boolean';
-            case 'string': return 'string';
-            default: return 'string';
+    private normalizeType(type: string): string {
+        switch (type.toLowerCase()) {
+            case "int":
+            case "integer":
+            case "float":
+            case "number":
+                return "number";
+            case "bool":
+            case "boolean":
+                return "boolean";
+            case "str":
+            case "string":
+            case "text":
+                return "string";
+            case "any":
+                return "any";
+            default:
+                return type;
         }
     }
+
+    // ============================================================================
+    // JSON Schema methods removed - using YAML output parsing instead
+    // Tools and output schema are embedded in the system prompt,
+    // model outputs YAML which is parsed by auwgent-yaml-lite
+    // ============================================================================
 }
+

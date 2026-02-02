@@ -1,4 +1,4 @@
-import { TempKey1 } from "./keys";
+import { TempKey } from "./keys";
 import { createAuditMiddleware, createShortMemoryMiddleware } from "./loader";
 import { createHello,type HelloConfig,type HelloTools,type User } from "./out/main.agent.types";
 
@@ -19,7 +19,7 @@ let tools:HelloTools = {
 
 let config:HelloConfig = {
     apiKeys: {
-        geminiApiKey:TempKey1
+        geminiApiKey:TempKey
     },
     context:{
         id:10,

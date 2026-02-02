@@ -5,7 +5,7 @@ import { StreamError } from "./types/errors";
  * Handler types for each stream event
  */
 export interface StreamHandlers {
-    onText?: (delta: string) => void;
+    onText?: (delta: string, meta?: { format?: 'yaml' | 'json'; raw?: string }) => void;
     onToolStart?: (name: string, id: string) => void;
     onToolArgs?: (name: string, id: string, delta: string) => void;
     onToolEnd?: (name: string, id: string) => void;
@@ -41,7 +41,7 @@ export class StreamBuilder<TOutput> {
     /**
      * Called when text tokens are streamed from the LLM
      */
-    onText(handler: (delta: string) => void): this {
+    onText(handler: (delta: string, meta?: { format?: 'yaml' | 'json'; raw?: string }) => void): this {
         this.handlers.onText = handler;
         return this;
     }
@@ -163,7 +163,7 @@ export class StreamBuilder<TOutput> {
         try {
             switch (chunk.type) {
                 case 'text':
-                    this.handlers.onText?.(chunk.delta);
+                    this.handlers.onText?.(chunk.delta, { format: chunk.format, raw: chunk.raw });
                     break;
 
                 case 'tool_start':

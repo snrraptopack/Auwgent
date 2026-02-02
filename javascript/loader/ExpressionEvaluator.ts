@@ -76,6 +76,12 @@ export class ExpressionEvaluator {
                 return (leftValue as any) + (rightValue as any);
             }
 
+            case "template":
+                return this.evaluateTemplate(expr, scope);
+
+            case "expression":
+                return this.evaluate(expr.value, scope);
+
             default:
                 throw new Error(`Unknown expression type: ${expr.type}`);
         }
@@ -530,6 +536,35 @@ export class ExpressionEvaluator {
         }
 
         throw new Error(`Transfer to ${helperName} expects exactly 1 object argument`);
+    }
+
+    private async evaluateTemplate(expr: any, scope: Map<string, any>): Promise<string> {
+        if (!expr || !Array.isArray(expr.value)) {
+            return "";
+        }
+
+        let rendered = "";
+        for (const part of expr.value) {
+            if (!part) {
+                continue;
+            }
+            if (part.type === "literal") {
+                rendered += String(part.value ?? "");
+                continue;
+            }
+            if (part.type === "expression") {
+                const evaluated = await this.evaluate(part.value, scope);
+                if (evaluated !== undefined && evaluated !== null) {
+                    rendered += String(evaluated);
+                }
+                continue;
+            }
+            const fallback = await this.evaluate(part, scope);
+            if (fallback !== undefined && fallback !== null) {
+                rendered += String(fallback);
+            }
+        }
+        return rendered;
     }
 
     /**

@@ -1,6 +1,6 @@
 import { Synthesizer } from "./Synthesizer";
 import type { AgentIR, HelperIR } from "./types/ir";
-import type { AgentDriver, AgentMiddleware, ContentBlock, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult } from "./types/protocol";
+import type { AgentDriver, AgentMiddleware, ContentBlock, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult, YamlIntent, YamlOutput } from "./types/protocol";
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
@@ -8,6 +8,8 @@ import { DriverRegistry } from "./DriverRegistry";
 import { logger } from "./Logger";
 import { ConfigurationError } from "./types/errors";
 import { createMiddlewareContext, runOnAfterModel, runOnAfterTool, runOnAgentEnd, runOnAgentStart, runOnBeforeModel, runOnBeforeTool, runOnThinking, runWithRetries, sortMiddlewares, wrapModelCall, wrapToolCall } from "./IrMiddleware";
+import { createStreamingParser, parseToJSON } from "auwgent-yaml-lite";
+import { randomUUID } from "crypto";
 
 /**
  * Configuration object for agent.run()
@@ -113,6 +115,7 @@ export class Agent<
 
             let currentMessages: SyntheticMessage[] = [...request.messages];
             let turnCount = 0;
+            let streamingYaml: YamlOutput | null = null;
             const completedCalls = new Set<string>();
 
             const getCallSignature = (call: ToolCall) => {
@@ -123,11 +126,11 @@ export class Agent<
 
             while (turnCount < this.maxTurns) {
                 turnCount++;
+                streamingYaml = null;
 
                 const currentRequest = {
                     ...request,
-                    messages: currentMessages,
-                    tools: request.tools
+                    messages: currentMessages
                 };
 
                 ctx.request = currentRequest;
@@ -147,12 +150,20 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
-                    const toolCalls = finalResult.toolCalls;
-                    const modelToolCalls = config?.modelToolCalls ?? "serial";
-                    const modelToolCallFailure = config?.modelToolCallFailure ?? "settle";
+                const textOutput = this.extractText(finalResult);
+                const yamlOutput = this.parseYamlOutput(textOutput);
+
+                const assistantContent = this.buildAssistantContent(finalResult, yamlOutput, textOutput);
+                if (assistantContent.length > 0) {
+                    currentMessages.push({ role: 'assistant', content: assistantContent });
+                }
+
+                const toolCalls = this.buildToolCallsFromYaml(yamlOutput);
+                if (toolCalls.length > 0) {
+                    const resolvedModelToolCalls = yamlOutput?.parallel === true ? "parallel" : (modelToolCalls ?? "serial");
+                    const failureMode = modelToolCallFailure ?? "settle";
                     if (toolCalls.length > 1) {
-                        logger.debug(`[Agent] Model returned ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
+                        logger.debug(`[Agent] YAML intents requested ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
                     }
 
                     currentMessages.push({
@@ -226,7 +237,7 @@ export class Agent<
                                 content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
                             });
                             results.push({ call, signature, error: new Error("Duplicate tool call") });
-                            if (modelToolCallFailure === "fail") {
+                            if (failureMode === "fail") {
                                 throw new Error(`Duplicate tool call: ${call.name}`);
                             }
                             continue;
@@ -234,8 +245,8 @@ export class Agent<
                         pendingCalls.push({ call, signature });
                     };
 
-                    if (modelToolCalls === "parallel") {
-                        if (modelToolCallFailure === "fail") {
+                    if (resolvedModelToolCalls === "parallel") {
+                        if (failureMode === "fail") {
                             const parallelResults = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
                                 try {
                                     const output = await executeToolCall(call, signature);
@@ -268,7 +279,7 @@ export class Agent<
                                 results.push({ ...output, signature });
                             } catch (error: any) {
                                 completedCalls.add(signature);
-                                if (modelToolCallFailure === "fail") {
+                                if (failureMode === "fail") {
                                     throw error;
                                 }
                                 results.push({ call, signature, error });
@@ -292,7 +303,7 @@ export class Agent<
                                     isError: true
                                 }]
                             });
-                            if (modelToolCallFailure === "fail") {
+                            if (failureMode === "fail") {
                                 throw error;
                             }
                             continue;
@@ -331,18 +342,8 @@ export class Agent<
                     continue;
                 }
 
-                const textOutput = this.extractText(finalResult);
-                if (request.responseSchema) {
-                    try {
-                        const parsed = JSON.parse(textOutput ?? "{}") as TOutput;
-                        return await complete(parsed, finalResult);
-                    } catch (e) {
-                        console.error("Failed to parse JSON response:", textOutput);
-                        throw new Error("Model failed to return valid JSON");
-                    }
-                }
-
-                return await complete((textOutput ?? "") as TOutput, finalResult);
+                const finalOutput = this.resolveFinalOutput<TOutput>(yamlOutput, textOutput);
+                return await complete(finalOutput, finalResult);
             }
 
             throw new Error("Agent exceeded maximum turns");
@@ -426,6 +427,7 @@ export class Agent<
 
             let currentMessages: SyntheticMessage[] = [...request.messages];
             let turnCount = 0;
+            let streamingYaml: YamlOutput | null = null;
             const completedCalls = new Set<string>();
 
             const getCallSignature = (call: ToolCall) => {
@@ -436,11 +438,11 @@ export class Agent<
 
             while (turnCount < this.maxTurns) {
                 turnCount++;
+                streamingYaml = null;
 
                 const currentRequest = {
                     ...request,
-                    messages: currentMessages,
-                    tools: request.tools
+                    messages: currentMessages
                 };
 
                 ctx.request = currentRequest;
@@ -452,6 +454,9 @@ export class Agent<
                 const queue = this.createStreamQueue<StreamChunk>();
                 const resultPromise = runWithRetries(middlewares, ctx, "model", async () => {
                     const wrapped = wrapModelCall(middlewares, ctx, async () => {
+                        const parser = createStreamingParser();
+                        let inFlightYaml: YamlOutput | null = null;
+                        let lastPreview: string | null = null;
                         const stream = driver.executeStream!(ctx.request);
                         let finalResult: DriverResult | undefined;
                         try {
@@ -461,9 +466,34 @@ export class Agent<
                                     finalResult = value;
                                     break;
                                 }
+                                if (value.type === 'text') {
+                                    try {
+                                        parser.write(value.delta);
+                                        inFlightYaml = parser.peek() as YamlOutput;
+                                    } catch {
+                                        // ignore partial parse errors during streaming
+                                    }
+                                    const preview = this.formatStreamingPreview(inFlightYaml);
+                                    if (preview.display && preview.display !== lastPreview) {
+                                        queue.push({ type: 'text', delta: preview.display, format: 'json', raw: preview.raw });
+                                        lastPreview = preview.display;
+                                    }
+                                    continue;
+                                }
                                 queue.push(value);
                             }
+                            try {
+                                inFlightYaml = parser.end() as YamlOutput;
+                            } catch {
+                                // final parse failed - fall back to text parsing later
+                            }
+                            const finalPreview = this.formatStreamingPreview(inFlightYaml);
+                            if (finalPreview.display && finalPreview.display !== lastPreview) {
+                                queue.push({ type: 'text', delta: finalPreview.display, format: 'json', raw: finalPreview.raw });
+                                lastPreview = finalPreview.display;
+                            }
                             queue.close();
+                            streamingYaml = inFlightYaml;
                             if (!finalResult) {
                                 throw new Error("Stream ended without a final result");
                             }
@@ -496,12 +526,20 @@ export class Agent<
                 const finalResult = afterModel ?? afterThinking;
                 ctx.response = finalResult;
 
-                if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
-                    const toolCalls = finalResult.toolCalls;
-                    const toolCallMode = modelToolCalls ?? "serial";
-                    const toolCallFailureMode = modelToolCallFailure ?? "settle";
+                const textOutput = this.extractText(finalResult);
+                const yamlOutput = streamingYaml ?? this.parseYamlOutput(textOutput);
+
+                const assistantContent = this.buildAssistantContent(finalResult, yamlOutput, textOutput);
+                if (assistantContent.length > 0) {
+                    currentMessages.push({ role: 'assistant', content: assistantContent });
+                }
+
+                const toolCalls = this.buildToolCallsFromYaml(yamlOutput, (_intent, index) => randomUUID());
+                if (toolCalls.length > 0) {
+                    const resolvedModelToolCalls = yamlOutput?.parallel === true ? "parallel" : (modelToolCalls ?? "serial");
+                    const failureMode = modelToolCallFailure ?? "settle";
                     if (toolCalls.length > 1) {
-                        logger.debug(`[Agent] Model returned ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
+                        logger.debug(`[Agent] YAML intents requested ${toolCalls.length} tool calls: ${toolCalls.map(call => call.name).join(", ")}`);
                     }
 
                     currentMessages.push({
@@ -520,7 +558,23 @@ export class Agent<
                             throw new Error("Tool execution blocked");
                         }
 
-                        const toolResult = await runWithRetries(middlewares, ctx, "tool", async () => {
+                        const emitToolStart = () => emit({ type: 'tool_start', name, id });
+                        const emitToolArgs = () => emit({ type: 'tool_args', id, delta: this.formatToolArgsForStream(args) });
+                        let toolEnded = false;
+                        const emitToolEnd = () => {
+                            if (toolEnded) {
+                                return;
+                            }
+                            toolEnded = true;
+                            emit({ type: 'tool_end', id });
+                        };
+
+                        emitToolStart();
+                        emitToolArgs();
+
+                        let toolResult: ToolResult;
+                        try {
+                            toolResult = await runWithRetries(middlewares, ctx, "tool", async () => {
                             const wrappedTool = wrapToolCall(middlewares, ctx, toolUseBlock, async (toolArgs: ToolArgs) => {
                                 if (workflow) {
                                     logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
@@ -569,8 +623,18 @@ export class Agent<
                             });
                             return wrappedTool(args);
                         });
+                        } catch (error) {
+                            emitToolEnd();
+                            throw error;
+                        }
 
-                        await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
+                        try {
+                            await runOnAfterTool(middlewares, ctx, toolUseBlock, toolResult);
+                        } catch (error) {
+                            emitToolEnd();
+                            throw error;
+                        }
+                        emitToolEnd();
                         const transfer = workflow
                             ? this.getTransferSignal(toolResult)
                             : this.getHelperHandoffSignal(helper?.name, toolResult);
@@ -588,7 +652,7 @@ export class Agent<
                                 content: this.textBlocks(`[SYSTEM ERROR] You already completed "${call.name}" with these exact arguments. The result is in your conversation history. Do NOT repeat this call. Either proceed with a different task or finish by responding to the user.`)
                             });
                             results.push({ call, signature: callSignature, error: new Error("Duplicate tool call") });
-                            if (toolCallFailureMode === "fail") {
+                            if (failureMode === "fail") {
                                 throw new Error(`Duplicate tool call: ${call.name}`);
                             }
                             continue;
@@ -596,12 +660,12 @@ export class Agent<
                         pendingCalls.push({ call, signature: callSignature });
                     }
 
-                    if (toolCallMode === "parallel") {
+                    if (resolvedModelToolCalls === "parallel") {
                         const toolQueue = this.createStreamQueue<StreamChunk>();
                         const emit = (chunk: StreamChunk) => toolQueue.push(chunk);
                         const completion = (async () => {
                             try {
-                                if (toolCallFailureMode === "fail") {
+                                if (failureMode === "fail") {
                                     const outputs = await Promise.all(pendingCalls.map(async ({ call, signature }) => {
                                         try {
                                             const output = await executeToolCallStream(call, signature, emit);
@@ -662,7 +726,7 @@ export class Agent<
                                 results.push({ ...output, signature });
                             } catch (error: any) {
                                 completedCalls.add(signature);
-                                if (toolCallFailureMode === "fail") {
+                                if (failureMode === "fail") {
                                     throw error;
                                 }
                                 results.push({ call, signature, error });
@@ -686,7 +750,7 @@ export class Agent<
                                     isError: true
                                 }]
                             });
-                            if (toolCallFailureMode === "fail") {
+                            if (failureMode === "fail") {
                                 throw error;
                             }
                             continue;
@@ -733,16 +797,8 @@ export class Agent<
                     continue;
                 }
 
-                const textOutput = this.extractText(finalResult);
-                if (request.responseSchema) {
-                    try {
-                        const parsed = JSON.parse(textOutput ?? "{}") as TOutput;
-                        return await complete(parsed, finalResult);
-                    } catch (e) {
-                        throw new Error("Model failed to return valid JSON");
-                    }
-                }
-                return await complete((textOutput ?? "") as TOutput, finalResult);
+                const finalOutput = this.resolveFinalOutput<TOutput>(yamlOutput, textOutput);
+                return await complete(finalOutput, finalResult);
             }
 
             throw new Error("Agent exceeded maximum turns");
@@ -762,6 +818,33 @@ export class Agent<
         return [{ type: "text", text }];
     }
 
+    private buildAssistantContent(result: DriverResult, yaml: YamlOutput | null, rawText: string | undefined): ContentBlock[] {
+        if (result.content && result.content.length > 0) {
+            const hasNonText = result.content.some(block => block.type !== "text");
+            if (hasNonText) {
+                return result.content;
+            }
+            const combined = result.content
+                .filter(block => block.type === "text")
+                .map(block => (block.type === "text" ? block.text : ""))
+                .join("");
+            const formattedFromContent = this.formatAssistantDisplay(yaml, combined);
+            if (formattedFromContent) {
+                return this.textBlocks(formattedFromContent);
+            }
+            if (combined.trim().length > 0) {
+                return this.textBlocks(combined);
+            }
+        }
+
+        const formatted = this.formatAssistantDisplay(yaml, rawText);
+        if (formatted) {
+            return this.textBlocks(formatted);
+        }
+
+        return this.textBlocks(rawText ?? "");
+    }
+
     private extractText(result: DriverResult): string | undefined {
         if (!result.content || result.content.length === 0) {
             return undefined;
@@ -770,6 +853,91 @@ export class Agent<
             .filter(block => block.type === "text")
             .map(block => block.type === "text" ? block.text : "")
             .join("");
+    }
+
+    private resolveFinalOutput<TOutput>(yamlOutput: YamlOutput | null, textOutput: string | undefined): TOutput {
+        const hasOutput = !!this.ir?.output && Object.keys(this.ir.output).length > 0;
+        if (hasOutput) {
+            if (!yamlOutput || typeof yamlOutput !== "object") {
+                throw new Error("Model failed to return valid YAML");
+            }
+            const output = yamlOutput.output ?? yamlOutput;
+            if (!output || typeof output !== "object") {
+                throw new Error("Model returned malformed YAML output block");
+            }
+            return output as TOutput;
+        }
+        if (yamlOutput) {
+            if (yamlOutput.output && typeof yamlOutput.output === "object") {
+                return yamlOutput.output as unknown as TOutput;
+            }
+            if (yamlOutput.text !== undefined) {
+                return String(yamlOutput.text ?? "") as TOutput;
+            }
+        }
+        return (textOutput ?? "") as TOutput;
+    }
+
+    private parseYamlOutput(textOutput: string | undefined): YamlOutput | null {
+        if (!textOutput) {
+            return null;
+        }
+        const trimmed = textOutput.trim();
+        if (!trimmed) {
+            return { text: "" };
+        }
+        try {
+            const parsed = parseToJSON(trimmed) as YamlOutput;
+            if (parsed && typeof parsed === "object") {
+                return parsed;
+            }
+        } catch {
+            try {
+                const streamingParser = createStreamingParser();
+                streamingParser.write(trimmed);
+                const parsed = streamingParser.end() as YamlOutput;
+                if (parsed && typeof parsed === "object") {
+                    return parsed;
+                }
+            } catch {
+                // ignore and fall back to raw text
+            }
+        }
+        return { text: textOutput };
+    }
+
+    private buildToolCallsFromYaml(yamlOutput: YamlOutput | null, idResolver?: (intent: YamlIntent, index: number) => string): ToolCall[] {
+        if (!yamlOutput?.intents || yamlOutput.intents.length === 0) {
+            return [];
+        }
+        const calls: ToolCall[] = [];
+        yamlOutput.intents.forEach((intent, index) => {
+            if (!intent || !intent.name) {
+                return;
+            }
+            if (intent.type !== "tool_call" && intent.type !== "workflow" && intent.type !== "helper") {
+                return;
+            }
+            if (intent.type === "helper") {
+                const helperDeclared = this.ir?.helpers?.some(helper => helper.name === intent.name) ?? false;
+                if (!helperDeclared) {
+                    if (intent.name === "respond") {
+                        logger.debug(`[Agent] Ignoring implicit respond helper intent.`);
+                        return;
+                    }
+                    logger.warn(`[Agent] Model requested unknown helper "${intent.name}" - intent skipped.`);
+                    return;
+                }
+            }
+            const args = intent.args && typeof intent.args === "object" ? intent.args : {};
+            const id = idResolver ? idResolver(intent, index) : randomUUID();
+            calls.push({
+                id,
+                name: intent.name,
+                args
+            });
+        });
+        return calls;
     }
 
     private getTransferSignal(value: unknown): { __type: "TransferSignal"; value: unknown; mode: "direct" | "thenContinue"; helperName?: string } | null {
@@ -941,6 +1109,23 @@ export class Agent<
         return result;
     }
 
+    private formatToolArgsForStream(args: ToolArgs | undefined): string {
+        if (!args || Object.keys(args).length === 0) {
+            return "{}";
+        }
+        const sorted = Object.keys(args)
+            .sort()
+            .reduce<Record<string, any>>((acc, key) => {
+                acc[key] = args[key];
+                return acc;
+            }, {});
+        try {
+            return JSON.stringify(sorted, null, 2);
+        } catch (error) {
+            return String(args);
+        }
+    }
+
     private createStreamQueue<T>() {
         let closed = false;
         let error: any;
@@ -995,6 +1180,150 @@ export class Agent<
         };
 
         return { push, close, fail, next };
+    }
+
+    private formatStreamingPreview(yaml: YamlOutput | null): { display: string | null; raw?: string } {
+        const summary = this.buildAssistantSummary(yaml, undefined);
+        const hasIntents = Array.isArray(summary.intents) && summary.intents.length > 0;
+        const done = !hasIntents;
+
+        const preview: Record<string, any> = {
+            stage: done ? "final" : "plan",
+            done
+        };
+
+        if (done) {
+            if (summary.text) {
+                preview.text = summary.text;
+            }
+            if (summary.output !== undefined) {
+                preview.output = summary.output;
+            }
+            if (summary.question) {
+                preview.question = summary.question;
+            }
+        } else {
+            if (summary.intents && summary.intents.length > 0) {
+                preview.intents = summary.intents;
+            }
+            if (summary.question) {
+                preview.question = summary.question;
+            }
+        }
+
+        const meaningfulKeys = Object.keys(preview).filter(key => !["stage", "done"].includes(key));
+        if (meaningfulKeys.length === 0) {
+            return { display: null };
+        }
+
+        return {
+            display: JSON.stringify(preview, null, 2),
+            raw: done && summary.text ? summary.text : undefined
+        };
+    }
+
+    private formatAssistantDisplay(yaml: YamlOutput | null, rawText: string | undefined): string | null {
+        const summary = this.buildAssistantSummary(yaml, rawText);
+        const segments: string[] = [];
+        if (summary.text) {
+            segments.push(summary.text);
+        }
+        if (summary.output) {
+            segments.push(`Output:\n${JSON.stringify(summary.output, null, 2)}`);
+        }
+        if (summary.question) {
+            segments.push(`Question: ${summary.question}`);
+        }
+        if (summary.intents && summary.intents.length > 0) {
+            segments.push(`Intents:\n${JSON.stringify(summary.intents, null, 2)}`);
+        }
+        if (segments.length === 0) {
+            return null;
+        }
+        return segments.join("\n\n");
+    }
+
+    private extractTextFromRawYaml(raw: string | undefined): string | null {
+        if (!raw) {
+            return null;
+        }
+        const lines = raw.split(/\r?\n/);
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.toLowerCase().startsWith("text:")) {
+                continue;
+            }
+            let value = trimmed.slice(5).trim();
+            if (value.length === 0) {
+                continue;
+            }
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+            }
+            return value.length > 0 ? value : null;
+        }
+        return null;
+    }
+
+    private extractQuestionFromRawYaml(raw: string | undefined): string | null {
+        if (!raw) {
+            return null;
+        }
+        const lines = raw.split(/\r?\n/);
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.toLowerCase().startsWith("question:")) {
+                continue;
+            }
+            let value = trimmed.slice(9).trim();
+            if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+                value = value.slice(1, -1);
+            }
+            if (value.toLowerCase() === "null") {
+                return null;
+            }
+            return value.length > 0 ? value : null;
+        }
+        return null;
+    }
+
+    private buildAssistantSummary(yaml: YamlOutput | null, rawText: string | undefined): { text?: string; question?: string; output?: Record<string, any>; intents?: YamlIntent[] } {
+        const summary: { text?: string; question?: string; output?: Record<string, any>; intents?: YamlIntent[] } = {};
+
+        if (yaml && typeof yaml === "object") {
+            if (typeof yaml.text === "string" && yaml.text.trim().length > 0) {
+                summary.text = yaml.text.trim();
+            }
+            if (yaml.output !== undefined) {
+                summary.output = yaml.output;
+            }
+            if (typeof yaml.question === "string" && yaml.question.trim().length > 0 && yaml.question.trim().toLowerCase() !== "null") {
+                summary.question = yaml.question.trim();
+            }
+            const actionableIntents = yaml.intents?.filter(intent => {
+                if (!intent || typeof intent !== "object") {
+                    return false;
+                }
+                const normalizedType = typeof intent.type === "string" ? intent.type.trim().toLowerCase() : "";
+                return normalizedType.length > 0 && normalizedType !== "respond";
+            });
+            if (actionableIntents && actionableIntents.length > 0) {
+                summary.intents = actionableIntents;
+            }
+            if (summary.text || summary.question || summary.output || (summary.intents && summary.intents.length > 0)) {
+                return summary;
+            }
+        }
+
+        const textFromRaw = this.extractTextFromRawYaml(rawText);
+        if (textFromRaw) {
+            summary.text = textFromRaw;
+        }
+        const questionFromRaw = this.extractQuestionFromRawYaml(rawText);
+        if (questionFromRaw) {
+            summary.question = questionFromRaw;
+        }
+        return summary;
     }
 
     /**

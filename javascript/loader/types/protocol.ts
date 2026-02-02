@@ -47,6 +47,31 @@ export type ContentBlock =
  */
 export type ToolUseBlock = Extract<ContentBlock, { type: 'tool_use' }>;
 
+/**
+ * Intent parsed from YAML output - represents a tool call, workflow, or response.
+ */
+export interface YamlIntent {
+    type: 'tool_call' | 'workflow' | 'helper' | 'respond' | 'question';
+    name: string;
+    args?: Record<string, any>;
+}
+
+/**
+ * Parsed YAML output from model response.
+ * This is the core structured output format for the YAML-based architecture.
+ */
+export interface YamlOutput {
+    /** Text response to the user */
+    text?: string;
+    /** When true, execute intents in parallel */
+    parallel?: boolean;
+    /** List of intents (tool calls, workflows, etc.) */
+    intents?: YamlIntent[];
+    /** Structured output matching the agent's output schema */
+    output?: Record<string, any>;
+    /** Follow-up question for the user */
+    question?: string;
+}
 
 /**
  * Tool definition provided to model drivers.
@@ -161,7 +186,7 @@ export type ModelResponse = DriverResult;
  * Stream chunk types for async generator streaming
  */
 export type StreamChunk =
-    | { type: 'text'; delta: string }
+    | { type: 'text'; delta: string; format?: 'yaml' | 'json'; raw?: string }
     | { type: 'tool_start'; name: string; id: string }
     | { type: 'tool_args'; id: string; delta: string }
     | { type: 'tool_end'; id: string }

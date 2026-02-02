@@ -4,6 +4,7 @@ import { WorkflowRunner } from "../loader/WorkflowRunner";
 import type { AgentIR, AgentTest, Expression, TestExpectation, TestToolCall, TestToolStub } from "../loader/types/ir";
 import type { ContentBlock } from "../loader/types/protocol";
 import type { ToolMap } from "../loader/types/tool";
+import { parseToJSON } from "auwgent-yaml-lite";
 
 type TestResult = {
     name: string;
@@ -135,8 +136,12 @@ export class AgentTestRunner {
     }
 
     private parseFinalOutput(text: string): any {
+        const trimmed = text.trim();
+        if (!trimmed) {
+            return text;
+        }
         try {
-            return JSON.parse(text);
+            return parseToJSON(trimmed);
         } catch {
             return text;
         }

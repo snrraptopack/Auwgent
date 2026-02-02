@@ -103,7 +103,7 @@ function buildTestAgent(options?: { includeTests?: boolean }): AgentIR {
                         }
                     ],
                     model: {
-                        finalText: "{\"value\":42}"
+                        finalText: "value: 42"
                     },
                     toolStubs: [
                         {

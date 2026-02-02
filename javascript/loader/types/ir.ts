@@ -89,7 +89,9 @@ export type Expression =
     | ArrayLiteral
     | ContextReference
     | MemberAccess
-    | ConcatExpression;
+    | ConcatExpression
+    | TemplateExpression
+    | ExpressionWrapper;
 
 export interface VariableDeclaration {
     type: "variableDeclaration";
@@ -161,6 +163,18 @@ export interface ObjectLiteral {
 export interface ArrayLiteral {
     type: "array";
     value: Expression[];  // Array of expressions
+}
+
+export interface TemplateExpression {
+    type: "template";
+    value: TemplatePart[];
+}
+
+export type TemplatePart = Literal | ExpressionWrapper;
+
+export interface ExpressionWrapper {
+    type: "expression";
+    value: Expression;
 }
 
 export interface ContextReference {
