@@ -211,7 +211,7 @@ Statement:
 ;
 
 VariableDeclartion:
-    "let" name=ID "=" value=Expression
+    "let" name=ID (":" varType=Types)? "=" value=Expression
 ;
 
 TypeDeclaration:

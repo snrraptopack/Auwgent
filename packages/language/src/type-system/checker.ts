@@ -22,7 +22,9 @@ import type {
     ModelConfig, 
     PromptStatement, 
     Condition,  
-    Output 
+    Output,
+    TestConfig,
+    ToolFunction
 } from '../generated/ast.js';
 
 import { 
@@ -51,7 +53,10 @@ import {
     isInputConfig, 
     isContextConfig, 
     isCondition, 
-    isOutputConfig 
+    isOutputConfig,
+    isHelperCall,
+    isToolConfig,
+    isToolsConfig
 } from '../generated/ast.js';
 
 export type TypeIssue = {
@@ -70,14 +75,14 @@ export class TypeChecker {
         const container = workflow.$container;
         const env = this.buildEnvForContainer(isAgent(container) || isHelper(container) ? container : undefined);
         const expectedType = this.mapTypes(workflow.return);
-        if (container && (isAgent(container) || isHelper(container))) {
+        if (container && isHelper(container)) {
             const outputType = this.buildOutputType(container);
             if (outputType) {
                 try {
-                    unifyTypes(expectedType, outputType, {});
+                    unifyTypes(outputType, expectedType, {});
                 } catch (error) {
                     const message = error instanceof UnificationError ? error.message : 'Output type mismatch';
-                    issues.push({ message: `Workflow return type does not match output config: ${this.formatType(expectedType)} vs ${this.formatType(outputType)} (${message})`, node: workflow, property: 'return' });
+                    issues.push({ message: `Workflow return type does not satisfy output config: ${this.formatType(outputType)} vs ${this.formatType(expectedType)} (${message})`, node: workflow, property: 'return' });
                 }
             }
         }
@@ -85,6 +90,32 @@ export class TypeChecker {
             env.set(param.name, { vars: [], type: this.mapTypes(param.t) });
         }
         this.checkStatements(workflow.body, env, expectedType, issues);
+        return issues;
+    }
+
+    checkTestConfig(testConfig: TestConfig, container?: Agent | Helper): TypeIssue[] {
+        const issues: TypeIssue[] = [];
+        const target = container ?? testConfig.$container;
+        if (!target) return issues;
+        const env = this.buildEnvForContainer(target);
+        const tools = this.collectToolFunctions(target);
+        for (const stub of testConfig.toolStubs ?? []) {
+            const tool = tools.get(stub.name);
+            if (!tool) {
+                issues.push({ message: `Unknown tool '${stub.name}'`, node: stub, property: 'name' });
+                continue;
+            }
+            if (stub.value) {
+                const valueType = this.inferExpression(stub.value, env, issues);
+                const returnType = this.mapTypes(tool.returns);
+                try {
+                    unifyTypes(returnType, valueType, {});
+                } catch (error) {
+                    const message = error instanceof UnificationError ? error.message : 'Return type mismatch';
+                    issues.push({ message: `Tool stub return type mismatch: ${this.formatType(valueType)} vs ${this.formatType(returnType)} (${message})`, node: stub, property: 'value' });
+                }
+            }
+        }
         return issues;
     }
 
@@ -225,6 +256,32 @@ export class TypeChecker {
             const ref = node.property?.ref;
             if (ref) {
                 return this.mapTypes(ref.t);
+            }
+            return tError('unknown');
+        }
+        if (isHelperCall(node)) {
+            const helper = node.helper?.ref;
+            if (helper) {
+                const inputType = this.buildInputType(helper);
+                if (inputType) {
+                    if (node.args.length !== 1) {
+                        issues.push({ message: `Helper call expects exactly 1 argument`, node, property: 'args' });
+                    } else {
+                        const argType = this.inferExpression(node.args[0], env, issues);
+                        try {
+                            unifyTypes(argType, inputType, {});
+                        } catch (error) {
+                            const message = error instanceof UnificationError ? error.message : 'Argument type mismatch';
+                            issues.push({ message: `Helper argument type mismatch: ${this.formatType(argType)} vs ${this.formatType(inputType)} (${message})`, node, property: 'args' });
+                        }
+                    }
+                } else if (node.args.length > 0) {
+                    issues.push({ message: `Helper call expects no arguments`, node, property: 'args' });
+                }
+                const outputType = this.buildOutputType(helper);
+                if (outputType) {
+                    return outputType;
+                }
             }
             return tError('unknown');
         }
@@ -428,6 +485,17 @@ export class TypeChecker {
         return undefined;
     }
 
+    private buildInputType(container: Agent | Helper): Type | undefined {
+        for (const config of container.configs) {
+            if (isInputConfig(config)) {
+                if (config.inProperties?.length) {
+                    return this.mapInputProperties(config.inProperties);
+                }
+            }
+        }
+        return undefined;
+    }
+
     private mapOutputProperties(properties: Output[]): Type {
         const fields: Record<string, Type> = {};
         const optional: Record<string, boolean> = {};
@@ -437,6 +505,31 @@ export class TypeChecker {
             optional[decl.name] = decl.isOptional ?? false;
         }
         return tRecord(fields, optional);
+    }
+
+    private mapInputProperties(properties: TypeConfigDeclaration[]): Type {
+        const fields: Record<string, Type> = {};
+        const optional: Record<string, boolean> = {};
+        for (const prop of properties) {
+            fields[prop.name] = this.mapTypes(prop.t);
+            optional[prop.name] = prop.isOptional ?? false;
+        }
+        return tRecord(fields, optional);
+    }
+
+    private collectToolFunctions(container: Agent | Helper): Map<string, ToolFunction> {
+        const tools = new Map<string, ToolFunction>();
+        for (const config of container.configs) {
+            if (isToolConfig(config)) {
+                tools.set(config.tool.name, config.tool);
+            }
+            if (isToolsConfig(config)) {
+                for (const tool of config.tools ?? []) {
+                    tools.set(tool.name, tool);
+                }
+            }
+        }
+        return tools;
     }
 
     private addTypeConfigToEnv(properties: TypeConfigDeclaration[], env: TypeEnv): void {

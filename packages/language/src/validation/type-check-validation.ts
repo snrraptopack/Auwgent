@@ -1,5 +1,5 @@
 import type { ValidationAcceptor } from 'langium';
-import type { WorkFlowConfig, NamedPrompt, ModelConfig, Agent, Helper } from '../generated/ast.js';
+import type { WorkFlowConfig, NamedPrompt, ModelConfig, Agent, Helper, TestConfig } from '../generated/ast.js';
 import { isAgent, isHelper } from '../generated/ast.js';
 import { TypeChecker } from '../type-system/checker.js';
 
@@ -30,6 +30,17 @@ export class TypeCheckValidation {
         const container = this.getAgentContainer(modelConfig);
         const checker = new TypeChecker(model);
         const issues = checker.checkModelConfig(modelConfig, container);
+        for (const issue of issues) {
+            accept('error', issue.message, { node: issue.node as any, property: issue.property });
+        }
+    }
+
+    checkTestConfigTypes(testConfig: TestConfig, accept: ValidationAcceptor): void {
+        const model = this.getRootModel(testConfig);
+        if (!model) return;
+        const container = this.getAgentContainer(testConfig);
+        const checker = new TypeChecker(model);
+        const issues = checker.checkTestConfig(testConfig, container);
         for (const issue of issues) {
             accept('error', issue.message, { node: issue.node as any, property: issue.property });
         }

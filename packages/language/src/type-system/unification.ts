@@ -93,7 +93,12 @@ export const unifyTypes = (left: Type, right: Type, subst: Substitution = {}): S
         for (const [key, value] of Object.entries(l.fields)) {
             const other = r.fields[key];
             if (!other) {
-                throw new UnificationError(`Missing field '${key}'`, l, r);
+                // Only error if the field is required (not optional)
+                const isOptional = l.optional?.[key] ?? false;
+                if (!isOptional) {
+                    throw new UnificationError(`Missing field '${key}'`, l, r);
+                }
+                continue;
             }
             s = unifyTypes(value, other, s);
         }

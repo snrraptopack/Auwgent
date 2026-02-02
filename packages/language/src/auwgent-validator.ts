@@ -1,6 +1,6 @@
 import type { ValidationAcceptor, ValidationChecks } from 'langium';
 import { AstUtils } from 'langium';
-import type { AuwgentAstType, ReturnStatement, FileImport, Model, Exportable, MultilineStringLiteral, VariableRef, PromptCall, FunctionCall, ToolFunction, WorkFlowConfig, NamedPrompt, ModelConfig } from './generated/ast.js';
+import type { AuwgentAstType, ReturnStatement, FileImport, Model, Exportable, MultilineStringLiteral, VariableRef, PromptCall, FunctionCall, ToolFunction, WorkFlowConfig, NamedPrompt, ModelConfig, TestConfig } from './generated/ast.js';
 import { isAgent, isHelperCall, isHelpersConfig } from './generated/ast.js';
 import type { AuwgentServices } from './auwgent-module.js';
 import { AuwgentUriResolver } from './auwgent-uri-resolver.js';
@@ -32,7 +32,8 @@ export function registerValidationChecks(services: AuwgentServices) {
         FunctionCall: validator.checkFunctionCall,
         ToolFunction: validator.checkToolReturn,
         WorkFlowConfig: [validator.checkWorkflowReturn, validator.checkWorkflowTypes, validator.checkWorkflowHelperUsage],
-        ModelConfig: validator.checkModelConfigTypes
+        ModelConfig: validator.checkModelConfigTypes,
+        TestConfig: validator.checkTestConfigTypes
     };
     registry.register(checks, validator);
 }
@@ -165,6 +166,10 @@ export class AuwgentValidator {
 
     checkModelConfigTypes(node: ModelConfig, accept: ValidationAcceptor): void {
         this.typeCheckValidation.checkModelConfigTypes(node, accept);
+    }
+
+    checkTestConfigTypes(node: TestConfig, accept: ValidationAcceptor): void {
+        this.typeCheckValidation.checkTestConfigTypes(node, accept);
     }
 
     private getAgentContainer(node: any): any | undefined {

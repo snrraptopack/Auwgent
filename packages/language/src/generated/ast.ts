@@ -158,7 +158,7 @@ export function isArrayLiteral(item: unknown): item is ArrayLiteral {
 }
 
 export interface ArrayType extends langium.AstNode {
-    readonly $container: OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
+    readonly $container: OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | VariableDeclartion | WorkFlowConfig;
     readonly $type: 'ArrayType';
     elementType: BaseType;
 }
@@ -173,7 +173,7 @@ export function isArrayType(item: unknown): item is ArrayType {
 }
 
 export interface BaseType extends langium.AstNode {
-    readonly $container: ArrayType | OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | WorkFlowConfig;
+    readonly $container: ArrayType | OutputConfig | PropertyType | ToolFunction | TypeConfigDeclaration | VariableDeclartion | WorkFlowConfig;
     readonly $type: 'BaseType';
     type?: BooleanType | NumberType | ObjectType | StringType | UnionType;
     typeRef?: langium.Reference<TypeDeclaration>;
@@ -1282,12 +1282,14 @@ export interface VariableDeclartion extends langium.AstNode {
     readonly $type: 'VariableDeclartion';
     name: string;
     value: Expression;
+    varType?: Types;
 }
 
 export const VariableDeclartion = {
     $type: 'VariableDeclartion',
     name: 'name',
-    value: 'value'
+    value: 'value',
+    varType: 'varType'
 } as const;
 
 export function isVariableDeclartion(item: unknown): item is VariableDeclartion {
@@ -2323,6 +2325,9 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 },
                 value: {
                     name: VariableDeclartion.value
+                },
+                varType: {
+                    name: VariableDeclartion.varType
                 }
             },
             superTypes: [Referenceable.$type, Statement.$type]

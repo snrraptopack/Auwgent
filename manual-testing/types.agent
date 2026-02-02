@@ -1,0 +1,61 @@
+export type IncidentReport{
+    id:string
+    severity:string
+    category:string
+    descriptions:string
+    affected_assets:string[]
+    owner_team:string
+    primary_asset:string
+    sla_minutes?:number
+}
+
+export type Brief{
+    summary:string
+    highlights:string[]
+}
+
+export type RoutingDecision{
+    channel:string
+    reasons:string[]
+}
+
+export type ActionPlan{
+    steps:string[]
+    owner:string
+    notes?:string
+}
+
+export type CoordinatorOutput{
+    summary:string @desc "High level summary for downstream stakeholders"
+    action_plan:ActionPlan
+    follow_up:boolean
+    escalations?:string[]
+    audit_log?:string
+}
+
+export type SecurityScanResult{
+    status:string
+    findings:string[]
+    risk_score:number
+}
+
+export type SecurityHandoffPayload{
+    ticket:string
+    summary:string
+    assets:string[]
+    primary_asset:string
+    priority:string
+}
+
+export output type ArchitectureRecommendation{
+    proposal:string
+    impact_summary:string
+    effort:string
+    open_questions?:string[]
+}
+
+export type ArchitectureReviewRequest{
+    descriptions:string
+    contexts:string
+    impact_area:string
+}

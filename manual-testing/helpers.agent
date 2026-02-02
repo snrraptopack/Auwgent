@@ -1,16 +1,79 @@
 import {model GeminiModel, model KimiModel} from "./models"
 import {prompt ArchitecturePrompt, prompt SecurityPrompt} from "./prompt"
+import {type SecurityHandoffPayload, type ArchitectureRecommendation} from "./types"
 
 export helper ArchitectureHelper{
-    description: "Is responsible for handling any architecture related issues"
+    description: "Handles complex architectural analysis once routed by the coordinator"
+
+    input {
+        request:string
+        contexts?:string
+        impact_area:string
+    }
+
+    output:ArchitectureRecommendation
+
+    workflow evaluate_change(desc:string, ctxs:string, area:string):ArchitectureRecommendation{
+        description:"Assess requested architectural changes and craft a recommendation"
+        let effort = area + " review"
+        return {
+            proposal: desc + "\nOwner: " + ctxs,
+            impact_summary: ctxs,
+            effort: "effort"
+        }
+    }
+
     default config{
         model:GeminiModel
         prompt:ArchitecturePrompt
     }
+
+    config deep_dive{
+        model:GeminiModel
+        prompt{
+            """
+You are conducting a deep architectural discovery session.
+Require explicit trade-off matrices and mitigation options.
+"""
+        }
+    }
 }
 
 export helper SecurityHelper{
-    description: "Is responsible for handling any security related issues"
+    description: "Coordinates security incident audits and mitigation steps"
+
+    input {
+        ticket:string
+        summary:string
+        assets:string[]
+        primary_asset:string
+        priority:string
+    }
+
+    output:SecurityHandoffPayload
+
+    workflow respond(ticket:string, summary:string, assets:string[], primary:string, prio:string):SecurityHandoffPayload{
+        description:"Run layered security response workflows"
+        let status = "unknown"
+        let related = ""
+        if (prio == "critical"){
+            return {
+                ticket: ticket,
+                summary: summary + " | Security scan status: " + status + " (related: " + related + ")",
+                assets: assets,
+                primary_asset: primary,
+                priority: prio
+            }
+        }
+        return {
+            ticket: ticket,
+            summary: summary + " | Security scan status: " + status + " (related: " + related + ")",
+            assets: assets,
+            primary_asset: primary,
+            priority: prio
+        }
+    }
+
     default config{
         model:KimiModel
         prompt:SecurityPrompt

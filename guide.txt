@@ -1,0 +1,1144 @@
+# auwgent-yaml-lite
+
+A **streaming YAML-Lite parser** designed for AI agents, LLM applications, and generative UI.
+
+[![npm version](https://img.shields.io/npm/v/auwgent-yaml-lite.svg)](https://www.npmjs.com/package/auwgent-yaml-lite)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+---
+
+## Table of Contents
+
+- [Why YAML-Lite?](#why-yaml-lite)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [API Reference](#api-reference)
+  - [parseToJSON](#parsetojson)
+  - [createStreamingParser](#createstreamingparser)
+  - [parseWithDiagnostics](#parsewithdiagnostics)
+  - [validate](#validate)
+  - [Low-Level APIs](#low-level-apis)
+- [Types Reference](#types-reference)
+- [The Reference System (id/ref)](#the-reference-system-idref)
+- [Use Cases](#use-cases)
+- [YAML-Lite Syntax](#yaml-lite-syntax)
+- [Error Handling](#error-handling)
+- [Best Practices](#best-practices)
+
+---
+
+## Why YAML-Lite?
+
+**Problem:** LLMs generate structured output that needs to be parsed. JSON has issues:
+- Syntax errors (missing commas, quotes) are common during generation
+- No partial parsing — you wait for the entire response
+- Verbose, uses more tokens
+
+**Solution:** YAML-Lite is a restricted YAML subset designed for LLM output:
+
+| Feature | YAML-Lite | JSON | Full YAML |
+|---------|-----------|------|-----------|
+| **Streaming parsing** | ✅ Yes | ❌ No | ❌ Fragile |
+| **Partial documents** | ✅ Valid JSON anytime | ❌ No | ❌ No |
+| **Token efficiency** | ✅ ~30% fewer tokens | ❌ Verbose | ✅ Good |
+| **LLM reliability** | ✅ High | ❌ Syntax errors | ⚠️ Too complex |
+| **Generative UI refs** | ✅ Built-in | ❌ No | ❌ Complex |
+| **Zero dependencies** | ✅ Yes | — | ❌ No |
+
+---
+
+## Installation
+
+```bash
+# npm
+npm install auwgent-yaml-lite
+
+# bun
+bun add auwgent-yaml-lite
+
+# pnpm
+pnpm add auwgent-yaml-lite
+
+# yarn
+yarn add auwgent-yaml-lite
+```
+
+---
+
+## Quick Start
+
+### Basic Parsing
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+
+const yaml = `
+user:
+  name: John Doe
+  email: john@example.com
+  roles:
+    - admin
+    - editor
+`;
+
+const json = parseToJSON(yaml);
+console.log(json);
+// {
+//   user: {
+//     name: 'John Doe',
+//     email: 'john@example.com',
+//     roles: ['admin', 'editor']
+//   }
+// }
+```
+
+### Streaming from LLM
+
+```typescript
+import { createStreamingParser } from 'auwgent-yaml-lite';
+
+const parser = createStreamingParser();
+
+// Simulate LLM streaming chunks
+const chunks = [
+  'intent:\n',
+  '  type: tool_call\n',
+  '  name: search\n',
+  '  args:\n',
+  '    query: "weather"\n'
+];
+
+for (const chunk of chunks) {
+  parser.write(chunk);
+  
+  // Get valid JSON at any point!
+  const current = parser.peek();
+  console.log('Current state:', JSON.stringify(current));
+}
+
+// Output after each chunk:
+// Current state: {"intent":{}}
+// Current state: {"intent":{"type":"tool_call"}}
+// Current state: {"intent":{"type":"tool_call","name":"search"}}
+// Current state: {"intent":{"type":"tool_call","name":"search","args":{}}}
+// Current state: {"intent":{"type":"tool_call","name":"search","args":{"query":"weather"}}}
+```
+
+---
+
+## Core Concepts
+
+### 1. Streaming-First Design
+
+Unlike traditional parsers that require complete input, YAML-Lite produces valid JSON at **every moment** during parsing. This enables:
+
+- **Progressive UI rendering** — Show UI as it generates
+- **Early action execution** — Start tool calls before response completes
+- **Lower latency** — Don't wait for full LLM response
+
+### 2. Automatic Type Coercion
+
+String values are automatically converted to appropriate types:
+
+```yaml
+count: 42           # → number: 42
+price: 19.99        # → number: 19.99
+enabled: true       # → boolean: true
+disabled: false     # → boolean: false
+empty: null         # → null
+name: John          # → string: "John"
+quoted: "123"       # → string: "123" (quoted = keep as string)
+```
+
+### 3. Empty Block Initialization
+
+Empty blocks automatically become objects:
+
+```yaml
+config:
+  database:
+  cache:
+```
+
+Produces:
+```json
+{ "config": { "database": {}, "cache": {} } }
+```
+
+### 4. The Reference System
+
+Objects with `id` are registered. Objects with `ref` are replaced:
+
+```yaml
+components:
+  - id: submit_btn
+    type: Button
+    label: Submit
+
+form:
+  children:
+    - ref: submit_btn    # ← Replaced with the Button object
+```
+
+---
+
+## API Reference
+
+### `parseToJSON`
+
+Parse a complete YAML-Lite string to JSON.
+
+```typescript
+function parseToJSON(input: string, options?: ParserOptions): IRValue
+```
+
+**Parameters:**
+- `input` — The YAML-Lite string to parse
+- `options` — Optional parser configuration
+
+**Returns:** The parsed JSON value (object, array, or primitive)
+
+**Example:**
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+
+// Simple object
+const obj = parseToJSON(`
+name: Alice
+age: 30
+`);
+// { name: 'Alice', age: 30 }
+
+// Array
+const arr = parseToJSON(`
+items:
+  - apple
+  - banana
+  - cherry
+`);
+// { items: ['apple', 'banana', 'cherry'] }
+
+// Nested structure
+const nested = parseToJSON(`
+user:
+  profile:
+    name: Bob
+    settings:
+      theme: dark
+      notifications: true
+`);
+// { user: { profile: { name: 'Bob', settings: { theme: 'dark', notifications: true } } } }
+```
+
+**When to use:**
+- Parsing complete LLM responses (non-streaming)
+- Processing saved YAML files
+- Converting YAML config to JSON
+
+---
+
+### `createStreamingParser`
+
+Create a parser for incremental/streaming parsing.
+
+```typescript
+function createStreamingParser(options?: ParserOptions): {
+  write: (chunk: string) => void;
+  peek: () => IRValue;
+  end: () => IRValue;
+  onIntentReady: (handler: (intentType: string) => void) => void;
+}
+```
+
+**Returns an object with:**
+
+#### `write(chunk: string): void`
+
+Feed a chunk of input to the parser. Call this as you receive data from the LLM.
+
+```typescript
+const parser = createStreamingParser();
+parser.write('name: ');
+parser.write('Alice');
+parser.write('\nage: 30');
+```
+
+#### `peek(): IRValue`
+
+Get the current parsed state **without** finalizing. Safe to call multiple times. Returns valid JSON even if the document is incomplete.
+
+```typescript
+parser.write('name: Alice\n');
+const state1 = parser.peek(); // { name: 'Alice' }
+
+parser.write('age: 30\n');
+const state2 = parser.peek(); // { name: 'Alice', age: 30 }
+```
+
+#### `end(): IRValue`
+
+Finalize parsing and return the complete result. Call this when the LLM response is complete.
+
+```typescript
+parser.write('name: Alice\nage: 30');
+const final = parser.end();
+// { name: 'Alice', age: 30 }
+```
+
+#### `onIntentReady(handler: (intentType: string) => void): void`
+
+Register a callback that fires when an `intent` block's `type` field is parsed. Enables early action routing.
+
+```typescript
+const parser = createStreamingParser();
+
+parser.onIntentReady((type) => {
+  console.log('Intent detected:', type);
+  // "tool_call" — start preparing tool execution
+});
+
+parser.write('intent:\n');
+parser.write('  type: tool_call\n');  // ← Callback fires here!
+parser.write('  name: search\n');
+```
+
+**Full streaming example:**
+
+```typescript
+import { createStreamingParser } from 'auwgent-yaml-lite';
+
+async function processLLMStream(stream: AsyncIterable<string>) {
+  const parser = createStreamingParser();
+  
+  // React early to intent type
+  parser.onIntentReady((type) => {
+    if (type === 'tool_call') {
+      console.log('Tool call detected — preparing execution');
+    }
+  });
+  
+  // Process stream
+  for await (const chunk of stream) {
+    parser.write(chunk);
+    
+    // Progressive state
+    const current = parser.peek();
+    updateUI(current);  // Update UI progressively
+  }
+  
+  // Get final result
+  return parser.end();
+}
+```
+
+---
+
+### `parseWithDiagnostics`
+
+Parse with full diagnostics including AST, errors, and unresolved references.
+
+```typescript
+function parseWithDiagnostics(input: string, options?: ParserOptions): {
+  parse: ParseResult;
+  ir: IRResult;
+}
+```
+
+**Returns:**
+- `parse.ast` — The abstract syntax tree
+- `parse.errors` — Parse-time errors
+- `parse.complete` — Whether document was complete
+- `ir.value` — The JSON output
+- `ir.registry` — Map of all registered `id` objects
+- `ir.unresolvedRefs` — List of unresolved reference names
+- `ir.errors` — IR building errors
+
+**Example:**
+
+```typescript
+import { parseWithDiagnostics } from 'auwgent-yaml-lite';
+
+const result = parseWithDiagnostics(`
+button:
+  id: my_btn
+  label: Click me
+
+panel:
+  child:
+    ref: my_btn
+    ref: unknown_ref
+`);
+
+console.log('JSON:', result.ir.value);
+console.log('Registry:', [...result.ir.registry.keys()]); // ['my_btn']
+console.log('Unresolved:', result.ir.unresolvedRefs);     // ['unknown_ref']
+```
+
+**When to use:**
+- Debugging parse issues
+- Validating LLM output quality
+- Checking for unresolved references
+- Building development tools
+
+---
+
+### `validate`
+
+Validate YAML-Lite input without full parsing. Faster for validation-only use cases.
+
+```typescript
+function validate(input: string, options?: ParserOptions): true | ParseError[]
+```
+
+**Returns:**
+- `true` if valid
+- Array of `ParseError` objects if invalid
+
+**Example:**
+
+```typescript
+import { validate } from 'auwgent-yaml-lite';
+
+const valid = validate(`
+name: Alice
+age: 30
+`);
+console.log(valid); // true
+
+const invalid = validate(`
+  bad indentation
+    name: Alice
+`);
+console.log(invalid);
+// [{ message: 'Unexpected indent...', line: 1, column: 3, severity: 'error' }]
+```
+
+---
+
+### Low-Level APIs
+
+For advanced use cases, you can access the internal components:
+
+#### `Tokenizer` / `tokenize`
+
+Convert YAML-Lite string into tokens.
+
+```typescript
+import { tokenize } from 'auwgent-yaml-lite';
+
+const tokens = tokenize('name: Alice\nage: 30');
+// [
+//   { type: 'KEY', value: 'name', line: 1, column: 1, indent: 0 },
+//   { type: 'COLON', value: ':', line: 1, column: 5, indent: 0 },
+//   { type: 'SCALAR', value: 'Alice', line: 1, column: 7, indent: 0 },
+//   { type: 'NEWLINE', value: '\n', line: 1, column: 12, indent: 0 },
+//   ...
+// ]
+```
+
+#### `Parser` / `parse`
+
+Convert tokens into an AST (Abstract Syntax Tree).
+
+```typescript
+import { parse } from 'auwgent-yaml-lite';
+
+const result = parse('name: Alice');
+console.log(result.ast);
+// {
+//   kind: 'mapping',
+//   entries: [{ key: 'name', value: { kind: 'scalar', value: 'Alice', quoted: false } }]
+// }
+```
+
+#### `IRBuilder` / `buildIR`
+
+Convert AST to JSON IR (Intermediate Representation).
+
+```typescript
+import { parse, buildIR } from 'auwgent-yaml-lite';
+
+const parseResult = parse('count: 42');
+const ir = buildIR(parseResult.ast);
+console.log(ir.value);
+// { count: 42 }  ← Note: '42' string became number 42
+```
+
+---
+
+## Types Reference
+
+### Core Output Types
+
+```typescript
+// JSON-compatible value (what you get from parsing)
+type IRValue = string | number | boolean | null | IRObject | IRArray | IRRef;
+
+// Object output
+interface IRObject {
+  [key: string]: IRValue;
+}
+
+// Array output
+type IRArray = IRValue[];
+
+// Unresolved reference (kept as-is if target not found)
+interface IRRef {
+  $ref: string;
+}
+```
+
+### Parse Results
+
+```typescript
+interface ParseResult {
+  ast: ASTNode | null;      // The syntax tree
+  errors: ParseError[];     // Any parse errors
+  complete: boolean;        // Was document complete?
+}
+
+interface IRResult {
+  value: IRValue;                    // The JSON output
+  registry: Map<string, IRValue>;    // id → object mapping
+  unresolvedRefs: string[];          // Refs that couldn't resolve
+  errors: IRError[];                 // IR building errors
+}
+```
+
+### Errors
+
+```typescript
+interface ParseError {
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+  line: number;
+  column: number;
+  context?: string;  // The problematic line
+}
+
+interface IRError {
+  message: string;
+  severity: 'error' | 'warning' | 'info';
+  path: string[];    // Path to the error in the document
+}
+```
+
+### Parser Options
+
+```typescript
+interface ParserOptions {
+  indentSize?: number;         // Spaces per indent (default: 2)
+  allowTabs?: boolean;         // Allow tab characters (default: false)
+  preserveComments?: boolean;  // Keep comments in output (default: false)
+  strict?: boolean;            // Fail on any warning (default: false)
+  intentSchema?: IntentSchema; // Schema for intent validation
+  middleware?: ParserMiddleware[]; // Event hooks
+}
+
+interface IntentSchema {
+  requiredKeys: string[];      // Keys required for intent to be valid
+  knownTypes?: string[];       // List of valid intent types
+}
+```
+
+### AST Node Types
+
+```typescript
+// Scalar value (string, but may become number/boolean after coercion)
+interface ScalarNode {
+  kind: 'scalar';
+  value: string;
+  quoted: boolean;  // Was it "quoted" or 'quoted'?
+  line: number;
+  column: number;
+}
+
+// Mapping (object)
+interface MappingNode {
+  kind: 'mapping';
+  entries: MappingEntry[];
+  line: number;
+  column: number;
+}
+
+interface MappingEntry {
+  key: string;
+  value: ASTNode;
+  line: number;
+  column: number;
+}
+
+// Sequence (array)
+interface SequenceNode {
+  kind: 'sequence';
+  items: ASTNode[];
+  line: number;
+  column: number;
+}
+
+// Reference
+interface RefNode {
+  kind: 'ref';
+  target: string;  // The id being referenced
+  line: number;
+  column: number;
+}
+
+// Empty block
+interface EmptyNode {
+  kind: 'empty';
+  hint?: 'mapping' | 'sequence';
+  line: number;
+  column: number;
+}
+```
+
+### Tokens
+
+```typescript
+type TokenType =
+  | 'KEY'      // name
+  | 'COLON'    // :
+  | 'DASH'     // -
+  | 'SCALAR'   // unquoted value
+  | 'QUOTED'   // "quoted" or 'quoted'
+  | 'INDENT'   // indentation increase
+  | 'DEDENT'   // indentation decrease
+  | 'NEWLINE'  // line terminator
+  | 'COMMENT'  // # comment
+  | 'EOF';     // end of input
+
+interface Token {
+  type: TokenType;
+  value: string;
+  line: number;
+  column: number;
+  indent: number;  // Indent level (0, 1, 2, ...)
+}
+```
+
+---
+
+## The Reference System (id/ref)
+
+The reference system enables reusable, composable structures — essential for generative UI.
+
+### How It Works
+
+1. **Registration:** Any object with an `id` key is registered globally
+2. **Resolution:** Any object with only a `ref` key is replaced with the registered object
+3. **Timing:** References are resolved **after** parsing (supports forward refs)
+
+### Example: Reusable UI Components
+
+```yaml
+# Define reusable components
+components:
+  - id: primary_button
+    type: Button
+    variant: primary
+    size: large
+
+  - id: input_field
+    type: Input
+    style: outlined
+
+# Use them in a form
+login_form:
+  type: Form
+  action: /login
+  children:
+    - ref: input_field    # Email input
+    - ref: input_field    # Password input (same style!)
+    - ref: primary_button # Submit button
+```
+
+Output:
+```json
+{
+  "components": [
+    { "id": "primary_button", "type": "Button", "variant": "primary", "size": "large" },
+    { "id": "input_field", "type": "Input", "style": "outlined" }
+  ],
+  "login_form": {
+    "type": "Form",
+    "action": "/login",
+    "children": [
+      { "id": "input_field", "type": "Input", "style": "outlined" },
+      { "id": "input_field", "type": "Input", "style": "outlined" },
+      { "id": "primary_button", "type": "Button", "variant": "primary", "size": "large" }
+    ]
+  }
+}
+```
+
+### Forward References
+
+References can point to objects defined later:
+
+```yaml
+page:
+  header:
+    ref: navbar    # ← Forward reference (navbar defined below)
+  
+navbar:
+  id: navbar
+  type: Navigation
+  items:
+    - Home
+    - About
+```
+
+### Checking Unresolved References
+
+```typescript
+const { ir } = parseWithDiagnostics(yaml);
+
+if (ir.unresolvedRefs.length > 0) {
+  console.warn('Missing components:', ir.unresolvedRefs);
+  // Handle gracefully or show error to user
+}
+```
+
+---
+
+## Use Cases
+
+### 1. AI Agent Tool Calling
+
+Execute tools as soon as the intent is clear — don't wait for full response.
+
+```typescript
+import { createStreamingParser } from 'auwgent-yaml-lite';
+
+async function handleAgentStream(llmStream: AsyncIterable<string>) {
+  const parser = createStreamingParser();
+  let toolPromise: Promise<any> | null = null;
+  
+  // Start tool execution early
+  parser.onIntentReady((type) => {
+    if (type === 'tool_call') {
+      // Peek at current state to get tool name
+      const state = parser.peek() as any;
+      if (state.intent?.name) {
+        console.log(`Starting ${state.intent.name} tool...`);
+        toolPromise = prepareTool(state.intent.name);
+      }
+    }
+  });
+  
+  for await (const chunk of llmStream) {
+    parser.write(chunk);
+  }
+  
+  const result = parser.end();
+  
+  // Execute with full arguments
+  if (result.intent?.type === 'tool_call') {
+    await toolPromise;  // Tool was already preparing!
+    return await executeTool(result.intent.name, result.intent.args);
+  }
+}
+```
+
+**Why this matters:** If the LLM takes 2 seconds to generate the full response, but the intent type appears in 200ms, you save 1.8 seconds of latency.
+
+### 2. Generative UI with Streaming Preview
+
+Show UI components as they're generated.
+
+```typescript
+import { createStreamingParser } from 'auwgent-yaml-lite';
+
+async function streamGenerativeUI(llmStream: AsyncIterable<string>) {
+  const parser = createStreamingParser();
+  
+  for await (const chunk of llmStream) {
+    parser.write(chunk);
+    
+    // Render current UI state
+    const ui = parser.peek();
+    renderToDOM(ui);  // Your renderer
+  }
+  
+  // Final render
+  const finalUI = parser.end();
+  renderToDOM(finalUI);
+}
+
+function renderToDOM(ui: any) {
+  // Map YAML structure to React/Vue/Svelte components
+  if (ui.type === 'Card') {
+    return <Card title={ui.title}>{renderChildren(ui.children)}</Card>;
+  }
+  // ... etc
+}
+```
+
+### 3. Structured Data Extraction
+
+Extract structured data from LLM responses reliably.
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+
+const prompt = `
+Extract the following information from this text:
+"John Smith, age 32, works as a software engineer at Google."
+
+Respond in this format:
+person:
+  name: <full name>
+  age: <number>
+  job:
+    title: <job title>
+    company: <company name>
+`;
+
+const llmResponse = `
+person:
+  name: John Smith
+  age: 32
+  job:
+    title: software engineer
+    company: Google
+`;
+
+const data = parseToJSON(llmResponse);
+// { person: { name: 'John Smith', age: 32, job: { title: 'software engineer', company: 'Google' } } }
+
+// Type-safe access
+console.log(data.person.name);  // 'John Smith'
+console.log(data.person.age);   // 32 (number, not string!)
+```
+
+### 4. Multi-Step Agent Workflows
+
+Parse complex agent workflows with multiple intents.
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+
+const workflow = parseToJSON(`
+workflow:
+  name: Research Task
+  steps:
+    - intent:
+        type: tool_call
+        name: web_search
+        args:
+          query: "latest AI news"
+    - intent:
+        type: tool_call
+        name: summarize
+        args:
+          max_length: 200
+    - intent:
+        type: respond
+        message: "Here's what I found..."
+`);
+
+// Execute steps sequentially
+for (const step of workflow.steps) {
+  if (step.intent.type === 'tool_call') {
+    const result = await executeTool(step.intent.name, step.intent.args);
+    context.addResult(step.intent.name, result);
+  } else if (step.intent.type === 'respond') {
+    return step.intent.message;
+  }
+}
+```
+
+### 5. Configuration Files
+
+Use YAML-Lite for type-safe configuration.
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+import { readFileSync } from 'fs';
+
+interface AppConfig {
+  server: {
+    port: number;
+    host: string;
+  };
+  database: {
+    url: string;
+    poolSize: number;
+  };
+  features: string[];
+}
+
+const configYaml = readFileSync('config.yaml', 'utf-8');
+const config = parseToJSON(configYaml) as AppConfig;
+
+// Types are preservCastException
+console.log(config.server.port);     // number
+console.log(config.features[0]);     // string
+```
+
+---
+
+## YAML-Lite Syntax
+
+### Supported Features
+
+```yaml
+# Comments (ignored in output)
+
+# Mappings (objects)
+object:
+  key1: value1
+  key2: value2
+
+# Sequences (arrays)
+list:
+  - item1
+  - item2
+  - item3
+
+# Nested structures
+parent:
+  child:
+    grandchild: value
+
+# Scalars with type coercion
+string: hello world
+number: 42
+float: 3.14
+boolean_true: true
+boolean_false: false
+null_value: null
+quoted_string: "keeps as string"
+quoted_number: "123"
+
+# Inline JSON arrays
+tags: ["red", "green", "blue"]
+numbers: [1, 2, 3, 4, 5]
+
+# Inline flow objects (YAML-style, unquoted keys)
+args: { id: "INC-123", limit: 10 }
+nested: { user: { name: "John" }, active: true }
+
+# Empty blocks (become {})
+config:
+  section:
+
+# References
+templates:
+  - id: my_template
+    content: Hello
+
+usage:
+  item:
+    ref: my_template
+```
+
+### Not Supported (By Design)
+
+These YAML features are **intentionally not supported** to ensure reliability:
+
+```yaml
+# ❌ Anchors and aliases
+defaults: &defaults
+  timeout: 30
+production:
+  <<: *defaults
+
+# ❌ Tags
+date: !!timestamp 2024-01-01
+
+# ❌ Multiple documents
+---
+doc1: true
+---
+doc2: true
+```
+
+**Why?** LLMs produce more reliable output with simpler syntax. The unsupported features add complexity without benefit for LLM use cases.
+
+---
+
+## Error Handling
+
+### Parse Errors
+
+```typescript
+import { parseWithDiagnostics, validate } from 'auwgent-yaml-lite';
+
+const input = `
+  invalid: indentation
+name: value
+`;
+
+// Option 1: validate only
+const validation = validate(input);
+if (validation !== true) {
+  console.error('Validation failed:', validation);
+  // [{ message: 'Unexpected indent at start...', line: 2, severity: 'error' }]
+}
+
+// Option 2: parse with diagnostics
+const { parse, ir } = parseWithDiagnostics(input);
+if (parse.errors.length > 0) {
+  console.error('Parse errors:', parse.errors);
+}
+```
+
+### Handling Incomplete Documents
+
+Streaming documents may be incomplete. The parser handles this gracefully:
+
+```typescript
+const parser = createStreamingParser();
+parser.write('partial:\n  incomplete:');
+
+const state = parser.peek();
+console.log(state); // { partial: { incomplete: {} } }
+
+// Document is usable even when incomplete!
+```
+
+### Unresolved References
+
+```typescript
+const { ir } = parseWithDiagnostics(`
+panel:
+  child:
+    ref: nonexistent
+`);
+
+if (ir.unresolvedRefs.length > 0) {
+  console.warn('Unresolved:', ir.unresolvedRefs);
+  // ['nonexistent']
+}
+
+// The ref is kept as { $ref: 'nonexistent' } in output
+```
+
+### Strict Mode
+
+Enable strict mode to fail on any warning:
+
+```typescript
+import { parseToJSON } from 'auwgent-yaml-lite';
+
+try {
+  parseToJSON(input, { strict: true });
+} catch (error) {
+  console.error('Strict validation failed:', error);
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Use Streaming for LLM Output
+
+Always use `createStreamingParser()` when parsing LLM output:
+
+```typescript
+// ✅ Good
+const parser = createStreamingParser();
+for await (const chunk of llmStream) {
+  parser.write(chunk);
+  updateUI(parser.peek());
+}
+
+// ❌ Avoid
+let fullText = '';
+for await (const chunk of llmStream) {
+  fullText += chunk;
+}
+parseToJSON(fullText);  // No progressive updates!
+```
+
+### 2. Handle LLM Noise
+
+LLMs often add conversational text or code fences. Use `extractYAML` to clean it:
+
+```typescript
+import { extractYAML, parseToJSON } from 'auwgent-yaml-lite';
+
+const llmOutput = `Sure! Here's the YAML:
+\`\`\`yaml
+text: Hello
+tool_call:
+  name: search
+\`\`\`
+Let me know if you need changes!`;
+
+const cleanYaml = extractYAML(llmOutput);
+const json = parseToJSON(cleanYaml);
+```
+
+### 3. Handle Partial State
+
+During streaming, state may be incomplete:
+
+```typescript
+const state = parser.peek();
+
+// Safe access
+if (state?.intent?.name) {
+  executeTool(state.intent.name, state.intent.args || {});
+}
+```
+
+### 4. Use TypeScript
+
+Define types for your expected structures:
+
+```typescript
+interface ToolCallIntent {
+  type: 'tool_call';
+  name: string;
+  args: Record<string, unknown>;
+}
+
+interface RespondIntent {
+  type: 'respond';
+  message: string;
+}
+
+type Intent = ToolCallIntent | RespondIntent;
+
+interface AgentOutput {
+  intent: Intent;
+}
+
+const output = parser.end() as AgentOutput;
+```
+
+### 5. Quote Strings That Look Like Other Types
+
+If a string should stay a string, quote it:
+
+```yaml
+# ❌ Will become boolean
+flag: true
+
+# ✅ Stays string
+flag: "true"
+
+# ❌ Will become number
+code: 12345
+
+# ✅ Stays string
+code: "12345"
+```
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## Contributing
+
+Contributions welcome! Please read our contributing guidelines before submitting PRs.

@@ -1,9 +1,10 @@
 import {helper SecurityHelper, helper ArchitectureHelper} from "./helpers"
 import {prompt CordinatorPrompt} from "./prompt"
 import {GeminiModel} from "./models"
+import {type IncidentReport, Brief, CoordinatorOutput, type ArchitectureRecommendation, type SecurityScanResult} from "./types"
 
 agent ProjectCoordinator{
-
+    
     helpers {
         SecurityHelper handoff user then continue
         ArchitectureHelper
@@ -14,6 +15,131 @@ agent ProjectCoordinator{
         prompt:CordinatorPrompt
     }
 
-    input {text:string}
+    config expedite{
+        model:GeminiModel
+        prompt{
+            "You are operating in expedited mode. Provide terse bullet responses and escalate aggressively."
+            "Never wait for additional confirmation when severity is high or critical."
+        }
+    }
 
+    input {
+        text:string
+        priority?:string
+        incident_id?:string
+    }
+
+    context {
+        organization:string
+        active_incidents:number
+    }
+
+    output:ArchitectureRecommendation
+
+    tools {
+        fetch_incident(id:string):IncidentReport{
+            description:"Retrieve the enriched ticket metadata and owner context."
+        }
+        summarize_history(subject_id:string, limit:number):string{
+            description:"Summarise recent interactions for the subject."
+        }
+        notify_owner(owner:string, message:string):boolean{
+            description:"Send an engagement update to the owning team."
+        }
+        escalate_ticket(incident_id:string, reason:string):boolean{
+            description:"Raise the incident to the on-call rotation."
+        }
+    }
+
+    workflow gather_context(id:string):Brief{
+        description:"Fetch an incident and compose a briefing summary"
+        let ticket = fetch_incident(id)
+        let history = summarize_history(id, 3)
+        return {
+            summary: ticket.descriptions + "\nRecent activity: " + history,
+            highlights: ticket.affected_assets
+        }
+    }
+
+    workflow orchestrate_response(incident:IncidentReport):CoordinatorOutput{
+        description:"Produce a coordination plan for the supplied incident"
+        let ack = notify_owner(incident.owner_team, "Coordinator engaged for " + incident.id)
+        let history = summarize_history(incident.id, 3)
+
+        if (incident.severity == "critical"){
+            let escalation = escalate_ticket(incident.id, "Critical severity escalation")
+            transfer to hlp.SecurityHelper({ticket:incident.id, summary:incident.descriptions, assets:incident.affected_assets, primary_asset:incident.primary_asset, priority:incident.severity}) then continue
+            return {
+                summary: "Critical incident " + incident.id + " routed through SecurityHelper\nHistory: " + history,
+                action_plan: {
+                    steps: ["Coordinate with Security response", "Track escalation status"],
+                    owner: incident.owner_team,
+                    notes: "Escalation triggered: " + escalation
+                },
+                follow_up: true,
+                escalations: ["SecurityHelper"],
+                audit_log: "Notification acknowledged: " + ack
+            }
+        }
+
+        if (incident.category == "architecture"){
+            let recommendation = hlp.ArchitectureHelper({request:incident.descriptions, contexts:incident.owner_team, impact_area:incident.category})
+            return {
+                summary: "Architecture route for " + incident.id + " :: " + recommendation.proposal,
+                action_plan: {
+                    steps: ["Share proposal with " + incident.owner_team, "Document trade-offs from " + recommendation.impact_summary],
+                    owner: incident.owner_team,
+                    notes: "Effort class: " + recommendation.effort
+                },
+                follow_up: true,
+                escalations: ["ArchitectureHelper"]
+            }
+        }
+
+        return {
+            summary: "Coordinated response for " + incident.id + " :: " + incident.descriptions + "\nContext: " + history,
+            action_plan: {
+                steps: ["Confirm remediation owner", "Send progress update"],
+                owner: incident.owner_team,
+                notes: "Notification acknowledged: " + ack
+            },
+            follow_up: false,
+            audit_log: "History: " + history
+        }
+    }
+
+    test "critical incident handoff"{
+        input {text:"Critical outage in auth service", priority:"high", incident_id:"INC-204"}
+        tools {
+            fetch_incident: returns {id:"INC-204", severity:"critical", category:"security", descriptions:"Service offline", affected_assets:["auth-service"], owner_team:"SRE", primary_asset:"auth-service"}
+            summarize_history: returns "Recent incidents summary"
+            notify_owner: returns true
+            escalate_ticket: returns true
+        }
+        expect {
+            output.follow_up: true
+            output.action_plan.owner: "SRE"
+        }
+        model {
+            finalText: "{\"summary\":\"Critical incident INC-204 routed through security\",\"action_plan\":{\"steps\":[\"Coordinate with Security response\",\"Track escalation status\"],\"owner\":\"SRE\",\"notes\":\"Escalation triggered: true\"},\"follow_up\":true,\"escalations\":[\"SecurityHelper\"],\"audit_log\":\"Notification acknowledged: true\"}"
+        }
+    }
+
+    test "architecture advisory"{
+        config:expedite
+        input {text:"Need to refactor data pipeline", priority:"medium", incident_id:"ARCH-12"}
+        tools {
+            fetch_incident: returns {id:"ARCH-12", severity:"high", category:"architecture", descriptions:"Refactor pipeline for resilience", affected_assets:["data-service"], owner_team:"Platform", primary_asset:"data-service"}
+            summarize_history: returns "Prior refactor completed last quarter"
+            notify_owner: returns true
+            escalate_ticket: returns false
+        }
+        expect {
+            output.action_plan.owner: "Platform"
+            output.escalations: ["ArchitectureHelper"]
+        }
+        model {
+            finalText: "{\"summary\":\"Architecture route for ARCH-12 :: Introduce circuit breaker pattern\",\"action_plan\":{\"steps\":[\"Share proposal with Platform\",\"Document trade-offs from Impacts ingestion latency\"],\"owner\":\"Platform\",\"notes\":\"Effort class: medium\"},\"follow_up\":true,\"escalations\":[\"ArchitectureHelper\"],\"audit_log\":\"History: Prior refactor completed last quarter\"}"
+        }
+    }
 }
