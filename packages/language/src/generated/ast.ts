@@ -287,7 +287,7 @@ export function isCallable(item: unknown): item is Callable {
 }
 
 export interface Comparison extends langium.AstNode {
-    readonly $container: IfStatement | LogicalCondition;
+    readonly $container: ArrayLiteral | AssignmentStatement | BinaryExpression | BooleanCondition | Comparison | FunctionCall | HelperCall | IfStatement | IndexAccess | InlinePromptBlock | LogicalCondition | ModelConfig | NamedPrompt | PromptCall | PropertyValue | ReturnStatement | TestExpectation | ToolStub | VariableDeclartion;
     readonly $type: 'Comparison';
     left: Expression;
     op: ComparisonOperator;
@@ -432,7 +432,7 @@ export function isExportable(item: unknown): item is Exportable {
     return reflection.isInstance(item, Exportable.$type);
 }
 
-export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | ContextReference | FunctionCall | HelperCall | IndexAccess | InlinePromptBlock | MemberAccess | MultilineStringLiteral | NumberLiteral | ObjectLiteral | PromptCall | StringLiteral | VariableRef;
+export type Expression = ArrayLiteral | BinaryExpression | BooleanLiteral | Comparison | ContextReference | FunctionCall | HelperCall | IndexAccess | InlinePromptBlock | MemberAccess | MultilineStringLiteral | NumberLiteral | ObjectLiteral | PromptCall | StringLiteral | VariableRef;
 
 export const Expression = {
     $type: 'Expression'
@@ -1672,7 +1672,7 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                     name: Comparison.right
                 }
             },
-            superTypes: [Condition.$type]
+            superTypes: [Condition.$type, Expression.$type]
         },
         Condition: {
             name: Condition.$type,

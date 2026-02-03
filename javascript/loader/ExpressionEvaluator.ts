@@ -123,6 +123,12 @@ export class ExpressionEvaluator {
                 }
             }
 
+            case "comparison": {
+                const left = await this.evaluate(expr.left, scope);
+                const right = await this.evaluate(expr.right, scope);
+                return this.compare(left, expr.operator, right);
+            }
+
             case "template":
                 return this.evaluateTemplate(expr, scope);
 

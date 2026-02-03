@@ -42,11 +42,6 @@ const run = async () => {
         .onText((text)=>{
             console.log(text)
         })
-        .onToolResult((name,result)=>{
-            console.log("called ",name)
-            console.log("with result",result)
-        })
         .run()
 }
-
 run()

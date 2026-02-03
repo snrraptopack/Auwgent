@@ -12,7 +12,7 @@ import {
     isBaseType, isObjectType, isUnionType, isVariableDeclartion, isVariableRef,
     isHelperCall, isToolFunction, isTypeDeclaration, isOutputConfig, isWorkFlowConfig,
     isStringLiteral, isNumberLiteral, isBooleanLiteral, isObjectLiteral, isArrayLiteral,
-    isMemberAccess, isTypeConfigDeclaration
+    isMemberAccess, isComparison, isTypeConfigDeclaration
 } from './generated/ast.js';
 
 /**
@@ -490,6 +490,7 @@ export class AuwgentHoverProvider extends AstNodeHoverProvider {
         if (isStringLiteral(expr)) return 'string';
         if (isNumberLiteral(expr)) return 'number';
         if (isBooleanLiteral(expr)) return 'boolean';
+        if (isComparison(expr)) return 'boolean';
         if (isObjectLiteral(expr)) return this.inferObjectLiteralType(expr);
         if (isArrayLiteral(expr)) return this.inferArrayLiteralType(expr);
         if (isFunctionCall(expr)) {

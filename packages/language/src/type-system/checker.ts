@@ -219,6 +219,17 @@ export class TypeChecker {
         if (isBooleanLiteral(node)) {
             return tConst('boolean');
         }
+        if (isComparison(node)) {
+            const left = this.inferExpression(node.left, env, issues);
+            const right = this.inferExpression(node.right, env, issues);
+            try {
+                unifyTypes(left, right, {});
+            } catch (error) {
+                const message = error instanceof UnificationError ? error.message : 'Condition type mismatch';
+                issues.push({ message: `Comparison type mismatch: ${this.formatType(left)} vs ${this.formatType(right)} (${message})`, node, property: 'op' });
+            }
+            return tConst('boolean');
+        }
         if (isArrayLiteral(node)) {
             if (node.elements.length === 0) {
                 return tArray(tError('unknown'));

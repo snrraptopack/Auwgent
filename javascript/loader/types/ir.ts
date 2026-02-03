@@ -93,6 +93,7 @@ export type Expression =
     | MemberAccess
     | IndexAccess
     | ConcatExpression
+    | ComparisonExpression
     | BinaryOpExpression
     | TemplateExpression
     | ExpressionWrapper;
@@ -240,6 +241,13 @@ export interface BinaryOpExpression {
     type: "binaryOp";
     op: "+" | "-" | "*" | "/";
     left: Expression;
+    right: Expression;
+}
+
+export interface ComparisonExpression {
+    type: "comparison";
+    left: Expression;
+    operator: "==" | "!=" | ">" | "<" | ">=" | "<=";
     right: Expression;
 }
 

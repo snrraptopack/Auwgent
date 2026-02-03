@@ -193,6 +193,7 @@ agent ResearchOrchestrator {
         
         return report
     }
+}
 
     // ═══════════════════════════════════════════════════════════════════════════
     // CONFIGS

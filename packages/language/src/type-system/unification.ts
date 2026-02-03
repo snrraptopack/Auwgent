@@ -57,6 +57,11 @@ export const unifyTypes = (left: Type, right: Type, subst: Substitution = {}): S
     const l = applySubstitution(left, subst);
     const r = applySubstitution(right, subst);
 
+    // Error types are compatible with anything (like empty arrays)
+    if (l.kind === 'error' || r.kind === 'error') {
+        return subst;
+    }
+
     if (isTypeVar(l)) {
         if (r.kind === 'var' && l.id === r.id) {
             return subst;
