@@ -47,9 +47,6 @@ const run = async () => {
             console.log("with result",result)
         })
         .run()
-
-    console.log(middlewareState.events)
-    console.log("memory",middlewareState.recent)
 }
 
 run()

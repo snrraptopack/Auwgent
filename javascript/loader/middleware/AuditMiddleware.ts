@@ -47,6 +47,7 @@ export type AuditEvent =
             response: number;
             thinking?: number;
             total: number;
+            cachedInput?: number;
         };
         responsePreview?: string;
     })
@@ -65,7 +66,7 @@ export type AuditEvent =
     })
     | (AuditEventBase & {
         type: "error";
-        phase: "model" | "tool" | "thinking";
+        phase: "model" | "tool" | "thinking" | "helper" | "workflow";
         name: string;
         message: string;
     })

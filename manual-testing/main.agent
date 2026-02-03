@@ -1,7 +1,7 @@
 import {helper SecurityHelper, helper ArchitectureHelper} from "./helpers"
 import {prompt CordinatorPrompt} from "./prompt"
-import {GeminiModel} from "./models"
-import {type IncidentReport, Brief, CoordinatorOutput, type ArchitectureRecommendation, type SecurityScanResult} from "./types"
+import {model GeminiModel} from "./models"
+import {type IncidentReport, type Brief, type CoordinatorOutput, type ArchitectureRecommendation, type SecurityScanResult} from "./types"
 
 agent ProjectCoordinator{
     

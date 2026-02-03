@@ -1,8 +1,19 @@
 import { CompletionAcceptor, CompletionContext, CompletionValueItem, DefaultCompletionProvider, NextFeature, LangiumServices, AstNodeHoverProvider } from 'langium/lsp';
 import { AstNode, AstUtils } from 'langium';
 import type { Hover } from 'vscode-languageserver';
-import type { BaseType, Model, MultilineStringLiteral, NamedPrompt, TypeConfigDeclaration, TypeDeclaration, Types } from './generated/ast.js';
-import { isFileImport, isNamedImports, isAgent, isHelper, isInputConfig, isContextConfig, isNamedPrompt, isFunctionCall, isPromptCall, isMultilineStringLiteral, isArrayType, isBaseType, isObjectType, isUnionType } from './generated/ast.js';
+import type { 
+    BaseType, Model, MultilineStringLiteral, NamedPrompt, TypeConfigDeclaration, 
+    TypeDeclaration, Types, VariableDeclartion, Helper, ToolFunction, WorkFlowConfig,
+    ObjectLiteral, ArrayLiteral, MemberAccess, Expression 
+} from './generated/ast.js';
+import { 
+    isFileImport, isNamedImports, isAgent, isHelper, isInputConfig, isContextConfig, 
+    isNamedPrompt, isFunctionCall, isPromptCall, isMultilineStringLiteral, isArrayType, 
+    isBaseType, isObjectType, isUnionType, isVariableDeclartion, isVariableRef,
+    isHelperCall, isToolFunction, isTypeDeclaration, isOutputConfig, isWorkFlowConfig,
+    isStringLiteral, isNumberLiteral, isBooleanLiteral, isObjectLiteral, isArrayLiteral,
+    isMemberAccess, isTypeConfigDeclaration
+} from './generated/ast.js';
 
 /**
  * Custom completion provider for Auwgent
@@ -259,8 +270,245 @@ export class AuwgentHoverProvider extends AstNodeHoverProvider {
         return super.getHoverContent(document, params);
     }
 
-    protected getAstNodeHoverContent(): string | undefined {
+    protected override getAstNodeHoverContent(node: AstNode): string | undefined {
+        // Handle variable declarations - show inferred type
+        if (isVariableDeclartion(node)) {
+            const inferredType = this.inferVariableType(node);
+            const varType = node.varType ? formatTypes(node.varType) : inferredType;
+            return `**let** ${node.name}: ${varType}`;
+        }
+
+        // Handle variable references - show what they refer to
+        if (isVariableRef(node)) {
+            const ref = node.variable?.ref;
+            if (ref && isVariableDeclartion(ref)) {
+                const inferredType = this.inferVariableType(ref);
+                const varType = ref.varType ? formatTypes(ref.varType) : inferredType;
+                return `**${ref.name}**: ${varType}`;
+            }
+            if (ref && isTypeConfigDeclaration(ref)) {
+                return `**${ref.name}**: ${formatTypes(ref.t)}`;
+            }
+        }
+
+        // Handle helper calls - show return type
+        if (isHelperCall(node)) {
+            const helper = node.helper?.ref;
+            if (helper) {
+                const outputType = this.getHelperOutputType(helper);
+                return `**helper** ${helper.name}(...) → ${outputType}`;
+            }
+        }
+
+        // Handle function calls (tools) - show return type
+        if (isFunctionCall(node)) {
+            const func = node.func?.ref;
+            if (func && isToolFunction(func)) {
+                const returnType = formatTypes(func.returns);
+                const params = this.formatToolParams(func);
+                return `**tool** ${func.name}(${params}) → ${returnType}`;
+            }
+        }
+
+        // Handle tool function definitions
+        if (isToolFunction(node)) {
+            const returnType = formatTypes(node.returns);
+            const params = this.formatToolParams(node);
+            const desc = node.desc?.length ? `\n\n${node.desc.join(' ')}` : '';
+            return `**tool** ${node.name}(${params}): ${returnType}${desc}`;
+        }
+
+        // Handle helper definitions
+        if (isHelper(node)) {
+            const outputType = this.getHelperOutputType(node);
+            return `**helper** ${node.name}\n\n${node.desc || ''}\n\n**returns** ${outputType}`;
+        }
+
+        // Handle workflow definitions
+        if (isWorkFlowConfig(node)) {
+            const returnType = formatTypes(node.return);
+            const params = this.formatWorkflowParams(node);
+            return `**workflow** ${node.name}(${params}): ${returnType}\n\n${node.desc || ''}`;
+        }
+
+        // Handle type declarations
+        if (isTypeDeclaration(node)) {
+            const fields = node.types.map(t => 
+                `  ${t.name}${t.isOptional ? '?' : ''}: ${formatTypes(t.t)}`
+            ).join('\n');
+            return `**type** ${node.name} {\n${fields}\n}`;
+        }
+
+        // Handle named prompts
+        if (isNamedPrompt(node)) {
+            const params = node.params?.map(p => `${p.name}: ${formatTypes(p.t)}`).join(', ') || '';
+            return `**prompt** ${node.name}(${params})`;
+        }
+
         return undefined;
+    }
+
+    /**
+     * Infer the type of a variable from its assigned value
+     */
+    private inferVariableType(varDecl: VariableDeclartion): string {
+        const value = varDecl.value;
+        if (!value) return 'unknown';
+
+        // Helper call - get helper's output type
+        if (isHelperCall(value)) {
+            const helper = value.helper?.ref;
+            if (helper) {
+                return this.getHelperOutputType(helper);
+            }
+        }
+
+        // Function call (tool) - get tool's return type
+        if (isFunctionCall(value)) {
+            const func = value.func?.ref;
+            if (func && isToolFunction(func)) {
+                return formatTypes(func.returns);
+            }
+        }
+
+        // String literal
+        if (isStringLiteral(value)) {
+            return 'string';
+        }
+
+        // Number literal
+        if (isNumberLiteral(value)) {
+            return 'number';
+        }
+
+        // Boolean literal
+        if (isBooleanLiteral(value)) {
+            return 'boolean';
+        }
+
+        // Object literal
+        if (isObjectLiteral(value)) {
+            return this.inferObjectLiteralType(value);
+        }
+
+        // Array literal
+        if (isArrayLiteral(value)) {
+            return this.inferArrayLiteralType(value);
+        }
+
+        // Member access - traverse the type
+        if (isMemberAccess(value)) {
+            return this.inferMemberAccessType(value);
+        }
+
+        // Variable reference - follow the chain
+        if (isVariableRef(value)) {
+            const ref = value.variable?.ref;
+            if (ref && isVariableDeclartion(ref)) {
+                return this.inferVariableType(ref);
+            }
+            if (ref && isTypeConfigDeclaration(ref)) {
+                return formatTypes(ref.t);
+            }
+        }
+
+        return 'unknown';
+    }
+
+    private getHelperOutputType(helper: Helper): string {
+        const configs = helper.configs ?? [];
+        for (const config of configs) {
+            if (isOutputConfig(config)) {
+                if (config.directType) {
+                    return formatTypes(config.directType);
+                }
+                const props = config.outProperties ?? [];
+                if (props.length > 0) {
+                    const fields = props.map(p => 
+                        `${p.td.name}${p.td.isOptional ? '?' : ''}: ${formatTypes(p.td.t)}`
+                    );
+                    return `{ ${fields.join(', ')} }`;
+                }
+            }
+        }
+        return 'void';
+    }
+
+    private formatToolParams(tool: ToolFunction): string {
+        const params = Object.entries(tool.params ?? {});
+        if (params.length === 0) return '';
+        return tool.params.map(p => 
+            `${p.name}${p.isOptional ? '?' : ''}: ${formatTypes(p.t)}`
+        ).join(', ');
+    }
+
+    private formatWorkflowParams(workflow: WorkFlowConfig): string {
+        const params = workflow.params ?? [];
+        if (params.length === 0) return '';
+        return params.map(p => 
+            `${p.name}${p.isOptional ? '?' : ''}: ${formatTypes(p.t)}`
+        ).join(', ');
+    }
+
+    private inferObjectLiteralType(obj: ObjectLiteral): string {
+        const props = obj.properties ?? [];
+        if (props.length === 0) return '{}';
+        const fields = props.map(p => {
+            const valueType = p.value ? this.inferExpressionType(p.value) : 'unknown';
+            return `${p.name}: ${valueType}`;
+        });
+        return `{ ${fields.join(', ')} }`;
+    }
+
+    private inferArrayLiteralType(arr: ArrayLiteral): string {
+        const elements = arr.elements ?? [];
+        if (elements.length === 0) return 'unknown[]';
+        const firstType = this.inferExpressionType(elements[0]);
+        return `${firstType}[]`;
+    }
+
+    private inferMemberAccessType(access: MemberAccess): string {
+        const objectRef = access.object?.ref;
+        if (!objectRef) return 'unknown';
+
+        // Get the base type and traverse properties
+        if (isVariableDeclartion(objectRef)) {
+            const baseType = this.inferVariableType(objectRef);
+            // TODO: Parse baseType and resolve property chain access.properties
+            void baseType;
+        } else if (isTypeConfigDeclaration(objectRef)) {
+            const baseType = formatTypes(objectRef.t);
+            void baseType;
+        }
+
+        // For now, just return unknown for member access
+        // Full implementation would parse the type and resolve properties
+        return 'unknown';
+    }
+
+    private inferExpressionType(expr: Expression): string {
+        if (isStringLiteral(expr)) return 'string';
+        if (isNumberLiteral(expr)) return 'number';
+        if (isBooleanLiteral(expr)) return 'boolean';
+        if (isObjectLiteral(expr)) return this.inferObjectLiteralType(expr);
+        if (isArrayLiteral(expr)) return this.inferArrayLiteralType(expr);
+        if (isFunctionCall(expr)) {
+            const func = expr.func?.ref;
+            if (func && isToolFunction(func)) {
+                return formatTypes(func.returns);
+            }
+        }
+        if (isHelperCall(expr)) {
+            const helper = expr.helper?.ref;
+            if (helper) return this.getHelperOutputType(helper);
+        }
+        if (isVariableRef(expr)) {
+            const ref = expr.variable?.ref;
+            if (ref && isVariableDeclartion(ref)) {
+                return this.inferVariableType(ref);
+            }
+        }
+        return 'unknown';
     }
 
     private getTemplateInterpolationHover(document: any, params: any): Hover | undefined {

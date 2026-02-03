@@ -21,7 +21,7 @@ import type {
     NamedPrompt, 
     ModelConfig, 
     PromptStatement, 
-    Condition,  
+    Condition,
     Output,
     TestConfig,
     ToolFunction
@@ -48,15 +48,19 @@ import {
     isUnionType, 
     isNamedPrompt, 
     isToolFunction, 
+    isWorkFlowConfig,
     isAgent, 
     isHelper, 
     isInputConfig, 
-    isContextConfig, 
-    isCondition, 
+    isContextConfig,
+    isComparison,
+    isLogicalCondition,
+    isBooleanCondition,
     isOutputConfig,
     isHelperCall,
     isToolConfig,
-    isToolsConfig
+    isToolsConfig,
+    isIndexAccess
 } from '../generated/ast.js';
 
 export type TypeIssue = {
@@ -146,7 +150,26 @@ export class TypeChecker {
             if ((statement as VariableDeclartion).$type === 'VariableDeclartion') {
                 const decl = statement as VariableDeclartion;
                 const valueType = this.inferExpression(decl.value, env, issues);
-                env.set(decl.name, { vars: [], type: valueType });
+                
+                // Use declared type annotation if present, otherwise infer from value
+                let varType: Type;
+                if (decl.varType) {
+                    varType = this.mapTypes(decl.varType);
+                    // Check that value is compatible with declared type (unless it's an empty array)
+                    const isEmptyArray = valueType.kind === 'array' && valueType.element.kind === 'error';
+                    if (!isEmptyArray) {
+                        try {
+                            unifyTypes(varType, valueType, {});
+                        } catch (error) {
+                            const message = error instanceof UnificationError ? error.message : 'Type mismatch';
+                            issues.push({ message: `Variable type mismatch: declared ${this.formatType(varType)} but got ${this.formatType(valueType)} (${message})`, node: decl, property: 'value' });
+                        }
+                    }
+                } else {
+                    varType = valueType;
+                }
+                
+                env.set(decl.name, { vars: [], type: varType });
                 continue;
             }
             if (isReturnStatement(statement)) {
@@ -295,6 +318,11 @@ export class TypeChecker {
                 this.checkCallArgs(node.args, ref.params ?? [], node, env, issues);
                 return tConst('string');
             }
+            if (ref && isWorkFlowConfig(ref)) {
+                // Workflow call - check args match workflow params
+                this.checkCallArgs(node.args, ref.params ?? [], node, env, issues);
+                return this.mapTypes(ref.return);
+            }
             return tError('unknown');
         }
         if (isPromptCall(node)) {
@@ -307,17 +335,67 @@ export class TypeChecker {
         if (isBinaryExpression(node)) {
             const left = this.inferExpression(node.left, env, issues);
             const right = this.inferExpression(node.right, env, issues);
-            if (left.kind === 'const' && left.name === 'string') {
-                return tConst('string');
+            const op = node.op;
+            
+            // String concatenation only for +
+            if (op === '+') {
+                if (left.kind === 'const' && left.name === 'string') {
+                    return tConst('string');
+                }
+                if (right.kind === 'const' && right.name === 'string') {
+                    return tConst('string');
+                }
             }
-            if (right.kind === 'const' && right.name === 'string') {
-                return tConst('string');
-            }
+            
+            // All arithmetic ops require numbers
             if (left.kind === 'const' && left.name === 'number' && right.kind === 'const' && right.name === 'number') {
                 return tConst('number');
             }
-            issues.push({ message: 'Operator + expects number or string operands', node, property: 'op' });
+            
+            // For +, allow string or number
+            if (op === '+') {
+                issues.push({ message: 'Operator + expects number or string operands', node, property: 'op' });
+            } else {
+                issues.push({ message: `Operator ${op} expects number operands`, node, property: 'op' });
+            }
             return tError('invalid');
+        }
+        if (isIndexAccess(node)) {
+            // Get the type of the array being indexed
+            const arrayRef = node.object?.ref;
+            const arrayType = this.inferReferenceType(arrayRef, env);
+            
+            // If it's an array type, get the element type
+            if (arrayType.kind === 'array') {
+                let elementType = arrayType.element;
+                
+                // If there's a property access after the index (e.g., findings[0].claim)
+                if (node.property) {
+                    if (elementType.kind === 'record' && elementType.fields[node.property]) {
+                        elementType = elementType.fields[node.property];
+                    } else {
+                        issues.push({ message: `Unknown property '${node.property}' on array element`, node, property: 'property' });
+                        return tError('unknown');
+                    }
+                }
+                
+                // If there's a chain of properties (e.g., findings[0].nested.field)
+                if (node.chain && node.chain.length > 0) {
+                    for (const segment of node.chain) {
+                        if (elementType.kind === 'record' && elementType.fields[segment]) {
+                            elementType = elementType.fields[segment];
+                        } else {
+                            issues.push({ message: `Unknown property '${segment}' in chain`, node, property: 'chain' });
+                            return tError('unknown');
+                        }
+                    }
+                }
+                
+                return elementType;
+            }
+            
+            issues.push({ message: 'Index access requires an array type', node, property: 'object' });
+            return tError('unknown');
         }
         return tError('unknown');
     }
@@ -359,20 +437,41 @@ export class TypeChecker {
     }
 
     private checkCondition(condition: Condition, env: TypeEnv, issues: TypeIssue[]): void {
-        if (!isCondition(condition)) return;
-        const left = this.inferExpression(condition.left, env, issues);
-        const right = this.inferExpression(condition.right, env, issues);
-        try {
-            unifyTypes(left, right, {});
-        } catch (error) {
-            const message = error instanceof UnificationError ? error.message : 'Condition type mismatch';
-            issues.push({ message: `Condition type mismatch: ${this.formatType(left)} vs ${this.formatType(right)} (${message})`, node: condition, property: 'op' });
+        if (isComparison(condition)) {
+            // Simple comparison: left op right
+            const left = this.inferExpression(condition.left, env, issues);
+            const right = this.inferExpression(condition.right, env, issues);
+            try {
+                unifyTypes(left, right, {});
+            } catch (error) {
+                const message = error instanceof UnificationError ? error.message : 'Condition type mismatch';
+                issues.push({ message: `Condition type mismatch: ${this.formatType(left)} vs ${this.formatType(right)} (${message})`, node: condition, property: 'op' });
+            }
+        } else if (isLogicalCondition(condition)) {
+            // Logical condition: left && right or left || right
+            this.checkCondition(condition.left, env, issues);
+            this.checkCondition(condition.right, env, issues);
+        } else if (isBooleanCondition(condition)) {
+            // Bare boolean expression: if (hasValue) {}
+            const exprType = this.inferExpression(condition.value, env, issues);
+            if (exprType.kind !== 'const' || exprType.name !== 'boolean') {
+                issues.push({ message: `Condition expects boolean but got ${this.formatType(exprType)}`, node: condition, property: 'value' });
+            }
         }
     }
 
     private inferReferenceType(ref: any, env: TypeEnv): Type {
         if (!ref) return tError('unknown');
         if (ref.$type === 'TypeConfigDeclaration') {
+            // This handles both:
+            // 1. Direct type config references (like type aliases)
+            // 2. Workflow/helper parameters (which are TypeConfigDeclaration)
+            // First check if it's in the env (as a parameter)
+            const scheme = env.get(ref.name);
+            if (scheme) {
+                return scheme.type;
+            }
+            // Otherwise map the type directly
             return this.mapTypes(ref.t);
         }
         if (ref.$type === 'VariableDeclartion') {

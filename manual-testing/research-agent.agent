@@ -1,0 +1,199 @@
+import {model GeminiModel} from "./models"
+import {prompt ResearchOrchestratorPrompt} from "./prompt"
+import {helper SourceFinderHelper, helper FactCheckerHelper, helper ResearchSynthesizerHelper} from "./helpers"
+import {type ResearchQuery, type ResearchReport, type SourceDocument, type ResearchFinding, type SynthesizedInsight, type FactCheckResult} from "./types"
+
+/**
+ * ResearchOrchestrator - A sophisticated multi-agent research system
+ * 
+ * This agent coordinates multiple specialized helpers to conduct
+ * comprehensive research on complex topics, with configurable depth
+ * and rigorous fact-checking.
+ */
+agent ResearchOrchestrator {
+    
+    helpers {
+        SourceFinderHelper
+        FactCheckerHelper handoff user then continue
+        ResearchSynthesizerHelper
+    }
+
+    input {
+        topic: string
+        depth: string
+        focus_areas?: string[]
+        max_sources?: number
+    }
+
+    context {
+        deadline_hours?: number
+        has_time_constraint: boolean
+        required_credibility: string
+        exclude_sources?: string[]
+    }
+
+    output: ResearchReport
+
+    tools {
+        log_research_step(step: string, details: string): boolean {
+            description: "Log a research step for audit trail"
+        }
+        estimate_time_remaining(completed_steps: number, total_steps: number): number {
+            description: "Estimate remaining research time in minutes"
+        }
+        check_source_blacklist(url: string): boolean {
+            description: "Check if a source is on the blacklist"
+        }
+        cache_finding(finding: ResearchFinding): string {
+            description: "Cache an intermediate finding for synthesis"
+        }
+        get_cached_findings(): ResearchFinding[] {
+            description: "Retrieve all cached findings"
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WORKFLOWS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    workflow plan_research(topic: string, depth: string, areas: string[]): string[] {
+        description: "Decompose research topic into sub-questions based on depth"
+        
+        let questions: string[] = []
+        let logged = log_research_step("planning", "Decomposing: " + topic)
+
+        
+        // Depth determines number of sub-questions
+        if (depth == "shallow") {
+            return [topic]
+        }
+        
+        if (depth == "moderate") {
+            return [
+                topic + " - overview",
+                topic + " - key considerations",
+                topic + " - recent developments"
+            ]
+        }
+        
+        if (depth == "deep") {
+            return [
+                topic + " - historical context",
+                topic + " - current state",
+                topic + " - key players and perspectives",
+                topic + " - controversies and debates",
+                topic + " - future implications"
+            ]
+        }
+        
+        // exhaustive
+        return [
+            topic + " - origins and history",
+            topic + " - theoretical foundations",
+            topic + " - current research",
+            topic + " - practical applications",
+            topic + " - criticisms and limitations",
+            topic + " - alternative viewpoints",
+            topic + " - future directions",
+            topic + " - meta-analysis of existing research"
+        ]
+    }
+
+    workflow gather_sources(questions: string[], max_per_question: number, credibility: string): SourceDocument[] {
+        description: "Dispatch to SourceFinder for each research question"
+        
+        let all_sources: SourceDocument[] = []
+        let logged = log_research_step("gathering", "Collecting sources for " + questions[0])
+        
+        // Call helper for each question
+        let sources = hlp.SourceFinderHelper({
+            query: questions,
+            max_sources: max_per_question,
+            credibility_threshold: credibility
+        })
+        
+        return sources
+    }
+
+    workflow verify_claims(findings: ResearchFinding[]): ResearchFinding[] {
+        description: "Route controversial claims through fact-checker"
+        
+        let verified: ResearchFinding[] = []
+        
+        // Check each finding that needs verification
+        if (findings[0].requires_verification == true) {
+            let logged = log_research_step("verification", "Fact-checking: " + findings[0].claim)
+            
+            // Handoff to fact checker - user can intervene
+            transfer to hlp.FactCheckerHelper({
+                claim: findings[0].claim,
+                context: "Research context",
+                strictness: "standard"
+            }) then continue
+        }
+        
+        return verified
+    }
+
+    workflow synthesize_report(findings: ResearchFinding[], topic: string, depth: string): ResearchReport {
+        description: "Aggregate findings into final research report"
+        
+        let logged = log_research_step("synthesis", "Generating final report")
+        
+        // Get synthesis from helper
+        let insights = hlp.ResearchSynthesizerHelper({
+            findings: [findings[0].claim],
+            focus_question: topic,
+            synthesis_depth: depth
+        })
+        
+        // Build comprehensive report
+        return {
+            executive_summary: "Research completed on: " + topic,
+            methodology: "Multi-source research with " + depth + " depth analysis",
+            key_findings: findings,
+            synthesized_insights: insights,
+            knowledge_gaps: ["Areas requiring further investigation"],
+            recommendations: ["Continue monitoring developments"],
+            confidence_assessment: "Moderate confidence based on available evidence",
+            sources_consulted: 10,
+            further_research_needed: true
+        }
+    }
+
+    workflow full_research_pipeline(topic: string, depth: string, areas: string[], max: number, cred: string): ResearchReport {
+        description: "Execute complete research pipeline end-to-end"
+        
+        // Phase 1: Planning
+        let questions = plan_research(topic, depth, areas)
+        let time_est = estimate_time_remaining(0, 4)
+        
+        // Phase 2: Source gathering
+        let sources = gather_sources(questions, max, cred)
+        let time_est2 = estimate_time_remaining(1, 4)
+        
+        // Phase 3: Extract findings (simulated)
+        let findings: ResearchFinding[] = [{
+            claim: "Key finding about " + topic,
+            confidence: 0.8,
+            supporting_sources: ["source1", "source2"],
+            requires_verification: true
+        }]
+        
+        // Cache for synthesis
+        let cached = cache_finding(findings[0])
+        
+        // Phase 4: Verification
+        let verified = verify_claims(findings)
+        
+        // Phase 5: Synthesis
+        let report = synthesize_report(findings, topic, depth)
+        
+        let final_log = log_research_step("complete", "Research pipeline finished")
+        
+        return report
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CONFIGS
+    // ═══════════════════════════════════════════════════════════════════════════

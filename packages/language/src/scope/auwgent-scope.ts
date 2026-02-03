@@ -155,13 +155,13 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
     }
 
     /**
-     * Find all ToolFunction nodes by walking up to the parent Agent
+     * Find all ToolFunction nodes by walking up to the parent Agent or Helper
      * and collecting from its configs.
      */
     private getToolFunctionsInScope(node: AstNode): ToolFunction[] {
         const tools: ToolFunction[] = [];
 
-        // Walk up to find workflow then agent
+        // Walk up to find workflow then agent/helper
         let current: AstNode | undefined = node;
         while (current) {
             if (isWorkFlowConfig(current)) {
@@ -193,6 +193,20 @@ export class AuwgentScopeProvider extends DefaultScopeProvider {
                     }
                 }
                 break; // Found the agent, stop walking
+            }
+            if (isHelper(current)) {
+                // Found a helper - collect all ToolFunctions from its configs
+                for (const config of current.configs) {
+                    // Single tool: tool functionName()
+                    if (isToolConfig(config) && config.tool) {
+                        tools.push(config.tool);
+                    }
+                    // Grouped tools: tools { ... }
+                    if (isToolsConfig(config) && config.tools) {
+                        tools.push(...config.tools);
+                    }
+                }
+                break; // Found the helper, stop walking
             }
             current = current.$container;
         }

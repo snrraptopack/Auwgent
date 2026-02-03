@@ -1,0 +1,252 @@
+import {model GeminiModel} from "./models"
+import {prompt SupportOrchestratorPrompt} from "./prompt"
+import {helper SentimentAnalyzerHelper, helper ResolutionSuggesterHelper} from "./helpers"
+import {
+    SupportTicket, 
+    CustomerProfile, 
+    SupportAnalysis, 
+    SentimentAnalysis, 
+    ResolutionSuggestion, 
+    TicketMessage
+} from "./types"
+
+/**
+ * SupportOrchestrator - Intelligent customer support analysis and routing
+ * 
+ * Analyzes support tickets using sentiment analysis and context to provide
+ * optimal resolution suggestions and escalation recommendations.
+ */
+agent SupportOrchestrator {
+    
+    helpers {
+        SentimentAnalyzerHelper
+        ResolutionSuggesterHelper handoff user then continue
+    }
+
+    input {
+        ticket_id: string
+        subject: string
+        message: string
+        customer_id: string
+    }
+
+    context {
+        customer_tier: string
+        customer_lifetime_value: number
+        open_ticket_count: number
+        last_contact_days_ago: number
+        previous_escalations: number
+        high_escalation_risk: boolean
+    }
+
+    output: SupportAnalysis
+
+    tools {
+        get_customer_profile(customer_id: string): CustomerProfile {
+            description: "Fetch full customer profile and history"
+        }
+        get_ticket_history(ticket_id: string): TicketMessage[] {
+            description: "Get all messages in this ticket thread"
+        }
+        search_knowledge_base(query: string): string[] {
+            description: "Search KB for relevant articles"
+        }
+        get_similar_tickets(subject: string, limit: number): string[] {
+            description: "Find similar resolved tickets"
+        }
+        check_known_issues(category: string): string[] {
+            description: "Check for known issues in this category"
+        }
+        create_escalation(ticket_id: string, reason: string, priority: string): string {
+            description: "Create an escalation record"
+        }
+        send_auto_response(ticket_id: string, response: string): boolean {
+            description: "Send an automated response to the customer"
+        }
+        assign_to_specialist(ticket_id: string, specialist_type: string): boolean {
+            description: "Route ticket to a specialist queue"
+        }
+        log_analysis(ticket_id: string, analysis: string): boolean {
+            description: "Log the analysis for audit purposes"
+        }
+        calculate_sla_urgency(customer_tier: string, created_at: string): number {
+            description: "Calculate SLA-based urgency score"
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // WORKFLOWS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    workflow analyze_ticket_context(ticket_id: string, customer_id: string): CustomerProfile {
+        description: "Gather comprehensive context about the ticket and customer"
+        
+        let profile = get_customer_profile(customer_id)
+        let history = get_ticket_history(ticket_id)
+        
+        return profile
+    }
+
+    workflow perform_sentiment_analysis(messages: string[], history: string): SentimentAnalysis {
+        description: "Analyze customer sentiment and escalation risk"
+        
+        // Route to sentiment analyzer helper
+        let sentiment = hlp.SentimentAnalyzerHelper({
+            messages: messages,
+            customer_history: history
+        })
+        
+        return sentiment
+    }
+
+    workflow classify_and_route(subject: string, message: string, sentiment: SentimentAnalysis, tier: string): string {
+        description: "Classify ticket category and determine routing"
+        
+        // Check for known issues first
+        let known = check_known_issues("general")
+        
+        // Search KB for potential solutions
+        let kb_results = search_knowledge_base(subject + " " + message)
+        
+        // Determine routing based on sentiment and tier
+        if (sentiment.escalation_risk == 0.8) {
+            return "human_urgent"
+        }
+        
+        if (tier == "vip") {
+            return "human_vip"
+        }
+        
+        if (tier == "enterprise") {
+            return "human_enterprise"
+        }
+        
+        if (sentiment.escalation_risk > 0.5) {
+            return "human_standard"
+        }
+        
+        return "auto_response"
+    }
+
+    workflow generate_resolutions(subject: string, category: string, sentiment: SentimentAnalysis, tier: string): ResolutionSuggestion[] {
+        description: "Generate resolution suggestions using helper"
+        
+        // Get resolution suggestions - may handoff to user for complex cases
+        let suggestions = hlp.ResolutionSuggesterHelper({
+            ticket_summary: subject,
+            category: category,
+            sentiment: sentiment,
+            customer_tier: tier
+        })
+        
+        // For high-value customers, always offer human option
+        if (tier == "vip") {
+            transfer to hlp.ResolutionSuggesterHelper({
+                ticket_summary: subject,
+                category: category,
+                sentiment: sentiment,
+                customer_tier: tier
+            }) then continue
+        }
+        
+        return suggestions
+    }
+
+    workflow handle_escalation(ticket_id: string, reason: string, sentiment: SentimentAnalysis, tier: string): string {
+        description: "Process escalation if needed"
+        
+        let priority = "medium"
+        
+        if (sentiment.escalation_risk > 0.9) {
+            priority = "critical"
+        }
+        if (sentiment.escalation_risk > 0.7) {
+            priority = "high"
+        }
+        if (tier == "vip") {
+            priority = "high"
+        }
+        
+        let escalation_id = create_escalation(ticket_id, reason, priority)
+        
+        return escalation_id
+    }
+
+    workflow full_analysis_pipeline(ticket_id: string, subject: string, message: string, customer_id: string, tier: string, ltv: number, esc_risk: boolean): SupportAnalysis {
+        description: "Execute complete support analysis pipeline"
+        
+        // Step 1: Gather context
+        let profile = analyze_ticket_context(ticket_id, customer_id)
+        let logged = log_analysis(ticket_id, "Started analysis")
+        
+        // Step 2: Sentiment analysis
+        let sentiment = perform_sentiment_analysis([message], "Previous interactions")
+        
+        // Update escalation risk from context
+        if (esc_risk == true) {
+            sentiment = {
+                overall: sentiment.overall,
+                confidence: sentiment.confidence,
+                escalation_risk: 0.9,
+                key_emotions: sentiment.key_emotions,
+                trigger_phrases: sentiment.trigger_phrases
+            }
+        }
+        
+        // Step 3: Classify and route
+        let routing = classify_and_route(subject, message, sentiment, tier)
+        
+        // Step 4: Generate resolutions
+        let resolutions = generate_resolutions(subject, "general", sentiment, tier)
+        
+        // Step 5: Handle escalation if needed
+        let escalation_reason = ""
+        if (sentiment.escalation_risk > 0.7) {
+            escalation_reason = handle_escalation(ticket_id, "High escalation risk detected", sentiment, tier)
+        }
+        
+        // Step 6: Search KB
+        let kb_articles = search_knowledge_base(subject)
+        
+        // Step 7: Calculate urgency
+        let urgency = calculate_sla_urgency(tier, "2025-01-15T10:00:00Z")
+        
+        // Step 8: Determine if specialist needed
+        let needs_specialist = false
+        let specialist_type = ""
+        
+        if (routing == "human_urgent" || routing == "human_vip") {
+            needs_specialist = true
+            specialist_type = "senior_support"
+        }
+        
+        // Step 9: Generate auto-response if appropriate
+        let auto_response = ""
+        if (routing == "auto_response" && resolutions[0].confidence > 0.8) {
+            auto_response = "Thank you for contacting us. Based on your inquiry, here's what we suggest..."
+        }
+        
+        // Build final analysis
+        let final_log = log_analysis(ticket_id, "Analysis complete: " + routing)
+        
+        return {
+            ticket_summary: subject + ": " + message,
+            sentiment: sentiment,
+            category_classification: "general",
+            urgency_score: urgency,
+            suggested_resolutions: resolutions,
+            escalation_recommended: sentiment.escalation_risk > 0.7,
+            escalation_reason: escalation_reason,
+            auto_response_draft: auto_response,
+            knowledge_base_articles: kb_articles,
+            requires_specialist: needs_specialist,
+            specialist_type: specialist_type
+        }
+    }
+}
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CONFIGS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+   

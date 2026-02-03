@@ -1,8 +1,9 @@
 import { ExpressionEvaluator, type StreamingHelperExecutor } from "./ExpressionEvaluator";
 import type { AgentIR, Statement, Expression, HelperIR, Tool } from "./types/ir";
 import type { ToolMap } from "./types/tool";
-import type { StreamChunk } from "./types/protocol";
+import type { AgentMiddleware, MiddlewareContext, StreamChunk } from "./types/protocol";
 import { WorkflowError } from "./types/errors";
+import { runOnWorkflowStart, runOnBeforeStep, runOnAfterStep, runOnWorkflowEnd } from "./IrMiddleware";
 
 export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
 
@@ -11,7 +12,9 @@ export class WorkflowRunner {
         private ir: AgentIR,
         private tools: ToolMap,
         private helperExecutor?: HelperExecutor,
-        private streamingHelperExecutor?: StreamingHelperExecutor
+        private streamingHelperExecutor?: StreamingHelperExecutor,
+        private middlewares?: AgentMiddleware<any, any, any>[],
+        private middlewareCtx?: MiddlewareContext<any, any, any>
     ) { }
 
     async run(workflowName: string, args: Record<string, any>, context?: Record<string, any>): Promise<any> {
@@ -20,7 +23,22 @@ export class WorkflowRunner {
             throw new WorkflowError(workflowName, undefined, new Error('Workflow not found'));
         }
 
+        // Create workflow-specific middleware context
+        const workflowCtx = this.middlewareCtx ? {
+            ...this.middlewareCtx,
+            workflowName
+        } : undefined;
+
         try {
+            // Call onWorkflowStart hooks - may return resume point
+            let startIndex = 0;
+            if (this.middlewares && workflowCtx) {
+                const resumeResult = await runOnWorkflowStart(this.middlewares, workflowCtx, workflowName, args);
+                if (resumeResult?.resumeFromStep !== undefined) {
+                    startIndex = resumeResult.resumeFromStep;
+                }
+            }
+
             const evaluator = new ExpressionEvaluator(
                 this.ir,
                 this.tools,
@@ -35,17 +53,45 @@ export class WorkflowRunner {
             ]);
 
             // Execute Body Statements
-            for (const stmt of flow.body) {
+            for (let stepIndex = startIndex; stepIndex < flow.body.length; stepIndex++) {
+                const stmt = flow.body[stepIndex]!;
+                const stepCtx = workflowCtx ? { ...workflowCtx, stepIndex } : undefined;
+
                 try {
+                    // Call onBeforeStep hooks - may return cached result
+                    if (this.middlewares && stepCtx) {
+                        const skipResult = await runOnBeforeStep(this.middlewares, stepCtx, stepIndex, (stmt as any).type || 'expression');
+                        if (skipResult?.skip) {
+                            // Use cached result - apply to scope if needed
+                            if (skipResult.result !== undefined && (stmt as any).name) {
+                                scope.set((stmt as any).name, skipResult.result);
+                            }
+                            continue;
+                        }
+                    }
+
                     const result = await evaluator.evaluate(stmt, scope);
+
+                    // Call onAfterStep hooks
+                    if (this.middlewares && stepCtx) {
+                        await runOnAfterStep(this.middlewares, stepCtx, stepIndex, (stmt as any).type || 'expression', result);
+                    }
 
                     // Handle Return
                     if (result && typeof result === 'object' && result.__type === 'ReturnSignal') {
+                        // Call onWorkflowEnd before returning
+                        if (this.middlewares && workflowCtx) {
+                            await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, result.value);
+                        }
                         return result.value;
                     }
 
                     // Handle Transfer - propagate up to the caller (IrInterpreter)
                     if (result && typeof result === 'object' && result.__type === 'TransferSignal') {
+                        // Call onWorkflowEnd before returning
+                        if (this.middlewares && workflowCtx) {
+                            await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, result);
+                        }
                         return result; // Pass the whole signal up
                     }
                 } catch (error: any) {
@@ -53,6 +99,11 @@ export class WorkflowRunner {
                     const stepName = (stmt as any).name || undefined;
                     throw new WorkflowError(workflowName, stepName, error);
                 }
+            }
+
+            // Call onWorkflowEnd for null return
+            if (this.middlewares && workflowCtx) {
+                await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, null);
             }
 
             return null; // Void return
@@ -80,7 +131,22 @@ export class WorkflowRunner {
             throw new WorkflowError(workflowName, undefined, new Error('Workflow not found'));
         }
 
+        // Create workflow-specific middleware context
+        const workflowCtx = this.middlewareCtx ? {
+            ...this.middlewareCtx,
+            workflowName
+        } : undefined;
+
         try {
+            // Call onWorkflowStart hooks - may return resume point
+            let startIndex = 0;
+            if (this.middlewares && workflowCtx) {
+                const resumeResult = await runOnWorkflowStart(this.middlewares, workflowCtx, workflowName, args);
+                if (resumeResult?.resumeFromStep !== undefined) {
+                    startIndex = resumeResult.resumeFromStep;
+                }
+            }
+
             const evaluator = new ExpressionEvaluator(
                 this.ir,
                 this.tools,
@@ -95,8 +161,23 @@ export class WorkflowRunner {
             ]);
 
             // Execute Body Statements using streaming evaluator
-            for (const stmt of flow.body) {
+            for (let stepIndex = startIndex; stepIndex < flow.body.length; stepIndex++) {
+                const stmt = flow.body[stepIndex]!;
+                const stepCtx = workflowCtx ? { ...workflowCtx, stepIndex } : undefined;
+
                 try {
+                    // Call onBeforeStep hooks - may return cached result
+                    if (this.middlewares && stepCtx) {
+                        const skipResult = await runOnBeforeStep(this.middlewares, stepCtx, stepIndex, (stmt as any).type || 'expression');
+                        if (skipResult?.skip) {
+                            // Use cached result - apply to scope if needed
+                            if (skipResult.result !== undefined && (stmt as any).name) {
+                                scope.set((stmt as any).name, skipResult.result);
+                            }
+                            continue;
+                        }
+                    }
+
                     const stmtGen = evaluator.evaluateStream(stmt, scope);
                     let result: any;
 
@@ -110,13 +191,26 @@ export class WorkflowRunner {
                         yield chunk;  // Forward chunks immediately!
                     }
 
+                    // Call onAfterStep hooks
+                    if (this.middlewares && stepCtx) {
+                        await runOnAfterStep(this.middlewares, stepCtx, stepIndex, (stmt as any).type || 'expression', result);
+                    }
+
                     // Handle Return
                     if (result && typeof result === 'object' && result.__type === 'ReturnSignal') {
+                        // Call onWorkflowEnd before returning
+                        if (this.middlewares && workflowCtx) {
+                            await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, result.value);
+                        }
                         return result.value;
                     }
 
                     // Handle Transfer - propagate up to the caller (IrInterpreter)
                     if (result && typeof result === 'object' && result.__type === 'TransferSignal') {
+                        // Call onWorkflowEnd before returning
+                        if (this.middlewares && workflowCtx) {
+                            await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, result);
+                        }
                         return result; // Pass the whole signal up
                     }
                 } catch (error: any) {
@@ -124,6 +218,11 @@ export class WorkflowRunner {
                     const stepName = (stmt as any).name || undefined;
                     throw new WorkflowError(workflowName, stepName, error);
                 }
+            }
+
+            // Call onWorkflowEnd for null return
+            if (this.middlewares && workflowCtx) {
+                await runOnWorkflowEnd(this.middlewares, workflowCtx, workflowName, null);
             }
 
             return null; // Void return

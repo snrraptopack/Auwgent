@@ -1,13 +1,13 @@
 import { Synthesizer } from "./Synthesizer";
 import type { AgentIR, HelperIR } from "./types/ir";
-import type { AgentDriver, AgentMiddleware, DriverResult, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult, YamlOutput } from "./types/protocol";
+import type { AgentDriver, AgentMiddleware, DriverResult, MiddlewareContext, StreamChunk, SyntheticMessage, ToolArgs, ToolCall, ToolResult, YamlOutput } from "./types/protocol";
 import type { ToolMap } from "./types/tool";
 import { WorkflowRunner } from "./WorkflowRunner";
 import { StreamBuilder } from "./StreamBuilder";
 import { DriverRegistry } from "./DriverRegistry";
 import { logger } from "./Logger";
 import { ConfigurationError } from "./types/errors";
-import { createMiddlewareContext, runOnAfterModel, runOnAfterTool, runOnAgentEnd, runOnAgentStart, runOnBeforeModel, runOnBeforeTool, runOnThinking, runWithRetries, sortMiddlewares, wrapModelCall, wrapToolCall } from "./IrMiddleware";
+import { createMiddlewareContext, runOnAfterModel, runOnAfterTool, runOnAgentEnd, runOnAgentStart, runOnBeforeModel, runOnBeforeTool, runOnThinking, runWithRetries, sortMiddlewares, wrapModelCall, wrapToolCall, runOnBeforeHelper, runOnAfterHelper } from "./IrMiddleware";
 import { createStreamingParser } from "auwgent-yaml-lite";
 import { randomUUID } from "crypto";
 
@@ -202,7 +202,7 @@ export class Agent<
                                 if (helper) {
                                     logger.debug(`[Agent] >>> Delegating to Helper Agent: ${name}`);
                                     logger.trackHelperCall(name);
-                                    const result = await this.executeHelper(helper, toolArgs);
+                                    const result = await this.executeHelper(helper, toolArgs, middlewares, ctx);
                                     logger.debug(`[Agent] <<< Helper ${name} completed.`);
                                     return result;
                                 }
@@ -212,7 +212,10 @@ export class Agent<
                                     const runner = new WorkflowRunner(
                                         ir,
                                         safeTools,
-                                        (helperTool, helperArgs) => this.executeHelper(helperTool, helperArgs)
+                                        (helperTool, helperArgs) => this.executeHelper(helperTool, helperArgs, middlewares, ctx),
+                                        undefined,
+                                        middlewares,
+                                        ctx
                                     );
                                     const workflowResult = await runner.run(name, toolArgs, runContext);
                                     logger.debug(`[Agent] <<< Workflow ${name} completed.`);
@@ -594,7 +597,7 @@ export class Agent<
                                 if (workflow) {
                                     logger.debug(`[Agent] >>> Dispatching to Workflow (streaming): ${name}`);
                                     logger.trackWorkflowCall(name);
-                                    const workflowStream = this.executeWorkflowStream(name, toolArgs, safeTools, runContext);
+                                    const workflowStream = this.executeWorkflowStream(name, toolArgs, safeTools, runContext, middlewares, ctx);
                                     let workflowResult: any;
                                     while (true) {
                                         const { value, done } = await workflowStream.next();
@@ -610,7 +613,7 @@ export class Agent<
                                 if (helper) {
                                     logger.debug(`[Agent] >>> Calling Helper (streaming): ${name}`);
                                     logger.trackHelperCall(name);
-                                    const helperStream = this.executeHelperStream(helper, toolArgs);
+                                    const helperStream = this.executeHelperStream(helper, toolArgs, middlewares, ctx);
                                     let helperResult: any;
                                     while (true) {
                                         const { value, done } = await helperStream.next();
@@ -837,7 +840,14 @@ export class Agent<
     /**
      * Executes a workflow defined in the agent's IR.
      */
-    async executeWorkflow(name: string, args: Record<string, any>, tools?: ToolMap, context?: Record<string, any>): Promise<any> {
+    async executeWorkflow(
+        name: string, 
+        args: Record<string, any>, 
+        tools?: ToolMap, 
+        context?: Record<string, any>,
+        middlewares?: AgentMiddleware<any, any, any>[],
+        ctx?: MiddlewareContext<any, any, any>
+    ): Promise<any> {
         if (!this.ir) throw new Error("Agent not loaded");
 
         // Use provided tools or empty map if none
@@ -846,7 +856,10 @@ export class Agent<
         const runner = new WorkflowRunner(
             this.ir,
             safeTools,
-            (helper, args) => this.executeHelper(helper, args)
+            (helper, args) => this.executeHelper(helper, args, middlewares, ctx),
+            undefined,
+            middlewares,
+            ctx
         );
         return runner.run(name, args, context);
     }
@@ -858,7 +871,9 @@ export class Agent<
         name: string,
         args: Record<string, any>,
         tools?: ToolMap,
-        context?: Record<string, any>
+        context?: Record<string, any>,
+        middlewares?: AgentMiddleware<any, any, any>[],
+        ctx?: MiddlewareContext<any, any, any>
     ): AsyncGenerator<StreamChunk, any, unknown> {
         if (!this.ir) throw new Error("Agent not loaded");
 
@@ -867,8 +882,10 @@ export class Agent<
         const runner = new WorkflowRunner(
             this.ir,
             safeTools,
-            (helper, args) => this.executeHelper(helper, args),
-            (helper, args) => this.executeHelperStream(helper, args)
+            (helper, args) => this.executeHelper(helper, args, middlewares, ctx),
+            (helper, args) => this.executeHelperStream(helper, args, middlewares, ctx),
+            middlewares,
+            ctx
         );
 
         // Yield* forwards all chunks and return value
@@ -877,8 +894,23 @@ export class Agent<
 
     /**
      * Executes a helper as a sub-agent (with caching).
+     * Calls middleware hooks for durability support.
      */
-    private async executeHelper(helper: HelperIR, args: Record<string, any>): Promise<any> {
+    private async executeHelper(
+        helper: HelperIR, 
+        args: Record<string, any>,
+        middlewares?: AgentMiddleware<any, any, any>[],
+        ctx?: MiddlewareContext<any, any, any>
+    ): Promise<any> {
+        // Call onBeforeHelper hooks - may return cached result
+        if (middlewares && ctx) {
+            const skipResult = await runOnBeforeHelper(middlewares, ctx, helper.name, args);
+            if (skipResult?.skip) {
+                logger.debug(`[Agent] Helper ${helper.name} skipped (cached result from middleware)`);
+                return skipResult.result;
+            }
+        }
+
         // Check cache first
         let subAgent = this.helperCache.get(helper.name);
 
@@ -908,18 +940,42 @@ export class Agent<
             logger.debug(`[Agent] Using cached helper: ${helper.name}`);
         }
 
-        // Run the helper with provided args
-        return await subAgent.run(args);
+        // Run the helper with provided args (pass parent runId for correlation)
+        const result = await subAgent.run(args, {
+            runId: ctx?.runId,
+            middlewareState: ctx?.state
+        });
+
+        // Call onAfterHelper hooks
+        if (middlewares && ctx) {
+            await runOnAfterHelper(middlewares, ctx, helper.name, args, result);
+        }
+
+        return result;
     }
 
     /**
      * Executes a helper as a sub-agent with streaming (yields chunks).
      * Returns final result after streaming completes.
+     * Calls middleware hooks for durability support.
      */
     private async *executeHelperStream(
         helper: HelperIR,
-        args: Record<string, any>
+        args: Record<string, any>,
+        middlewares?: AgentMiddleware<any, any, any>[],
+        ctx?: MiddlewareContext<any, any, any>
     ): AsyncGenerator<StreamChunk, any, unknown> {
+        // Call onBeforeHelper hooks - may return cached result
+        if (middlewares && ctx) {
+            const skipResult = await runOnBeforeHelper(middlewares, ctx, helper.name, args);
+            if (skipResult?.skip) {
+                logger.debug(`[Agent] Helper ${helper.name} skipped (cached result from middleware)`);
+                yield { type: 'helper_start', name: helper.name };
+                yield { type: 'helper_end', name: helper.name, result: skipResult.result };
+                return skipResult.result;
+            }
+        }
+
         // Get or create cached helper agent
         let subAgent = this.helperCache.get(helper.name);
 
@@ -946,8 +1002,11 @@ export class Agent<
         // Emit helper start
         yield { type: 'helper_start', name: helper.name };
 
-        // Stream from helper
-        const stream = subAgent.runStream(args);
+        // Stream from helper (pass parent runId for correlation)
+        const stream = subAgent.runStream(args, {
+            runId: ctx?.runId,
+            middlewareState: ctx?.state
+        });
         let result: any;
 
         while (true) {
@@ -958,6 +1017,11 @@ export class Agent<
             }
             // Wrap each chunk with helper context
             yield { type: 'helper_chunk', name: helper.name, chunk: value };
+        }
+
+        // Call onAfterHelper hooks
+        if (middlewares && ctx) {
+            await runOnAfterHelper(middlewares, ctx, helper.name, args, result);
         }
 
         // Emit helper end with result

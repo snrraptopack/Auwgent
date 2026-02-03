@@ -221,6 +221,8 @@ export interface ModelUsage {
     response: number;
     thinking?: number;
     total: number;
+    /** Tokens served from cache (reduces cost) */
+    cachedInput?: number;
 }
 
 /**
@@ -267,6 +269,34 @@ export interface MiddlewareContext<TInput, TContext, TState> {
     request: ModelRequest;
     /** Normalized response after model execution, if available. */
     response?: ModelResponse;
+    /** Current workflow name if executing inside a workflow. */
+    workflowName?: string;
+    /** Current step index within a workflow (0-based). */
+    stepIndex?: number;
+}
+
+/**
+ * Result returned by onBeforeHelper to skip execution and return cached result.
+ */
+export interface HelperSkipResult {
+    skip: true;
+    result: any;
+}
+
+/**
+ * Result returned by onBeforeStep to skip execution and return cached result.
+ */
+export interface StepSkipResult {
+    skip: true;
+    result: any;
+}
+
+/**
+ * Result returned by onWorkflowStart to resume from a specific step.
+ */
+export interface WorkflowResumeResult {
+    resumeFromStep?: number;
+    scopeSnapshot?: Record<string, any>;
 }
 
 /**
@@ -278,6 +308,11 @@ export interface AgentMiddleware<TInput, TContext, TState> {
     name: string;
     /** Order precedence for middleware execution (lower runs first). */
     priority?: number;
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // AGENT PHASE - Core agent/model interaction hooks
+    // ═══════════════════════════════════════════════════════════════════
+    
     /** Called once when a run begins. */
     onAgentStart?: (ctx: MiddlewareContext<TInput, TContext, TState>) => void | Promise<void>;
     /** Observe or modify the request before the model call. */
@@ -308,8 +343,61 @@ export interface AgentMiddleware<TInput, TContext, TState> {
     onError?: (
         ctx: MiddlewareContext<TInput, TContext, TState>,
         error: Error,
-        phase: 'model' | 'tool' | 'thinking'
+        phase: 'model' | 'tool' | 'thinking' | 'helper' | 'workflow'
     ) => { retry: boolean; delayMs?: number } | void | Promise<{ retry: boolean; delayMs?: number } | void>;
     /** Called once when a run completes or fails. */
     onAgentEnd?: (ctx: MiddlewareContext<TInput, TContext, TState>, result?: ModelResponse, error?: Error) => void | Promise<void>;
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // HELPER PHASE - Hooks for helper (sub-agent) execution
+    // ═══════════════════════════════════════════════════════════════════
+    
+    /** Called before executing a helper. Return { skip: true, result } to use cached result. */
+    onBeforeHelper?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        helperName: string,
+        args: Record<string, any>
+    ) => void | HelperSkipResult | Promise<void | HelperSkipResult>;
+    
+    /** Called after a helper completes successfully. */
+    onAfterHelper?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        helperName: string,
+        args: Record<string, any>,
+        result: any
+    ) => void | Promise<void>;
+    
+    // ═══════════════════════════════════════════════════════════════════
+    // WORKFLOW PHASE - Hooks for workflow step execution
+    // ═══════════════════════════════════════════════════════════════════
+    
+    /** Called when a workflow begins. Return resumeFromStep to skip completed steps. */
+    onWorkflowStart?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        workflowName: string,
+        args: Record<string, any>
+    ) => void | WorkflowResumeResult | Promise<void | WorkflowResumeResult>;
+    
+    /** Called before each workflow step. Return { skip: true, result } to use cached result. */
+    onBeforeStep?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        stepIndex: number,
+        stepType: string
+    ) => void | StepSkipResult | Promise<void | StepSkipResult>;
+    
+    /** Called after each workflow step completes. */
+    onAfterStep?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        stepIndex: number,
+        stepType: string,
+        result: any
+    ) => void | Promise<void>;
+    
+    /** Called when a workflow completes or fails. */
+    onWorkflowEnd?: (
+        ctx: MiddlewareContext<TInput, TContext, TState>,
+        workflowName: string,
+        result: any,
+        error?: Error
+    ) => void | Promise<void>;
 }

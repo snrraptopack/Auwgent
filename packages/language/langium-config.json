@@ -6,10 +6,7 @@
             "grammar": "src/auwgent.langium",
             "fileExtensions": [
                 "agent"
-            ],
-            "textMate": {
-                "out": "syntaxes/auwgent.tmLanguage.json"
-            }
+            ]
         }
     ],
     "out": "src/generated"

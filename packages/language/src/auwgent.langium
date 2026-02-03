@@ -24,7 +24,7 @@ Element:
     Agent | NamedPrompt | Helper | TypeDeclaration | ModelDefinition;
 
 type Exportable = Helper | TypeDeclaration | NamedPrompt | ModelDefinition;
-type Callable = ToolFunction | NamedPrompt;
+type Callable = ToolFunction | NamedPrompt | WorkFlowConfig;
 
 Helper:
     exported?="export"? "helper" name=ID "{"
@@ -185,7 +185,7 @@ UseLifecycle:
 ;
 
 ContextReference:
-    'ctx' '.' property=[TypeConfigDeclaration:ID];
+    'ctx' '.' property=[TypeConfigDeclaration:PropertyName];
 
 Output:
     td=TypeConfigDeclaration ("@desc" description=STRING)?
@@ -207,18 +207,22 @@ ToolFunction:
 ;
 
 Statement:
-    VariableDeclartion | ReturnStatement | IfStatement | TransferStatement | ParallelStatement
+    VariableDeclartion | AssignmentStatement | ReturnStatement | IfStatement | TransferStatement | ParallelStatement
 ;
 
 VariableDeclartion:
     "let" name=ID (":" varType=Types)? "=" value=Expression
 ;
 
+AssignmentStatement:
+    variable=[VariableDeclartion:ID] "=" value=Expression
+;
+
 TypeDeclaration:
     exported?="export"? (isOutput?="output")? "type" name=ID "{" (types+=TypeConfigDeclaration (","? types+=TypeConfigDeclaration)*)? "}";
 
 TypeConfigDeclaration:
-    name=ID (isOptional?='?')? ":" t=Types ("@desc" description=STRING)?;
+    name=PropertyName (isOptional?='?')? ":" t=Types ("@desc" description=STRING)?;
 
 IfStatement:
     'if' '(' condition=Condition ')' '{' 
@@ -230,10 +234,21 @@ IfStatement:
 ;
 
 Condition:
-    left=Expression op=Operators right=Expression;
+    OrCondition;
 
-Operators returns string:
-    "=="| ">" | "<" | "!="
+OrCondition infers Condition:
+    AndCondition ({infer LogicalCondition.left=current} op='||' right=AndCondition)*;
+
+AndCondition infers Condition:
+    PrimaryCondition ({infer LogicalCondition.left=current} op='&&' right=PrimaryCondition)*;
+
+PrimaryCondition infers Condition:
+    {infer Comparison} left=Expression op=ComparisonOperator right=Expression
+    | {infer BooleanCondition} value=Expression
+    | '(' Condition ')';
+
+ComparisonOperator returns string:
+    "==" | "!=" | ">" | "<" | ">=" | "<="
 ;
 
 ReturnStatement:
@@ -249,12 +264,16 @@ ParallelStatement:
 // NamedPrompt is included so prompt names can be referenced directly (e.g., myPrompt + "text")
 type Referenceable = VariableDeclartion | TypeConfigDeclaration | NamedPrompt;
 
-// Binary expression with left recursion for + operator
+// Binary expressions with proper operator precedence
+// Precedence (lowest to highest): + - , * /
 Expression:
     AdditionExpression;
 
 AdditionExpression infers Expression:
-    PrimaryExpression ({infer BinaryExpression.left=current} op='+' right=PrimaryExpression)*;
+    MultiplicationExpression ({infer BinaryExpression.left=current} op=('+' | '-') right=MultiplicationExpression)*;
+
+MultiplicationExpression infers Expression:
+    PrimaryExpression ({infer BinaryExpression.left=current} op=('*' | '/') right=PrimaryExpression)*;
 
 PrimaryExpression infers Expression:
     {infer StringLiteral} value=STRING
@@ -263,6 +282,7 @@ PrimaryExpression infers Expression:
     | {infer BooleanLiteral} value=("true"|"false")
     | ArrayLiteral
     | ObjectLiteral
+    | IndexAccess
     | MemberAccess
     | {infer VariableRef} variable=[Referenceable]
     | PromptCall
@@ -272,6 +292,9 @@ PrimaryExpression infers Expression:
     | InlinePromptBlock
     | '(' Expression ')'
 ;
+
+IndexAccess:
+    object=[Referenceable] '[' index=Expression ']' ('.' property=ID ('.' chain+=ID)*)?;
 
 // Inline prompt parts: { "text" if(...) "more" }
 InlinePromptBlock:
@@ -304,8 +327,17 @@ ObjectLiteral:
 
 
 PropertyValue:
-    name=ID (':' value=Expression)?;
+    name=PropertyName (':' value=Expression)?;
 
+// Allow keywords to be used as property names in object literals
+PropertyName returns string:
+    ID | 'description' | 'input' | 'output' | 'context' | 'tools' | 'helpers' | 'config' 
+    | 'model' | 'prompt' | 'type' | 'agent' | 'helper' | 'workflow' | 'default' | 'export'
+    | 'import' | 'from' | 'as' | 'let' | 'return' | 'if' | 'else' | 'true' | 'false'
+    | 'string' | 'number' | 'boolean' | 'transfer' | 'to' | 'then' | 'continue'
+    | 'parallel' | 'example' | 'user' | 'assistant' | 'test' | 'expect' | 'error'
+    | 'returns' | 'with' | 'all' | 'handoff' | 'use' | 'lifecycle' | 'provider'
+    | 'gemini' | 'openai' | 'custom' | 'maxTokens' | 'maxMessages';
 
 Types:
     BaseType ('[' ']' {infer ArrayType.elementType=current})*;

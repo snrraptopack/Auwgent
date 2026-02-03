@@ -7,6 +7,7 @@ export { Agent } from './IrInterpreter';
 export { StreamBuilder } from './StreamBuilder';
 export { WorkflowRunner } from './WorkflowRunner';
 export { ExpressionEvaluator } from './ExpressionEvaluator';
+export type { SchemaContext } from './ExpressionEvaluator';
 export { Synthesizer } from './Synthesizer';
 
 // Drivers
@@ -47,6 +48,8 @@ export { createAuditMiddleware } from './middleware/AuditMiddleware';
 export type { AuditEvent, AuditEventBase, AuditMiddlewareOptions, AuditState } from './middleware/AuditMiddleware';
 export { createShortMemoryMiddleware } from './middleware/ShortMemoryMiddleware';
 export type { ShortMemoryState } from './middleware/ShortMemoryMiddleware';
+export { createDurableMiddleware, InMemoryDurableStore } from './middleware/DurableMiddleware';
+export type { DurableStore, DurableRunState, DurableMiddlewareState, DurableState, DurableMiddlewareOptions } from './middleware/DurableMiddleware';
 
 // Error types
 export {

@@ -6,7 +6,20 @@ import { logger } from "./Logger";
 export type HelperExecutor = (helper: HelperIR, args: Record<string, any>) => Promise<any>;
 export type StreamingHelperExecutor = (helper: HelperIR, args: Record<string, any>) => AsyncGenerator<StreamChunk, any, unknown>;
 
+/**
+ * Schema context for resolving {{@schema(path)}} directives.
+ * This is scoped to the current agent/helper being evaluated.
+ */
+export interface SchemaContext {
+    output?: Record<string, any>;
+    input?: Record<string, any>;
+    context?: Record<string, any>;
+    types?: Record<string, any>;
+}
+
 export class ExpressionEvaluator {
+    private schemaContext?: SchemaContext;
+
     constructor(
         private ir?: AgentIR,
         private tools?: ToolMap,
@@ -14,6 +27,14 @@ export class ExpressionEvaluator {
         private streamingHelperExecutor?: StreamingHelperExecutor,
         private toolDefinitions?: AgentIR["tools"]
     ) { }
+
+    /**
+     * Set schema context for {{@schema()}} directive resolution.
+     * Call this before evaluating prompts that may contain schema directives.
+     */
+    setSchemaContext(ctx: SchemaContext): void {
+        this.schemaContext = ctx;
+    }
 
     /**
      * Evaluate any expression/statement and return the result
@@ -43,6 +64,9 @@ export class ExpressionEvaluator {
             case "functionCall":
                 return this.evaluateFunctionCall(expr, scope);
 
+            case "workflowCall":
+                return this.evaluateWorkflowCall(expr, scope);
+
             case "helperCall":
                 return this.evaluateHelperCall(expr, scope);
 
@@ -58,6 +82,17 @@ export class ExpressionEvaluator {
                 scope.set(expr.name, value);
                 return undefined;
 
+            case "assignment":
+                const assignValue = await this.evaluate(expr.value, scope);
+                if (!scope.has(expr.name)) {
+                    throw new Error(`Cannot assign to undeclared variable: ${expr.name}`);
+                }
+                scope.set(expr.name, assignValue);
+                return undefined;
+
+            case "indexAccess":
+                return this.evaluateIndexAccess(expr, scope);
+
             case "return":
                 const returnValue = await this.evaluate(expr.value, scope);
                 return { __type: "ReturnSignal", value: returnValue };
@@ -69,11 +104,23 @@ export class ExpressionEvaluator {
                 return this.evaluateMemberAccess(expr, scope);
 
             case "concat": {
+                // Legacy concat - always addition/concatenation
                 const left = await this.evaluate(expr.left, scope);
                 const right = await this.evaluate(expr.right, scope);
-                const leftValue = left ?? "";
-                const rightValue = right ?? "";
-                return (leftValue as any) + (rightValue as any);
+                return (left ?? "") + (right ?? "");
+            }
+
+            case "binaryOp": {
+                const left = await this.evaluate(expr.left, scope);
+                const right = await this.evaluate(expr.right, scope);
+                const op = expr.op;
+                switch (op) {
+                    case '+': return (left ?? "") + (right ?? "");
+                    case '-': return (left ?? 0) - (right ?? 0);
+                    case '*': return (left ?? 0) * (right ?? 0);
+                    case '/': return right !== 0 ? (left ?? 0) / right : 0;
+                    default: return (left ?? "") + (right ?? "");
+                }
             }
 
             case "template":
@@ -125,6 +172,25 @@ export class ExpressionEvaluator {
                     yield chunk;
                 }
                 scope.set(expr.name, value);
+                return undefined;
+            }
+
+            case "assignment": {
+                // Assignment statements might contain streaming helper calls
+                const valueGen = this.evaluateStream(expr.value, scope);
+                let assignValue: any;
+                while (true) {
+                    const { value: chunk, done } = await valueGen.next();
+                    if (done) {
+                        assignValue = chunk;
+                        break;
+                    }
+                    yield chunk;
+                }
+                if (!scope.has(expr.name)) {
+                    throw new Error(`Cannot assign to undeclared variable: ${expr.name}`);
+                }
+                scope.set(expr.name, assignValue);
                 return undefined;
             }
 
@@ -257,11 +323,7 @@ export class ExpressionEvaluator {
         expr: any,
         scope: Map<string, any>
     ): AsyncGenerator<StreamChunk, any, unknown> {
-        const left = await this.evaluate(expr.condition.left, scope);
-        const right = await this.evaluate(expr.condition.right, scope);
-        const operator = expr.condition.operator;
-
-        const conditionMet = this.compare(left, operator, right);
+        const conditionMet = await this.evaluateCondition(expr.condition, scope);
 
         const block = conditionMet ? expr.then : expr.else;
         if (block && block.length > 0) {
@@ -321,6 +383,46 @@ export class ExpressionEvaluator {
                 throw new Error(`Cannot access property '${prop}' of ${current}`);
             }
             current = current[prop];
+        }
+
+        return current;
+    }
+
+    /**
+     * Evaluate index access (e.g., results[0] or results[0].field)
+     * Supports array indexing with optional property chain
+     */
+    private async evaluateIndexAccess(expr: any, scope: Map<string, any>): Promise<any> {
+        // Get the base object from the variable name
+        const objectName = expr.object;
+        if (!scope.has(objectName)) {
+            throw new Error(`Variable not found for index access: ${objectName}`);
+        }
+        const baseObject = scope.get(objectName);
+
+        if (baseObject === null || baseObject === undefined) {
+            throw new Error(`Cannot index into ${baseObject}`);
+        }
+
+        // Evaluate the index expression
+        const index = await this.evaluate(expr.index, scope);
+        
+        // Access the indexed element
+        let current = baseObject[index];
+
+        // If there's a property, access it
+        if (expr.property && current !== null && current !== undefined) {
+            current = current[expr.property];
+        }
+
+        // If there's a chain of properties, traverse them
+        if (expr.chain && expr.chain.length > 0 && current !== null && current !== undefined) {
+            for (const prop of expr.chain) {
+                if (current === null || current === undefined) {
+                    throw new Error(`Cannot access property '${prop}' of ${current}`);
+                }
+                current = current[prop];
+            }
         }
 
         return current;
@@ -388,6 +490,50 @@ export class ExpressionEvaluator {
     }
 
     /**
+     * Evaluate workflow call (internal workflow-to-workflow call)
+     * This allows workflows to call other workflows within the same agent/helper.
+     */
+    private async evaluateWorkflowCall(expr: any, scope: Map<string, any>): Promise<any> {
+        const workflowName = expr.value;
+        const args = expr.args || [];
+
+        // Find workflow definition
+        const workflow = this.ir?.workflows?.find(w => w.flowName === workflowName);
+        if (!workflow) {
+            throw new Error(`Workflow not found: ${workflowName}`);
+        }
+
+        // Create a new scope for the workflow execution
+        const workflowScope = new Map<string, any>();
+
+        // Map positional arguments to workflow parameters
+        const paramNames = Object.keys(workflow.flowParams);
+        for (let i = 0; i < args.length; i++) {
+            const argValue = await this.evaluate(args[i], scope);
+            const paramName = paramNames[i];
+            if (paramName) {
+                workflowScope.set(paramName, argValue);
+            }
+        }
+
+        // Execute workflow body statements
+        for (const stmt of workflow.body) {
+            const result = await this.evaluate(stmt, workflowScope);
+            
+            // Handle return signal
+            if (result && typeof result === "object" && result.__type === "ReturnSignal") {
+                return result.value;
+            }
+            // Handle transfer signal - propagate it up
+            if (result && typeof result === "object" && result.__type === "TransferSignal") {
+                return result;
+            }
+        }
+
+        return undefined;
+    }
+
+    /**
      * Evaluate helper call (delegate to helper agent) - NON-STREAMING
      * For streaming, use evaluateStream() instead.
      */
@@ -421,11 +567,7 @@ export class ExpressionEvaluator {
      * Evaluate if statement
      */
     private async evaluateIf(expr: any, scope: Map<string, any>): Promise<any> {
-        const left = await this.evaluate(expr.condition.left, scope);
-        const right = await this.evaluate(expr.condition.right, scope);
-        const operator = expr.condition.operator;
-
-        const conditionMet = this.compare(left, operator, right);
+        const conditionMet = await this.evaluateCondition(expr.condition, scope);
 
         const block = conditionMet ? expr.then : expr.else;
         if (block && block.length > 0) {
@@ -443,6 +585,40 @@ export class ExpressionEvaluator {
         }
 
         return undefined;
+    }
+
+    /**
+     * Evaluate a condition (supports simple comparison, logical operators, and bare booleans)
+     */
+    private async evaluateCondition(condition: any, scope: Map<string, any>): Promise<boolean> {
+        // Handle logical conditions (&&, ||)
+        if (condition.type === "logical") {
+            const left = await this.evaluateCondition(condition.left, scope);
+            if (condition.operator === "||") {
+                // Short-circuit: if left is true, return true immediately
+                if (left) return true;
+                return await this.evaluateCondition(condition.right, scope);
+            } else if (condition.operator === "&&") {
+                // Short-circuit: if left is false, return false immediately
+                if (!left) return false;
+                return await this.evaluateCondition(condition.right, scope);
+            }
+        }
+
+        // Handle bare boolean expression: if (hasValue) {}
+        if (condition.type === "boolean") {
+            const value = await this.evaluate(condition.value, scope);
+            return Boolean(value);
+        }
+
+        // Handle comparison conditions (==, !=, >, <, >=, <=)
+        if (condition.type === "comparison" || condition.left !== undefined) {
+            const left = await this.evaluate(condition.left, scope);
+            const right = await this.evaluate(condition.right, scope);
+            return this.compare(left, condition.operator, right);
+        }
+
+        throw new Error(`Unknown condition type: ${condition.type}`);
     }
 
     private async evaluateParallel(expr: any, scope: Map<string, any>): Promise<any> {
@@ -545,26 +721,181 @@ export class ExpressionEvaluator {
 
         let rendered = "";
         for (const part of expr.value) {
-            if (!part) {
-                continue;
-            }
-            if (part.type === "literal") {
-                rendered += String(part.value ?? "");
-                continue;
-            }
-            if (part.type === "expression") {
+            rendered += await this.evaluateTemplatePart(part, scope);
+        }
+        return rendered;
+    }
+
+    /**
+     * Evaluate a single template part (literal, expression, inlineIf, schemaDirective)
+     */
+    private async evaluateTemplatePart(part: any, scope: Map<string, any>): Promise<string> {
+        if (!part) return "";
+
+        switch (part.type) {
+            case "literal":
+                return String(part.value ?? "");
+
+            case "expression":
                 const evaluated = await this.evaluate(part.value, scope);
-                if (evaluated !== undefined && evaluated !== null) {
-                    rendered += String(evaluated);
+                return evaluated !== undefined && evaluated !== null ? String(evaluated) : "";
+
+            case "inlineIf":
+                return this.evaluateInlineIf(part, scope);
+
+            case "schemaDirective":
+                return this.evaluateSchemaDirective(part.path);
+
+            default:
+                // Fallback: try to evaluate as expression
+                const fallback = await this.evaluate(part, scope);
+                return fallback !== undefined && fallback !== null ? String(fallback) : "";
+        }
+    }
+
+    /**
+     * Evaluate {{#if condition}}...{{else}}...{{/if}} inline conditionals
+     */
+    private async evaluateInlineIf(expr: any, scope: Map<string, any>): Promise<string> {
+        const conditionMet = await this.evaluateCondition(expr.condition, scope);
+
+        const block = conditionMet ? expr.then : expr.else;
+        if (!block || block.length === 0) {
+            return "";
+        }
+
+        let result = "";
+        for (const part of block) {
+            result += await this.evaluateTemplatePart(part, scope);
+        }
+        return result;
+    }
+
+    /**
+     * Evaluate {{@schema(path)}} directive.
+     * Paths: output, output.property, input, context, types.TypeName
+     */
+    private evaluateSchemaDirective(path: string): string {
+        if (!this.schemaContext) {
+            return `[schema: ${path} - no context]`;
+        }
+
+        const parts = path.split('.');
+        const root = parts[0];
+
+        switch (root) {
+            case 'output':
+                return this.renderSchemaYAML(
+                    parts.length > 1 
+                        ? this.getNestedProperty(this.schemaContext.output, parts.slice(1))
+                        : this.schemaContext.output,
+                    0
+                );
+
+            case 'input':
+                return this.renderSchemaYAML(
+                    parts.length > 1
+                        ? this.getNestedProperty(this.schemaContext.input, parts.slice(1))
+                        : this.schemaContext.input,
+                    0
+                );
+
+            case 'context':
+                return this.renderSchemaYAML(
+                    parts.length > 1
+                        ? this.getNestedProperty(this.schemaContext.context, parts.slice(1))
+                        : this.schemaContext.context,
+                    0
+                );
+
+            case 'types':
+                if (parts.length < 2) {
+                    return '[schema: types requires type name]';
+                }
+                const typeName = parts[1]!;  // Safe: length check above guarantees this exists
+                const typeDef = this.schemaContext.types?.[typeName];
+                if (!typeDef) {
+                    return `[schema: type "${typeName}" not found]`;
+                }
+                return this.renderSchemaYAML(typeDef.properties ?? typeDef, 0);
+
+            default:
+                return `[schema: unknown path "${root}"]`;
+        }
+    }
+
+    /**
+     * Get nested property from object using path array
+     */
+    private getNestedProperty(obj: any, path: string[]): any {
+        if (!obj) return undefined;
+        let current = obj;
+        for (const key of path) {
+            if (current === undefined || current === null) return undefined;
+            current = current[key];
+        }
+        return current;
+    }
+
+    /**
+     * Render a schema object as YAML-like string for prompt injection
+     */
+    private renderSchemaYAML(schema: any, indent: number): string {
+        if (!schema) return "";
+
+        const lines: string[] = [];
+        const pad = " ".repeat(indent);
+
+        for (const [name, info] of Object.entries(schema)) {
+            const typeInfo = info as any;
+            const optional = typeInfo.optional ? "?" : "";
+            const desc = typeInfo.description ? ` # ${typeInfo.description}` : "";
+            const type = typeInfo.type;
+
+            // Handle arrays
+            if (typeof type === 'object' && type.type === 'array') {
+                lines.push(`${pad}${name}${optional}:${desc}`);
+                const itemType = type.items;
+                if (typeof itemType === 'object' && itemType.properties) {
+                    lines.push(`${pad}  -`);
+                    lines.push(this.renderSchemaYAML(itemType.properties, indent + 4));
+                } else {
+                    lines.push(`${pad}  - ${this.formatType(itemType)}`);
                 }
                 continue;
             }
-            const fallback = await this.evaluate(part, scope);
-            if (fallback !== undefined && fallback !== null) {
-                rendered += String(fallback);
+
+            // Handle nested objects
+            if (typeof type === 'object' && type.properties) {
+                lines.push(`${pad}${name}${optional}:${desc}`);
+                lines.push(this.renderSchemaYAML(type.properties, indent + 2));
+                continue;
             }
+
+            // Handle type references
+            if (typeof type === 'object' && type.type === 'typeRef') {
+                lines.push(`${pad}${name}${optional}: ${type.name}${desc}`);
+                continue;
+            }
+
+            // Simple types
+            lines.push(`${pad}${name}${optional}: ${this.formatType(type)}${desc}`);
         }
-        return rendered;
+
+        return lines.join('\n');
+    }
+
+    /**
+     * Format a type for YAML schema output
+     */
+    private formatType(type: any): string {
+        if (typeof type === 'string') return type;
+        if (typeof type === 'object') {
+            if (type.type === 'union') return type.options?.join(' | ') ?? 'string';
+            if (type.type === 'typeRef') return type.name;
+            if (type.type === 'array') return `${this.formatType(type.items)}[]`;
+        }
+        return 'any';
     }
 
     /**

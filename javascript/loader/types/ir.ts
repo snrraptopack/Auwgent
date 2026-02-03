@@ -72,6 +72,7 @@ export interface TestToolCall {
 
 export type Statement =
     | VariableDeclaration
+    | AssignmentStatement
     | ReturnStatement
     | IfStatement
     | TransferStatement
@@ -83,13 +84,16 @@ export type Expression =
     | UnionLiteral
     | VarRef
     | FunctionCall
+    | WorkflowCall
     | HelperCall
     | PromptRef
     | ObjectLiteral
     | ArrayLiteral
     | ContextReference
     | MemberAccess
+    | IndexAccess
     | ConcatExpression
+    | BinaryOpExpression
     | TemplateExpression
     | ExpressionWrapper;
 
@@ -99,18 +103,42 @@ export interface VariableDeclaration {
     value: Expression;
 }
 
+export interface AssignmentStatement {
+    type: "assignment";
+    name: string;
+    value: Expression;
+}
+
 export interface ReturnStatement {
     type: "return";
     value: Expression;
 }
 
+// Condition types for if statements
+export type Condition = ComparisonCondition | LogicalCondition | BooleanCondition;
+
+export interface ComparisonCondition {
+    type: "comparison";
+    left: Expression;
+    operator: "==" | "!=" | ">" | "<" | ">=" | "<=";
+    right: Expression;
+}
+
+export interface LogicalCondition {
+    type: "logical";
+    operator: "&&" | "||";
+    left: Condition;
+    right: Condition;
+}
+
+export interface BooleanCondition {
+    type: "boolean";
+    value: Expression;
+}
+
 export interface IfStatement {
     type: "if";
-    condition: {
-        left: Expression;
-        operator: string;
-        right: Expression;
-    };
+    condition: Condition;
     then: Statement[];
     else: Statement[];
 }
@@ -118,6 +146,14 @@ export interface IfStatement {
 export interface ParallelStatement {
     type: "parallel";
     body: Statement[];
+}
+
+export interface IndexAccess {
+    type: "indexAccess";
+    object: string;
+    index: Expression;
+    property?: string;
+    chain?: string[];
 }
 
 export interface Literal {
@@ -138,6 +174,12 @@ export interface VarRef {
 export interface FunctionCall {
     type: "functionCall";
     value: string; // Function name
+    args: Expression[];
+}
+
+export interface WorkflowCall {
+    type: "workflowCall";
+    value: string; // Workflow name
     args: Expression[];
 }
 
@@ -190,6 +232,13 @@ export interface MemberAccess {
 
 export interface ConcatExpression {
     type: "concat";
+    left: Expression;
+    right: Expression;
+}
+
+export interface BinaryOpExpression {
+    type: "binaryOp";
+    op: "+" | "-" | "*" | "/";
     left: Expression;
     right: Expression;
 }

@@ -141,11 +141,13 @@ export class Synthesizer {
             return prompt;
         }
 
+        // Create evaluator with schema context for {{@schema()}} directives
+        const evaluator = this.createEvaluatorWithSchemaContext();
+        const ctx = context ?? {};
+        const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
+
         // Case 2: Parts with expressions/if statements
         if (prompt.type === 'parts' && Array.isArray(prompt.value)) {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
 
@@ -168,9 +170,6 @@ export class Synthesizer {
 
         // Case 6: Prompt reference (named prompt)
         if (prompt.type === 'promptRef' && Array.isArray(prompt.value)) {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             if (Array.isArray(prompt.args) && Array.isArray(prompt.params) && prompt.params.length > 0) {
                 const argValues = [] as any;
                 for (const arg of prompt.args) {
@@ -187,28 +186,39 @@ export class Synthesizer {
 
         // Case 7: Inline prompt block { ... }
         if (prompt.type === 'inlinePrompt' && Array.isArray(prompt.parts)) {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.parts, scope, true);
+        }
+
+        // Case 8: Template with {{#if}}, {{@schema}}, etc.
+        if (prompt.type === 'template' && Array.isArray(prompt.value)) {
+            return await evaluator.evaluate(prompt, scope);
         }
 
         // Legacy case: ref type (for backwards compatibility)
         if (prompt.type === 'ref' && Array.isArray(prompt.value)) {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return await evaluator.evaluateStatements(prompt.value, scope, true);
         }
 
         if (prompt?.type) {
-            const evaluator = new ExpressionEvaluator();
-            const ctx = context ?? {};
-            const scope = new Map(Object.entries({ ...input, ...ctx, ctx, input }));
             return String(await evaluator.evaluate(prompt, scope));
         }
 
         return '';
+    }
+
+    /**
+     * Create an ExpressionEvaluator with schema context for {{@schema()}} directives.
+     * The context is scoped to the current agent's definitions.
+     */
+    private createEvaluatorWithSchemaContext(): ExpressionEvaluator {
+        const evaluator = new ExpressionEvaluator();
+        evaluator.setSchemaContext({
+            output: this.ir.output,
+            input: this.ir.input,
+            context: this.ir.context,
+            types: this.ir.types
+        });
+        return evaluator;
     }
 
     private async buildSystemPrompt(promptConfig: any, input: Record<string, any>, context?: Record<string, any>): Promise<string> {

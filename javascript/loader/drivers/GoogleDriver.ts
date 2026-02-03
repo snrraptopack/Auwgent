@@ -115,6 +115,7 @@ export class GoogleDriver implements AgentDriver {
         const response = usageMetadata.candidatesTokenCount ?? usageMetadata.candidates_token_count;
         const total = usageMetadata.totalTokenCount ?? usageMetadata.total_token_count;
         const thinking = usageMetadata.thoughtsTokenCount ?? usageMetadata.thoughts_token_count;
+        const cachedInput = usageMetadata.cachedContentTokenCount ?? usageMetadata.cached_content_token_count;
         if (typeof input !== "number" || typeof response !== "number" || typeof total !== "number") {
             return undefined;
         }
@@ -122,7 +123,8 @@ export class GoogleDriver implements AgentDriver {
             input,
             response,
             thinking: typeof thinking === "number" ? thinking : undefined,
-            total
+            total,
+            cachedInput: typeof cachedInput === "number" ? cachedInput : undefined
         };
     }
 

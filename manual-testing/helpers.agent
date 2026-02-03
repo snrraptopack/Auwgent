@@ -1,6 +1,10 @@
 import {model GeminiModel, model KimiModel} from "./models"
-import {prompt ArchitecturePrompt, prompt SecurityPrompt} from "./prompt"
-import {type SecurityHandoffPayload, type ArchitectureRecommendation} from "./types"
+import {prompt ArchitecturePrompt, prompt SecurityPrompt, prompt SourceFinderPrompt, prompt FactCheckerPrompt, prompt SynthesizerPrompt, prompt SecurityAnalyzerPrompt, prompt PerformanceAnalyzerPrompt, prompt TestCoverageAnalyzerPrompt, prompt SentimentAnalyzerPrompt, prompt ResolutionSuggesterPrompt} from "./prompt"
+import {type SecurityHandoffPayload, type ArchitectureRecommendation, type SourceDocument, type FactCheckResult, type SynthesizedInsight, type SecurityVulnerability, type PerformanceIssue, type TestCoverageGap, type SentimentAnalysis, type ResolutionSuggestion} from "./types"
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXISTING HELPERS (preserved)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export helper ArchitectureHelper{
     description: "Handles complex architectural analysis once routed by the coordinator"
@@ -77,5 +81,420 @@ export helper SecurityHelper{
     default config{
         model:KimiModel
         prompt:SecurityPrompt
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESEARCH SYSTEM HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export helper SourceFinderHelper {
+    description: "Discovers, retrieves, and evaluates information sources for research queries"
+
+    input {
+        query: string[]
+        max_sources: number
+        credibility_threshold: string
+    }
+
+    output: SourceDocument[]
+
+    tools {
+        web_search(query: string, num_results: number): string[] {
+            description: "Search the web for relevant URLs and snippets"
+        }
+        fetch_content(url: string): string {
+            description: "Retrieve full content from a URL"
+        }
+        check_domain_authority(domain: string): number {
+            description: "Get domain authority score (0-100)"
+        }
+    }
+
+
+    workflow find_sources(q: string, max: number, threshold: string): SourceDocument[] {
+        description: "Execute multi-stage source discovery"
+        
+        let urls = web_search(q,max)
+        let results: SourceDocument[] = []
+        
+        // In real implementation, this would iterate and filter
+        return results
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: SourceFinderPrompt
+    }
+}
+
+export helper FactCheckerHelper {
+    description: "Rigorously verifies claims against multiple sources"
+
+    input {
+        claim: string
+        strictness: string
+    }
+
+    output: FactCheckResult
+
+    tools {
+        search_fact_databases(claim: string): string[] {
+            description: "Search fact-checking databases (Snopes, PolitiFact, etc.)"
+        }
+        find_primary_source(claim: string): string {
+            description: "Attempt to locate the original source of a claim"
+        }
+        cross_reference(claim: string, sources: string[]): string {
+            description: "Cross-reference claim across multiple sources"
+        }
+    }
+
+    workflow verify_claim(claim: string, ctxs: string, strict: string): FactCheckResult {
+        description: "Execute comprehensive fact verification pipeline"
+        
+        let db_results = search_fact_databases(claim)
+        let primary = find_primary_source(claim)
+        
+        // Determine verdict based on evidence
+        return {
+            claim: claim,
+            verdict: "unverifiable",
+            explanation: "Insufficient evidence found. Primary source: " + primary,
+            sources: db_results
+        }
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: FactCheckerPrompt
+    }
+
+    config strict_mode {
+        model: GeminiModel
+        prompt {
+            """
+STRICT VERIFICATION MODE ENGAGED.
+
+Apply maximum rigor:
+- Require 3+ independent sources for "verified" verdict
+- Any contradiction triggers "partially_true" at best
+- Date-check all sources - reject anything > 2 years old for current events
+- Flag ANY unverifiable claim explicitly
+"""
+        }
+    }
+}
+
+export helper ResearchSynthesizerHelper {
+    description: "Transforms raw research findings into synthesized insights"
+
+    input {
+        findings: string[]
+        focus_question: string
+        synthesis_depth: string
+    }
+
+    output: SynthesizedInsight[]
+
+    workflow synthesize(findings: string[], question: string, depth: string): SynthesizedInsight[] {
+        description: "Aggregate and synthesize research findings"
+        
+        // Pattern matching and insight generation
+        let insights: SynthesizedInsight[] = []
+        
+        return insights
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: SynthesizerPrompt
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CODE REVIEW SYSTEM HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export helper SecurityCodeAnalyzerHelper {
+    description: "Specialized security auditor for code analysis"
+
+    input {
+        code: string
+        language: string
+        file_path: string
+        context?: string
+    }
+
+    output: SecurityVulnerability[]
+
+    tools {
+        run_sast_scan(code: string, lang: string): string[] {
+            description: "Run static application security testing"
+        }
+        check_dependency_vulns(imports: string[]): string[] {
+            description: "Check for known vulnerabilities in dependencies"
+        }
+        lookup_cwe(pattern: string): string {
+            description: "Look up CWE ID for a vulnerability pattern"
+        }
+    }
+
+    workflow analyze_security(code: string, lang: string, path: string, ctxs: string): SecurityVulnerability[] {
+        description: "Execute comprehensive security analysis"
+        
+        let sast_results = run_sast_scan(code, lang)
+        let vulns: SecurityVulnerability[] = []
+        
+        return vulns
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: SecurityAnalyzerPrompt
+    }
+
+    config owasp_strict {
+        model: GeminiModel
+        prompt {
+            """
+OWASP TOP 10 STRICT MODE
+
+Mandatory checks for ALL categories:
+1. A01:2021 - Broken Access Control
+2. A02:2021 - Cryptographic Failures
+3. A03:2021 - Injection
+4. A04:2021 - Insecure Design
+5. A05:2021 - Security Misconfiguration
+6. A06:2021 - Vulnerable Components
+7. A07:2021 - Auth Failures
+8. A08:2021 - Integrity Failures
+9. A09:2021 - Logging Failures
+10. A10:2021 - SSRF
+
+Flag ANYTHING suspicious. False positives > missed vulnerabilities.
+"""
+        }
+    }
+}
+
+export helper PerformanceAnalyzerHelper {
+    description: "Analyzes code for performance issues and optimization opportunities"
+
+    input {
+        code: string
+        language: string
+        hot_path: boolean
+        context?: string
+    }
+
+    output: PerformanceIssue[]
+
+    tools {
+        analyze_complexity(code: string): string {
+            description: "Compute time/space complexity analysis"
+        }
+        detect_n_plus_one(code: string): string[] {
+            description: "Detect N+1 query patterns"
+        }
+        find_memory_leaks(code: string): string[] {
+            description: "Static analysis for potential memory leaks"
+        }
+    }
+
+    workflow analyze_performance(code: string, lang: string, hot: boolean, ctxs: string): PerformanceIssue[] {
+        description: "Execute performance analysis pipeline"
+        
+        let complexity = analyze_complexity(code)
+        let n1_issues = detect_n_plus_one(code)
+        let leaks = find_memory_leaks(code)
+        
+        let issues: PerformanceIssue[] = []
+        
+        return issues
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: PerformanceAnalyzerPrompt
+    }
+}
+
+export helper TestCoverageAnalyzerHelper {
+    description: "Identifies test coverage gaps and suggests test cases"
+
+    input {
+        code: string
+        existing_tests?: string
+        language: string
+    }
+
+    output: TestCoverageGap[]
+
+    tools {
+        parse_functions(code: string): string[] {
+            description: "Extract function signatures from code"
+        }
+        map_test_coverage(code: string, tests: string): string {
+            description: "Map which functions have test coverage"
+        }
+        generate_test_stub(func_signature: string, lang: string): string {
+            description: "Generate a test stub for a function"
+        }
+    }
+
+    workflow analyze_coverage(code: string, tests: string, lang: string): TestCoverageGap[] {
+        description: "Identify gaps and suggest tests"
+        
+        let functions = parse_functions(code)
+        let coverage_map = map_test_coverage(code, tests)
+        
+        let gaps: TestCoverageGap[] = []
+        
+        return gaps
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: TestCoverageAnalyzerPrompt
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CUSTOMER SUPPORT HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export helper SentimentAnalyzerHelper {
+    description: "Analyzes customer sentiment and escalation risk"
+
+    input {
+        messages: string[]
+        customer_history?: string
+    }
+
+    output: SentimentAnalysis
+
+    tools {
+        detect_language(text: string): string {
+            description: "Detect the language of input text"
+        }
+        extract_entities(text: string): string[] {
+            description: "Extract named entities (products, features, etc.)"
+        }
+        get_customer_history(customer_id: string): string {
+            description: "Retrieve customer interaction history"
+        }
+    }
+
+    workflow analyze_sentiment(msgs: string[], history: string): SentimentAnalysis {
+        description: "Execute sentiment analysis pipeline"
+        
+        // Aggregate message content for analysis
+        let combined = ""
+        
+        return {
+            overall: "neutral",
+            confidence: 0.75,
+            escalation_risk: 0.3,
+            key_emotions: ["uncertainty"],
+            trigger_phrases: []
+        }
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: SentimentAnalyzerPrompt
+    }
+
+    config empathy_mode {
+        model: GeminiModel
+        prompt {
+            """
+EMPATHY-FIRST ANALYSIS MODE
+
+Focus on understanding the human behind the ticket:
+- What are they really feeling?
+- What do they need emotionally before the technical fix?
+- How can we make them feel heard?
+
+Adjust risk scores UP for any sign of emotional distress.
+Recommend human handoff for frustrated/angry customers.
+"""
+        }
+    }
+}
+
+export helper ResolutionSuggesterHelper {
+    description: "Suggests optimal resolutions for support tickets"
+
+    input {
+        ticket_summary: string
+        category: string
+        sentiment: SentimentAnalysis
+        customer_tier: string
+    }
+
+    output: ResolutionSuggestion[]
+
+    tools {
+        search_knowledge_base(query: string): string[] {
+            description: "Search internal knowledge base for solutions"
+        }
+        find_similar_tickets(summary: string, limit: number): string[] {
+            description: "Find similar resolved tickets"
+        }
+        check_known_issues(category: string): string[] {
+            description: "Check for known issues in this category"
+        }
+        draft_response(template: string, context: string): string {
+            description: "Generate a draft response from template"
+        }
+    }
+
+    workflow suggest_resolutions(summary: string, cat: string, sentiment: SentimentAnalysis, tier: string): ResolutionSuggestion[] {
+        description: "Generate ranked resolution suggestions"
+        
+        let kb_results = search_knowledge_base(summary)
+        let similar = find_similar_tickets(summary, 5)
+        let known = check_known_issues(cat)
+        
+        let suggestions: ResolutionSuggestion[] = []
+        
+        // Factor in sentiment for human requirement
+        if (sentiment.escalation_risk > 0.7) {
+            return [{
+                approach: "Immediate human escalation recommended",
+                confidence: 0.95,
+                requires_human: true,
+                estimated_time_minutes: 15,
+                similar_resolved_tickets: similar
+            }]
+        }
+        
+        return suggestions
+    }
+
+    default config {
+        model: GeminiModel
+        prompt: ResolutionSuggesterPrompt
+    }
+
+    config vip_mode {
+        model: GeminiModel
+        prompt {
+            """
+VIP CUSTOMER RESOLUTION MODE
+
+This is a high-value customer. Apply premium service standards:
+- Proactive compensation consideration
+- Personalized response (no templates)
+- Executive escalation path always available
+- Follow-up commitment required
+- Satisfaction guarantee messaging
+
+Never suggest self-service for VIP customers.
+Human touch is mandatory.
+"""
+        }
     }
 }
