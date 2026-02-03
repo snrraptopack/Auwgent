@@ -88,8 +88,10 @@ TestExpectation:
 ;
 
 TestModel:
-    ("toolCalls" "{" toolCalls+=TestToolCall* "}")?
-    ("finalText" ":" finalText=STRING)?
+    (
+        "toolCalls" "{" toolCalls+=TestToolCall* "}" ("finalText" ":" finalText=STRING)?
+        | "finalText" ":" finalText=STRING ("toolCalls" "{" toolCalls+=TestToolCall* "}")?
+    )
 ;
 
 TestToolCall:
