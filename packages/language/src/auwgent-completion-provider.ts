@@ -471,19 +471,96 @@ export class AuwgentHoverProvider extends AstNodeHoverProvider {
         const objectRef = access.object?.ref;
         if (!objectRef) return 'unknown';
 
-        // Get the base type and traverse properties
-        if (isVariableDeclartion(objectRef)) {
-            const baseType = this.inferVariableType(objectRef);
-            // TODO: Parse baseType and resolve property chain access.properties
-            void baseType;
-        } else if (isTypeConfigDeclaration(objectRef)) {
-            const baseType = formatTypes(objectRef.t);
-            void baseType;
+        const path = [access.property, ...(access.chain ?? [])];
+        if (path.length === 0) return 'unknown';
+
+        if (isTypeConfigDeclaration(objectRef)) {
+            const resolved = resolveTypePath(objectRef.t, path);
+            return resolved ? formatTypes(resolved) : 'unknown';
         }
 
-        // For now, just return unknown for member access
-        // Full implementation would parse the type and resolve properties
+        if (isVariableDeclartion(objectRef)) {
+            if (objectRef.varType) {
+                const resolved = resolveTypePath(objectRef.varType, path);
+                if (resolved) return formatTypes(resolved);
+            }
+            const resolvedFromValue = this.resolvePathFromExpression(objectRef.value, path);
+            if (resolvedFromValue) return resolvedFromValue;
+        }
+
         return 'unknown';
+    }
+
+    private resolvePathFromExpression(expr: Expression | undefined, path: string[]): string | undefined {
+        if (!expr) return undefined;
+        if (path.length === 0) return this.inferExpressionType(expr);
+
+        if (isObjectLiteral(expr)) {
+            return this.resolvePathFromObjectLiteral(expr, path);
+        }
+
+        if (isFunctionCall(expr)) {
+            const func = expr.func?.ref;
+            if (func && isToolFunction(func)) {
+                const resolved = resolveTypePath(func.returns, path);
+                return resolved ? formatTypes(resolved) : undefined;
+            }
+        }
+
+        if (isHelperCall(expr)) {
+            const helper = expr.helper?.ref;
+            if (helper) {
+                return this.resolvePathFromHelper(helper, path);
+            }
+        }
+
+        if (isVariableRef(expr)) {
+            const ref = expr.variable?.ref;
+            if (ref && isTypeConfigDeclaration(ref)) {
+                const resolved = resolveTypePath(ref.t, path);
+                return resolved ? formatTypes(resolved) : undefined;
+            }
+            if (ref && isVariableDeclartion(ref)) {
+                if (ref.varType) {
+                    const resolved = resolveTypePath(ref.varType, path);
+                    if (resolved) return formatTypes(resolved);
+                }
+                return this.resolvePathFromExpression(ref.value, path);
+            }
+        }
+
+        if (isMemberAccess(expr) && path.length === 0) {
+            return this.inferMemberAccessType(expr);
+        }
+
+        return undefined;
+    }
+
+    private resolvePathFromObjectLiteral(obj: ObjectLiteral, path: string[]): string | undefined {
+        if (path.length === 0) return this.inferObjectLiteralType(obj);
+        const props = obj.properties ?? [];
+        const match = props.find(p => p.name === path[0]);
+        if (!match) return undefined;
+        if (!match.value) return 'unknown';
+        return this.resolvePathFromExpression(match.value, path.slice(1));
+    }
+
+    private resolvePathFromHelper(helper: Helper, path: string[]): string | undefined {
+        const configs = helper.configs ?? [];
+        for (const config of configs) {
+            if (!isOutputConfig(config)) continue;
+            if (config.directType) {
+                const resolved = resolveTypePath(config.directType, path);
+                return resolved ? formatTypes(resolved) : undefined;
+            }
+            const props = config.outProperties ?? [];
+            if (props.length === 0) continue;
+            const first = props.find(p => p.td.name === path[0]);
+            if (!first) return undefined;
+            const resolved = resolveTypePath(first.td.t, path.slice(1));
+            return resolved ? formatTypes(resolved) : undefined;
+        }
+        return undefined;
     }
 
     private inferExpressionType(expr: Expression): string {

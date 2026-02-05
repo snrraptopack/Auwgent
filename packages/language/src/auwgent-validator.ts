@@ -1,7 +1,7 @@
 import type { ValidationAcceptor, ValidationChecks } from 'langium';
 import { AstUtils } from 'langium';
-import type { AuwgentAstType, ReturnStatement, FileImport, Model, Exportable, MultilineStringLiteral, VariableRef, PromptCall, FunctionCall, ToolFunction, WorkFlowConfig, NamedPrompt, ModelConfig, TestConfig } from './generated/ast.js';
-import { isAgent, isHelperCall, isHelpersConfig } from './generated/ast.js';
+import type { AuwgentAstType, ReturnStatement, FileImport, Model, Exportable, MultilineStringLiteral, VariableRef, PromptCall, FunctionCall, ToolFunction, WorkFlowConfig, NamedPrompt, ModelConfig, TestConfig, Agent, Helper, TypeDeclaration, ModelDefinition } from './generated/ast.js';
+import { isAgent, isHelperCall, isHelpersConfig, isHelper, isTypeDeclaration, isNamedPrompt, isModelDefinition } from './generated/ast.js';
 import type { AuwgentServices } from './auwgent-module.js';
 import { AuwgentUriResolver } from './auwgent-uri-resolver.js';
 import { ReturnValidation } from './validation/return-validation.js';
@@ -22,7 +22,7 @@ export function registerValidationChecks(services: AuwgentServices) {
     const checks: ValidationChecks<AuwgentAstType> = {
         ReturnStatement: validator.checkReturnStatement,
         FileImport: validator.checkImportStatement,
-        Model: [validator.checkCircularDependencies, validator.checkImportOrdering],
+        Model: [validator.checkCircularDependencies, validator.checkImportOrdering, validator.checkNameConflicts],
         Helper: validator.checkExportDependencies,
         TypeDeclaration: validator.checkExportDependencies,
         NamedPrompt: [validator.checkExportDependencies, validator.checkPromptTypes],
@@ -97,6 +97,23 @@ export class AuwgentValidator {
      */
     checkImportOrdering(model: Model, accept: ValidationAcceptor): void {
         this.dependencyValidation.checkImportOrdering(model, accept);
+    }
+
+    checkNameConflicts(model: Model, accept: ValidationAcceptor): void {
+        const seen = new Map<string, { node: Agent | Helper | TypeDeclaration | NamedPrompt | ModelDefinition; kind: string }>();
+        for (const element of model.elements) {
+            const entry = this.getNamedElementInfo(element);
+            if (!entry) continue;
+            const existing = seen.get(entry.name);
+            if (!existing) {
+                seen.set(entry.name, { node: entry.node, kind: entry.kind });
+                continue;
+            }
+            accept('error', `Name conflict: ${entry.kind} "${entry.name}" conflicts with ${existing.kind} "${entry.name}"`, {
+                node: entry.node,
+                property: 'name'
+            });
+        }
     }
 
     /**
@@ -180,6 +197,15 @@ export class AuwgentValidator {
             }
             current = current.$container;
         }
+        return undefined;
+    }
+
+    private getNamedElementInfo(element: unknown): { name: string; kind: string; node: Agent | Helper | TypeDeclaration | NamedPrompt | ModelDefinition } | undefined {
+        if (isAgent(element)) return { name: element.name, kind: 'agent', node: element };
+        if (isHelper(element)) return { name: element.name, kind: 'helper', node: element };
+        if (isTypeDeclaration(element)) return { name: element.name, kind: 'type', node: element };
+        if (isNamedPrompt(element)) return { name: element.name, kind: 'prompt', node: element };
+        if (isModelDefinition(element)) return { name: element.name, kind: 'model', node: element };
         return undefined;
     }
 }
