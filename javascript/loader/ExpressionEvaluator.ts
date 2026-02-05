@@ -670,8 +670,8 @@ export class ExpressionEvaluator {
      */
     private compare(left: any, operator: string, right: any): boolean {
         switch (operator) {
-            case "==": return left == right;
-            case "!=": return left != right;
+            case "==": return left === right;
+            case "!=": return left !== right;
             case ">": return left > right;
             case "<": return left < right;
             case ">=": return left >= right;
