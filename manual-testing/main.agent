@@ -1,3 +1,4 @@
+
 agent Hello {
     input {
         name: string
@@ -5,6 +6,7 @@ agent Hello {
 
     context {
         isvip:boolean
+        name:string
         person:number
     }
 
@@ -14,17 +16,18 @@ agent Hello {
     
     default config {
         model: gemini("key")
-        prompt {
-            """
-            Hello {{input.name}}, you are a helpful assistant
-            {{@schema(output)}}
-            """
-            if(ctx.person == 1){
-                return "the number is 1"
-            }else{
-                return "the number is above 1 and 2"
-            }
-        }
+        prompt: "you are a helpfull assistant"
 
+    }
+
+    tools {
+        hello(id:string):string @desc "this is a tool"
+        amina(name:string):number @desc "do nothing"
+    }
+
+    workflow one():string{
+        description: "dummy"
+
+        return "nothing"
     }
 }

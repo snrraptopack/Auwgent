@@ -40,17 +40,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         "context":{
             "isvip": false,
+            "name": "Jane User",
             "person": 1
         }
     });
 
     // Flatten the input object into the top-level scope
-    // So "input.name" becomes accessible via scope.get("input") -> Object -> .get("name")
     if let Some(obj) = input_data.as_object() {
         for (k, v) in obj {
             scope.insert(k.clone(), v.clone());
 
-            // FIX: Also expose context variables directly (e.g. "isvip")
+            // FIX: Also expose context variables directly
             if k == "context" {
                 if let Some(ctx_obj) = v.as_object() {
                     for (ck, cv) in ctx_obj {
@@ -68,18 +68,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Evaluate the default model config's prompt
     if let Some(entry) = agent.model_config.first() {
         if let Some(default) = &entry.default_config {
-            println!(" Evaluating prompt with scope: {:?}", scope);
+            println!(" Evaluating prompt...");
 
-            // Pass the populated scope to resolve variables like {{input.name}}
-            let value = evaluator.evaluate(&default.prompt, &scope)?;
+            // Evaluate the base prompt
+            let mut prompt_content = evaluator
+                .evaluate(&default.prompt, &scope)?
+                .as_str()
+                .unwrap_or("")
+                .to_string();
+
+            // Append Intents section
+            let intents = evaluator.generate_intents();
+            if !intents.is_empty() {
+                prompt_content.push_str("\n\n");
+                prompt_content.push_str(&intents);
+            }
 
             println!("GENERATED PROMPT:");
             println!("---------------------------------------------------");
-            if let Some(s) = value.as_str() {
-                println!("{}", s);
-            } else {
-                println!("{}", value);
-            }
+            println!("{}", prompt_content);
             println!("---------------------------------------------------");
         }
     }

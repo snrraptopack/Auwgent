@@ -11,11 +11,19 @@ pub struct AgentIR {
     pub input: Option<Value>,
     pub output: Option<Value>,
     pub context: Option<Value>,
-    pub tools: Vec<Value>,
+    pub tools: Vec<Tool>,
     pub workflows: Vec<Value>,
     pub helpers: Vec<Value>,
     #[serde(default)]
     pub tests: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Tool {
+    pub name: String,
+    pub description: Option<String>,
+    pub params: Value, // Object of field definitions
+    pub returns: Value,
 }
 
 // --- Model Configuration ---
@@ -103,6 +111,20 @@ pub enum Expression {
     },
     SchemaDirective {
         path: String,
+    },
+    PromptRef {
+        name: String,
+        params: Vec<String>,
+        args: Vec<Expression>,
+        value: Vec<Expression>,
+    },
+    BinaryOp {
+        left: Box<Expression>,
+        op: String,
+        right: Box<Expression>,
+    },
+    InlinePrompt {
+        parts: Vec<Expression>,
     },
 
     Expression {

@@ -184,6 +184,71 @@ impl<'a> Evaluator<'a> {
             }
 
             Expression::Return { value } => self.evaluate(value, scope),
+
+            Expression::PromptRef {
+                params,
+                args,
+                value,
+                ..
+            } => {
+                // 1. Create a local scope by cloning the current one and adding parameters
+                let mut local_scope = scope.clone();
+                for (param_name, arg_expr) in params.iter().zip(args.iter()) {
+                    let val = self.evaluate(arg_expr, scope)?;
+                    local_scope.insert(param_name.clone(), val);
+                }
+
+                // 2. Evaluate the prompt block with the local scope
+                let mut results = Vec::new();
+                for part in value {
+                    results.push((part, self.evaluate(part, &local_scope)?));
+                }
+
+                // 3. Join results if all are strings
+                if results.iter().all(|(_, v)| v.is_string()) {
+                    let joined = self.join_and_dedent(results);
+                    Ok(Value::String(joined.trim().to_string()))
+                } else {
+                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
+                }
+            }
+
+            Expression::BinaryOp { left, op, right } => {
+                let left_val = self.evaluate(left, scope)?;
+                let right_val = self.evaluate(right, scope)?;
+                if op == "+" {
+                    let l_str = left_val
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| left_val.to_string());
+                    let r_str = right_val
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| right_val.to_string());
+                    Ok(Value::String(format!(
+                        "{}\n{}",
+                        l_str.trim_end(),
+                        r_str.trim_start()
+                    )))
+                } else {
+                    Err(format!("Unsupported operator: {}", op).into())
+                }
+            }
+
+            Expression::InlinePrompt { parts } => {
+                let mut results = Vec::new();
+                for part in parts {
+                    results.push((part, self.evaluate(part, scope)?));
+                }
+
+                if results.iter().all(|(_, v)| v.is_string()) {
+                    let joined = self.join_and_dedent(results);
+                    Ok(Value::String(joined))
+                } else {
+                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
+                }
+            }
+
             Expression::Expression { value } => self.evaluate(value, scope),
         }
     }
@@ -195,9 +260,14 @@ impl<'a> Evaluator<'a> {
             let s = val.as_str().unwrap();
 
             // Smart Dedent Logic:
-            // If we are about to append a block result (InlineIf or If),
+            // If we are about to append a block result (InlineIf, If, or Schema),
             // and the buffer ends with whitespace (indentation), trim it.
-            if matches!(expr, Expression::InlineIf { .. } | Expression::If { .. }) {
+            if matches!(
+                expr,
+                Expression::InlineIf { .. }
+                    | Expression::If { .. }
+                    | Expression::SchemaDirective { .. }
+            ) {
                 let trimmed = joined.trim_end_matches(|c| c == ' ' || c == '\t');
                 let len = trimmed.len();
                 joined.truncate(len);
@@ -206,6 +276,83 @@ impl<'a> Evaluator<'a> {
             joined.push_str(s);
         }
         joined
+    }
+
+    pub fn generate_intents(&self) -> String {
+        let mut sections = Vec::new();
+
+        // 1. # tool available
+        if !self.ir.tools.is_empty() {
+            let mut tool_lines = Vec::new();
+            for tool in &self.ir.tools {
+                let mut params = Vec::new();
+                if let Some(obj) = tool.params.as_object() {
+                    for (name, def) in obj {
+                        let field_type = def["type"].as_str().unwrap_or("any");
+                        params.push(format!("{}: {}", name, field_type));
+                    }
+                }
+                let mut sig = format!("{}({})", tool.name, params.join(", "));
+                if let Some(desc) = &tool.description {
+                    sig.push_str(" // ");
+                    sig.push_str(desc);
+                }
+                tool_lines.push(sig);
+            }
+            sections.push(format!("# tool available\n{}", tool_lines.join("\n")));
+        }
+
+        // 2. Options as standalone # Option sections
+        if let Some(output) = &self.ir.output {
+            if output.is_object() && !output.as_object().unwrap().is_empty() {
+                let schema_str = self.format_schema_yaml(output, 2);
+                sections.push(format!("# Option\nresponse_schema:\n{}", schema_str));
+            } else {
+                sections.push("# Option\nresponse_text:\n  text: string".to_string());
+            }
+        } else {
+            sections.push("# Option\nresponse_text:\n  text: string".to_string());
+        }
+
+        if !self.ir.tools.is_empty() {
+            let tool_names: Vec<String> = self.ir.tools.iter().map(|t| t.name.clone()).collect();
+            let tool_union = if tool_names.len() > 1 {
+                format!("< {} >", tool_names.join(" | "))
+            } else {
+                tool_names[0].clone()
+            };
+
+            sections.push(format!(
+                "# Option\n tool_call:\n  type: {}\n  args: {{ key: value }}",
+                tool_union
+            ));
+        }
+
+        sections.join("\n\n")
+    }
+
+    fn format_schema_yaml(&self, schema: &Value, indent_level: usize) -> String {
+        let indent = " ".repeat(indent_level);
+        let mut lines = Vec::new();
+        if let Some(obj) = schema.as_object() {
+            for (name, def) in obj {
+                let is_optional = def["optional"].as_bool().unwrap_or(false);
+                let name_tag = if is_optional {
+                    format!("{}?", name)
+                } else {
+                    name.clone()
+                };
+                let field_type = def["type"].as_str().unwrap_or("any");
+
+                let mut line = format!("{}{}: {}", indent, name_tag, field_type);
+                if let Some(desc) = def["description"].as_str() {
+                    line.push_str(" // ");
+                    line.push_str(desc);
+                }
+                lines.push(line);
+            }
+        }
+        lines.join("\n")
     }
 
     fn format_schema(&self, schema: &Value) -> String {
