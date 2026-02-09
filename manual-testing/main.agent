@@ -1,16 +1,30 @@
-helper HelLo{
-    description:"hello"
-    output{
-        name:string,
-        age:string
+agent Hello {
+    input {
+        name: string
     }
-}
 
-agent one{
-    helpers{HelLo}
-    workflow one():string{
-        description: "hello"
-        let one = hlp.HelLo()
-        return ""
+    context {
+        isvip:boolean
+        person:number
+    }
+
+    output {
+        name:string @desc "user name"
+    }
+    
+    default config {
+        model: gemini("key")
+        prompt {
+            """
+            Hello {{input.name}}, you are a helpful assistant
+            {{@schema(output)}}
+            """
+            if(ctx.person == 1){
+                return "the number is 1"
+            }else{
+                return "the number is above 1 and 2"
+            }
+        }
+
     }
 }
