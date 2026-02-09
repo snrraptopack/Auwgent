@@ -1,6 +1,5 @@
 grammar Auwgent
 
-
 entry Model:
     (imports+=FileImport)*
     (elements+=Element)*;

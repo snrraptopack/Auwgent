@@ -1,6 +1,5 @@
 helper HelLo{
     description:"hello"
-
     output{
         name:string,
         age:string
@@ -8,14 +7,10 @@ helper HelLo{
 }
 
 agent one{
-
     helpers{HelLo}
-
     workflow one():string{
         description: "hello"
         let one = hlp.HelLo()
-
         return ""
     }
-
 }
