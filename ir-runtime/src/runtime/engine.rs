@@ -37,6 +37,7 @@ impl AuwgentEngine {
         let intents_for_handler = Arc::clone(&pending_intents);
 
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
+            println!("\n[INTENT READY]: {} -> {}", name, value);
             if let Ok(mut pending) = intents_for_handler.lock() {
                 pending.push((name, value));
             }
@@ -148,7 +149,6 @@ impl AuwgentEngine {
         for (name, value) in intents {
             match name.as_str() {
                 "tool_call" => {
-                    println!("name {} , value {}", name, value);
                     self.execute_tool(value).await?;
                 }
                 "workflow_call" => {

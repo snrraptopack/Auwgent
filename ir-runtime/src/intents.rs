@@ -4,6 +4,8 @@ use crate::types::AgentIR;
 pub fn generate_intents(ir: &AgentIR) -> String {
     let mut sections = Vec::new();
 
+    sections.push("# Instructions\nRespond ONLY with a valid YAML block that matches exactly one  or more of the # Option structures defined below. Do not include any conversational text or explanation.".to_string());
+
     // 1. # tool available
     if !ir.tools.is_empty() {
         let mut tool_lines = Vec::new();
@@ -128,6 +130,8 @@ pub fn generate_intents(ir: &AgentIR) -> String {
 
 pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
     let mut sections = Vec::new();
+
+    sections.push("# Instructions\nRespond ONLY with a valid YAML block that matches exactly one of the # Option structures defined below. Do not include any conversational text or explanation.".to_string());
 
     // Determine allowed tools
     let mut allowed_tools = Vec::new();
