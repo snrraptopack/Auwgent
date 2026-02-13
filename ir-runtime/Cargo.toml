@@ -7,6 +7,9 @@ default-run = "ir-runtime"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["full"] }
 async-trait = "0.1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
