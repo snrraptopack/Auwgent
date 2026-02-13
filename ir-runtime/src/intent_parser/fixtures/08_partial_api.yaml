@@ -1,0 +1,12 @@
+# PARTIAL - Missing closing content
+api:
+  version: v2
+  endpoints:
+    - path: /users
+      method: GET
+      response:
+        status: 200
+        body:
+          users:
+            - id: 1
+              name: Test

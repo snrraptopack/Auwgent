@@ -1,0 +1,12 @@
+# Special characters and edge cases
+special:
+  url: https://api.example.com/v1/users?filter=active&limit=10
+  email: "user@example.com"
+  path_windows: "C:\\Users\\test\\documents"
+  path_unix: /usr/local/bin
+  quoted_number: "12345"
+  emoji: 🚀
+  multiword: Hello World Example
+  with_colon: "Time: 12:30:45"
+  with_hash: "Color #FF5733"
+  escape_test: "Line1\nLine2\tTabbed"

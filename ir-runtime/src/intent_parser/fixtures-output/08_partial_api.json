@@ -1,0 +1,22 @@
+{
+  "api": {
+    "endpoints": [
+      {
+        "method": "GET",
+        "path": "/users",
+        "response": {
+          "body": {
+            "users": [
+              {
+                "id": 1.0,
+                "name": "Test"
+              }
+            ]
+          },
+          "status": 200.0
+        }
+      }
+    ],
+    "version": "v2"
+  }
+}

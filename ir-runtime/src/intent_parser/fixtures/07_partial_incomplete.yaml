@@ -1,0 +1,15 @@
+# PARTIAL/INCOMPLETE - Testing streaming resilience
+# This file intentionally has incomplete content
+
+config:
+  database:
+    host: localhost
+    port: 5432
+    name: myapp
+  features:
+    - id: feature_1
+      name: User Authentication
+      enabled: true
+    - id: feature_2
+      name: Dark Mode
+      enabled:

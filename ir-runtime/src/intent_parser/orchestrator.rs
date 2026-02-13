@@ -1,0 +1,160 @@
+use super::parser::Parser;
+use super::types::*;
+use serde_json::Value;
+use std::collections::HashSet;
+use std::sync::Arc;
+
+/// Handler for intent events
+pub type IntentHandler = Arc<dyn Fn(String, Value) + Send + Sync>;
+
+pub struct Orchestrator {
+    parser: Parser,
+    ir_builder: IRBuilder,
+    /// Registered intent keys
+    intent_keys: HashSet<String>,
+    /// Callback for finished intents
+    intent_handler: Option<IntentHandler>,
+    /// Callback for partial updates
+    partial_handler: Option<IntentHandler>,
+    /// Set of (line, col) for intents already emitted as "ready"
+    emitted_identities: HashSet<(usize, usize)>,
+}
+
+impl Orchestrator {
+    pub fn new(options: Option<ParserOptions>) -> Self {
+        let parser = Parser::new(options);
+
+        Self {
+            parser,
+            ir_builder: IRBuilder::new(),
+            intent_keys: HashSet::new(),
+            intent_handler: None,
+            partial_handler: None,
+            emitted_identities: HashSet::new(),
+        }
+    }
+
+    /// Register a key as an intent
+    pub fn register_intent(&mut self, key: &str) {
+        self.intent_keys.insert(key.to_string());
+    }
+
+    /// Set handler for finished intents
+    pub fn on_intent_ready(&mut self, handler: IntentHandler) {
+        self.intent_handler = Some(handler);
+    }
+
+    /// Set handler for partial intent updates
+    pub fn on_intent_partial(&mut self, handler: IntentHandler) {
+        self.partial_handler = Some(handler);
+    }
+
+    /// Write chunk of input
+    pub fn write(&mut self, chunk: &str) {
+        self.parser.write(chunk);
+        self.check_intents(false);
+    }
+
+    /// Peek at current state
+    pub fn peek(&mut self) -> Value {
+        self.parser.peek();
+        self.check_intents(false);
+
+        let res = self.parser.peek();
+        if let Some(ast) = res.ast {
+            let build = self.ir_builder.build(Some(&ast));
+            build.value.into_json()
+        } else {
+            Value::Null
+        }
+    }
+
+    /// End parsing
+    pub fn end(&mut self) -> Value {
+        let res = self.parser.end();
+        self.check_intents(true);
+
+        if let Some(ast) = res.ast {
+            let build = self.ir_builder.build(Some(&ast));
+            build.value.into_json()
+        } else {
+            Value::Null
+        }
+    }
+
+    /// Reset state
+    pub fn reset(&mut self) {
+        self.parser.reset();
+        self.emitted_identities.clear();
+    }
+
+    /// Check for ready and partial intents
+    fn check_intents(&mut self, _final_pass: bool) {
+        // 1. Finished Intents (from root mapping)
+        if let Some(root_mapping) = self.parser.get_root_mapping() {
+            // Clone entries to avoid borrow issues while potentially calling handlers
+            let entries = root_mapping.entries.clone();
+            for entry in entries {
+                if !self.intent_keys.contains(&entry.key) {
+                    continue;
+                }
+
+                let identity = (entry.line, entry.column);
+                if !self.emitted_identities.contains(&identity) {
+                    self.emitted_identities.insert(identity);
+                    if let Some(handler) = &self.intent_handler {
+                        let build_result = self.ir_builder.build(Some(&entry.value));
+                        handler(entry.key.clone(), build_result.value.into_json());
+                    }
+                }
+            }
+        }
+
+        // 2. Partial Intents (from stack)
+        // We look at the stack to see what's currently being built.
+        // If stack[i-1] has a pending_key that matches an intent, then stack[i].node is its partial value.
+        let stack = self.parser.stack();
+        for i in 1..stack.len() {
+            let parent = &stack[i - 1];
+            if let Some(key) = &parent.pending_key {
+                if self.intent_keys.contains(key) {
+                    if let Some(handler) = &self.partial_handler {
+                        // Clone the node from stack to build partial IR
+                        let node = stack[i].node.to_ast_node();
+                        let build_result = self.ir_builder.build(Some(&node));
+                        handler(key.clone(), build_result.value.into_json());
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Helper to extract YAML from LLM output (noisy markdown)
+pub fn extract_yaml(input: &str) -> String {
+    if !input.contains("```") {
+        return input.to_string();
+    }
+
+    if let Some(start_idx) = input.find("```") {
+        let rest = &input[start_idx + 3..];
+        // Skip language tag if any
+        let content_start = if rest.starts_with("yaml") {
+            rest[4..].find('\n').map(|i| 4 + i + 1).unwrap_or(4)
+        } else if rest.starts_with("yml") {
+            rest[3..].find('\n').map(|i| 3 + i + 1).unwrap_or(3)
+        } else {
+            rest.find('\n').map(|i| i + 1).unwrap_or(0)
+        };
+
+        let actual_content = &rest[content_start..];
+        if let Some(end_idx) = actual_content.find("```") {
+            return actual_content[..end_idx].trim().to_string();
+        }
+        return actual_content.trim().to_string();
+    }
+
+    input.to_string()
+}
+
+use super::builder::IRBuilder;

@@ -1,0 +1,41 @@
+{
+  "intent": {
+    "confidence": 0.95,
+    "context": {
+      "session_id": "s_67890",
+      "timestamp": 1706789012.0,
+      "user_id": "u_12345"
+    },
+    "reasoning": "User wants to search and summarize news",
+    "steps": [
+      {
+        "action": "search",
+        "params": {
+          "limit": 10.0,
+          "query": "latest AI news",
+          "safe_search": true
+        },
+        "service": "web_search"
+      },
+      {
+        "action": "filter",
+        "criteria": {
+          "exclude_duplicates": true,
+          "min_relevance": 0.7
+        }
+      },
+      {
+        "action": "summarize",
+        "format": "bullet_points",
+        "include_sources": true,
+        "max_items": 5.0
+      },
+      {
+        "action": "respond",
+        "template": "news_summary",
+        "tone": "professional"
+      }
+    ],
+    "type": "multi_step"
+  }
+}

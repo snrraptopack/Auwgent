@@ -1,0 +1,18 @@
+Sure! Here's the YAML-Lite response you requested:
+
+```yaml
+text: I understand you need help with your order. Let me look into that for you.
+tool_call:
+  name: supportAction
+  parameters:
+    customerSummary: Customer received damaged widget from order ORD-2024-884, arrived 2 days late
+    action: order_refund
+    actionParameters:
+      orderId: ORD-2024-884
+      productId: CX-4488
+      refundWindow: 45 days
+      notes: Damaged item documented, eligible for refund or replacement
+    followUp: Will process refund and ship replacement widget within 2 business days
+```
+
+Let me know if you need anything else!

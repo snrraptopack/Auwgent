@@ -1,0 +1,39 @@
+# Multiline string examples using | syntax
+user:
+  name: Alice Johnson
+  bio: |
+    Software engineer with 10+ years of experience.
+    Specialized in distributed systems and cloud architecture.
+    Passionate about open source and developer tools.
+  email: alice@example.com
+
+task:
+  title: Deploy new feature
+  description: |
+    Deploy the authentication system to production.
+    
+    Steps:
+    1. Run database migrations
+    2. Update environment variables
+    3. Deploy to staging first
+    4. Run smoke tests
+    5. Deploy to production
+  assignee: Bob
+
+documentation:
+  api_endpoint: /api/v1/users
+  request_body: |
+    {
+      "username": "string",
+      "email": "string",
+      "password": "string"
+    }
+  response: |
+    {
+      "id": "uuid",
+      "username": "string",
+      "created_at": "timestamp"
+    }
+  notes: |
+    All requests must include authentication token.
+    Rate limit: 100 requests per minute.

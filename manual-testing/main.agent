@@ -1,3 +1,4 @@
+import {GeminiModel} from "./models"
 
 prompt One {
     """
@@ -39,7 +40,7 @@ agent Hello {
     }
     
     default config {
-        model: gemini("key")
+        model: GeminiModel
         prompt: "you are a helpfull assistant" + One + {
             example { 
                 user : "was found"

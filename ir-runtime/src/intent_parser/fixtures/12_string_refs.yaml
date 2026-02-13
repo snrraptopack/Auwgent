@@ -1,0 +1,47 @@
+# Test: String refs in arrays (auto-resolve)
+# children: [component_id] should resolve like children: [{ref: component_id}]
+
+styles:
+  - id: btn_primary
+    backgroundColor: "#007AFF"
+    color: white
+    padding: 12
+  
+  - id: btn_secondary
+    backgroundColor: transparent
+    color: "#007AFF"
+    border: 1px solid #007AFF
+
+components:
+  - id: login_button
+    type: Button
+    label: Sign In
+    style:
+      ref: btn_primary
+  
+  - id: signup_button
+    type: Button
+    label: Create Account
+    style:
+      ref: btn_secondary
+  
+  - id: divider
+    type: Divider
+    thickness: 1
+
+# UI with string refs in children array
+ui:
+  type: Card
+  props:
+    title: Welcome
+  children:
+    - login_button      # ← String ref (should auto-resolve!)
+    - divider           # ← String ref (should auto-resolve!)
+    - signup_button     # ← String ref (should auto-resolve!)
+
+# Mixed: explicit ref and string refs
+mixed_children:
+  - type: Text
+    content: Choose an option
+  - login_button        # ← String ref
+  - ref: signup_button  # ← Explicit ref (also works)

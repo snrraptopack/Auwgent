@@ -1,0 +1,68 @@
+# Testing id/ref system
+# Components define themselves with 'id', and reference others with 'ref'
+
+# Define reusable styles
+styles:
+  - id: primary_button_style
+    backgroundColor: "#007AFF"
+    color: white
+    padding: 12
+    borderRadius: 8
+    fontWeight: bold
+
+  - id: secondary_button_style
+    backgroundColor: transparent
+    color: "#007AFF"
+    padding: 12
+    borderRadius: 8
+    border: "1px solid #007AFF"
+
+  - id: card_style
+    backgroundColor: white
+    boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+    borderRadius: 12
+    padding: 16
+
+# Define component templates
+components:
+  header:
+    id: app_header
+    type: Header
+    props:
+      title: My App
+      height: 64
+
+  loginButton:
+    id: login_btn
+    type: Button
+    text: Sign In
+    style:
+      ref: primary_button_style
+
+  signupButton:
+    id: signup_btn
+    type: Button
+    text: Create Account
+    style:
+      ref: secondary_button_style
+
+# Page using refs
+page:
+  type: Page
+  header:
+    ref: app_header
+  content:
+    type: Container
+    children:
+      - type: Card
+        style:
+          ref: card_style
+        content:
+          - type: Text
+            value: Welcome back!
+          - ref: login_btn
+          - ref: signup_btn
+
+# Reference that doesn't exist (should be flagged)
+brokenRef:
+  ref: nonexistent_component

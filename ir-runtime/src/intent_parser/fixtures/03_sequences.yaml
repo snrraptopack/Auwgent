@@ -1,0 +1,18 @@
+# Sequences
+fruits:
+  - apple
+  - banana
+  - cherry
+  - grape
+  - orange
+numbers:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+mixed:
+  - text
+  - 42
+  - true
+  - null

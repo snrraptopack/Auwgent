@@ -1,0 +1,46 @@
+# UI Component tree with id/ref
+app:
+  id: root_container
+  type: Container
+  props:
+    layout: flex
+    direction: column
+    padding: 16
+  children:
+    - id: header_section
+      type: Header
+      props:
+        title: My Application
+        subtitle: Welcome back!
+        showLogo: true
+    - id: main_content
+      type: ScrollView
+      props:
+        scrollDirection: vertical
+      children:
+        - id: card_list
+          type: List
+          props:
+            gap: 12
+          children:
+            - id: card_1
+              type: Card
+              props:
+                title: Getting Started
+                description: Learn the basics
+                icon: book
+            - id: card_2
+              type: Card
+              props:
+                title: Advanced Features
+                description: Deep dive into features
+                icon: star
+    - id: footer
+      type: Footer
+      props:
+        copyright: 2024 MyApp Inc
+        links:
+          - text: Privacy
+            url: /privacy
+          - text: Terms
+            url: /terms

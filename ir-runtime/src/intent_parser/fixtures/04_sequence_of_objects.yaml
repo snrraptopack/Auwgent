@@ -1,0 +1,14 @@
+# Sequence of objects
+users:
+  - id: 1
+    name: Alice
+    role: admin
+    active: true
+  - id: 2
+    name: Bob
+    role: user
+    active: true
+  - id: 3
+    name: Charlie
+    role: guest
+    active: false

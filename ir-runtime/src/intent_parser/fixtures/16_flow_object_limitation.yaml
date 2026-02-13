@@ -1,0 +1,19 @@
+# This fixture demonstrates the limitation of "YAML-Lite"
+# regarding flow objects (inline mappings/sequences).
+
+# 1. WORKING: Single-line flow object
+# The tokenizer captures the entire { ... } as a single scalar.
+single_line: { mode: "dark", retries: 3 }
+
+# 2. BROKEN: Multi-line flow object
+# The tokenizer stops at the newline after the '{'.
+# This results in 'multi_line' having a value of '{' 
+# and the subsequent lines being parsed as separate (often invalid) entities.
+multi_line: {
+  inner: "value"
+}
+
+# 3. CORRECT ALTERNATIVE: Standard Block Syntax
+# This is how multi-line nesting should be handled in YAML-Lite.
+block_syntax:
+  inner: "value"

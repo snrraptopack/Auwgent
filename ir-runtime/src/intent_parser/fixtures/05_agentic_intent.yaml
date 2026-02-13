@@ -1,0 +1,27 @@
+# Complex agentic intent structure
+intent:
+  type: multi_step
+  confidence: 0.95
+  reasoning: User wants to search and summarize news
+  context:
+    user_id: u_12345
+    session_id: s_67890
+    timestamp: 1706789012
+  steps:
+    - action: search
+      service: web_search
+      params:
+        query: latest AI news
+        limit: 10
+        safe_search: true
+    - action: filter
+      criteria:
+        min_relevance: 0.7
+        exclude_duplicates: true
+    - action: summarize
+      format: bullet_points
+      max_items: 5
+      include_sources: true
+    - action: respond
+      template: news_summary
+      tone: professional

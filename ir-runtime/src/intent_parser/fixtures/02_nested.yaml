@@ -1,0 +1,13 @@
+# Nested structure
+user:
+  profile:
+    firstName: Alice
+    lastName: Smith
+    age: 28
+  settings:
+    theme: dark
+    notifications: true
+    language: en-US
+  metadata:
+    created: 2024-01-15
+    updated: 2024-06-20

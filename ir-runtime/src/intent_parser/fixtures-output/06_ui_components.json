@@ -1,0 +1,75 @@
+{
+  "app": {
+    "children": [
+      {
+        "id": "header_section",
+        "props": {
+          "showLogo": true,
+          "subtitle": "Welcome back!",
+          "title": "My Application"
+        },
+        "type": "Header"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "id": "card_1",
+                "props": {
+                  "description": "Learn the basics",
+                  "icon": "book",
+                  "title": "Getting Started"
+                },
+                "type": "Card"
+              },
+              {
+                "id": "card_2",
+                "props": {
+                  "description": "Deep dive into features",
+                  "icon": "star",
+                  "title": "Advanced Features"
+                },
+                "type": "Card"
+              }
+            ],
+            "id": "card_list",
+            "props": {
+              "gap": 12.0
+            },
+            "type": "List"
+          }
+        ],
+        "id": "main_content",
+        "props": {
+          "scrollDirection": "vertical"
+        },
+        "type": "ScrollView"
+      },
+      {
+        "id": "footer",
+        "props": {
+          "copyright": "2024 MyApp Inc",
+          "links": [
+            {
+              "text": "Privacy",
+              "url": "/privacy"
+            },
+            {
+              "text": "Terms",
+              "url": "/terms"
+            }
+          ]
+        },
+        "type": "Footer"
+      }
+    ],
+    "id": "root_container",
+    "props": {
+      "direction": "column",
+      "layout": "flex",
+      "padding": 16.0
+    },
+    "type": "Container"
+  }
+}

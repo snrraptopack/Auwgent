@@ -1,0 +1,79 @@
+# Large workflow definition
+workflow:
+  name: data_processing_pipeline
+  version: 1.0.0
+  description: Process and transform data from multiple sources
+  triggers:
+    - type: schedule
+      cron: "0 0 * * *"
+      timezone: UTC
+    - type: webhook
+      path: /api/trigger
+      method: POST
+      auth: bearer
+  environment:
+    NODE_ENV: production
+    LOG_LEVEL: info
+    MAX_RETRIES: 3
+  steps:
+    - name: extract_data
+      action: database.query
+      config:
+        connection: primary_db
+        query: SELECT * FROM events WHERE date > NOW() - INTERVAL 1 DAY
+        timeout: 30000
+      outputs:
+        - raw_data
+    - name: validate_schema
+      action: schema.validate
+      depends_on:
+        - extract_data
+      config:
+        schema: event_schema_v2
+        strict: true
+      on_error: skip_invalid
+    - name: transform_data
+      action: transform.map
+      depends_on:
+        - validate_schema
+      config:
+        mapping:
+          id: event_id
+          timestamp: created_at
+          type: event_type
+          payload: data
+    - name: enrich_data
+      action: api.call
+      depends_on:
+        - transform_data
+      config:
+        endpoint: https://enrichment.api.example.com/enrich
+        method: POST
+        batch_size: 100
+        retry:
+          attempts: 3
+          delay: 1000
+    - name: load_warehouse
+      action: warehouse.insert
+      depends_on:
+        - enrich_data
+      config:
+        destination: analytics_warehouse
+        table: processed_events
+        mode: append
+        partition_by: date
+    - name: notify_complete
+      action: notification.send
+      depends_on:
+        - load_warehouse
+      config:
+        channel: slack
+        webhook: https://hooks.slack.com/services/xxx
+        message: Pipeline completed successfully
+  error_handling:
+    on_failure: notify_and_retry
+    max_retries: 3
+    retry_delay: 300
+    notification:
+      channel: pagerduty
+      severity: critical
