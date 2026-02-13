@@ -208,15 +208,15 @@ ToolFunction:
 ;
 
 Statement:
-    VariableDeclartion | AssignmentStatement | ReturnStatement | IfStatement | TransferStatement | ParallelStatement
+    VariableDeclaration | AssignmentStatement | ReturnStatement | IfStatement | TransferStatement | ParallelStatement
 ;
 
-VariableDeclartion:
+VariableDeclaration:
     "let" name=ID (":" varType=Types)? "=" value=Expression
 ;
 
 AssignmentStatement:
-    variable=[VariableDeclartion:ID] "=" value=Expression
+    variable=[VariableDeclaration:ID] "=" value=Expression
 ;
 
 TypeDeclaration:
@@ -263,7 +263,7 @@ ParallelStatement:
 ;
 
 // NamedPrompt is included so prompt names can be referenced directly (e.g., myPrompt + "text")
-type Referenceable = VariableDeclartion | TypeConfigDeclaration | NamedPrompt;
+type Referenceable = VariableDeclaration | TypeConfigDeclaration | NamedPrompt;
 
 // Binary expressions with proper operator precedence
 // Precedence (lowest to highest): + - , * /

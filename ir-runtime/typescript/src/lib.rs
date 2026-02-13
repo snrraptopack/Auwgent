@@ -1,12 +1,12 @@
 #![deny(clippy::all)]
 
 use napi::bindgen_prelude::*;
-use napi::threadsafe_function::{ErrorStrategy, ThreadsafeFunction};
+use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi_derive::napi;
 
 use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::runtime::drivers::gemini::GeminiDriver;
-use ir_runtime::runtime::engine::ToolImplementation;
+use ir_runtime::runtime::engine::{IntentControl, ToolImplementation};
 
 use ir_runtime::types::AgentIR;
 
@@ -116,6 +116,102 @@ impl Auwgent {
         Ok(())
     }
 
+    /// Register an intent callback for real-time streaming events.
+    ///
+    /// The callback fires for every detected intent during the agentic loop:
+    /// - `"tool_call"` — LLM requested a tool call (value: { type, args })
+    /// - `"tool_result"` — Tool finished (value: { name, result })
+    /// - `"response_text"` — LLM text response (value: { text })
+    /// - `"response_schema"` — LLM structured output
+    /// - `"workflow_call"` — LLM requested a workflow
+    /// - `"error"` — An error occurred
+    ///
+    /// Return value controls behavior:
+    /// - `undefined` / `null` → engine auto-executes (default)
+    /// - `{ skip: true }` → skip this tool/workflow call
+    /// - `{ result: value }` → use this result instead of executing
+    ///
+    /// ```js
+    /// agent.onIntent((name, value) => {
+    ///   console.log(`[${name}]`, value);
+    /// });
+    /// ```
+    #[napi(ts_args_type = "callback: (name: string, value: any) => any")]
+    pub fn on_intent(&self, callback: JsFunction) -> Result<()> {
+        // Create a TSFN that receives (name, value) as a tuple
+        let tsfn: ThreadsafeFunction<(String, Value), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value)>| {
+                let name = ctx.env.create_string(&ctx.value.0)?;
+                let value = ctx.env.to_js_value(&ctx.value.1)?;
+                Ok(vec![name.into_unknown(), value])
+            })?;
+
+        // Wrap into an AsyncIntentCallback
+        let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
+            Arc::new(move |name: String, value: Value| {
+                let tsfn = tsfn.clone();
+                Box::pin(async move {
+                    // Call the JS callback and check return value
+                    let result = tsfn.call_async::<Promise<Value>>((name, value)).await;
+                    match result {
+                        Ok(promise) => match promise.await {
+                            Ok(ret) => parse_intent_control(&ret),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    }
+                })
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_intent(handler);
+        });
+
+        Ok(())
+    }
+
+    /// Register a partial intent callback for streaming updates.
+    ///
+    /// This fires as YAML data streams in, BEFORE the intent block is
+    /// complete. Useful for streaming partial text or showing tool args
+    /// as they arrive. Observational only — no control/skip/override.
+    ///
+    /// ```js
+    /// agent.onIntentPartial((name, value) => {
+    ///   if (name === 'response_text') {
+    ///     process.stdout.write(value.text ?? '');
+    ///   }
+    /// });
+    /// ```
+    #[napi(ts_args_type = "callback: (name: string, value: any) => void")]
+    pub fn on_intent_partial(&self, callback: JsFunction) -> Result<()> {
+        use napi::threadsafe_function::ThreadsafeFunctionCallMode;
+
+        let tsfn: ThreadsafeFunction<(String, Value), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value)>| {
+                let name = ctx.env.create_string(&ctx.value.0)?;
+                let value = ctx.env.to_js_value(&ctx.value.1)?;
+                Ok(vec![name.into_unknown(), value])
+            })?;
+
+        // Wrap into a sync callback (partials are fire-and-forget, no await)
+        let handler: Arc<dyn Fn(String, Value) + Send + Sync> =
+            Arc::new(move |name: String, value: Value| {
+                // Non-blocking call — don't await, just fire
+                tsfn.call((name, value), ThreadsafeFunctionCallMode::NonBlocking);
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_intent_partial(handler);
+        });
+
+        Ok(())
+    }
+
     /// Run the agentic loop with the given input.
     /// Returns the exported session state as JSON.
     ///
@@ -218,18 +314,6 @@ impl Auwgent {
         serde_json::to_string(&schemas).map_err(|e| Error::from_reason(format!("{}", e)))
     }
 
-    /// Get the final session steps (for debugging).
-    #[napi]
-    pub fn get_session_steps(&self) -> Result<String> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let eng = engine.lock().await;
-            let steps = eng.get_session_steps();
-            serde_json::to_string(steps).map_err(|e| Error::from_reason(format!("{}", e)))
-        })
-    }
-
     /// Write a chunk directly to the orchestrator (for simulation/testing).
     #[napi]
     pub fn write_chunk(&self, chunk: String) -> Result<()> {
@@ -275,5 +359,29 @@ impl Auwgent {
         .map_err(|e| Error::from_reason(format!("Task join error: {}", e)))?;
 
         result.map_err(|e| Error::from_reason(e))
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Parse a JS return value into an IntentControl signal.
+/// Returns None if the value is null/undefined (proceed normally).
+fn parse_intent_control(val: &Value) -> Option<IntentControl> {
+    match val {
+        Value::Null => None,
+        Value::Object(obj) => {
+            if obj.get("skip").and_then(|v| v.as_bool()) == Some(true) {
+                Some(IntentControl::Skip)
+            } else if let Some(result) = obj.get("result") {
+                Some(IntentControl::Override {
+                    result: result.clone(),
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }

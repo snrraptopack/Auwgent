@@ -51,15 +51,26 @@ impl ModelDriver for GeminiDriver {
             .iter()
             .filter(|m| m.role != Role::System)
             .map(|m| {
-                let role = match m.role {
-                    Role::User | Role::ToolResult => "user",
-                    Role::Model => "model",
+                match m.role {
+                    Role::User => json!({
+                        "role": "user",
+                        "parts": [{ "text": m.content }]
+                    }),
+                    Role::Model => json!({
+                        "role": "model",
+                        "parts": [{ "text": m.content }]
+                    }),
+                    Role::ToolResult => json!({
+                        "role": "user",
+                        "parts": [{
+                            "functionResponse": {
+                                "name": "tool_result",
+                                "response": { "output": m.content }
+                            }
+                        }]
+                    }),
                     Role::System => unreachable!(), // filtered above
-                };
-                json!({
-                    "role": role,
-                    "parts": [{ "text": m.content }]
-                })
+                }
             })
             .collect();
 

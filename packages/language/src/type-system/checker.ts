@@ -2,56 +2,56 @@ import type { Type } from './types.js';
 import { tArray, tConst, tError, tRecord } from './types.js';
 import { TypeEnv } from './env.js';
 import { unifyTypes, UnificationError } from './unification.js';
-import type { 
-    Model, 
-    WorkFlowConfig, 
-    Statement, 
-    IfStatement, 
-    ReturnStatement, 
-    Expression, 
-    Types, 
-    BaseType, 
-    ObjectType, 
-    PropertyType, 
-    TypeDeclaration, 
-    VariableDeclartion, 
-    Agent, 
-    Helper, 
-    TypeConfigDeclaration, 
-    NamedPrompt, 
-    ModelConfig, 
-    PromptStatement, 
+import type {
+    Model,
+    WorkFlowConfig,
+    Statement,
+    IfStatement,
+    ReturnStatement,
+    Expression,
+    Types,
+    BaseType,
+    ObjectType,
+    PropertyType,
+    TypeDeclaration,
+    VariableDeclaration,
+    Agent,
+    Helper,
+    TypeConfigDeclaration,
+    NamedPrompt,
+    ModelConfig,
+    PromptStatement,
     Condition,
     Output,
     TestConfig,
     ToolFunction
 } from '../generated/ast.js';
 
-import { 
-    isArrayLiteral, 
-    isBooleanLiteral, 
-    isNumberLiteral, 
-    isObjectLiteral, 
-    isStringLiteral, 
-    isMultilineStringLiteral, 
-    isVariableRef, 
-    isMemberAccess, 
-    isContextReference, 
-    isFunctionCall, 
-    isPromptCall, 
-    isBinaryExpression, 
-    isReturnStatement, 
-    isIfStatement, 
-    isArrayType, 
-    isBaseType, 
-    isObjectType, 
-    isUnionType, 
-    isNamedPrompt, 
-    isToolFunction, 
+import {
+    isArrayLiteral,
+    isBooleanLiteral,
+    isNumberLiteral,
+    isObjectLiteral,
+    isStringLiteral,
+    isMultilineStringLiteral,
+    isVariableRef,
+    isMemberAccess,
+    isContextReference,
+    isFunctionCall,
+    isPromptCall,
+    isBinaryExpression,
+    isReturnStatement,
+    isIfStatement,
+    isArrayType,
+    isBaseType,
+    isObjectType,
+    isUnionType,
+    isNamedPrompt,
+    isToolFunction,
     isWorkFlowConfig,
-    isAgent, 
-    isHelper, 
-    isInputConfig, 
+    isAgent,
+    isHelper,
+    isInputConfig,
     isContextConfig,
     isComparison,
     isLogicalCondition,
@@ -147,10 +147,10 @@ export class TypeChecker {
 
     private checkStatements(statements: Statement[], env: TypeEnv, expectedType: Type, issues: TypeIssue[]): void {
         for (const statement of statements) {
-            if ((statement as VariableDeclartion).$type === 'VariableDeclartion') {
-                const decl = statement as VariableDeclartion;
+            if ((statement as VariableDeclaration).$type === 'VariableDeclaration') {
+                const decl = statement as VariableDeclaration;
                 const valueType = this.inferExpression(decl.value, env, issues);
-                
+
                 // Use declared type annotation if present, otherwise infer from value
                 let varType: Type;
                 if (decl.varType) {
@@ -168,7 +168,7 @@ export class TypeChecker {
                 } else {
                     varType = valueType;
                 }
-                
+
                 env.set(decl.name, { vars: [], type: varType });
                 continue;
             }
@@ -253,7 +253,7 @@ export class TypeChecker {
             if (ref && isNamedPrompt(ref)) {
                 return tConst('string');
             }
-            if (ref && (ref as any).$type === 'VariableDeclartion') {
+            if (ref && (ref as any).$type === 'VariableDeclaration') {
                 const scheme = env.get((ref as any).name);
                 if (scheme) {
                     return scheme.type;
@@ -336,7 +336,7 @@ export class TypeChecker {
             const left = this.inferExpression(node.left, env, issues);
             const right = this.inferExpression(node.right, env, issues);
             const op = node.op;
-            
+
             // String concatenation only for +
             if (op === '+') {
                 if (left.kind === 'const' && left.name === 'string') {
@@ -346,12 +346,12 @@ export class TypeChecker {
                     return tConst('string');
                 }
             }
-            
+
             // All arithmetic ops require numbers
             if (left.kind === 'const' && left.name === 'number' && right.kind === 'const' && right.name === 'number') {
                 return tConst('number');
             }
-            
+
             // For +, allow string or number
             if (op === '+') {
                 issues.push({ message: 'Operator + expects number or string operands', node, property: 'op' });
@@ -364,11 +364,11 @@ export class TypeChecker {
             // Get the type of the array being indexed
             const arrayRef = node.object?.ref;
             const arrayType = this.inferReferenceType(arrayRef, env);
-            
+
             // If it's an array type, get the element type
             if (arrayType.kind === 'array') {
                 let elementType = arrayType.element;
-                
+
                 // If there's a property access after the index (e.g., findings[0].claim)
                 if (node.property) {
                     if (elementType.kind === 'record' && elementType.fields[node.property]) {
@@ -378,7 +378,7 @@ export class TypeChecker {
                         return tError('unknown');
                     }
                 }
-                
+
                 // If there's a chain of properties (e.g., findings[0].nested.field)
                 if (node.chain && node.chain.length > 0) {
                     for (const segment of node.chain) {
@@ -390,10 +390,10 @@ export class TypeChecker {
                         }
                     }
                 }
-                
+
                 return elementType;
             }
-            
+
             issues.push({ message: 'Index access requires an array type', node, property: 'object' });
             return tError('unknown');
         }
@@ -416,8 +416,8 @@ export class TypeChecker {
 
     private checkStatementsLoose(statements: Statement[], env: TypeEnv, issues: TypeIssue[]): void {
         for (const statement of statements) {
-            if ((statement as VariableDeclartion).$type === 'VariableDeclartion') {
-                const decl = statement as VariableDeclartion;
+            if ((statement as VariableDeclaration).$type === 'VariableDeclaration') {
+                const decl = statement as VariableDeclaration;
                 const valueType = this.inferExpression(decl.value, env, issues);
                 env.set(decl.name, { vars: [], type: valueType });
                 continue;
@@ -474,7 +474,7 @@ export class TypeChecker {
             // Otherwise map the type directly
             return this.mapTypes(ref.t);
         }
-        if (ref.$type === 'VariableDeclartion') {
+        if (ref.$type === 'VariableDeclaration') {
             const scheme = env.get(ref.name);
             return scheme ? scheme.type : tError('unknown');
         }

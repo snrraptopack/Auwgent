@@ -28,6 +28,44 @@ export declare class Auwgent {
    */
   registerTool(name: string, callback: (args: any) => Promise<any>): void
   /**
+   * Register an intent callback for real-time streaming events.
+   *
+   * The callback fires for every detected intent during the agentic loop:
+   * - `"tool_call"` — LLM requested a tool call (value: { type, args })
+   * - `"tool_result"` — Tool finished (value: { name, result })
+   * - `"response_text"` — LLM text response (value: { text })
+   * - `"response_schema"` — LLM structured output
+   * - `"workflow_call"` — LLM requested a workflow
+   * - `"error"` — An error occurred
+   *
+   * Return value controls behavior:
+   * - `undefined` / `null` → engine auto-executes (default)
+   * - `{ skip: true }` → skip this tool/workflow call
+   * - `{ result: value }` → use this result instead of executing
+   *
+   * ```js
+   * agent.onIntent((name, value) => {
+   *   console.log(`[${name}]`, value);
+   * });
+   * ```
+   */
+  onIntent(callback: (name: string, value: any) => any): void
+  /**
+   * Register a partial intent callback for streaming updates.
+   *
+   * Fires as YAML data streams in, BEFORE the intent block is complete.
+   * Observational only — no control/skip/override.
+   *
+   * ```js
+   * agent.onIntentPartial((name, value) => {
+   *   if (name === 'response_text') {
+   *     process.stdout.write(value.text ?? '');
+   *   }
+   * });
+   * ```
+   */
+  onIntentPartial(callback: (name: string, value: any) => void): void
+  /**
    * Run the agentic loop with the given input.
    * Returns the exported session state as JSON.
    *
@@ -54,8 +92,6 @@ export declare class Auwgent {
   getToolNames(): Array<string>
   /** Get tool schemas as JSON (for TypeScript type generation). */
   getToolSchemas(): string
-  /** Get the final session steps (for debugging). */
-  getSessionSteps(): string
   /** Write a chunk directly to the orchestrator (for simulation/testing). */
   writeChunk(chunk: string): void
   /** Finalize the LLM stream (for simulation/testing). */

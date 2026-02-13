@@ -1,6 +1,7 @@
 use ir_runtime::AgentIR;
 use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::runtime::drivers::gemini::GeminiDriver;
+use ir_runtime::runtime::engine::AsyncIntentCallback;
 use serde_json::json;
 use std::{env, fs, sync::Arc};
 
@@ -33,6 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     );
 
+    // Register onIntent callback for real-time visibility
+    engine.on_intent(Arc::new(|name, value| {
+        Box::pin(async move {
+            println!("\n  🔔 [onIntent] {} → {}", name, value);
+            None // proceed normally — auto-execute
+        })
+    }));
+
     // Check for real LLM integration
     if let Ok(key) = env::var("GEMINI_API_KEY") {
         println!("*** LIVE MODE ENABLED (Gemini) ***");
@@ -55,7 +64,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let engine_prompt = engine.generate_prompt()?;
         println!("Engine Generated Prompt (Length: {})", engine_prompt.len());
-        println!("\n--- ENGINE PROMPT START ---\n{}\n--- ENGINE PROMPT END ---", engine_prompt);
+        println!(
+            "\n--- ENGINE PROMPT START ---\n{}\n--- ENGINE PROMPT END ---",
+            engine_prompt
+        );
 
         // Simulate LLM Output with a tool_call intent
         println!("\nSimulating LLM Output (Tool Call Intent)...");
@@ -81,10 +93,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ======================================================================================
     // 3. Final Session State
     // ======================================================================================
-    println!("\nFinal Session Steps:");
-    let steps = engine.get_session_steps();
-    for (i, step) in steps.iter().enumerate() {
-        println!("  Step {}: {:?}", i, step);
+    println!("\nFinal Session Turns:");
+    for (i, turn) in engine.session().turns.iter().enumerate() {
+        println!(
+            "  Turn {}: input={:?} response_len={}",
+            i,
+            turn.input,
+            turn.model_response.len()
+        );
     }
 
     Ok(())

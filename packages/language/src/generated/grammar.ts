@@ -2978,7 +2978,7 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
     },
     {
       "$type": "ParserRule",
-      "name": "VariableDeclartion",
+      "name": "VariableDeclaration",
       "definition": {
         "$type": "Group",
         "elements": [

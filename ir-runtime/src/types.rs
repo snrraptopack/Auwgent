@@ -23,6 +23,9 @@ pub struct AgentIR {
     pub helper_handoff: Option<HashMap<String, String>>,
     #[serde(default)]
     pub tests: Vec<Value>,
+    /// Lifecycle configuration (maxTokens, maxMessages)
+    #[serde(default)]
+    pub lifecycle: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -107,10 +110,21 @@ pub enum ModelProvider {
         model_name: String,
         config: Option<Box<Expression>>,
     },
+    #[serde(rename = "openai")]
+    OpenAI {
+        #[serde(rename = "modelName")]
+        model_name: String,
+        config: Option<Box<Expression>>,
+    },
+    Custom {
+        url: String,
+        #[serde(rename = "modelName")]
+        model_name: String,
+        config: Option<Box<Expression>>,
+    },
     ModelRef {
         name: String,
     },
-    // We can add OpenAI or Custom later when they appear in your JSON
 }
 
 // --- Expressions (The Core Logic) ---

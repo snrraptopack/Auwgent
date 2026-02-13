@@ -2,7 +2,7 @@ use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
 use crate::intent_parser::orchestrator::Orchestrator;
 use crate::runtime::drivers::ModelDriver;
-use crate::runtime::session::{RunStep, SessionState};
+use crate::runtime::session::SessionState;
 use crate::types::*;
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -13,6 +13,38 @@ pub type ToolImplementation = Arc<
     dyn Fn(Value) -> futures_util::future::BoxFuture<'static, Result<Value, String>> + Send + Sync,
 >;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// INTENT EVENT TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Control returned by an intent handler to override default behavior.
+#[derive(Debug, Clone)]
+pub enum IntentControl {
+    /// Skip this intent — don't execute the tool/workflow
+    Skip,
+    /// Use this result instead of executing the tool
+    Override { result: Value },
+}
+
+/// Intent callback signature.
+///
+/// Receives the intent name and value. Returns:
+///   - `None` → engine proceeds normally (auto-execute)
+///   - `Some(IntentControl::Skip)` → skip this intent
+///   - `Some(IntentControl::Override { result })` → use this result
+pub type IntentCallback = Arc<dyn Fn(String, Value) -> Option<IntentControl> + Send + Sync>;
+
+/// Async intent callback for handlers that need to await.
+pub type AsyncIntentCallback = Arc<
+    dyn Fn(String, Value) -> futures_util::future::BoxFuture<'static, Option<IntentControl>>
+        + Send
+        + Sync,
+>;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// AUWGENT ENGINE
+// ═══════════════════════════════════════════════════════════════════════════
+
 pub struct AuwgentEngine {
     ir: AgentIR,
     session: SessionState,
@@ -22,8 +54,15 @@ pub struct AuwgentEngine {
     context: Option<Value>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Tool/workflow results accumulated during the current turn
+    /// Used by build_results_payload() to feed results back to the LLM
+    pending_tool_results: Vec<(String, Value)>,
     /// Accumulated raw response for the current turn
     current_raw_response: String,
+    /// User-facing intent callback (fires on every completed intent)
+    intent_handler: Option<AsyncIntentCallback>,
+    /// User-facing partial intent callback (fires as data streams in)
+    partial_intent_handler: Option<Arc<dyn Fn(String, Value) + Send + Sync>>,
 }
 
 impl AuwgentEngine {
@@ -41,7 +80,6 @@ impl AuwgentEngine {
         let intents_for_handler = Arc::clone(&pending_intents);
 
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
-            println!("\n[INTENT READY]: {} -> {}", name, value);
             if let Ok(mut pending) = intents_for_handler.lock() {
                 pending.push((name, value));
             }
@@ -55,7 +93,10 @@ impl AuwgentEngine {
             driver: None,
             context: None,
             pending_intents,
+            pending_tool_results: Vec::new(),
             current_raw_response: String::new(),
+            intent_handler: None,
+            partial_intent_handler: None,
         }
     }
 
@@ -69,6 +110,46 @@ impl AuwgentEngine {
 
     pub fn register_tool(&mut self, name: &str, implementation: ToolImplementation) {
         self.tools.insert(name.to_string(), implementation);
+    }
+
+    /// Register an async intent callback.
+    ///
+    /// This fires for every detected intent (tool_call, response_text, etc.)
+    /// during the agentic loop. The engine auto-executes by default.
+    ///
+    /// To control behavior, return `Some(IntentControl::Skip)` to skip
+    /// a tool call, or `Some(IntentControl::Override { result })` to
+    /// provide a custom result without executing the tool.
+    pub fn on_intent(&mut self, handler: AsyncIntentCallback) {
+        self.intent_handler = Some(handler);
+    }
+
+    /// Register a sync intent callback (convenience wrapper).
+    pub fn on_intent_sync(&mut self, handler: IntentCallback) {
+        let handler = handler.clone();
+        self.intent_handler = Some(Arc::new(move |name, value| {
+            let result = handler(name, value);
+            Box::pin(async move { result })
+        }));
+    }
+
+    /// Register a partial intent callback.
+    ///
+    /// This fires as YAML data streams in, BEFORE the intent block is
+    /// complete. Useful for:
+    /// - Streaming partial `response_text` to the UI as tokens arrive
+    /// - Showing tool call args as they're being typed by the LLM
+    /// - Progress indicators for long structured outputs
+    ///
+    /// Partial intents are observational only (no control/skip/override).
+    pub fn on_intent_partial(&mut self, handler: Arc<dyn Fn(String, Value) + Send + Sync>) {
+        // Wire into the orchestrator's partial handler
+        let user_handler = handler.clone();
+        self.orchestrator
+            .on_intent_partial(Arc::new(move |name, value| {
+                user_handler(name, value);
+            }));
+        self.partial_intent_handler = Some(handler);
     }
 
     // ── Session export/import for host runtime hooks ──────────────────────
@@ -128,9 +209,6 @@ impl AuwgentEngine {
         // 2. Generate system prompt and set it on the session
         let system_prompt = self.generate_prompt()?;
         self.session.set_system_prompt(&system_prompt);
-        self.session.add_step(RunStep::Prompt {
-            content: system_prompt.clone(),
-        });
 
         // 3. Build the initial user input
         let initial_user_input = match input {
@@ -142,16 +220,25 @@ impl AuwgentEngine {
         // Start the first turn
         self.session.start_turn(&initial_user_input);
 
+        // Read max loops from lifecycle config, fallback to 12
+        let max_loops: usize = self
+            .ir
+            .lifecycle
+            .as_ref()
+            .and_then(|lc| lc.get("maxMessages").and_then(|v| v.as_u64()))
+            .map(|v| v as usize)
+            .unwrap_or(12);
+
         let mut loop_count = 0;
-        const MAX_LOOPS: usize = 12;
 
         loop {
             loop_count += 1;
-            if loop_count > MAX_LOOPS {
-                return Err(AuwgentError::MaxLoopsExceeded(MAX_LOOPS));
+            if loop_count > max_loops {
+                return Err(AuwgentError::MaxLoopsExceeded(max_loops));
             }
 
             self.current_raw_response.clear();
+            self.pending_tool_results.clear();
             self.orchestrator.reset();
 
             // Build message history from session state
@@ -173,9 +260,6 @@ impl AuwgentEngine {
                 match chunk_res {
                     Ok(text) => {
                         if !text.is_empty() {
-                            print!("{}", text);
-                            use std::io::Write;
-                            let _ = std::io::stdout().flush();
                             self.current_raw_response.push_str(&text);
                         }
                         self.orchestrator.write(&text);
@@ -188,7 +272,9 @@ impl AuwgentEngine {
                         }
                     }
                     Err(e) => {
-                        self.session.add_step(RunStep::Error { message: e.clone() });
+                        // Fire error as intent if handler exists
+                        self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
+                            .await;
                         return Err(AuwgentError::StreamError(e));
                     }
                 }
@@ -211,37 +297,44 @@ impl AuwgentEngine {
                 break;
             }
 
-            // If we performed tool/workflow actions, start a new turn with the results
+            // Feed tool/workflow results back to the LLM as the next turn's input
             let results_payload = self.build_results_payload();
-            println!("\n--- FEEDING RESULTS BACK ---\n{}", results_payload);
             self.session.start_turn(&results_payload);
         }
 
         Ok(())
     }
 
+    /// Build a structured payload of tool/workflow results to feed back to
+    /// the LLM on the next turn. This is critical — without it, the LLM
+    /// has no idea what the tools returned.
     fn build_results_payload(&self) -> String {
-        // Use the current turn's steps to build the results
-        if let Some(turn) = self.session.turns.last() {
-            let results: Vec<String> = turn
-                .steps
-                .iter()
-                .filter_map(|step| {
-                    if let RunStep::IntentAction {
-                        name,
-                        result: Some(res),
-                        ..
-                    } = step
-                    {
-                        Some(format!("tool_result:\n  name: {}\n  result: {}", name, res))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            results.join("\n\n")
+        if self.pending_tool_results.is_empty() {
+            return String::new();
+        }
+
+        let mut parts = Vec::new();
+        for (name, result) in &self.pending_tool_results {
+            // Format as YAML blocks matching the intent schema
+            let result_str = match serde_json::to_string(result) {
+                Ok(s) => s,
+                Err(_) => format!("{:?}", result),
+            };
+            parts.push(format!(
+                "tool_result:\n  name: {}\n  result: {}",
+                name, result_str
+            ));
+        }
+        parts.join("\n\n")
+    }
+
+    /// Fire the user's intent callback (if registered).
+    /// Returns the control signal, or None if no handler / handler returns None.
+    async fn fire_intent(&self, name: String, value: Value) -> Option<IntentControl> {
+        if let Some(ref handler) = self.intent_handler {
+            handler(name, value).await
         } else {
-            String::new()
+            None
         }
     }
 
@@ -256,87 +349,189 @@ impl AuwgentEngine {
 
         let mut has_terminal = false;
         let mut has_actions = false;
+        let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, value) in intents {
+            // Fire the user callback BEFORE execution
+            let control = self.fire_intent(name.clone(), value.clone()).await;
+
             match name.as_str() {
                 "tool_call" => {
-                    self.execute_tool(value).await?;
-                    has_actions = true;
-                }
-                "workflow_call" => {
-                    self.execute_workflow(value).await?;
-                    has_actions = true;
-                }
-                "response_schema" | "response_text" => {
-                    self.session.add_step(RunStep::ModelOutput {
-                        data: value,
-                    });
-                    has_terminal = true;
-                }
-                _ => {}
-            }
-        }
-        Ok((has_terminal, has_actions))
-    }
-
-    async fn execute_tool(&mut self, call: Value) -> AuwgentResult<()> {
-        let tool_name = call["type"].as_str().unwrap_or("");
-        let args = call["args"].clone();
-
-        self.session.add_step(RunStep::IntentAction {
-            name: tool_name.to_string(),
-            args: args.clone(),
-            result: None,
-        });
-
-        if let Some(imp) = self.tools.get(tool_name) {
-            let result = imp(args).await;
-            match result {
-                Ok(val) => {
-                    let result_val = val.clone();
-                    if let Some(RunStep::IntentAction { result: res, .. }) =
-                        self.session.steps.last_mut()
-                    {
-                        *res = Some(val);
-                    }
-                    if let Some(turn) = self.session.current_turn_mut() {
-                        if let Some(RunStep::IntentAction { result: res, .. }) =
-                            turn.steps.last_mut()
-                        {
-                            *res = Some(result_val);
+                    match control {
+                        Some(IntentControl::Skip) => {
+                            // User chose to skip — fire a skip notification
+                            self.fire_intent("tool_skipped".to_string(), value.clone())
+                                .await;
+                            continue;
+                        }
+                        Some(IntentControl::Override { result }) => {
+                            // User provided a custom result
+                            let tool_name = value["type"].as_str().unwrap_or("").to_string();
+                            self.fire_intent(
+                                "tool_result".to_string(),
+                                serde_json::json!({
+                                    "name": tool_name,
+                                    "result": result,
+                                    "overridden": true,
+                                }),
+                            )
+                            .await;
+                            tool_results.push((tool_name, result));
+                            has_actions = true;
+                        }
+                        None => {
+                            // Default: auto-execute the tool
+                            let (tool_name, result) = self.execute_tool(&value).await?;
+                            // Fire tool_result intent
+                            self.fire_intent(
+                                "tool_result".to_string(),
+                                serde_json::json!({
+                                    "name": tool_name,
+                                    "result": result,
+                                }),
+                            )
+                            .await;
+                            tool_results.push((tool_name, result));
+                            has_actions = true;
                         }
                     }
                 }
+                "workflow_call" => match control {
+                    Some(IntentControl::Skip) => continue,
+                    Some(IntentControl::Override { result }) => {
+                        let wf_name = value["type"].as_str().unwrap_or("").to_string();
+                        tool_results.push((format!("workflow:{}", wf_name), result));
+                        has_actions = true;
+                    }
+                    None => {
+                        let (wf_name, result) = self.execute_workflow(&value).await?;
+                        self.fire_intent(
+                            "workflow_result".to_string(),
+                            serde_json::json!({
+                                "name": wf_name,
+                                "result": result,
+                            }),
+                        )
+                        .await;
+                        tool_results.push((format!("workflow:{}", wf_name), result));
+                        has_actions = true;
+                    }
+                },
+                "helper_call" => match control {
+                    Some(IntentControl::Skip) => continue,
+                    Some(IntentControl::Override { result }) => {
+                        let helper_name = value["type"].as_str().unwrap_or("").to_string();
+                        tool_results.push((format!("helper:{}", helper_name), result));
+                        has_actions = true;
+                    }
+                    None => {
+                        let (helper_name, result) = self.execute_helper(&value).await?;
+                        self.fire_intent(
+                            "helper_result".to_string(),
+                            serde_json::json!({
+                                "name": helper_name,
+                                "result": result,
+                            }),
+                        )
+                        .await;
+                        tool_results.push((format!("helper:{}", helper_name), result));
+                        has_actions = true;
+                    }
+                },
+                "response_schema" | "response_text" => {
+                    // Terminal intents — already fired to user above
+                    has_terminal = true;
+                }
+                _ => {
+                    // Custom / unknown intents — already fired to user
+                }
+            }
+        }
+
+        // Store tool results so build_results_payload() can feed them back
+        self.pending_tool_results.extend(tool_results);
+
+        Ok((has_terminal, has_actions))
+    }
+
+    async fn execute_tool(&self, call: &Value) -> AuwgentResult<(String, Value)> {
+        let tool_name = call["type"].as_str().unwrap_or("").to_string();
+        let args = call["args"].clone();
+
+        if let Some(imp) = self.tools.get(&tool_name) {
+            match imp(args).await {
+                Ok(val) => Ok((tool_name, val)),
                 Err(e) => {
-                    self.session.add_step(RunStep::Error { message: e });
+                    // Fire a specific tool_error intent so the host can react
+                    self.fire_intent(
+                        "tool_error".to_string(),
+                        serde_json::json!({
+                            "tool": tool_name,
+                            "message": e,
+                        }),
+                    )
+                    .await;
+                    // Return the error as the result — the LLM will see it
+                    // and can retry or adjust
+                    Ok((tool_name, serde_json::json!({ "error": e })))
                 }
             }
         } else {
-            self.session.add_step(RunStep::Error {
-                message: format!("Tool not found: {}", tool_name),
-            });
+            self.fire_intent(
+                "tool_error".to_string(),
+                serde_json::json!({
+                    "tool": tool_name,
+                    "message": format!("Tool not found: {}", tool_name),
+                }),
+            )
+            .await;
+            Ok((
+                tool_name.clone(),
+                serde_json::json!({ "error": format!("Tool '{}' is not registered", tool_name) }),
+            ))
         }
-
-        Ok(())
     }
 
-    async fn execute_workflow(&mut self, call: Value) -> AuwgentResult<()> {
-        let wf_name = call["type"].as_str().unwrap_or("");
+    async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value)> {
+        let wf_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
         if let Some(wf) = self.ir.workflows.iter().find(|w| w.name == wf_name) {
-            self.session.add_step(RunStep::IntentAction {
-                name: format!("workflow:{}", wf_name),
-                args: args.clone(),
-                result: None,
-            });
+            // Create evaluator WITH tools so workflow body can call functions (#4)
+            let mut tool_fns: HashMap<String, crate::evaluator::SyncToolFn> = HashMap::new();
+            for (name, imp) in &self.tools {
+                let imp = imp.clone();
+                let name_clone = name.clone();
+                tool_fns.insert(
+                    name.clone(),
+                    Box::new(move |fn_args: Vec<Value>| {
+                        // Convert Vec<Value> to a single JSON object for the tool
+                        let arg_val = if fn_args.len() == 1 {
+                            fn_args.into_iter().next().unwrap_or(Value::Null)
+                        } else {
+                            Value::Array(fn_args)
+                        };
+                        // Block on the async tool — workflows are evaluated synchronously
+                        // This is a known limitation; async workflows would need a redesign
+                        let rt = tokio::runtime::Handle::current();
+                        let imp = imp.clone();
+                        std::thread::spawn(move || rt.block_on(imp(arg_val)))
+                            .join()
+                            .map_err(|_| format!("Tool '{}' panicked", name_clone))?
+                    }),
+                );
+            }
 
-            let evaluator = Evaluator::new(&self.ir);
+            let evaluator = Evaluator::with_tools(&self.ir, tool_fns);
             let mut scope = HashMap::new();
             if let Some(obj) = args.as_object() {
                 for (k, v) in obj {
                     scope.insert(k.clone(), v.clone());
                 }
+            }
+            // Inject context into workflow scope
+            if let Some(ctx) = self.context.as_ref() {
+                scope.insert("context".to_string(), ctx.clone());
             }
 
             let mut last_result = Value::Null;
@@ -344,18 +539,102 @@ impl AuwgentEngine {
                 last_result = evaluator.evaluate(stmt, &mut scope)?;
             }
 
-            let workflow_result = last_result;
-            if let Some(RunStep::IntentAction { result: res, .. }) = self.session.steps.last_mut() {
-                *res = Some(workflow_result.clone());
-            }
-            if let Some(turn) = self.session.current_turn_mut() {
-                if let Some(RunStep::IntentAction { result: res, .. }) = turn.steps.last_mut() {
-                    *res = Some(workflow_result);
+            Ok((wf_name, last_result))
+        } else {
+            Ok((
+                wf_name.clone(),
+                serde_json::json!({ "error": format!("Workflow not found: {}", wf_name) }),
+            ))
+        }
+    }
+
+    /// Execute a helper by running a sub-engine with the helper's model config and prompt.
+    async fn execute_helper(&mut self, call: &Value) -> AuwgentResult<(String, Value)> {
+        let helper_name = call["type"].as_str().unwrap_or("").to_string();
+        let args = call["args"].clone();
+
+        if let Some(helper) = self.ir.helpers.iter().find(|h| h.name == helper_name) {
+            // Build a sub-prompt from the helper's model config
+            let evaluator = Evaluator::new(&self.ir);
+            let mut scope = HashMap::new();
+            if let Some(obj) = args.as_object() {
+                for (k, v) in obj {
+                    scope.insert(k.clone(), v.clone());
                 }
             }
-        }
+            if let Some(ctx) = self.context.as_ref() {
+                scope.insert("context".to_string(), ctx.clone());
+            }
 
-        Ok(())
+            // Evaluate the helper's prompt
+            let helper_prompt = if let Some(entry) = helper.model_config.first() {
+                if let Some(cfg) = &entry.default_config {
+                    let prompt_val = evaluator.evaluate(&cfg.prompt, &mut scope)?;
+                    prompt_val.as_str().unwrap_or("").to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
+            // Append helper-specific intents
+            let helper_intents = crate::intents::generate_helper_intents(&self.ir, &helper_name);
+            let full_prompt = if helper_intents.is_empty() {
+                helper_prompt
+            } else {
+                format!("{}\n\n{}", helper_prompt, helper_intents)
+            };
+
+            // If we have a driver, run a single LLM call for the helper
+            if let Some(driver) = self.driver.as_ref() {
+                let messages = vec![
+                    crate::runtime::session::Message::system(&full_prompt),
+                    crate::runtime::session::Message::user(
+                        serde_json::to_string(&args).unwrap_or_default(),
+                    ),
+                ];
+
+                let model_name = if let Some(entry) = helper.model_config.first() {
+                    if let Some(cfg) = &entry.default_config {
+                        let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
+                        model_info["modelName"]
+                            .as_str()
+                            .unwrap_or("gemini-2.0-flash")
+                            .to_string()
+                    } else {
+                        "gemini-2.0-flash".to_string()
+                    }
+                } else {
+                    "gemini-2.0-flash".to_string()
+                };
+
+                let mut stream = driver
+                    .stream_generate(&model_name, &messages, None)
+                    .await
+                    .map_err(AuwgentError::Driver)?;
+
+                let mut response = String::new();
+                while let Some(chunk_res) = stream.next().await {
+                    match chunk_res {
+                        Ok(text) => response.push_str(&text),
+                        Err(e) => return Err(AuwgentError::StreamError(e)),
+                    }
+                }
+
+                Ok((helper_name, Value::String(response)))
+            } else {
+                Ok((
+                    helper_name,
+                    serde_json::json!({ "error": "No driver configured for helper execution" }),
+                ))
+            }
+        } else {
+            Ok((
+                helper_name.clone(),
+                serde_json::json!({ "error": format!("Helper not found: {}", helper_name) }),
+            ))
+        }
     }
 
     pub fn write_llm_chunk(&mut self, chunk: &str) {
@@ -369,6 +648,11 @@ impl AuwgentEngine {
     pub fn generate_prompt(&self) -> AuwgentResult<String> {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
+
+        // Inject context into scope so prompt templates can use {{context.field}} (#7)
+        if let Some(ctx) = self.context.as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
+        }
 
         let entry = self
             .ir
@@ -390,9 +674,5 @@ impl AuwgentEngine {
         }
 
         Ok(prompt)
-    }
-
-    pub fn get_session_steps(&self) -> &Vec<RunStep> {
-        &self.session.steps
     }
 }

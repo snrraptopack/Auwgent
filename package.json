@@ -25,7 +25,6 @@
     "workspaces": [
         "packages/language",
         "packages/cli",
-        "packages/extension",
-        "javascript"
+        "packages/extension"
     ]
 }

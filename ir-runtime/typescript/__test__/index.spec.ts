@@ -8,6 +8,7 @@
  * 4. Type-safe wrapper enforces tool completeness
  * 5. Prompt generation works
  * 6. Session export/import round-trips
+ * 7. onIntent callback works
  */
 import { describe, it, expect } from 'bun:test';
 import { Auwgent } from '../index.js';  // Native binding
@@ -127,7 +128,7 @@ describe('Native Auwgent', () => {
         const exported = agent.exportSession();
         const state = JSON.parse(exported);
         expect(state).toBeDefined();
-        expect(state.steps).toBeDefined();
+        expect(state.turns).toBeDefined();
 
         // Round-trip
         agent.importSession(exported);
@@ -139,7 +140,16 @@ describe('Native Auwgent', () => {
         const agent = new Auwgent(IR_JSON);
         agent.clearSession();
         const state = JSON.parse(agent.exportSession());
-        expect(state.steps).toEqual([]);
+        expect(state.turns).toEqual([]);
+    });
+
+    it('registers an onIntent callback', () => {
+        const agent = new Auwgent(IR_JSON);
+        agent.onIntent((name: string, value: any) => {
+            // Just observe
+            console.log(`[${name}]`, value);
+        });
+        // No error means success
     });
 });
 
@@ -182,7 +192,7 @@ describe('TypedAuwgent', () => {
         expect(prompt.length).toBeGreaterThan(0);
     });
 
-    it('exports typed session', () => {
+    it('exports typed session without steps', () => {
         const agent = createAuwgent(TEST_IR, {
             tools: {
                 greet: async () => ({ message: 'hi' }),
@@ -190,8 +200,10 @@ describe('TypedAuwgent', () => {
             },
         });
         const session = agent.exportSession();
-        expect(session.steps).toBeDefined();
-        expect(Array.isArray(session.steps)).toBe(true);
+        expect(session.turns).toBeDefined();
+        expect(Array.isArray(session.turns)).toBe(true);
+        // Steps should NOT exist anymore
+        expect((session as any).steps).toBeUndefined();
     });
 
     it('round-trips session through wrapper', () => {
@@ -205,6 +217,22 @@ describe('TypedAuwgent', () => {
         agent.importSession(session);
         const after = agent.exportSession();
         expect(after).toEqual(session);
+    });
+
+    it('registers onIntent through wrapper', () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const events: Array<{ name: string; value: unknown }> = [];
+        agent.onIntent((name, value) => {
+            events.push({ name, value });
+        });
+        // onIntent registered successfully — events will fire during run()
+        expect(events).toEqual([]);
     });
 
     it('parseIR returns typed IR', () => {

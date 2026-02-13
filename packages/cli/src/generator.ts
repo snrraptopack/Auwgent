@@ -14,7 +14,7 @@ import {
     isStringLiteral,
     isStringType,
     isUnionType,
-    isVariableDeclartion,
+    isVariableDeclaration,
     isVariableRef,
     isTransferStatement,
     isMemberAccess,
@@ -403,7 +403,7 @@ export function extractCondition(condition: Condition): any {
 
 export function extractExpression(express: Expression | Statement): any {
 
-    if (isVariableDeclartion(express)) {
+    if (isVariableDeclaration(express)) {
         let value = extractExpression(express.value) as any
         let name = express.name
         return { name: name, value: value, type: "variableDeclaration" }

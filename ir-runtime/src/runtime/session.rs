@@ -54,49 +54,17 @@ impl Message {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RUN STEPS — granular record of what happened during a turn
+// TURN — groups a single model interaction in the agentic loop
 // ═══════════════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum RunStep {
-    /// System or User instructions starting the turn
-    Prompt {
-        content: String,
-    },
-    /// What the model actually said (raw)
-    ModelResponse {
-        content: String,
-    },
-    /// High-level parsed output (if schema or text intent was hit)
-    ModelOutput {
-        data: Value,
-    },
-    /// A tool or workflow call and its result
-    IntentAction {
-        name: String,
-        args: Value,
-        result: Option<Value>,
-    },
-    Error {
-        message: String,
-    },
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TURN — groups steps that belong to a single model interaction
-// ═══════════════════════════════════════════════════════════════════════════
-
-/// A single turn in the agentic loop. One turn = one model call + its
-/// resulting actions (tool calls, workflow calls, etc.).
+/// A single turn in the agentic loop. One turn = one model call + response.
+/// Tool/workflow results are tracked via the onIntent callback, not stored here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Turn {
     /// The user/tool-result input that triggered this turn
     pub input: String,
     /// The raw model response
     pub model_response: String,
-    /// Granular steps that happened during this turn
-    pub steps: Vec<RunStep>,
 }
 
 impl Turn {
@@ -104,12 +72,7 @@ impl Turn {
         Self {
             input: input.into(),
             model_response: String::new(),
-            steps: Vec::new(),
         }
-    }
-
-    pub fn add_step(&mut self, step: RunStep) {
-        self.steps.push(step);
     }
 }
 
@@ -131,9 +94,6 @@ pub struct SessionState {
     pub system_prompt: Option<String>,
     /// Ordered list of turns in this session
     pub turns: Vec<Turn>,
-    /// Legacy flat steps list for backwards compatibility during migration.
-    /// Will be removed once all code uses turns.
-    pub steps: Vec<RunStep>,
 }
 
 impl SessionState {
@@ -153,14 +113,6 @@ impl SessionState {
     /// Get the current (most recent) turn mutably
     pub fn current_turn_mut(&mut self) -> Option<&mut Turn> {
         self.turns.last_mut()
-    }
-
-    /// Add a step to the current turn (and to the legacy flat list)
-    pub fn add_step(&mut self, step: RunStep) {
-        if let Some(turn) = self.turns.last_mut() {
-            turn.steps.push(step.clone());
-        }
-        self.steps.push(step);
     }
 
     /// Set the model response on the current turn
@@ -204,9 +156,8 @@ impl SessionState {
         serde_json::from_str(json)
     }
 
-    /// Clear all turns and steps
+    /// Clear all turns
     pub fn clear(&mut self) {
         self.turns.clear();
-        self.steps.clear();
     }
 }

@@ -17,14 +17,40 @@ pub fn format_schema_yaml(
             } else {
                 name.clone()
             };
-            let field_type = format_type_value(def, types);
 
-            let mut line = format!("{}{}: {}", indent, name_tag, field_type);
-            if let Some(desc) = def["description"].as_str() {
-                line.push_str(" // ");
-                line.push_str(desc);
+            // Check if this field has an inline object type — if so, recurse
+            let type_val = def.get("type");
+            let is_inline_object = type_val
+                .and_then(|t| t.as_object())
+                .and_then(|o| o.get("type"))
+                .and_then(|t| t.as_str())
+                .map_or(false, |t| t == "object");
+
+            if is_inline_object {
+                let nested_obj = type_val.unwrap();
+                let mut line = format!("{}{}:", indent, name_tag);
+                if let Some(desc) = def["description"].as_str() {
+                    line.push_str(" // ");
+                    line.push_str(desc);
+                }
+                lines.push(line);
+
+                // Recursively format the nested properties
+                if let Some(props) = nested_obj.as_object().and_then(|o| o.get("properties")) {
+                    let nested = format_schema_yaml(props, indent_level + 2, types);
+                    if !nested.is_empty() {
+                        lines.push(nested);
+                    }
+                }
+            } else {
+                let field_type = format_type_value(def, types);
+                let mut line = format!("{}{}: {}", indent, name_tag, field_type);
+                if let Some(desc) = def["description"].as_str() {
+                    line.push_str(" // ");
+                    line.push_str(desc);
+                }
+                lines.push(line);
             }
-            lines.push(line);
         }
     }
     lines.join("\n")
@@ -81,10 +107,7 @@ pub fn format_type_definitions_yaml(
     lines.join("\n")
 }
 
-pub fn format_type_value(
-    def: &Value,
-    types: Option<&HashMap<String, TypeDefinition>>,
-) -> String {
+pub fn format_type_value(def: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = def.as_object() {
         if let Some(type_val) = obj.get("type") {
             return format_type(type_val, types);

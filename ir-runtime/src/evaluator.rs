@@ -141,29 +141,7 @@ impl<'a> Evaluator<'a> {
                 let right = self.evaluate(&condition.right, scope)?;
 
                 // 2. Perform comparison
-                let is_true = match condition.operator.as_str() {
-                    "==" => left == right,
-                    "!=" => left != right,
-                    ">" => {
-                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
-                            l > r
-                        } else {
-                            false
-                        }
-                    }
-                    "<" => {
-                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
-                            l < r
-                        } else {
-                            false
-                        }
-                    }
-                    _ => {
-                        return Err(AuwgentError::UnsupportedOperator(
-                            condition.operator.clone(),
-                        ));
-                    }
-                };
+                let is_true = self.compare_values(&left, &right, &condition.operator)?;
 
                 // 3. Choose which block to execute
                 let block = if is_true { then } else { else_block };
@@ -225,25 +203,7 @@ impl<'a> Evaluator<'a> {
                 let right = self.evaluate(right_expr, scope)?;
 
                 // 2. Reuse comparison logic
-                let is_true = match op.as_str() {
-                    "==" => left == right,
-                    "!=" => left != right,
-                    ">" => {
-                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
-                            l > r
-                        } else {
-                            false
-                        }
-                    }
-                    "<" => {
-                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
-                            l < r
-                        } else {
-                            false
-                        }
-                    }
-                    _ => return Err(AuwgentError::UnsupportedOperator(op.clone())),
-                };
+                let is_true = self.compare_values(&left, &right, op)?;
 
                 // 3. Execute block
                 let block = if is_true { then } else { else_block };
@@ -454,13 +414,65 @@ impl<'a> Evaluator<'a> {
 
                 Ok(Value::Object(res))
             }
+            crate::types::ModelProvider::OpenAI { model_name, config } => {
+                let mut res = serde_json::Map::new();
+                res.insert("provider".to_string(), Value::String("openai".to_string()));
+                res.insert("modelName".to_string(), Value::String(model_name.clone()));
+
+                if let Some(expr) = config {
+                    let evaluated_config = self.evaluate(expr, scope)?;
+                    res.insert("config".to_string(), evaluated_config);
+                }
+
+                Ok(Value::Object(res))
+            }
+            crate::types::ModelProvider::Custom {
+                url,
+                model_name,
+                config,
+            } => {
+                let mut res = serde_json::Map::new();
+                res.insert("provider".to_string(), Value::String("custom".to_string()));
+                res.insert("url".to_string(), Value::String(url.clone()));
+                res.insert("modelName".to_string(), Value::String(model_name.clone()));
+
+                if let Some(expr) = config {
+                    let evaluated_config = self.evaluate(expr, scope)?;
+                    res.insert("config".to_string(), evaluated_config);
+                }
+
+                Ok(Value::Object(res))
+            }
             crate::types::ModelProvider::ModelRef { name } => {
-                // In a real implementation, we would look up the named config in AgentIR
-                // or just return the ref name for the driver to resolve.
                 let mut res = serde_json::Map::new();
                 res.insert("ref".to_string(), Value::String(name.clone()));
                 Ok(Value::Object(res))
             }
+        }
+    }
+
+    /// Reusable comparison helper to eliminate duplicated match logic.
+    fn compare_values(&self, left: &Value, right: &Value, op: &str) -> AuwgentResult<bool> {
+        match op {
+            "==" => Ok(left == right),
+            "!=" => Ok(left != right),
+            ">" => Ok(left
+                .as_f64()
+                .zip(right.as_f64())
+                .map_or(false, |(l, r)| l > r)),
+            "<" => Ok(left
+                .as_f64()
+                .zip(right.as_f64())
+                .map_or(false, |(l, r)| l < r)),
+            ">=" => Ok(left
+                .as_f64()
+                .zip(right.as_f64())
+                .map_or(false, |(l, r)| l >= r)),
+            "<=" => Ok(left
+                .as_f64()
+                .zip(right.as_f64())
+                .map_or(false, |(l, r)| l <= r)),
+            _ => Err(AuwgentError::UnsupportedOperator(op.to_string())),
         }
     }
 
