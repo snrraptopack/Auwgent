@@ -72,13 +72,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Evaluate the base prompt
             let mut prompt_content = evaluator
-                .evaluate(&default.prompt, &scope)?
+                .evaluate(&default.prompt, &mut scope)?
                 .as_str()
                 .unwrap_or("")
                 .to_string();
 
             // Append Intents section
-            let intents = evaluator.generate_intents();
+            let intents = ir_runtime::intents::generate_intents(&agent);
             if !intents.is_empty() {
                 prompt_content.push_str("\n\n");
                 prompt_content.push_str(&intents);
@@ -91,7 +91,105 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // ======================================================================================
+    // 4. Run Workflow "two"
+    // ======================================================================================
+
+    if let Some(workflow) = agent.workflows.iter().find(|w| w.name == "two") {
+        println!("\nExecuting Workflow 'two'...");
+        let mut wf_scope = HashMap::new();
+        // Bind args: value="workflow_test"
+        wf_scope.insert(
+            "value".to_string(),
+            serde_json::Value::String("workflow_test".to_string()),
+        );
+
+        // Execute body
+        let mut last_result = serde_json::Value::Null;
+        for stmt in &workflow.body {
+            last_result = evaluator.evaluate(stmt, &mut wf_scope)?;
+            // In a real runner, we would check for Return statements here
+        }
+        println!("Workflow Result: {:?}", last_result);
+    }
+
+    // ======================================================================================
+    // 5. Test Helper Execution (Manual)
+    // ======================================================================================
+    println!("\nTesting Helper Execution...");
+    let helper_call = ir_runtime::types::Expression::HelperCall {
+        value: "Again".to_string(),
+        args: vec![ir_runtime::types::Expression::Literal {
+            value: serde_json::Value::String("hello helper".to_string()),
+        }],
+    };
+
+    let result = evaluator.evaluate(&helper_call, &mut scope)?;
+    println!("Helper Result: {:?}", result);
+
     // TODO: Add more checks here later (e.g. for tools, output schema)
+
+    // ======================================================================================
+    // 6. Test Helper Tool Grants & Prompts (Manual)
+    // ======================================================================================
+    println!("\nTesting Helper Context (Prompt + Grants)...");
+
+    let helper_name = "testing";
+    println!("\n--- Helper '{}' Context ---", helper_name);
+
+    if let Some(helper) = agent.helpers.iter().find(|h| h.name == helper_name) {
+        // 1. Create Helper Scope (Input defaults)
+        let mut helper_scope = HashMap::new();
+        // Mock input for the helper (it expects "text")
+        helper_scope.insert(
+            "text".to_string(),
+            serde_json::Value::String("I am a sub-agent".to_string()),
+        );
+
+        // 2. Evaluate Helper Prompt
+        // We reuse the main evaluator because it holds the global context/types,
+        // but typically a helper might share or have isolated context.
+        // For now, we just evaluate the prompt expression in the helper's scope.
+        let mut full_prompt = String::new();
+
+        if let Some(entry) = helper.model_config.first() {
+            if let Some(default) = &entry.default_config {
+                let prompt_res = evaluator.evaluate(&default.prompt, &mut helper_scope)?;
+                full_prompt.push_str(prompt_res.as_str().unwrap_or(""));
+            }
+        }
+
+        // 3. Append Helper Intents (Tool Grants)
+        let helper_intents = ir_runtime::intents::generate_helper_intents(&agent, helper_name);
+        if !helper_intents.is_empty() {
+            full_prompt.push_str("\n\n");
+            full_prompt.push_str(&helper_intents);
+        }
+
+        println!("{}", full_prompt);
+    } else {
+        println!("Helper '{}' not found!", helper_name);
+    }
+
+    // ======================================================================================
+    // 7. Test Workflow with Helper Call
+    // ======================================================================================
+    if let Some(workflow) = agent.workflows.iter().find(|w| w.name == "eei") {
+        println!("\nExecuting Workflow 'eei' (calls helper)...");
+        let mut wf_scope = HashMap::new();
+        // Bind args: text="hello from workflow"
+        wf_scope.insert(
+            "text".to_string(),
+            serde_json::Value::String("hello from workflow".to_string()),
+        );
+
+        // Execute body
+        let mut last_result = serde_json::Value::Null;
+        for stmt in &workflow.body {
+            last_result = evaluator.evaluate(stmt, &mut wf_scope)?;
+        }
+        println!("Workflow Result: {:?}", last_result);
+    }
 
     Ok(())
 }

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 // --- Top Level ---
 
@@ -12,10 +13,40 @@ pub struct AgentIR {
     pub output: Option<Value>,
     pub context: Option<Value>,
     pub tools: Vec<Tool>,
-    pub workflows: Vec<Value>,
-    pub helpers: Vec<Value>,
+    pub workflows: Vec<Workflow>,
+    pub helpers: Vec<Helper>,
+    #[serde(default)]
+    pub helper_tool_grants: Option<HashMap<String, Value>>,
+    #[serde(default)]
+    pub helper_handoff: Option<HashMap<String, String>>,
     #[serde(default)]
     pub tests: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Helper {
+    pub name: String,
+    pub description: Option<String>,
+    pub model_config: Vec<ModelConfigEntry>,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+    pub context: Option<Value>,
+    pub tools: Vec<Tool>,
+    pub workflows: Vec<Workflow>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Workflow {
+    #[serde(rename = "flowName")]
+    pub name: String,
+    #[serde(rename = "flowParams")]
+    pub params: Value, // Object of parameter definitions
+    pub returns: Value,
+    pub description: Option<String>,
+    pub body: Vec<Expression>,
+    #[serde(default)]
+    pub tools: Vec<Tool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -85,6 +116,9 @@ pub enum Expression {
     Template {
         value: Vec<Expression>,
     },
+    Object {
+        value: HashMap<String, Expression>,
+    },
 
     // Conditional Logic
     InlineIf {
@@ -126,6 +160,29 @@ pub enum Expression {
     InlinePrompt {
         parts: Vec<Expression>,
     },
+    PromptExamples {
+        examples: Vec<ExamplePair>,
+    },
+
+    VariableDeclaration {
+        name: String,
+        value: Box<Expression>,
+    },
+    FunctionCall {
+        value: String,
+        args: Vec<Expression>,
+    },
+    HelperCall {
+        value: String,
+        args: Vec<Expression>,
+    },
+    Transfer {
+        target: Box<Expression>,
+        mode: String,
+    },
+    Parallel {
+        body: Vec<Expression>,
+    },
 
     Expression {
         value: Box<Expression>,
@@ -144,4 +201,10 @@ pub struct Comparison {
     pub left: Box<Expression>,
     pub operator: String,
     pub right: Box<Expression>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ExamplePair {
+    pub user: String,
+    pub assistant: String,
 }

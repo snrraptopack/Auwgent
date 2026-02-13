@@ -19,7 +19,6 @@ import {
     isTransferStatement,
     isMemberAccess,
     isBinaryExpression,
-    isNamedPrompt,
     isInlinePromptBlock,
     isMultilineStringLiteral,
     isParallelStatement,
@@ -43,7 +42,9 @@ import {
     createAuwgentServices,
     isPromptCall,
     isExampleBlock,
-    Condition
+    Condition,
+    isNamedPrompt,
+    PromptStatement
 } from "auwgent-language"
 
 
@@ -111,7 +112,7 @@ export async function generateOutput(model: Model, source: string, destination: 
     // Initialize cross-file resolver
     const resolver = new CrossFileResolver();
     const services = createAuwgentServices(NodeFileSystem).Auwgent;
-    
+
     // Create a parser function for the resolver
     const parseFile = async (filePath: string): Promise<Model | null> => {
         try {
@@ -126,17 +127,17 @@ export async function generateOutput(model: Model, source: string, destination: 
 
     // Resolve all imports and collect dependencies
     const absoluteSourcePath = path.resolve(source);
-    const { helpers: importedHelpers, types: importedTypes } = 
+    const { helpers: importedHelpers, types: importedTypes } =
         await resolver.resolveImports(model, absoluteSourcePath, parseFile);
 
     // Collect all type definitions (local + imported)
     const typeMap = new Map<string, TypeDeclaration>();
-    
+
     // Add imported types
     for (const [name, type] of importedTypes) {
         typeMap.set(name, type);
     }
-    
+
     // Add local types (override imported if same name)
     for (const element of model.elements) {
         if (isTypeDeclaration(element)) {
@@ -146,13 +147,13 @@ export async function generateOutput(model: Model, source: string, destination: 
 
     // First pass: collect all helpers (local + imported)
     const helperMap = new Map<string, HelperType>();
-    
+
     // Add imported helpers
     for (const [name, helper] of importedHelpers) {
         const helperIR = handleHelper(helper);
         helperMap.set(name, helperIR);
     }
-    
+
     // Add local helpers (override imported if same name)
     for (const element of model.elements) {
         if (element.$type === "Helper") {
@@ -172,12 +173,12 @@ export async function generateOutput(model: Model, source: string, destination: 
             if (agentIR.output && typeof agentIR.output === 'object' && '__directType' in agentIR.output) {
                 const directTypeInfo = agentIR.output as any;
                 const typeName = directTypeInfo.__directType;
-                
+
                 // Look up the type definition
                 if (typeMap.has(typeName)) {
                     const typeDef = typeMap.get(typeName)!;
                     const flattened: any = {};
-                    
+
                     // Flatten the type properties
                     for (const prop of typeDef.types) {
                         flattened[prop.name] = {
@@ -186,7 +187,7 @@ export async function generateOutput(model: Model, source: string, destination: 
                             ...(prop.description && { description: prop.description })
                         };
                     }
-                    
+
                     agentIR.output = flattened;
                 }
             }
@@ -280,10 +281,10 @@ function handleHelper(helper: Helper): HelperType {
  */
 function extractTypeDefinitions(typeMap: Map<string, TypeDeclaration>): Record<string, TypeDefinition> {
     const types: Record<string, TypeDefinition> = {};
-    
+
     for (const [name, typeDecl] of typeMap.entries()) {
         const properties: Record<string, PropertyInfo> = {};
-        
+
         for (const prop of typeDecl.types) {
             properties[prop.name] = {
                 type: extractType(prop.t),
@@ -291,13 +292,13 @@ function extractTypeDefinitions(typeMap: Map<string, TypeDeclaration>): Record<s
                 ...(prop.description && { description: prop.description })
             };
         }
-        
+
         types[name] = {
             isOutput: typeDecl.isOutput,
             properties
         };
     }
-    
+
     return types;
 }
 
@@ -308,12 +309,12 @@ export function extractType(types: Types): any {
         const elementType = extractBaseType(types.elementType);
         return { type: "array", items: elementType };
     }
-    
+
     // Handle BaseType
     if (isBaseType(types)) {
         return extractBaseType(types);
     }
-    
+
     return 'unknown';
 }
 
@@ -322,27 +323,27 @@ function extractBaseType(baseType: BaseType): any {
     if (baseType.typeRef) {
         return { type: "typeRef", name: baseType.typeRef.ref?.name || "unknown" };
     }
-    
+
     // Handle inline types
     if (baseType.type) {
         const t = baseType.type;
-        
+
         if (isUnionType(t)) {
             return { type: "union", options: t.options };
         }
-        
+
         if (isBooleanType(t)) {
             return "boolean";
         }
-        
+
         if (isNumberType(t)) {
             return "number";
         }
-        
+
         if (isStringType(t)) {
             return "string";
         }
-        
+
         if (isObjectType(t)) {
             const props = {} as any;
             t.properties.forEach(prop => {
@@ -351,7 +352,7 @@ function extractBaseType(baseType: BaseType): any {
             return { type: "object", properties: props };
         }
     }
-    
+
     return 'unknown';
 }
 
@@ -377,7 +378,7 @@ export function extractCondition(condition: Condition): any {
             right: extractExpression(condition.right)
         };
     }
-    
+
     if (isLogicalCondition(condition)) {
         // Logical condition: left && right or left || right
         return {
@@ -395,7 +396,7 @@ export function extractCondition(condition: Condition): any {
             value: extractExpression(condition.value)
         };
     }
-    
+
     // Fallback (shouldn't happen)
     return { type: "unknown" };
 }
@@ -574,9 +575,27 @@ export function extractExpression(express: Expression | Statement): any {
     return null
 }
 
-export function extractPromptStatement(statement: any): any | null {
+export function extractPromptStatement(statement: Expression | Statement | PromptStatement): any | null {
     if (isExampleBlock(statement)) {
-        return null;
+        const examples: { user: string, assistant: string }[] = [];
+        let currentUserText = "";
+
+        for (const msg of statement.messages) {
+            if (msg.role === 'user') {
+                currentUserText = msg.text;
+            } else if (msg.role === 'assistant') {
+                examples.push({
+                    user: currentUserText,
+                    assistant: msg.text
+                });
+                currentUserText = ""; // Reset after pairing
+            }
+        }
+
+        return {
+            type: "promptExamples",
+            examples: examples
+        };
     }
     return extractExpression(statement);
 }
@@ -588,19 +607,19 @@ export function extractPromptStatement(statement: any): any | null {
 function processMultilineString(value: string): any {
     // Remove the triple quotes from the value
     const content = value.replace(/^"""/, '').replace(/"""$/, '');
-    
+
     const segments = parseTemplateContent(content);
-    
+
     // If no segments, return empty literal
     if (segments.length === 0) {
         return { type: "literal", value: content };
     }
-    
+
     // If single segment, return it directly
     if (segments.length === 1) {
         return segments[0];
     }
-    
+
     // Wrap in template type for proper evaluation
     return { type: "template", value: segments };
 }
@@ -611,11 +630,11 @@ function processMultilineString(value: string): any {
 function parseTemplateContent(content: string): any[] {
     const segments: any[] = [];
     let pos = 0;
-    
+
     while (pos < content.length) {
         // Look for next {{ 
         const nextOpen = content.indexOf('{{', pos);
-        
+
         if (nextOpen === -1) {
             // No more interpolations, add remaining as literal
             const remaining = content.substring(pos);
@@ -624,15 +643,15 @@ function parseTemplateContent(content: string): any[] {
             }
             break;
         }
-        
+
         // Add literal text before {{
         if (nextOpen > pos) {
             segments.push({ type: "literal", value: content.substring(pos, nextOpen) });
         }
-        
+
         // Check what kind of block this is
         const afterOpen = content.substring(nextOpen + 2);
-        
+
         if (afterOpen.startsWith('#if ')) {
             // {{#if condition}}...{{/if}} or {{#if condition}}...{{else}}...{{/if}}
             const result = parseIfBlock(content, nextOpen);
@@ -651,13 +670,13 @@ function parseTemplateContent(content: string): any[] {
                 segments.push({ type: "literal", value: content.substring(nextOpen) });
                 break;
             }
-            
+
             const exprText = content.substring(nextOpen + 2, closePos).trim();
             segments.push(parseInterpolationExpression(exprText));
             pos = closePos + 2;
         }
     }
-    
+
     return segments;
 }
 
@@ -672,32 +691,32 @@ function parseIfBlock(content: string, startPos: number): { node: any, endPos: n
     if (conditionEnd === -1) {
         return { node: { type: "literal", value: "" }, endPos: content.length };
     }
-    
+
     const conditionText = content.substring(conditionStart, conditionEnd).trim();
     const condition = parseCondition(conditionText);
-    
+
     // Find matching {{/if}} (handling nested ifs)
     let depth = 1;
     let searchPos = conditionEnd + 2;
     let elsePos = -1;
     let endIfPos = -1;
-    
+
     while (depth > 0 && searchPos < content.length) {
         const nextIf = content.indexOf('{{#if ', searchPos);
         const nextElse = content.indexOf('{{else}}', searchPos);
         const nextEndIf = content.indexOf('{{/if}}', searchPos);
-        
+
         // Find the closest tag
         const positions = [
             { type: 'if', pos: nextIf },
             { type: 'else', pos: nextElse },
             { type: 'endif', pos: nextEndIf }
         ].filter(p => p.pos !== -1).sort((a, b) => a.pos - b.pos);
-        
+
         if (positions.length === 0) break;
-        
+
         const closest = positions[0];
-        
+
         if (closest.type === 'if') {
             depth++;
             searchPos = closest.pos + 6;
@@ -712,25 +731,25 @@ function parseIfBlock(content: string, startPos: number): { node: any, endPos: n
             searchPos = closest.pos + 7;
         }
     }
-    
+
     if (endIfPos === -1) {
         // Malformed, return empty
         return { node: { type: "literal", value: "" }, endPos: content.length };
     }
-    
+
     // Extract then and else blocks
     const thenStart = conditionEnd + 2;
     const thenEnd = elsePos !== -1 ? elsePos : endIfPos;
     const thenContent = content.substring(thenStart, thenEnd);
     const thenBlock = parseTemplateContent(thenContent);
-    
+
     let elseBlock: any[] = [];
     if (elsePos !== -1) {
         const elseStart = elsePos + 8; // {{else}}
         const elseContent = content.substring(elseStart, endIfPos);
         elseBlock = parseTemplateContent(elseContent);
     }
-    
+
     return {
         node: {
             type: "inlineIf",
@@ -749,13 +768,13 @@ function parseIfBlock(content: string, startPos: number): { node: any, endPos: n
 function parseCondition(condText: string): any {
     // Match: expression operator expression
     const operators = ['==', '!=', '>=', '<=', '>', '<'];
-    
+
     for (const op of operators) {
         const opIndex = condText.indexOf(op);
         if (opIndex !== -1) {
             const left = condText.substring(0, opIndex).trim();
             const right = condText.substring(opIndex + op.length).trim();
-            
+
             return {
                 left: parseInterpolationExpression(left),
                 operator: op,
@@ -763,7 +782,7 @@ function parseCondition(condText: string): any {
             };
         }
     }
-    
+
     // No operator found - this is an error, but return a falsy condition
     // We require explicit comparisons for cross-language compatibility
     console.warn(`Warning: Condition "${condText}" has no explicit operator. Use "value == true" instead.`);
@@ -779,20 +798,20 @@ function parseCondition(condText: string): any {
  */
 function parseConditionValue(value: string): any {
     // String literal
-    if ((value.startsWith('"') && value.endsWith('"')) || 
+    if ((value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))) {
         return { type: "literal", value: value.slice(1, -1) };
     }
-    
+
     // Boolean
     if (value === 'true') return { type: "literal", value: true };
     if (value === 'false') return { type: "literal", value: false };
-    
+
     // Number
     if (!isNaN(Number(value))) {
         return { type: "literal", value: Number(value) };
     }
-    
+
     // Variable reference
     return parseInterpolationExpression(value);
 }
@@ -804,21 +823,21 @@ function parseConditionValue(value: string): any {
 function parseSchemaDirective(content: string, startPos: number): { node: any, endPos: number } {
     const directiveStart = startPos + 2; // {{
     const closePos = content.indexOf('}}', directiveStart);
-    
+
     if (closePos === -1) {
         return { node: { type: "literal", value: "" }, endPos: content.length };
     }
-    
+
     // Extract: @schema(path)
     const directive = content.substring(directiveStart, closePos).trim();
     const match = directive.match(/^@schema\(([^)]+)\)$/);
-    
+
     if (!match) {
         return { node: { type: "literal", value: "" }, endPos: closePos + 2 };
     }
-    
+
     const schemaPath = match[1].trim();
-    
+
     return {
         node: {
             type: "schemaDirective",
@@ -834,24 +853,24 @@ function parseSchemaDirective(content: string, startPos: number): { node: any, e
  */
 function parseInterpolationExpression(expr: string): any {
     // Handle string literals
-    if ((expr.startsWith('"') && expr.endsWith('"')) || 
+    if ((expr.startsWith('"') && expr.endsWith('"')) ||
         (expr.startsWith("'") && expr.endsWith("'"))) {
         return { type: "literal", value: expr.slice(1, -1) };
     }
-    
+
     // Handle member access: user.name or user.profile.email
     if (expr.includes('.')) {
         const parts = expr.split('.');
         const objectName = parts[0];
         const properties = parts.slice(1);
-        
+
         return {
             type: "memberAccess",
             object: { type: "varRef", value: objectName },
             properties: properties
         };
     }
-    
+
     // Handle simple variable reference
     return { type: "varRef", value: expr };
 }

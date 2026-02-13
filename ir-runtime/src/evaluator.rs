@@ -15,7 +15,7 @@ impl<'a> Evaluator<'a> {
     pub fn evaluate(
         &self,
         expr: &Expression,
-        scope: &HashMap<String, Value>,
+        scope: &mut HashMap<String, Value>,
     ) -> Result<Value, Box<dyn Error>> {
         match expr {
             Expression::SchemaDirective { path } => {
@@ -28,7 +28,7 @@ impl<'a> Evaluator<'a> {
                 };
 
                 if let Some(s) = schema {
-                    Ok(Value::String(self.format_schema(s)))
+                    Ok(Value::String(crate::schema::format_schema(s)))
                 } else {
                     Ok(Value::String("{}".to_string()))
                 }
@@ -92,6 +92,15 @@ impl<'a> Evaluator<'a> {
                 }
             }
 
+            Expression::Object { value } => {
+                let mut map = serde_json::Map::new();
+                for (k, v) in value {
+                    let evaluated_val = self.evaluate(v, scope)?;
+                    map.insert(k.clone(), evaluated_val);
+                }
+                Ok(Value::Object(map))
+            }
+
             Expression::InlineIf {
                 condition,
                 then,
@@ -105,7 +114,20 @@ impl<'a> Evaluator<'a> {
                 let is_true = match condition.operator.as_str() {
                     "==" => left == right,
                     "!=" => left != right,
-                    // We can add >, <, etc. later if needed, but strings/numbers can be tricky in JSON
+                    ">" => {
+                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
+                            l > r
+                        } else {
+                            false
+                        }
+                    }
+                    "<" => {
+                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
+                            l < r
+                        } else {
+                            false
+                        }
+                    }
                     _ => {
                         return Err(format!("Operator {} not supported", condition.operator).into());
                     }
@@ -169,6 +191,20 @@ impl<'a> Evaluator<'a> {
                 let is_true = match op.as_str() {
                     "==" => left == right,
                     "!=" => left != right,
+                    ">" => {
+                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
+                            l > r
+                        } else {
+                            false
+                        }
+                    }
+                    "<" => {
+                        if let (Some(l), Some(r)) = (left.as_f64(), right.as_f64()) {
+                            l < r
+                        } else {
+                            false
+                        }
+                    }
                     _ => return Err(format!("Operator {} not supported", op).into()),
                 };
 
@@ -192,16 +228,21 @@ impl<'a> Evaluator<'a> {
                 ..
             } => {
                 // 1. Create a local scope by cloning the current one and adding parameters
+                // Evaluate args in current scope first
+                let mut evaluated_args = Vec::new();
+                for arg_expr in args {
+                    evaluated_args.push(self.evaluate(arg_expr, scope)?);
+                }
+
                 let mut local_scope = scope.clone();
-                for (param_name, arg_expr) in params.iter().zip(args.iter()) {
-                    let val = self.evaluate(arg_expr, scope)?;
+                for (param_name, val) in params.iter().zip(evaluated_args.into_iter()) {
                     local_scope.insert(param_name.clone(), val);
                 }
 
                 // 2. Evaluate the prompt block with the local scope
                 let mut results = Vec::new();
                 for part in value {
-                    results.push((part, self.evaluate(part, &local_scope)?));
+                    results.push((part, self.evaluate(part, &mut local_scope)?));
                 }
 
                 // 3. Join results if all are strings
@@ -225,10 +266,19 @@ impl<'a> Evaluator<'a> {
                         .as_str()
                         .map(|s| s.to_string())
                         .unwrap_or_else(|| right_val.to_string());
+
+                    let l_trimmed = l_str.trim_end();
+                    // Preserve explicit structure of right side (e.g. if it starts with newlines)
+                    // Only add a separator if the right side doesn't already have one.
+                    let separator = if r_str.starts_with('\n') || r_str.starts_with("\r\n") {
+                        ""
+                    } else {
+                        "\n"
+                    };
+
                     Ok(Value::String(format!(
-                        "{}\n{}",
-                        l_str.trim_end(),
-                        r_str.trim_start()
+                        "{}{}{}",
+                        l_trimmed, separator, r_str
                     )))
                 } else {
                     Err(format!("Unsupported operator: {}", op).into())
@@ -247,6 +297,111 @@ impl<'a> Evaluator<'a> {
                 } else {
                     Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
                 }
+            }
+
+            Expression::PromptExamples { examples } => {
+                let mut formatted = String::from("\n\n# Example\n");
+                for (i, example) in examples.iter().enumerate() {
+                    formatted.push_str(&format!(
+                        "User: {}\nAssistant: {}\n",
+                        example.user, example.assistant
+                    ));
+                    // Add newline between examples, but not after the last one if we want to be strict,
+                    // though a trailing newline is usually fine in prompts.
+                    if i < examples.len() - 1 {
+                        formatted.push('\n');
+                    }
+                }
+                // Ensure it ends with a newline to separate from following text
+                formatted.push('\n');
+                Ok(Value::String(formatted))
+            }
+
+            Expression::VariableDeclaration { name, value } => {
+                let val = self.evaluate(value, scope)?;
+                scope.insert(name.clone(), val);
+                Ok(Value::Null)
+            }
+
+            Expression::FunctionCall {
+                value: func_name,
+                args,
+            } => {
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    arg_values.push(self.evaluate(arg, scope)?);
+                }
+
+                // Mock Tool Execution
+                match func_name.as_str() {
+                    "hello" => {
+                        let id = arg_values
+                            .get(0)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        Ok(Value::String(format!("Hello tool called with id: {}", id)))
+                    }
+                    "amina" => {
+                        let name = arg_values
+                            .get(0)
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown");
+                        // Mock return "nothing" or whatever logic
+                        // In workflow "two":
+                        // let a = amina(value)
+                        // return amina(value)
+                        // It returns string.
+                        Ok(Value::String(format!(
+                            "Amina tool called with name: {}",
+                            name
+                        )))
+                    }
+                    _ => Err(format!("Unknown function/tool: {}", func_name).into()),
+                }
+            }
+
+            Expression::HelperCall {
+                value: helper_name,
+                args,
+            } => {
+                let mut arg_values = Vec::new();
+                for arg in args {
+                    arg_values.push(self.evaluate(arg, scope)?);
+                }
+
+                // Validate helper exists
+                if !self.ir.helpers.iter().any(|h| h.name == *helper_name) {
+                    return Err(format!("Unknown helper: {}", helper_name).into());
+                }
+
+                // Mock Helper Execution
+                // In a real implementation, this would:
+                // 1. Create a new Helper Runtime
+                // 2. Pass input (args mapped to helper input schema)
+                // 3. Run the helper's default prompt/workflow
+                Ok(Value::String(format!(
+                    "Helper '{}' executed with args: {:?}",
+                    helper_name, arg_values
+                )))
+            }
+
+            Expression::Transfer { target, mode } => {
+                let target_val = self.evaluate(target, scope)?;
+                // Mock Transfer Execution
+                Ok(Value::String(format!(
+                    "Transferred to '{}' with mode '{}'",
+                    target_val, mode
+                )))
+            }
+
+            Expression::Parallel { body } => {
+                println!("Executing Parallel Block ({} tasks)...", body.len());
+                let mut results = Vec::new();
+                // TODO: Implement actual parallel execution (requires async/threading)
+                for expr in body {
+                    results.push(self.evaluate(expr, scope)?);
+                }
+                Ok(Value::Array(results))
             }
 
             Expression::Expression { value } => self.evaluate(value, scope),
@@ -273,110 +428,95 @@ impl<'a> Evaluator<'a> {
                 joined.truncate(len);
             }
 
-            joined.push_str(s);
+            // Indentation Fix: If this is a literal string part (from template text),
+            // it might carry accumulated indentation from the source file.
+            if matches!(expr, Expression::Literal { .. }) {
+                // If it's a literal, clean it up with dedent
+                // but only if it looks like a multiline block or starts with newline
+                if s.contains('\n') {
+                    let dedented = self.dedent(s);
+                    // If the previous part ended with newline, we should probably trim start of this one.
+                    if joined.ends_with('\n') {
+                        // If we are appending to a newline, we want to ensure we don't double up or leave weird gaps.
+                        // dedent() returns a clean block.
+                        joined.push_str(&dedented);
+                    } else {
+                        // If we are appending to existing text (inline), we might not want to dedent the *first* line
+                        // if it matters, but usually for prompt templates, consistent left-alignment is prefered.
+                        joined.push_str(&dedented);
+                    }
+                } else {
+                    joined.push_str(s);
+                }
+            } else {
+                joined.push_str(s);
+            }
         }
         joined
     }
 
-    pub fn generate_intents(&self) -> String {
-        let mut sections = Vec::new();
+    fn dedent(&self, s: &str) -> String {
+        // Normalize tabs to 4 spaces to handle mixed indentation
+        let s_expanded = s.replace('\t', "    ");
+        let lines: Vec<&str> = s_expanded.lines().collect();
 
-        // 1. # tool available
-        if !self.ir.tools.is_empty() {
-            let mut tool_lines = Vec::new();
-            for tool in &self.ir.tools {
-                let mut params = Vec::new();
-                if let Some(obj) = tool.params.as_object() {
-                    for (name, def) in obj {
-                        let field_type = def["type"].as_str().unwrap_or("any");
-                        params.push(format!("{}: {}", name, field_type));
-                    }
-                }
-                let mut sig = format!("{}({})", tool.name, params.join(", "));
-                if let Some(desc) = &tool.description {
-                    sig.push_str(" // ");
-                    sig.push_str(desc);
-                }
-                tool_lines.push(sig);
-            }
-            sections.push(format!("# tool available\n{}", tool_lines.join("\n")));
+        if lines.is_empty() {
+            return String::new();
         }
 
-        // 2. Options as standalone # Option sections
-        if let Some(output) = &self.ir.output {
-            if output.is_object() && !output.as_object().unwrap().is_empty() {
-                let schema_str = self.format_schema_yaml(output, 2);
-                sections.push(format!("# Option\nresponse_schema:\n{}", schema_str));
+        // 1. Calculate common indentation from the second line onwards
+        let mut min_indent = usize::MAX;
+
+        // If there's only one line, we just trim it?
+        // Or do we treat it as having 0 indent if we follow cleandoc?
+        // Let's just calculate from all lines if only 1, or just trim start.
+        if lines.len() == 1 {
+            return lines[0].trim_start().to_string();
+        }
+
+        for (i, line) in lines.iter().enumerate() {
+            // Skip the first line for indentation calculation
+            if i == 0 {
+                continue;
+            }
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let indent = line.chars().take_while(|c| *c == ' ' || *c == '\t').count();
+            if indent < min_indent {
+                min_indent = indent;
+            }
+        }
+
+        if min_indent == usize::MAX {
+            min_indent = 0;
+        }
+
+        // 2. Strip indentation
+        let mut dedented = String::new();
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                dedented.push('\n');
+            }
+
+            if i == 0 {
+                // For the first line, we just trim leading whitespace
+                dedented.push_str(line.trim_start());
             } else {
-                sections.push("# Option\nresponse_text:\n  text: string".to_string());
-            }
-        } else {
-            sections.push("# Option\nresponse_text:\n  text: string".to_string());
-        }
-
-        if !self.ir.tools.is_empty() {
-            let tool_names: Vec<String> = self.ir.tools.iter().map(|t| t.name.clone()).collect();
-            let tool_union = if tool_names.len() > 1 {
-                format!("< {} >", tool_names.join(" | "))
-            } else {
-                tool_names[0].clone()
-            };
-
-            sections.push(format!(
-                "# Option\n tool_call:\n  type: {}\n  args: {{ key: value }}",
-                tool_union
-            ));
-        }
-
-        sections.join("\n\n")
-    }
-
-    fn format_schema_yaml(&self, schema: &Value, indent_level: usize) -> String {
-        let indent = " ".repeat(indent_level);
-        let mut lines = Vec::new();
-        if let Some(obj) = schema.as_object() {
-            for (name, def) in obj {
-                let is_optional = def["optional"].as_bool().unwrap_or(false);
-                let name_tag = if is_optional {
-                    format!("{}?", name)
+                if line.len() >= min_indent {
+                    dedented.push_str(&line[min_indent..]);
                 } else {
-                    name.clone()
-                };
-                let field_type = def["type"].as_str().unwrap_or("any");
-
-                let mut line = format!("{}{}: {}", indent, name_tag, field_type);
-                if let Some(desc) = def["description"].as_str() {
-                    line.push_str(" // ");
-                    line.push_str(desc);
+                    dedented.push_str(line.trim_start()); // Fallback for shorter lines (empty)
                 }
-                lines.push(line);
             }
         }
-        lines.join("\n")
-    }
 
-    fn format_schema(&self, schema: &Value) -> String {
-        if let Some(obj) = schema.as_object() {
-            let mut fields = Vec::new();
-            for (name, def) in obj {
-                let is_optional = def["optional"].as_bool().unwrap_or(false);
-                let name_tag = if is_optional {
-                    format!("{}?", name)
-                } else {
-                    name.clone()
-                };
-                let field_type = def["type"].as_str().unwrap_or("any");
-
-                let mut field_str = format!("{}:{}", name_tag, field_type);
-                if let Some(desc) = def["description"].as_str() {
-                    field_str.push_str(" // ");
-                    field_str.push_str(desc);
-                }
-                fields.push(field_str);
-            }
-            format!("schema: {{ {} }}", fields.join(", "))
-        } else {
-            "{}".to_string()
+        // Preserve trailing newline if original had it
+        if s.ends_with('\n') && !dedented.ends_with('\n') {
+            dedented.push('\n');
         }
+
+        dedented
     }
 }
