@@ -68,6 +68,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Evaluate the default model config's prompt
     if let Some(entry) = agent.model_config.first() {
         if let Some(default) = &entry.default_config {
+            println!(" Evaluating model config...");
+            let model_info = evaluator.evaluate_model(default, &mut scope)?;
+            println!(
+                "MODEL CONFIG: {}",
+                serde_json::to_string_pretty(&model_info)?
+            );
+
             println!(" Evaluating prompt...");
 
             // Evaluate the base prompt

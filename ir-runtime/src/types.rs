@@ -87,7 +87,10 @@ pub enum ModelProvider {
     Gemini {
         #[serde(rename = "modelName")]
         model_name: String,
-        config: Option<Value>,
+        config: Option<Box<Expression>>,
+    },
+    ModelRef {
+        name: String,
     },
     // We can add OpenAI or Custom later when they appear in your JSON
 }

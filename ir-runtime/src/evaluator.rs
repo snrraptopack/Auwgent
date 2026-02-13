@@ -408,6 +408,42 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    pub fn evaluate_model(
+        &self,
+        config: &crate::types::ModelConfig,
+        scope: &mut HashMap<String, Value>,
+    ) -> Result<Value, Box<dyn Error>> {
+        self.evaluate_provider(&config.model, scope)
+    }
+
+    pub fn evaluate_provider(
+        &self,
+        provider: &crate::types::ModelProvider,
+        scope: &mut HashMap<String, Value>,
+    ) -> Result<Value, Box<dyn Error>> {
+        match provider {
+            crate::types::ModelProvider::Gemini { model_name, config } => {
+                let mut res = serde_json::Map::new();
+                res.insert("provider".to_string(), Value::String("gemini".to_string()));
+                res.insert("modelName".to_string(), Value::String(model_name.clone()));
+
+                if let Some(expr) = config {
+                    let evaluated_config = self.evaluate(expr, scope)?;
+                    res.insert("config".to_string(), evaluated_config);
+                }
+
+                Ok(Value::Object(res))
+            }
+            crate::types::ModelProvider::ModelRef { name } => {
+                // In a real implementation, we would look up the named config in AgentIR
+                // or just return the ref name for the driver to resolve.
+                let mut res = serde_json::Map::new();
+                res.insert("ref".to_string(), Value::String(name.clone()));
+                Ok(Value::Object(res))
+            }
+        }
+    }
+
     // Helper method for smart dedent logic
     fn join_and_dedent(&self, parts: Vec<(&Expression, Value)>) -> String {
         let mut joined = String::new();
