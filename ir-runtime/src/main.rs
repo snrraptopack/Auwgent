@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("*** SIMULATION MODE ENABLED (No GEMINI_API_KEY found) ***");
 
-        let engine_prompt = engine.generate_prompt(None)?;
+        let engine_prompt = engine.generate_prompt()?;
         println!("Engine Generated Prompt (Length: {})", engine_prompt.len());
 
         // Simulate LLM Output with a tool_call intent
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine.write_llm_chunk("```\n");
         engine.end_llm_stream();
 
-        engine.process_intents().await?;
+        let _ = engine.process_intents().await?;
 
         // Simulate Workflow
         println!("\nSimulating LLM Output (Workflow Call Intent)...");

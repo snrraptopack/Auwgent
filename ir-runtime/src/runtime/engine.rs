@@ -20,6 +20,8 @@ pub struct AuwgentEngine {
     driver: Option<Box<dyn ModelDriver>>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Accumulated raw response for the current turn
+    current_raw_response: String,
 }
 
 impl AuwgentEngine {
@@ -50,6 +52,7 @@ impl AuwgentEngine {
             orchestrator,
             driver: None,
             pending_intents,
+            current_raw_response: String::new(),
         }
     }
 
@@ -63,20 +66,15 @@ impl AuwgentEngine {
 
     /// Execute the agentic loop.
     pub async fn run(&mut self, input: Option<Value>) -> Result<(), Box<dyn std::error::Error>> {
-        let driver = self
-            .driver
-            .as_ref()
-            .ok_or("No driver configured for AuwgentEngine")?;
         let evaluator = Evaluator::new(&self.ir);
 
-        // 1. Evaluate Model Info (Provider, ModelName, Config)
+        // 1. Evaluate Model Info
         let model_entry = self.ir.model_config.first().ok_or("No model config")?;
         let default_config = model_entry
             .default_config
             .as_ref()
             .ok_or("No default config")?;
 
-        // Evaluate the config expression (temperature, results, etc.)
         let mut scope = HashMap::new();
         if let Some(val) = input.as_ref() {
             scope.insert("input".to_string(), val.clone());
@@ -88,82 +86,150 @@ impl AuwgentEngine {
             .unwrap_or("gemini-2.0-flash");
         let config_params = model_info.get("config").cloned();
 
-        // 2. Generate System Prompt (Instructions + Intents)
-        let system_prompt = self.generate_prompt(None)?;
+        // Add the initial prompt to the session
+        let initial_system_prompt = self.generate_prompt()?;
         self.session.add_step(RunStep::Prompt {
-            content: system_prompt.clone(),
+            content: initial_system_prompt.clone(),
         });
 
-        // 3. User Input (the payload)
-        // For Gemini, we pass the user input as a string if it's text, or a JSON blob.
-        let user_text = match input {
+        let mut current_user_input = match input {
             Some(Value::String(s)) => s,
             Some(v) => serde_json::to_string(&v)?,
             None => "".to_string(),
         };
 
-        // 4. Call LLM
-        let mut stream = driver
-            .stream_generate_content(model_name, &user_text, Some(&system_prompt), config_params)
-            .await?;
+        let mut loop_count = 0;
+        const MAX_LOOPS: usize = 12;
 
-        // 5. Stream & Extract Intents
-        while let Some(chunk_res) = stream.next().await {
-            match chunk_res {
-                Ok(text) => {
-                    if !text.is_empty() {
-                        print!("{}", text);
-                        use std::io::Write;
-                        let _ = std::io::stdout().flush();
+        loop {
+            loop_count += 1;
+            if loop_count > MAX_LOOPS {
+                return Err("Max agentic loops reached".into());
+            }
+
+            self.current_raw_response.clear();
+            self.orchestrator.reset();
+
+            // Scope the driver borrow to avoid holding it while calling self.process_intents()
+            let mut stream = {
+                let driver = self
+                    .driver
+                    .as_ref()
+                    .ok_or("No driver configured for AuwgentEngine")?;
+                driver
+                    .stream_generate_content(
+                        model_name,
+                        &current_user_input,
+                        Some(&initial_system_prompt),
+                        config_params.clone(),
+                    )
+                    .await?
+            };
+
+            let mut has_terminal_output = false;
+            let mut actions_performed = false;
+
+            while let Some(chunk_res) = stream.next().await {
+                match chunk_res {
+                    Ok(text) => {
+                        if !text.is_empty() {
+                            print!("{}", text);
+                            use std::io::Write;
+                            let _ = std::io::stdout().flush();
+                            self.current_raw_response.push_str(&text);
+                        }
+                        self.orchestrator.write(&text);
+                        let (terminal, actions) = self.process_intents().await?;
+                        if terminal {
+                            has_terminal_output = true;
+                        }
+                        if actions {
+                            actions_performed = true;
+                        }
                     }
-                    self.write_llm_chunk(&text);
-                    self.process_intents().await?;
-                }
-                Err(e) => {
-                    self.session.add_step(RunStep::Error { message: e });
-                    return Err("LLM Stream error".into());
+                    Err(e) => {
+                        self.session.add_step(RunStep::Error { message: e });
+                        return Err("LLM Stream error".into());
+                    }
                 }
             }
-        }
 
-        self.end_llm_stream();
-        self.process_intents().await?;
+            self.orchestrator.end();
+            let (terminal, actions) = self.process_intents().await?;
+            if terminal {
+                has_terminal_output = true;
+            }
+            if actions {
+                actions_performed = true;
+            }
+
+            // Record the raw model response in session
+            self.session.add_step(RunStep::ModelResponse {
+                content: self.current_raw_response.clone(),
+            });
+
+            // Decide if we loop or stop
+            if has_terminal_output || !actions_performed {
+                break;
+            }
+
+            // If we performed actions (tools/workflows), we need to feed the results back
+            // We build a new "user input" which is the collection of results from this turn
+            current_user_input = self.build_results_payload();
+            println!("\n--- FEEDING RESULTS BACK ---\n{}", current_user_input);
+        }
 
         Ok(())
     }
 
-    pub fn write_llm_chunk(&mut self, chunk: &str) {
-        self.orchestrator.write(chunk);
+    fn build_results_payload(&self) -> String {
+        let mut results = Vec::new();
+        // Look at the latest actions in the session
+        for step in self.session.steps.iter().rev() {
+            match step {
+                RunStep::IntentAction { name, result, .. } => {
+                    if let Some(res) = result {
+                        results.push(format!("tool_result:\n  name: {}\n  result: {}", name, res));
+                    }
+                }
+                RunStep::Prompt { .. } | RunStep::ModelResponse { .. } => break, // Stop at the start of this turn
+                _ => {}
+            }
+        }
+        results.reverse();
+        results.join("\n\n")
     }
 
-    pub fn end_llm_stream(&mut self) -> Value {
-        self.orchestrator.end()
-    }
-
-    pub async fn process_intents(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn process_intents(&mut self) -> Result<(bool, bool), Box<dyn std::error::Error>> {
         let intents = {
             let mut pending = self.pending_intents.lock().unwrap();
             std::mem::take(&mut *pending)
         };
 
+        let mut has_terminal = false;
+        let mut has_actions = false;
+
         for (name, value) in intents {
             match name.as_str() {
                 "tool_call" => {
                     self.execute_tool(value).await?;
+                    has_actions = true;
                 }
                 "workflow_call" => {
                     self.execute_workflow(value).await?;
+                    has_actions = true;
                 }
                 "response_schema" | "response_text" => {
                     self.session.add_step(RunStep::ModelOutput {
                         text: None,
                         raw_yaml: Some(serde_json::to_string(&value)?),
                     });
+                    has_terminal = true;
                 }
                 _ => {}
             }
         }
-        Ok(())
+        Ok((has_terminal, has_actions))
     }
 
     async fn execute_tool(&mut self, call: Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -231,15 +297,17 @@ impl AuwgentEngine {
         Ok(())
     }
 
-    pub fn generate_prompt(
-        &self,
-        input: Option<Value>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn write_llm_chunk(&mut self, chunk: &str) {
+        self.orchestrator.write(chunk);
+    }
+
+    pub fn end_llm_stream(&mut self) -> Value {
+        self.orchestrator.end()
+    }
+
+    pub fn generate_prompt(&self) -> Result<String, Box<dyn std::error::Error>> {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
-        if let Some(val) = input {
-            scope.insert("input".to_string(), val);
-        }
 
         let entry = self.ir.model_config.first().ok_or("No model config")?;
         let default = entry.default_config.as_ref().ok_or("No default config")?;

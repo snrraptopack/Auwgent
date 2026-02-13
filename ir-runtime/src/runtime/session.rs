@@ -4,14 +4,21 @@ use serde_json::Value;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum RunStep {
+    /// System or User instructions starting the turn
     Prompt {
         content: String,
     },
+    /// What the model actually said (raw)
+    ModelResponse {
+        content: String,
+    },
+    /// High-level parsed output (if schema or text intent was hit)
     ModelOutput {
         text: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         raw_yaml: Option<String>,
     },
+    /// A tool or workflow call and its result
     IntentAction {
         name: String,
         args: Value,
