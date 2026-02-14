@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "typescript"]
+resolver = "2"
+
 [package]
 name = "ir-runtime"
 version = "0.1.0"

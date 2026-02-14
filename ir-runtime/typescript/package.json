@@ -1,0 +1,32 @@
+{
+    "name": "@auwgent/runtime",
+    "version": "0.1.0",
+    "description": "Auwgent IR Runtime — Rust-powered agent engine with type-safe TypeScript bindings",
+    "main": "auwgent.ts",
+    "types": "auwgent.ts",
+    "exports": {
+        ".": {
+            "import": "./auwgent.ts",
+            "types": "./auwgent.ts"
+        },
+        "./native": {
+            "import": "./index.js",
+            "types": "./index.d.ts"
+        }
+    },
+    "napi": {
+        "name": "auwgent-runtime",
+        "triples": {
+            "defaults": true
+        }
+    },
+    "scripts": {
+        "build": "napi build --platform --release",
+        "build:debug": "napi build --platform",
+        "test": "bun test"
+    },
+    "devDependencies": {
+        "@napi-rs/cli": "^2.18.0"
+    },
+    "license": "MIT"
+}

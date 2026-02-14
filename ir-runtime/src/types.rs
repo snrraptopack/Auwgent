@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 // --- Top Level ---
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentIR {
     pub name: String,
@@ -23,7 +23,7 @@ pub struct AgentIR {
     pub tests: Vec<Value>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Helper {
     pub name: String,
@@ -59,7 +59,7 @@ pub struct Tool {
 
 // --- Model Configuration ---
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelConfigEntry {
     #[serde(rename = "defaultConfig")]
     pub default_config: Option<ModelConfig>,
@@ -67,7 +67,7 @@ pub struct ModelConfigEntry {
     pub named_config: Option<Vec<NamedModelConfig>>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct NamedModelConfig {
     #[serde(rename = "configName")]
     pub config_name: String,
@@ -75,13 +75,13 @@ pub struct NamedModelConfig {
     pub config: ModelConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelConfig {
     pub model: ModelProvider,
     pub prompt: Expression,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ModelProvider {
     Gemini {
