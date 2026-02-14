@@ -1,4 +1,5 @@
 use crate::runtime::drivers::ModelDriver;
+use crate::runtime::session::{Message, Role};
 use async_trait::async_trait;
 use futures_util::{Stream, StreamExt};
 use reqwest::Client;
@@ -21,59 +22,71 @@ impl GeminiDriver {
 
 #[async_trait]
 impl ModelDriver for GeminiDriver {
-    async fn stream_generate_content(
+    async fn stream_generate(
         &self,
         model: &str,
-        prompt: &str,
-        system_instruction: Option<&str>,
+        messages: &[Message],
         config: Option<Value>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String, String>> + Send>>, String> {
-        // Construct URL with dynamic model
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             model, self.api_key
         );
 
-        let mut body = json!({
-            "contents": [{
-                "parts": [{ "text": prompt }]
-            }]
-        });
+        // ── Build request body from messages ──────────────────────────────
+        let mut body = json!({});
+        let body_obj = body.as_object_mut().expect("body is always an object");
 
-        if let Some(si) = system_instruction {
-            body.as_object_mut().unwrap().insert(
+        // Extract system instruction (first System message, if any)
+        if let Some(sys_msg) = messages.iter().find(|m| m.role == Role::System) {
+            body_obj.insert(
                 "system_instruction".to_string(),
-                json!({
-                    "parts": [{ "text": si }]
-                }),
+                json!({ "parts": [{ "text": sys_msg.content }] }),
             );
         }
 
+        // Build contents array from non-system messages
+        // Gemini expects alternating user/model roles
+        let contents: Vec<Value> = messages
+            .iter()
+            .filter(|m| m.role != Role::System)
+            .map(|m| {
+                let role = match m.role {
+                    Role::User | Role::ToolResult => "user",
+                    Role::Model => "model",
+                    Role::System => unreachable!(), // filtered above
+                };
+                json!({
+                    "role": role,
+                    "parts": [{ "text": m.content }]
+                })
+            })
+            .collect();
+
+        body_obj.insert("contents".to_string(), json!(contents));
+
+        // ── Generation config ─────────────────────────────────────────────
         if let Some(cfg) = config {
             let mut gen_config = serde_json::Map::new();
-            if let Some(temp) = cfg.get("temperature") {
-                gen_config.insert("temperature".to_string(), temp.clone());
+            for key in &[
+                "temperature",
+                "topP",
+                "topK",
+                "stopSequences",
+                "thinkingConfig",
+                "maxOutputTokens",
+                "responseMimeType",
+            ] {
+                if let Some(val) = cfg.get(*key) {
+                    gen_config.insert(key.to_string(), val.clone());
+                }
             }
-            if let Some(top_p) = cfg.get("topP") {
-                gen_config.insert("topP".to_string(), top_p.clone());
-            }
-            if let Some(top_k) = cfg.get("topK") {
-                gen_config.insert("topK".to_string(), top_k.clone());
-            }
-            if let Some(stop) = cfg.get("stopSequences") {
-                gen_config.insert("stopSequences".to_string(), stop.clone());
-            }
-            if let Some(think) = cfg.get("thinkingConfig") {
-                gen_config.insert("thinkingConfig".to_string(), think.clone());
-            }
-
             if !gen_config.is_empty() {
-                body.as_object_mut()
-                    .unwrap()
-                    .insert("generationConfig".to_string(), Value::Object(gen_config));
+                body_obj.insert("generationConfig".to_string(), Value::Object(gen_config));
             }
         }
 
+        // ── Send request ──────────────────────────────────────────────────
         let response = self
             .client
             .post(&url)
@@ -88,7 +101,7 @@ impl ModelDriver for GeminiDriver {
             return Err(format!("Gemini API error ({}): {}", status, error_text));
         }
 
-        // --- Robust SSE Stream Handling ---
+        // ── SSE stream parsing ────────────────────────────────────────────
         let mut buffer = String::new();
         let stream = response.bytes_stream().map(move |item| match item {
             Ok(bytes) => {

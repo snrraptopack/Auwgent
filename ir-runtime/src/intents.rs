@@ -73,7 +73,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
 
     // 3. Options as standalone # Option sections
     if let Some(output) = &ir.output {
-        if output.is_object() && !output.as_object().unwrap().is_empty() {
+        if matches!(output.as_object(), Some(obj) if !obj.is_empty()) {
             let schema_str = schema::format_schema_yaml(output, 2);
             sections.push(format!("# Option\nresponse_schema:\n{}", schema_str));
         } else {

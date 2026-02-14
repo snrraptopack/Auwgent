@@ -1,3 +1,4 @@
+use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
 use crate::intent_parser::orchestrator::Orchestrator;
 use crate::runtime::drivers::ModelDriver;
@@ -64,16 +65,45 @@ impl AuwgentEngine {
         self.tools.insert(name.to_string(), implementation);
     }
 
+    // ── Session export/import for host runtime hooks ──────────────────────
+
+    /// Export the session state as JSON for the host to persist.
+    pub fn export_session(&self) -> AuwgentResult<String> {
+        self.session.export().map_err(AuwgentError::Serialization)
+    }
+
+    /// Import a session state from JSON, restoring conversation history.
+    pub fn import_session(&mut self, json: &str) -> AuwgentResult<()> {
+        self.session = SessionState::import(json).map_err(AuwgentError::Serialization)?;
+        Ok(())
+    }
+
+    /// Clear the session (start a fresh conversation).
+    pub fn clear_session(&mut self) {
+        self.session.clear();
+    }
+
+    /// Get a reference to the session state.
+    pub fn session(&self) -> &SessionState {
+        &self.session
+    }
+
+    // ── Agentic Loop ──────────────────────────────────────────────────────
+
     /// Execute the agentic loop.
-    pub async fn run(&mut self, input: Option<Value>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn run(&mut self, input: Option<Value>) -> AuwgentResult<()> {
         let evaluator = Evaluator::new(&self.ir);
 
         // 1. Evaluate Model Info
-        let model_entry = self.ir.model_config.first().ok_or("No model config")?;
+        let model_entry = self
+            .ir
+            .model_config
+            .first()
+            .ok_or(AuwgentError::MissingConfig("No model config".into()))?;
         let default_config = model_entry
             .default_config
             .as_ref()
-            .ok_or("No default config")?;
+            .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
         let mut scope = HashMap::new();
         if let Some(val) = input.as_ref() {
@@ -86,17 +116,22 @@ impl AuwgentEngine {
             .unwrap_or("gemini-2.0-flash");
         let config_params = model_info.get("config").cloned();
 
-        // Add the initial prompt to the session
-        let initial_system_prompt = self.generate_prompt()?;
+        // 2. Generate system prompt and set it on the session
+        let system_prompt = self.generate_prompt()?;
+        self.session.set_system_prompt(&system_prompt);
         self.session.add_step(RunStep::Prompt {
-            content: initial_system_prompt.clone(),
+            content: system_prompt.clone(),
         });
 
-        let mut current_user_input = match input {
+        // 3. Build the initial user input
+        let initial_user_input = match input {
             Some(Value::String(s)) => s,
-            Some(v) => serde_json::to_string(&v)?,
+            Some(v) => serde_json::to_string(&v).map_err(AuwgentError::Serialization)?,
             None => "".to_string(),
         };
+
+        // Start the first turn
+        self.session.start_turn(&initial_user_input);
 
         let mut loop_count = 0;
         const MAX_LOOPS: usize = 12;
@@ -104,26 +139,22 @@ impl AuwgentEngine {
         loop {
             loop_count += 1;
             if loop_count > MAX_LOOPS {
-                return Err("Max agentic loops reached".into());
+                return Err(AuwgentError::MaxLoopsExceeded(MAX_LOOPS));
             }
 
             self.current_raw_response.clear();
             self.orchestrator.reset();
 
-            // Scope the driver borrow to avoid holding it while calling self.process_intents()
+            // Build message history from session state
+            let messages = self.session.to_messages();
+
+            // Stream from the driver using full message history
             let mut stream = {
-                let driver = self
-                    .driver
-                    .as_ref()
-                    .ok_or("No driver configured for AuwgentEngine")?;
+                let driver = self.driver.as_ref().ok_or(AuwgentError::NoDriver)?;
                 driver
-                    .stream_generate_content(
-                        model_name,
-                        &current_user_input,
-                        Some(&initial_system_prompt),
-                        config_params.clone(),
-                    )
-                    .await?
+                    .stream_generate(model_name, &messages, config_params.clone())
+                    .await
+                    .map_err(AuwgentError::Driver)?
             };
 
             let mut has_terminal_output = false;
@@ -148,8 +179,8 @@ impl AuwgentEngine {
                         }
                     }
                     Err(e) => {
-                        self.session.add_step(RunStep::Error { message: e });
-                        return Err("LLM Stream error".into());
+                        self.session.add_step(RunStep::Error { message: e.clone() });
+                        return Err(AuwgentError::StreamError(e));
                     }
                 }
             }
@@ -163,7 +194,8 @@ impl AuwgentEngine {
                 actions_performed = true;
             }
 
-            // Record the raw model response in session
+            // Record the raw model response in the session turn
+            self.session.set_model_response(&self.current_raw_response);
             self.session.add_step(RunStep::ModelResponse {
                 content: self.current_raw_response.clone(),
             });
@@ -173,36 +205,46 @@ impl AuwgentEngine {
                 break;
             }
 
-            // If we performed actions (tools/workflows), we need to feed the results back
-            // We build a new "user input" which is the collection of results from this turn
-            current_user_input = self.build_results_payload();
-            println!("\n--- FEEDING RESULTS BACK ---\n{}", current_user_input);
+            // If we performed tool/workflow actions, start a new turn with the results
+            let results_payload = self.build_results_payload();
+            println!("\n--- FEEDING RESULTS BACK ---\n{}", results_payload);
+            self.session.start_turn(&results_payload);
         }
 
         Ok(())
     }
 
     fn build_results_payload(&self) -> String {
-        let mut results = Vec::new();
-        // Look at the latest actions in the session
-        for step in self.session.steps.iter().rev() {
-            match step {
-                RunStep::IntentAction { name, result, .. } => {
-                    if let Some(res) = result {
-                        results.push(format!("tool_result:\n  name: {}\n  result: {}", name, res));
+        // Use the current turn's steps to build the results
+        if let Some(turn) = self.session.turns.last() {
+            let results: Vec<String> = turn
+                .steps
+                .iter()
+                .filter_map(|step| {
+                    if let RunStep::IntentAction {
+                        name,
+                        result: Some(res),
+                        ..
+                    } = step
+                    {
+                        Some(format!("tool_result:\n  name: {}\n  result: {}", name, res))
+                    } else {
+                        None
                     }
-                }
-                RunStep::Prompt { .. } | RunStep::ModelResponse { .. } => break, // Stop at the start of this turn
-                _ => {}
-            }
+                })
+                .collect();
+            results.join("\n\n")
+        } else {
+            String::new()
         }
-        results.reverse();
-        results.join("\n\n")
     }
 
-    pub async fn process_intents(&mut self) -> Result<(bool, bool), Box<dyn std::error::Error>> {
+    pub async fn process_intents(&mut self) -> AuwgentResult<(bool, bool)> {
         let intents = {
-            let mut pending = self.pending_intents.lock().unwrap();
+            let mut pending = self
+                .pending_intents
+                .lock()
+                .expect("pending_intents mutex poisoned");
             std::mem::take(&mut *pending)
         };
 
@@ -222,7 +264,9 @@ impl AuwgentEngine {
                 "response_schema" | "response_text" => {
                     self.session.add_step(RunStep::ModelOutput {
                         text: None,
-                        raw_yaml: Some(serde_json::to_string(&value)?),
+                        raw_yaml: Some(
+                            serde_json::to_string(&value).map_err(AuwgentError::Serialization)?,
+                        ),
                     });
                     has_terminal = true;
                 }
@@ -232,7 +276,7 @@ impl AuwgentEngine {
         Ok((has_terminal, has_actions))
     }
 
-    async fn execute_tool(&mut self, call: Value) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_tool(&mut self, call: Value) -> AuwgentResult<()> {
         let tool_name = call["type"].as_str().unwrap_or("");
         let args = call["args"].clone();
 
@@ -265,7 +309,7 @@ impl AuwgentEngine {
         Ok(())
     }
 
-    async fn execute_workflow(&mut self, call: Value) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_workflow(&mut self, call: Value) -> AuwgentResult<()> {
         let wf_name = call["type"].as_str().unwrap_or("");
         let args = call["args"].clone();
 
@@ -305,12 +349,19 @@ impl AuwgentEngine {
         self.orchestrator.end()
     }
 
-    pub fn generate_prompt(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn generate_prompt(&self) -> AuwgentResult<String> {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
 
-        let entry = self.ir.model_config.first().ok_or("No model config")?;
-        let default = entry.default_config.as_ref().ok_or("No default config")?;
+        let entry = self
+            .ir
+            .model_config
+            .first()
+            .ok_or(AuwgentError::MissingConfig("No model config".into()))?;
+        let default = entry
+            .default_config
+            .as_ref()
+            .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
         let prompt_val = evaluator.evaluate(&default.prompt, &mut scope)?;
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();

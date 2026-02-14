@@ -1,22 +1,42 @@
+use crate::errors::{AuwgentError, AuwgentResult};
 use crate::types::{AgentIR, Expression};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::error::Error;
+
+/// Synchronous tool handler for workflow-level function calls.
+/// For async tool execution (engine-level tool_call intents), the engine
+/// handles dispatch directly via its own ToolImplementation type.
+pub type SyncToolFn = Box<dyn Fn(Vec<Value>) -> Result<Value, String> + Send + Sync>;
 
 pub struct Evaluator<'a> {
     pub ir: &'a AgentIR,
+    /// Optional tool registry for resolving FunctionCall expressions within workflows.
+    tools: HashMap<String, SyncToolFn>,
 }
 
 impl<'a> Evaluator<'a> {
     pub fn new(ir: &'a AgentIR) -> Self {
-        Self { ir }
+        Self {
+            ir,
+            tools: HashMap::new(),
+        }
+    }
+
+    /// Create an evaluator with a pre-populated tool registry.
+    pub fn with_tools(ir: &'a AgentIR, tools: HashMap<String, SyncToolFn>) -> Self {
+        Self { ir, tools }
+    }
+
+    /// Register a synchronous tool function for workflow-level calls.
+    pub fn register_tool(&mut self, name: impl Into<String>, handler: SyncToolFn) {
+        self.tools.insert(name.into(), handler);
     }
 
     pub fn evaluate(
         &self,
         expr: &Expression,
         scope: &mut HashMap<String, Value>,
-    ) -> Result<Value, Box<dyn Error>> {
+    ) -> AuwgentResult<Value> {
         match expr {
             Expression::SchemaDirective { path } => {
                 // Find the schema in the agent IR
@@ -24,7 +44,12 @@ impl<'a> Evaluator<'a> {
                     "input" => &self.ir.input,
                     "output" => &self.ir.output,
                     "context" => &self.ir.context,
-                    _ => return Err(format!("Unknown schema path: {}", path).into()),
+                    _ => {
+                        return Err(AuwgentError::Evaluation(format!(
+                            "Unknown schema path: {}",
+                            path
+                        )));
+                    }
                 };
 
                 if let Some(s) = schema {
@@ -37,7 +62,7 @@ impl<'a> Evaluator<'a> {
             Expression::VarRef { value } => scope
                 .get(value)
                 .cloned()
-                .ok_or_else(|| format!("Variable not found: {}", value).into()),
+                .ok_or_else(|| AuwgentError::VariableNotFound(value.clone())),
             Expression::MemberAccess { object, properties } => {
                 // 1. Evaluate the base object (e.g., "input")
                 let mut current = self.evaluate(object, scope)?;
@@ -49,15 +74,17 @@ impl<'a> Evaluator<'a> {
                             if let Some(val) = map.get(prop) {
                                 current = val.clone();
                             } else {
-                                return Err(
-                                    format!("Property '{}' not found in object", prop).into()
-                                );
+                                return Err(AuwgentError::PropertyNotFound {
+                                    property: prop.clone(),
+                                    context: "object".to_string(),
+                                });
                             }
                         }
                         _ => {
-                            return Err(
-                                format!("Cannot access property '{}' on non-object", prop).into()
-                            );
+                            return Err(AuwgentError::PropertyNotFound {
+                                property: prop.clone(),
+                                context: "non-object value".to_string(),
+                            });
                         }
                     }
                 }
@@ -129,7 +156,9 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                     _ => {
-                        return Err(format!("Operator {} not supported", condition.operator).into());
+                        return Err(AuwgentError::UnsupportedOperator(
+                            condition.operator.clone(),
+                        ));
                     }
                 };
 
@@ -155,9 +184,14 @@ impl<'a> Evaluator<'a> {
                 if let Some(Value::Object(ctx)) = scope.get("context") {
                     ctx.get(property)
                         .cloned()
-                        .ok_or_else(|| format!("Context property '{}' not found", property).into())
+                        .ok_or_else(|| AuwgentError::PropertyNotFound {
+                            property: property.clone(),
+                            context: "context".to_string(),
+                        })
                 } else {
-                    Err("Context object not found in scope".into())
+                    Err(AuwgentError::Evaluation(
+                        "Context object not found in scope".to_string(),
+                    ))
                 }
             }
 
@@ -205,7 +239,7 @@ impl<'a> Evaluator<'a> {
                             false
                         }
                     }
-                    _ => return Err(format!("Operator {} not supported", op).into()),
+                    _ => return Err(AuwgentError::UnsupportedOperator(op.clone())),
                 };
 
                 // 3. Execute block
@@ -281,7 +315,7 @@ impl<'a> Evaluator<'a> {
                         l_trimmed, separator, r_str
                     )))
                 } else {
-                    Err(format!("Unsupported operator: {}", op).into())
+                    Err(AuwgentError::UnsupportedOperator(op.clone()))
                 }
             }
 
@@ -332,31 +366,14 @@ impl<'a> Evaluator<'a> {
                     arg_values.push(self.evaluate(arg, scope)?);
                 }
 
-                // Mock Tool Execution
-                match func_name.as_str() {
-                    "hello" => {
-                        let id = arg_values
-                            .get(0)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        Ok(Value::String(format!("Hello tool called with id: {}", id)))
-                    }
-                    "amina" => {
-                        let name = arg_values
-                            .get(0)
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown");
-                        // Mock return "nothing" or whatever logic
-                        // In workflow "two":
-                        // let a = amina(value)
-                        // return amina(value)
-                        // It returns string.
-                        Ok(Value::String(format!(
-                            "Amina tool called with name: {}",
-                            name
-                        )))
-                    }
-                    _ => Err(format!("Unknown function/tool: {}", func_name).into()),
+                // Look up tool in registry
+                if let Some(handler) = self.tools.get(func_name.as_str()) {
+                    handler(arg_values).map_err(|e| AuwgentError::ToolExecution {
+                        tool_name: func_name.clone(),
+                        message: e,
+                    })
+                } else {
+                    Err(AuwgentError::UnknownFunction(func_name.clone()))
                 }
             }
 
@@ -371,7 +388,7 @@ impl<'a> Evaluator<'a> {
 
                 // Validate helper exists
                 if !self.ir.helpers.iter().any(|h| h.name == *helper_name) {
-                    return Err(format!("Unknown helper: {}", helper_name).into());
+                    return Err(AuwgentError::UnknownHelper(helper_name.clone()));
                 }
 
                 // Mock Helper Execution
@@ -412,7 +429,7 @@ impl<'a> Evaluator<'a> {
         &self,
         config: &crate::types::ModelConfig,
         scope: &mut HashMap<String, Value>,
-    ) -> Result<Value, Box<dyn Error>> {
+    ) -> AuwgentResult<Value> {
         self.evaluate_provider(&config.model, scope)
     }
 
@@ -420,7 +437,7 @@ impl<'a> Evaluator<'a> {
         &self,
         provider: &crate::types::ModelProvider,
         scope: &mut HashMap<String, Value>,
-    ) -> Result<Value, Box<dyn Error>> {
+    ) -> AuwgentResult<Value> {
         match provider {
             crate::types::ModelProvider::Gemini { model_name, config } => {
                 let mut res = serde_json::Map::new();
@@ -448,7 +465,7 @@ impl<'a> Evaluator<'a> {
     fn join_and_dedent(&self, parts: Vec<(&Expression, Value)>) -> String {
         let mut joined = String::new();
         for (expr, val) in parts {
-            let s = val.as_str().unwrap();
+            let s = val.as_str().unwrap_or("");
 
             // Smart Dedent Logic:
             // If we are about to append a block result (InlineIf, If, or Schema),
