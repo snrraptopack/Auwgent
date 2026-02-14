@@ -72,7 +72,7 @@ pub enum RunStep {
     ModelOutput {
         text: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        raw_yaml: Option<String>,
+        data: Option<Value>,
     },
     /// A tool or workflow call and its result
     IntentAction {
@@ -190,26 +190,6 @@ impl SessionState {
             // The model response
             if !turn.model_response.is_empty() {
                 messages.push(Message::model(turn.model_response.clone()));
-            }
-
-            // If there were tool results, they become a tool_result message
-            // so the next turn has context
-            let mut tool_results = Vec::new();
-            for step in &turn.steps {
-                if let RunStep::IntentAction {
-                    name,
-                    result: Some(result),
-                    ..
-                } = step
-                {
-                    tool_results.push(format!(
-                        "tool_result:\n  name: {}\n  result: {}",
-                        name, result
-                    ));
-                }
-            }
-            if !tool_results.is_empty() {
-                messages.push(Message::tool_result(tool_results.join("\n\n")));
             }
         }
 

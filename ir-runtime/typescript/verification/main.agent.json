@@ -1,0 +1,55 @@
+{
+  "name": "CHEF",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash",
+          "config": {
+            "type": "object",
+            "value": {
+              "temperature": {
+                "value": 0,
+                "type": "literal"
+              },
+              "thinkingConfig": {
+                "type": "object",
+                "value": {
+                  "includeThoughts": {
+                    "value": "false",
+                    "type": "literal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "prompt": {
+          "value": "You are a helpful assistant",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": {
+    "text": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "output": null,
+  "context": null,
+  "tools": [
+    {
+      "description": "used to get the user name",
+      "params": {},
+      "name": "tool_get_user_name",
+      "returns": "string"
+    }
+  ],
+  "workflows": [],
+  "helpers": [],
+  "tests": []
+}

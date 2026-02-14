@@ -271,11 +271,13 @@ impl AuwgentEngine {
                     has_actions = true;
                 }
                 "response_schema" | "response_text" => {
+                    let text = value
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
                     self.session.add_step(RunStep::ModelOutput {
-                        text: None,
-                        raw_yaml: Some(
-                            serde_json::to_string(&value).map_err(AuwgentError::Serialization)?,
-                        ),
+                        text,
+                        data: Some(value),
                     });
                     has_terminal = true;
                 }
@@ -299,10 +301,18 @@ impl AuwgentEngine {
             let result = imp(args).await;
             match result {
                 Ok(val) => {
+                    let result_val = val.clone();
                     if let Some(RunStep::IntentAction { result: res, .. }) =
                         self.session.steps.last_mut()
                     {
                         *res = Some(val);
+                    }
+                    if let Some(turn) = self.session.current_turn_mut() {
+                        if let Some(RunStep::IntentAction { result: res, .. }) =
+                            turn.steps.last_mut()
+                        {
+                            *res = Some(result_val);
+                        }
                     }
                 }
                 Err(e) => {
@@ -342,8 +352,14 @@ impl AuwgentEngine {
                 last_result = evaluator.evaluate(stmt, &mut scope)?;
             }
 
+            let workflow_result = last_result;
             if let Some(RunStep::IntentAction { result: res, .. }) = self.session.steps.last_mut() {
-                *res = Some(last_result);
+                *res = Some(workflow_result.clone());
+            }
+            if let Some(turn) = self.session.current_turn_mut() {
+                if let Some(RunStep::IntentAction { result: res, .. }) = turn.steps.last_mut() {
+                    *res = Some(workflow_result);
+                }
             }
         }
 

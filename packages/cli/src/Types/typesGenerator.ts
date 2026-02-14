@@ -60,7 +60,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
 
     // Generate IR import statement using baseName if provided, otherwise fall back to agent.name
     const fileName = baseName || agent.name;
-    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as const;`;
+    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as typeof _importedIR;`;
 
     const sections = [
         `// Auto-generated types for ${agent.name}`,

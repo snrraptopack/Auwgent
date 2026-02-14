@@ -37,8 +37,8 @@ export { AuwgentNative };
 export interface IRToolDef {
     name: string;
     description?: string;
-    params: Record<string, unknown>;
-    returns: Record<string, unknown>;
+    params: unknown;
+    returns: unknown;
 }
 
 export interface IRModelProvider {
@@ -153,7 +153,7 @@ export interface Turn {
 export type RunStep =
     | { type: 'prompt'; content: string }
     | { type: 'modelResponse'; content: string }
-    | { type: 'modelOutput'; text?: string; rawYaml?: string }
+    | { type: 'modelOutput'; text?: string; data?: unknown }
     | { type: 'intentAction'; name: string; args: unknown; result?: unknown }
     | { type: 'error'; message: string };
 
