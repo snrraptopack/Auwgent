@@ -205,9 +205,6 @@ impl AuwgentEngine {
 
             // Record the raw model response in the session turn
             self.session.set_model_response(&self.current_raw_response);
-            self.session.add_step(RunStep::ModelResponse {
-                content: self.current_raw_response.clone(),
-            });
 
             // Decide if we loop or stop
             if has_terminal_output || !actions_performed {
@@ -271,13 +268,8 @@ impl AuwgentEngine {
                     has_actions = true;
                 }
                 "response_schema" | "response_text" => {
-                    let text = value
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
                     self.session.add_step(RunStep::ModelOutput {
-                        text,
-                        data: Some(value),
+                        data: value,
                     });
                     has_terminal = true;
                 }

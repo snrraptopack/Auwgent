@@ -16,7 +16,8 @@ const chef = createCHEF(config)
 if (!geminiApiKey) {
     console.log(chef.generatePrompt())
 } else {
-    let sessions = await chef.run("hello what my name")
+    let sessions = await chef.run("tell me a short story based on my name")
+    console.log(JSON.stringify(sessions.turns,null,2))
     console.log(sessions.systemPrompt)
     console.log(sessions.steps)
 }

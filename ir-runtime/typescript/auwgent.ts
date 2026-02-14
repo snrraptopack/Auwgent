@@ -153,7 +153,7 @@ export interface Turn {
 export type RunStep =
     | { type: 'prompt'; content: string }
     | { type: 'modelResponse'; content: string }
-    | { type: 'modelOutput'; text?: string; data?: unknown }
+    | { type: 'modelOutput'; data: unknown }
     | { type: 'intentAction'; name: string; args: unknown; result?: unknown }
     | { type: 'error'; message: string };
 

@@ -70,9 +70,7 @@ pub enum RunStep {
     },
     /// High-level parsed output (if schema or text intent was hit)
     ModelOutput {
-        text: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        data: Option<Value>,
+        data: Value,
     },
     /// A tool or workflow call and its result
     IntentAction {
