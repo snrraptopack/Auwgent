@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let engine_prompt = engine.generate_prompt()?;
         println!("Engine Generated Prompt (Length: {})", engine_prompt.len());
+        println!("\n--- ENGINE PROMPT START ---\n{}\n--- ENGINE PROMPT END ---", engine_prompt);
 
         // Simulate LLM Output with a tool_call intent
         println!("\nSimulating LLM Output (Tool Call Intent)...");

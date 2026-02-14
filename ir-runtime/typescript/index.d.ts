@@ -14,6 +14,7 @@ export declare class Auwgent {
   constructor(irJson: string)
   /** Set the Gemini driver with the given API key. */
   setGeminiDriver(apiKey: string): void
+  setContext(context: any): void
   /**
    * Register a tool by name. The callback receives a JSON args object
    * and must return a JSON result.

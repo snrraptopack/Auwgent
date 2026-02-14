@@ -41,10 +41,33 @@ export interface IRToolDef {
     returns: Record<string, unknown>;
 }
 
+export interface IRModelProvider {
+    type: string;
+}
+
+export interface IRModelConfig {
+    model?: IRModelProvider;
+}
+
+export interface IRNamedModelConfig {
+    model?: IRModelProvider;
+}
+
+export interface IRModelConfigEntry {
+    defaultConfig?: IRModelConfig;
+    namedConfig?: IRNamedModelConfig[] | null;
+}
+
+export interface IRHelperShape {
+    modelConfig?: IRModelConfigEntry[] | null;
+}
+
 /** Minimal shape of an Agent IR document (only the fields we need) */
 export interface AgentIRShape {
     name: string;
     tools: readonly IRToolDef[];
+    modelConfig?: IRModelConfigEntry[];
+    helpers?: readonly IRHelperShape[];
     [key: string]: unknown;
 }
 
@@ -65,12 +88,50 @@ export type ToolRegistry<IR extends AgentIRShape> = {
     [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
+export type ApiKeys = {
+    geminiApiKey?: string;
+    openaiApiKey?: string;
+    customApiKey?: string;
+    customUrl?: string;
+};
+
+function collectRequiredProviders(ir: AgentIRShape): Set<string> {
+    const providers = new Set<string>();
+    const addProvider = (value?: string) => {
+        if (value) {
+            providers.add(value.toLowerCase());
+        }
+    };
+    const addFromEntries = (entries?: IRModelConfigEntry[] | null) => {
+        if (!entries) {
+            return;
+        }
+        for (const entry of entries) {
+            addProvider(entry.defaultConfig?.model?.type);
+            if (entry.namedConfig) {
+                for (const named of entry.namedConfig) {
+                    addProvider(named.model?.type);
+                }
+            }
+        }
+    };
+
+    addFromEntries(ir.modelConfig);
+    if (ir.helpers) {
+        for (const helper of ir.helpers) {
+            addFromEntries(helper.modelConfig);
+        }
+    }
+
+    return providers;
+}
+
 // ── Configuration ────────────────────────────────────────────────────────
 
 export interface AuwgentConfig<IR extends AgentIRShape> {
-    /** Implementation for every tool defined in the IR — TS enforces completeness */
     tools: ToolRegistry<IR>;
-    /** Gemini API key (creates the GeminiDriver automatically) */
+    context?: Record<string, unknown>;
+    apiKeys?: ApiKeys;
     geminiApiKey?: string;
 }
 
@@ -112,9 +173,17 @@ export class TypedAuwgent<IR extends AgentIRShape> {
         this.ir = ir;
         this.native = new AuwgentNative(JSON.stringify(ir));
 
-        // Set driver if API key provided
-        if (config.geminiApiKey) {
-            this.native.setGeminiDriver(config.geminiApiKey);
+        if (config.context) {
+            this.native.setContext(config.context);
+        }
+
+        const requiredProviders = collectRequiredProviders(ir);
+        const apiKeys = config.apiKeys ?? (config.geminiApiKey ? { geminiApiKey: config.geminiApiKey } : undefined);
+        const shouldSetGemini =
+            apiKeys?.geminiApiKey &&
+            (requiredProviders.size === 0 || requiredProviders.has('gemini'));
+        if (shouldSetGemini) {
+            this.native.setGeminiDriver(apiKeys.geminiApiKey!);
         }
 
         // Register all tools — guaranteed complete by the type system
@@ -189,6 +258,14 @@ export function createAuwgent<const IR extends AgentIRShape>(
     ir: IR,
     config: AuwgentConfig<IR>,
 ): TypedAuwgent<IR> {
+    return new TypedAuwgent(ir, config);
+}
+
+export function createAuwgentFromIRJson<const IR extends AgentIRShape>(
+    irJson: string,
+    config: AuwgentConfig<IR>,
+): TypedAuwgent<IR> {
+    const ir = JSON.parse(irJson) as IR;
     return new TypedAuwgent(ir, config);
 }
 

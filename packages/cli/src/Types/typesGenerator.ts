@@ -6,6 +6,10 @@
 interface HelperType {
     name: string;
     output: Record<string, any> | null;
+    modelConfig?: Array<{
+        defaultConfig?: { model: { type: string; modelName: string; url?: string; config?: any }; prompt: any };
+        namedConfig?: Array<{ configName: string; model: { type: string; modelName: string; url?: string; config?: any }; prompt: any }>;
+    }>;
 }
 
 interface ToolDef {
@@ -48,7 +52,6 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
     const hasTools = allTools.length > 0;
     const hasContext = agent.context && Object.keys(agent.context).length > 0;
     const requiredProviders = collectRequiredProviders(agent);
-    const hasTests = (agent.tests ?? []).length > 0;
 
     // Collect helpers that are transferred to (their output becomes part of agent output)
     const transferredHelpers = collectTransferredHelpers(agent);
@@ -57,19 +60,15 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
 
     // Generate IR import statement using baseName if provided, otherwise fall back to agent.name
     const fileName = baseName || agent.name;
-    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as unknown as AgentIR;`;
+    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as const;`;
 
     const sections = [
         `// Auto-generated types for ${agent.name}`,
         `// Do not edit manually`,
         ``,
         `// Core Runtime Imports`,
-        `import { Agent } from "../javascript/loader/IrInterpreter";`,
-        requiredProviders.has("gemini") ? `import { GoogleDriver } from "../javascript/loader/drivers/GoogleDriver";` : '',
-        requiredProviders.has("openai") || requiredProviders.has("custom") ? `import { OpenAIDriver } from "../javascript/loader/drivers/OpenAIDriver";` : '',
-        `import type { AgentIR } from "../javascript/loader/types/ir";`,
-        `import type { AgentMiddleware } from "../javascript/loader/types/protocol";`,
-        hasTests ? `import { AgentTestRunner } from "../javascript/testing/AgentTestRunner";` : '',
+        `import { createAuwgent } from "@auwgent/runtime";`,
+        `import type { ToolRegistry } from "@auwgent/runtime";`,
         ``,
         irImportStatement,
         ``,
@@ -82,7 +81,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent.name, allTools) : '',
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
-        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders, outputHelpers, hasTests),
+        generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders),
     ];
 
     return sections.filter(Boolean).join('\n');
@@ -183,22 +182,35 @@ ${props}
 /**
  * Collect all required provider types from agent model config
  */
-function collectRequiredProviders(agent: AgentIR): Set<string> {
+function collectProvidersFromModelConfig(modelConfig?: AgentIR["modelConfig"]): Set<string> {
     const providers = new Set<string>();
+    if (!modelConfig) {
+        return providers;
+    }
 
-    if (agent.modelConfig && agent.modelConfig.length > 0) {
-        const config = agent.modelConfig[0];
-
-        if (config.defaultConfig?.model) {
+    for (const config of modelConfig) {
+        if (config.defaultConfig?.model?.type) {
             providers.add(config.defaultConfig.model.type);
         }
-
         if (config.namedConfig) {
             for (const named of config.namedConfig) {
-                if (named.model) {
+                if (named.model?.type) {
                     providers.add(named.model.type);
                 }
             }
+        }
+    }
+
+    return providers;
+}
+
+function collectRequiredProviders(agent: AgentIR): Set<string> {
+    const providers = collectProvidersFromModelConfig(agent.modelConfig);
+
+    for (const helper of agent.helpers || []) {
+        const helperProviders = collectProvidersFromModelConfig(helper.modelConfig);
+        for (const provider of helperProviders) {
+            providers.add(provider);
         }
     }
 
@@ -355,221 +367,38 @@ ${toolMethods}
 /**
  * Generate factory function with unified configuration pattern
  */
-function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>, transferredHelpers: HelperType[], hasTests: boolean): string {
-    // Extract named config names for type-safe configName
-    const namedConfigs = agent.modelConfig?.[0]?.namedConfig ?? [];
-    const configNames = namedConfigs
-        .map((c: any) => c.configName)
-        .filter((name: string | undefined) => name);
-
-    const configNameType = configNames.length > 0
-        ? configNames.map((n: string) => `"${n}"`).join(' | ')
-        : 'never';
-
-    // Type parameters for Agent generic
-    const typeParams = [
-        `${agent.name}Input`,
-        `${agent.name}Output`,
-        hasContext ? `${agent.name}Context` : 'Record<string, never>',
-        hasTools ? `${agent.name}Tools` : 'Record<string, never>'
-    ].join(', ');
-
-    // Generate drivers object
-    const driverEntries: string[] = [];
-    if (requiredProviders.has("gemini")) {
-        driverEntries.push(`        gemini: new GoogleDriver(config.apiKeys.geminiApiKey)`);
-    }
-    if (requiredProviders.has("openai")) {
-        driverEntries.push(`        openai: new OpenAIDriver(config.apiKeys.openaiApiKey)`);
-    }
-    if (requiredProviders.has("custom")) {
-        driverEntries.push(`        custom: new OpenAIDriver(config.apiKeys.customApiKey, config.apiKeys.customUrl ?? "https://api.openai.com/v1")`);
-    }
-
+function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>): string {
+    const toolsType = hasTools ? `${agent.name}Tools` : 'Record<string, never>';
     const hasApiKeys = requiredProviders.size > 0;
-    const driversObject = driverEntries.length > 0
-        ? `{\n${driverEntries.join(',\n')}\n    }`
-        : '{}';
 
-    const testNames = (agent.tests ?? []).map(t => t.name);
-    const testNameType = testNames.length > 0
-        ? testNames.map(name => `"${name}"`).join(" | ")
-        : "never";
-
-    // Build config interface properties
     const configProps: string[] = [];
-    if (hasApiKeys) {
-        configProps.push(`    apiKeys: ${agent.name}ApiKeys;`);
-    }
-    // IR is now imported automatically, no need for user to provide it
+    configProps.push(`    tools: ${toolsType};`);
     if (hasContext) {
         configProps.push(`    context: ${agent.name}Context;`);
     }
-    if (hasTools) {
-        configProps.push(`    tools: ${agent.name}Tools;`);
+    if (hasApiKeys) {
+        configProps.push(`    apiKeys: ${agent.name}ApiKeys;`);
     }
-    configProps.push(`    middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[];`);
-    configProps.push(`    middlewareState?: Record<string, any>;`);
-    configProps.push(`    runId?: string;`);
-    // Build validation checks
-    const validationChecks: string[] = [];
-    
-    if (hasTools) {
-        validationChecks.push(`
-    // Validate tools against IR
-    const toolMap = new Map<string, any>();
-    if (agentIR.tools && agentIR.tools.length > 0) {
-        for (const toolDef of agentIR.tools) {
-            toolMap.set(toolDef.name, toolDef);
-        }
-    }
-    if (agentIR.workflows && agentIR.workflows.length > 0) {
-        for (const workflow of agentIR.workflows) {
-            if (workflow.tools && workflow.tools.length > 0) {
-                for (const toolDef of workflow.tools) {
-                    toolMap.set(toolDef.name, toolDef);
-                }
-            }
-        }
-    }
-    const toolsConfig = config.tools as Record<string, any>;
-    for (const toolDef of toolMap.values()) {
-        if (!toolsConfig[toolDef.name]) {
-            throw new Error(
-                \`Missing required tool: \${toolDef.name}\\n\` +
-                \`Expected in tools configuration\`
-            );
-        }
-    }`);
-    }
-
-    // Build run parameters (just input + optional overrides)
-    const runInputParam = `input: ${agent.name}Input`;
-    const runOverrideProps: string[] = [];
-    if (hasContext) runOverrideProps.push(`context?: ${agent.name}Context`);
-    if (hasTools) runOverrideProps.push(`tools?: ${agent.name}Tools`);
-    runOverrideProps.push(`modelOverride?: { providerType?: string; modelName?: string; temperature?: number }`);
-    runOverrideProps.push(`configName?: ${configNameType}`);
-    runOverrideProps.push(`middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]`);
-    runOverrideProps.push(`middlewareState?: Record<string, any>`);
-    runOverrideProps.push(`runId?: string`);
-    
-    const runOverrideParam = runOverrideProps.length > 0 
-        ? `, overrides?: { ${runOverrideProps.join('; ')} }`
-        : '';
-
-    // Build config merge for run call
-    const configMergeParts: string[] = [];
-    if (hasTools) configMergeParts.push('tools: overrides?.tools ?? config.tools');
-    if (hasContext) configMergeParts.push('context: overrides?.context ?? config.context');
-    configMergeParts.push('modelOverride: overrides?.modelOverride');
-    configMergeParts.push('configName: overrides?.configName');
-    configMergeParts.push('middleware: overrides?.middleware ?? config.middleware');
-    configMergeParts.push('middlewareState: overrides?.middlewareState ?? config.middlewareState');
-    configMergeParts.push('runId: overrides?.runId ?? config.runId');
-    
-    const configMerge = `{ ${configMergeParts.join(', ')} }`;
 
     return `
-/**
- * Configuration for ${agent.name} agent
- */
 export type ${agent.name}Config = {
 ${configProps.join('\n')}
 }
 
-/**
- * Create a type-safe ${agent.name} agent instance
- * 
- * @example
- * \`\`\`typescript
- * const agent = create${agent.name}({
- *     apiKeys: { geminiApiKey: '...' },${hasContext ? '\n *     context: { sessionId: "123" },' : ''}${hasTools ? '\n *     tools: { ... },' : ''}
- * });
- * 
- * // Clean execution - config bound at creation
- * const result = await agent.run({ ... });
- * const stream = await agent.stream({ ... });
- * \`\`\`
- */
 export function create${agent.name}(config: ${agent.name}Config) {
-    // Create agent with drivers
-    const agent = new Agent<${typeParams}>(${driversObject});
-    
-    // Load and validate IR from imported file
-    agent.load(agentIR);
-${validationChecks.join('\n')}
-    const testRunner = ${hasTests ? `new AgentTestRunner(agentIR);` : `null;`}
-    return {
-        /**
-         * Run the agent with type-safe parameters
-         * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, or configName
-         */
-        run: (${runInputParam}${runOverrideParam}): Promise<${agent.name}Output> => 
-            agent.run(input, ${configMerge}),
-        
-        /**
-         * Fluent streaming API with callbacks
-         * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, or configName
-         * 
-         * @example
-         * \`\`\`typescript
-         * const result = await agent
-         *   .stream({ request: "..." })
-         *   .onChunk(delta => console.log(delta))
-         *   .onToolResult((name, result) => console.log(name, result))
-         *   .run();
-         * \`\`\`
-         */
-        stream: (${runInputParam}${runOverrideParam}) => 
-            agent.stream(input, ${configMerge}),
-        
-        /**
-         * Native async iteration over stream chunks
-         * @param input - Agent input
-         * @param overrides - Optional overrides for context, tools, or configName
-         * 
-         * @example
-         * \`\`\`typescript
-         * for await (const chunk of agent.streamIterable({ request: "..." })) {
-         *     if (chunk.type === 'text') console.log(chunk.delta);
-         * }
-         * \`\`\`
-         */
-        streamIterable: (${runInputParam}${runOverrideParam}) => 
-            agent.runStream(input, ${configMerge}),${hasContext ? `
-        
-        /**
-         * Create a new agent instance with bound context
-         * Useful for multi-turn conversations with the same session
-         * 
-         * @example
-         * \`\`\`typescript
-         * const sessionAgent = agent.forContext({ sessionId: '123' });
-         * await sessionAgent.run({ message: "First" });
-         * await sessionAgent.run({ message: "Second" });
-         * \`\`\`
-         */
-        forContext: (context: ${agent.name}Context) => {
-            const boundContext = context;
-            return {
-                run: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
-                    agent.run(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId }),
-                stream: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
-                    agent.stream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId }),
-                streamIterable: (${runInputParam}, overrides?: { configName?: ${configNameType}; modelOverride?: { providerType?: string; modelName?: string; temperature?: number }; middleware?: AgentMiddleware<${agent.name}Input, ${agent.name}Context, any>[]; middlewareState?: Record<string, any>; runId?: string }) => 
-                    agent.runStream(input, { context: boundContext, configName: overrides?.configName, modelOverride: overrides?.modelOverride, middleware: overrides?.middleware ?? config.middleware, middlewareState: overrides?.middlewareState ?? config.middlewareState, runId: overrides?.runId ?? config.runId })
-            };
-        }` : ''}${hasTests ? `,
-        test: (name: ${testNameType}) => testRunner!.runTest(name),
-        testAll: () => testRunner!.runAllTests()` : ''}
-    };
+    return createAuwgent(agentIR, {
+        tools: config.tools as unknown as ToolRegistry<typeof agentIR>,
+        ${hasContext ? 'context: config.context,' : ''}
+        ${hasApiKeys ? 'apiKeys: config.apiKeys' : ''}
+    });
 }
 
-/** Type for the created agent instance */
 export type ${agent.name}Agent = ReturnType<typeof create${agent.name}>;
+export const auwgent = create${agent.name};
+export type AuwgentTools = ${toolsType};
+export type AuwgentConfig = ${agent.name}Config;
+export type AuwgentAgent = ${agent.name}Agent;
+export type AuwgentContext = ${agent.name}Context;
 `;
 }
 

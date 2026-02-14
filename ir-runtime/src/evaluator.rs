@@ -53,7 +53,10 @@ impl<'a> Evaluator<'a> {
                 };
 
                 if let Some(s) = schema {
-                    Ok(Value::String(crate::schema::format_schema(s)))
+                    Ok(Value::String(crate::schema::format_schema(
+                        s,
+                        self.ir.types.as_ref(),
+                    )))
                 } else {
                     Ok(Value::String("{}".to_string()))
                 }

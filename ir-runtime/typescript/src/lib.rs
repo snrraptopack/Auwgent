@@ -64,6 +64,16 @@ impl Auwgent {
         Ok(())
     }
 
+    #[napi]
+    pub fn set_context(&self, context: Value) -> Result<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.set_context(context);
+        });
+        Ok(())
+    }
+
     /// Register a tool by name. The callback receives a JSON args object
     /// and must return a JSON result.
     ///

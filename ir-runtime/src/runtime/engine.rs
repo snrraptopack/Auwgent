@@ -19,6 +19,7 @@ pub struct AuwgentEngine {
     tools: HashMap<String, ToolImplementation>,
     orchestrator: Orchestrator,
     driver: Option<Box<dyn ModelDriver>>,
+    context: Option<Value>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
     /// Accumulated raw response for the current turn
@@ -52,6 +53,7 @@ impl AuwgentEngine {
             tools: HashMap::new(),
             orchestrator,
             driver: None,
+            context: None,
             pending_intents,
             current_raw_response: String::new(),
         }
@@ -59,6 +61,10 @@ impl AuwgentEngine {
 
     pub fn set_driver(&mut self, driver: Box<dyn ModelDriver>) {
         self.driver = Some(driver);
+    }
+
+    pub fn set_context(&mut self, context: Value) {
+        self.context = Some(context);
     }
 
     pub fn register_tool(&mut self, name: &str, implementation: ToolImplementation) {
@@ -108,6 +114,9 @@ impl AuwgentEngine {
         let mut scope = HashMap::new();
         if let Some(val) = input.as_ref() {
             scope.insert("input".to_string(), val.clone());
+        }
+        if let Some(ctx) = self.context.as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
         }
 
         let model_info = evaluator.evaluate_model(default_config, &mut scope)?;

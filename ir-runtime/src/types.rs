@@ -16,6 +16,8 @@ pub struct AgentIR {
     pub workflows: Vec<Workflow>,
     pub helpers: Vec<Helper>,
     #[serde(default)]
+    pub types: Option<HashMap<String, TypeDefinition>>,
+    #[serde(default)]
     pub helper_tool_grants: Option<HashMap<String, Value>>,
     #[serde(default)]
     pub helper_handoff: Option<HashMap<String, String>>,
@@ -55,6 +57,22 @@ pub struct Tool {
     pub description: Option<String>,
     pub params: Value, // Object of field definitions
     pub returns: Value,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeDefinition {
+    pub is_output: bool,
+    pub properties: HashMap<String, TypeProperty>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeProperty {
+    #[serde(rename = "type")]
+    pub type_value: Value,
+    pub optional: bool,
+    pub description: Option<String>,
 }
 
 // --- Model Configuration ---

@@ -1,6 +1,6 @@
 use ir_runtime::intent_parser::orchestrator::Orchestrator;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let fixtures_dir = Path::new("src/intent_parser/fixtures");
