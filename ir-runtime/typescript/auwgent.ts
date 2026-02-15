@@ -246,7 +246,7 @@ export class TypedAuwgent<IR extends AgentIRShape> {
      * ```
      */
     onIntent(handler: IntentHandler): void {
-        this.native.onIntent((name: string, value: unknown) => {
+        this.native.onIntent(async (name: string, value: unknown) => {
             return handler(name, value);
         });
     }

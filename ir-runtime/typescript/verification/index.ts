@@ -18,12 +18,14 @@ chef.onIntent((name, value) => {
     console.log(`\n🔔 [${name}]`, JSON.stringify(value, null, 2));
 });
 
+chef.onIntentPartial((name, value) => {
+    if (name === "response_text") {
+        console.log("partial", value)
+    }
+})
+
 if (!geminiApiKey) {
     console.log(chef.generatePrompt())
 } else {
     let session = await chef.run("tell me a short story based on my name")
-    console.log("\n=== Session Turns ===")
-    console.log(JSON.stringify(session.turns, null, 2))
-    console.log("\n=== System Prompt ===")
-    console.log(session.systemPrompt)
 }

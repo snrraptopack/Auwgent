@@ -53,8 +53,9 @@ export declare class Auwgent {
   /**
    * Register a partial intent callback for streaming updates.
    *
-   * Fires as YAML data streams in, BEFORE the intent block is complete.
-   * Observational only — no control/skip/override.
+   * This fires as YAML data streams in, BEFORE the intent block is
+   * complete. Useful for streaming partial text or showing tool args
+   * as they arrive. Observational only — no control/skip/override.
    *
    * ```js
    * agent.onIntentPartial((name, value) => {
