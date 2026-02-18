@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MESSAGE TYPES — used by drivers and session history

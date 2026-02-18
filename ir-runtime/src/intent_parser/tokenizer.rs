@@ -20,6 +20,7 @@ struct TokenizerState {
     pending: Vec<Token>,
     /// Whether we're at line start
     at_line_start: bool,
+    after_colon: bool,
 }
 
 impl Default for TokenizerState {
@@ -32,6 +33,7 @@ impl Default for TokenizerState {
             current_indent: 0,
             pending: Vec::new(),
             at_line_start: true,
+            after_colon: false,
         }
     }
 }
@@ -235,6 +237,7 @@ impl Tokenizer {
         // Colon
         if char == ':' {
             self.advance();
+            self.state.after_colon = true;
             return Some(self.create_token(TokenType::Colon, ":".to_string()));
         }
 
@@ -278,6 +281,7 @@ impl Tokenizer {
             } // Don't span lines
         }
 
+        self.state.after_colon = false;
         Token {
             kind: TokenType::Scalar,
             value: value.trim().to_string(),
@@ -302,7 +306,9 @@ impl Tokenizer {
 
             if c == ':' {
                 let next = self.peek_char(1);
-                if next == ' ' || next == '\n' || next == '\r' || next == '\0' {
+                if !self.state.after_colon
+                    && (next == ' ' || next == '\n' || next == '\r' || next == '\0')
+                {
                     break;
                 }
             }
@@ -331,6 +337,7 @@ impl Tokenizer {
             });
         }
 
+        self.state.after_colon = false;
         Some(Token {
             kind: TokenType::Scalar,
             value,
@@ -390,6 +397,7 @@ impl Tokenizer {
             return None;
         }
 
+        self.state.after_colon = false;
         Some(Token {
             kind: TokenType::Quoted,
             value,
@@ -419,6 +427,7 @@ impl Tokenizer {
             return self.tokenize_newline();
         }
 
+        self.state.after_colon = false;
         Token {
             kind: TokenType::Comment,
             value: value.trim().to_string(),
@@ -431,6 +440,7 @@ impl Tokenizer {
     fn tokenize_newline(&mut self) -> Token {
         let token = self.create_token(TokenType::Newline, "\n".to_string());
 
+        self.state.after_colon = false;
         if self.peek_char(0) == '\r' {
             self.advance();
         }
@@ -639,6 +649,7 @@ impl Tokenizer {
             return None;
         }
 
+        self.state.after_colon = false;
         Some(Token {
             kind: TokenType::Scalar,
             value: lines.join("\n"),

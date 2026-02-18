@@ -1,55 +1,130 @@
 {
-  "name": "CHEF",
+  "name": "Manger",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash",
-          "config": {
-            "type": "object",
-            "value": {
-              "temperature": {
-                "value": 0,
-                "type": "literal"
-              },
-              "thinkingConfig": {
-                "type": "object",
-                "value": {
-                  "includeThoughts": {
-                    "value": "false",
-                    "type": "literal"
-                  }
-                }
-              }
-            }
-          }
+          "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "value": "You are a helpful assistant",
-          "type": "literal"
+          "type": "promptRef",
+          "name": "Alone",
+          "params": [
+            "user_name",
+            "id"
+          ],
+          "args": [
+            {
+              "type": "contextRef",
+              "property": "user_name"
+            },
+            {
+              "type": "contextRef",
+              "property": "id"
+            }
+          ],
+          "value": [
+            {
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n    You are an ai agent that gives a user concise information about what they do....\r\n    the user name is : "
+                },
+                {
+                  "type": "varRef",
+                  "value": "user_name"
+                },
+                {
+                  "type": "literal",
+                  "value": " and wit an id of "
+                },
+                {
+                  "type": "varRef",
+                  "value": "id"
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n    "
+                }
+              ]
+            }
+          ]
         }
       },
       "namedConfig": []
     }
   ],
-  "input": {
-    "text": {
+  "input": null,
+  "output": null,
+  "context": {
+    "user_name": {
+      "type": "string",
+      "optional": false
+    },
+    "id": {
       "type": "string",
       "optional": false
     }
   },
-  "output": null,
-  "context": null,
   "tools": [
     {
-      "description": "used to get the user name",
-      "params": {},
-      "name": "tool_get_user_name",
-      "returns": "string"
+      "description": "get the deatails of the the student",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "get_student_details",
+      "returns": {
+        "type": "typeRef",
+        "name": "Student"
+      }
+    },
+    {
+      "description": "edit the details of the student",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "edit_student_details",
+      "returns": {
+        "type": "typeRef",
+        "name": "Student"
+      }
     }
   ],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "tests": [],
+  "types": {
+    "Student": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "id": {
+          "type": "string",
+          "optional": false
+        },
+        "location": {
+          "type": "string",
+          "optional": false
+        },
+        "grades": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
+        }
+      }
+    }
+  }
 }

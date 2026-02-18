@@ -1,7 +1,6 @@
 use ir_runtime::AgentIR;
 use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::runtime::drivers::gemini::GeminiDriver;
-use ir_runtime::runtime::engine::AsyncIntentCallback;
 use serde_json::json;
 use std::{env, fs, sync::Arc};
 

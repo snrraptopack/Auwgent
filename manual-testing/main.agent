@@ -1,14 +1,32 @@
-import {GeminiModel} from "./models"
-agent CHEF{
+import {Gemini} from "./models"
+
+type Student{
+    name:string,
+    id:string,
+    location:string,
+    grades:string[]
+}
+
+prompt Alone(user_name:string, id:string){
+    """
+    You are an ai agent that gives a user concise information about what they do....
+    the user name is : {{user_name}} and wit an id of {{id}}
+    """
+}
+
+agent Manger{
 
     default config{
-        model : GeminiModel
-        prompt: "You are a helpful assistant"
+        model:Gemini
+        prompt:Alone(ctx.user_name,ctx.id)
+    }
+    context{
+        user_name:string,
+        id:string
     }
 
-    input {
-        text:string
+    tools{
+        get_student_details(id:string):Student @desc "get the deatails of the the student"
+        edit_student_details(id:string):Student @desc "edit the details of the student"
     }
-
-    tool tool_get_user_name():string @desc "used to get the user name"
 }
