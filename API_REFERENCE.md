@@ -1,6 +1,6 @@
 # Auwgent API Reference
 
-> **Quick Overview**: This guide covers all APIs available in the Auwgent framework. Each section provides a brief introduction - refer to detailed documentation for in-depth explanations.
+> **Quick Overview**: This guide covers all APIs available in the Auwgent framework, leveraging the new Rust-powered runtime and TypeScript bindings.
 
 ---
 
@@ -8,208 +8,154 @@
 
 1. [Agent Creation & Configuration](#1-agent-creation--configuration)
 2. [Execution Methods](#2-execution-methods)
-3. [Streaming APIs](#3-streaming-apis)
-4. [Context Management](#4-context-management)
+3. [Streaming Events](#3-streaming-events)
+4. [Middleware](#4-middleware)
 5. [Type System](#5-type-system)
 6. [Tools & Workflows](#6-tools--workflows)
 7. [Helpers (Sub-Agents)](#7-helpers-sub-agents)
-8. [Lifecycle Hooks](#8-lifecycle-hooks)
-9. [Model Configuration](#9-model-configuration)
-10. [Generated Types](#10-generated-types)
+8. [Model Configuration](#8-model-configuration)
+9. [Generated Types](#9-generated-types)
 
 ---
 
 ## 1. Agent Creation & Configuration
 
-### `createAgent(config)`
+### `createAuwgent(ir, config)`
 
-Creates a type-safe agent instance with unified configuration.
+Creates a type-safe agent instance using the highly optimized Rust-backed runtime.
 
 **Signature:**
 ```typescript
-function createAgent(config: AgentConfig): Agent
+function createAuwgent<IR extends AgentIRShape>(
+    ir: IR,
+    config: AuwgentConfig<IR>
+): TypedAuwgent<IR>
 ```
 
 **Config Interface:**
 ```typescript
-interface AgentConfig {
-    apiKeys: ApiKeys;           // Required: API keys for LLM providers
-    ir: AgentIR;                // Required: Agent IR (from .agent.json)
-    context?: Context;          // Optional: Bind context at creation
-    tools?: Tools;              // Optional: Bind tools at creation
-    lifecycle?: Lifecycle;      // Optional: Memory management hooks
+interface AuwgentConfig<IR> {
+    tools: ToolRegistry<IR>;            // Required: Bind tools matching the IR
+    middleware?: Middleware<IR>[];      // Optional: Middleware plugins
+    context?: Record<string, unknown>;  // Optional: Bind initial context
+    apiKeys?: ApiKeys;                  // Optional: API keys (e.g. { geminiApiKey })
+    geminiApiKey?: string;              // Optional: Shortcut for Gemini API key
 }
 ```
 
 **Example:**
 ```typescript
-const agent = createTypeSystemTest({
-    apiKeys: { geminiApiKey: '...' },
-    ir: agentIR,
-    context: { sessionId: "123" },
-    tools: { myTool: async (args) => {...} },
-    lifecycle: { prune, load, save }
+import { createAuwgent, parseIR } from '@auwgent/runtime';
+import irJson from './output/main.agent.json';
+
+const agent = createAuwgent(parseIR(JSON.stringify(irJson)), {
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    tools: {
+        myTool: async (args) => { /* implementation */ }
+    }
 });
 ```
 
-**Key Features:**
-- ✅ Validates IR structure immediately
-- ✅ Validates tools match IR requirements
-- ✅ Validates lifecycle hooks if required
-- ✅ Fails fast with clear error messages
+### `createAuwgentFromIRJson(irJson, config)`
 
-**See Also:** [DX_IMPROVEMENTS.md](./DX_IMPROVEMENTS.md)
+An alternative helper that takes the raw IR JSON string directly.
 
 ---
 
 ## 2. Execution Methods
 
-### `agent.run(input, overrides?)`
+### `agent.run(input?)`
 
-Executes the agent and returns the final result.
+Executes the agent for a single turn and returns the updated `SessionState`.
 
 **Signature:**
 ```typescript
-async run(input: Input, overrides?: Overrides): Promise<Output>
+async run(input?: string): Promise<SessionState>
 ```
 
 **Example:**
 ```typescript
-const result = await agent.run({ message: "Hello" });
-console.log(result.analysis);
+const session = await agent.run("Hello, what can you do?");
+console.log(session.turns[session.turns.length - 1].model_response);
 ```
 
-**With Overrides:**
+### Session Management
+
+The runtime manages temporal conversational state internally in a lightweight structure.
+
+- `exportSession(): SessionState` - Export the current session for persistence (e.g. database).
+- `importSession(session: SessionState): void` - Restore a previously exported session.
+- `clearSession(): void` - Reset the conversation trace to start fresh.
+
+**Example:**
 ```typescript
-const result = await agent.run(
-    { message: "Hello" },
-    { context: { sessionId: "override" } }
-);
+const savedSession = agent.exportSession();
+// ... later in another request ...
+agent.importSession(savedSession);
+await agent.run("Continue from where we left off");
 ```
-
-**Behavior:**
-- Executes agent with bound configuration
-- Handles tool calls automatically
-- Returns structured output matching schema
-- Throws on validation errors
 
 ---
 
-## 3. Streaming APIs
+## 3. Streaming Events
 
-### `agent.stream(input, overrides?)`
+Auwgent's Rust runtime streams "intents" in real-time as the YAML output is parsed over the wire.
 
-Fluent streaming API with callback-based event handling.
+### `agent.onIntent(handler)` & `agent.onHandlers(handlers)`
 
-**Signature:**
-```typescript
-stream(input: Input, overrides?: Overrides): StreamBuilder
-```
+Captures complete, fully-parsed intent blocks (e.g., when a tool finishes parsing). 
 
 **Example:**
 ```typescript
-const result = await agent.stream({ message: "Hello" })
-    .onChunk(delta => console.log(delta))
-    .onToolStart(name => console.log(`Tool: ${name}`))
-    .onToolResult((name, result) => console.log(name, result))
-    .onToolEnd(name => console.log(`Done: ${name}`))
-    .onHelperStart(name => console.log(`Helper: ${name}`))
-    .onHelperEnd((name, result) => console.log(name, result))
-    .run();
+agent.onHandlers({
+    response_text: async (value) => {
+        process.stdout.write(value.text);
+    },
+    tool_call: async (value) => {
+        if (value.type === 'myTool') {
+            console.log("Tool myTool executing with args:", value.args);
+        }
+    }
+});
 ```
 
-**Available Callbacks:**
-- `onChunk(delta: string)` - Text chunks as they arrive
-- `onToolStart(name: string)` - Tool execution starts
-- `onToolArgs(name: string, args: any)` - Tool arguments
-- `onToolResult(name: string, result: any)` - Tool result
-- `onToolEnd(name: string)` - Tool execution ends
-- `onHelperStart(name: string)` - Helper (sub-agent) starts
-- `onHelperEnd(name: string, result: any)` - Helper completes
+### `agent.onIntentPartial(handler)` & `agent.onHandlersPartial(handlers)`
 
-**Returns:** Final structured output after streaming completes
+Captures streaming delta updates while an intent is actively generating. Useful for building real-time UI components before the LLM finishes outputting the entire payload.
 
 ---
 
-### `agent.streamIterable(input, overrides?)`
+## 4. Middleware
 
-Native async iteration over stream chunks.
+Middleware intercept the execution lifecycle of the agent, allowing for context compaction, tracing, metrics, and advanced error handling.
 
-**Signature:**
+**Interface:**
 ```typescript
-streamIterable(input: Input, overrides?: Overrides): AsyncGenerator<StreamChunk>
-```
-
-**Example:**
-```typescript
-for await (const chunk of agent.streamIterable({ message: "Hello" })) {
-    if (chunk.type === 'text') {
-        process.stdout.write(chunk.delta);
-    }
-    if (chunk.type === 'tool_result') {
-        console.log(`Tool: ${chunk.name}`, chunk.result);
-    }
-    if (chunk.type === 'helper_start') {
-        console.log(`Helper started: ${chunk.name}`);
-    }
+export interface Middleware<IR> {
+    name: string;
+    onRunStart?: (session: SessionState, ctx: MiddlewareContext) => SessionState | Promise<SessionState>;
+    onLLMStart?: (prompt: string, ctx: MiddlewareContext) => void | Promise<void>;
+    onIntent?: MiddlewareIntentHandler<IR>;
+    onLLMEnd?: (response: string, ctx: MiddlewareContext) => void | Promise<void>;
+    onRunComplete?: (finalSession: SessionState, ctx: MiddlewareContext) => void | Promise<void>;
+    onError?: (error: Error, session: SessionState, ctx: MiddlewareContext) => boolean | Promise<boolean> | void;
 }
 ```
 
-**Chunk Types:**
-```typescript
-type StreamChunk =
-    | { type: 'text'; delta: string }
-    | { type: 'tool_start'; name: string }
-    | { type: 'tool_args'; name: string; args: any }
-    | { type: 'tool_result'; name: string; result: any }
-    | { type: 'tool_end'; name: string }
-    | { type: 'helper_start'; name: string }
-    | { type: 'helper_chunk'; name: string; chunk: StreamChunk }
-    | { type: 'helper_end'; name: string; result: any }
-    | { type: 'transfer'; mode: 'direct' | 'thenContinue'; helperName: string }
-```
-
-**Use Case:** When you need fine-grained control over stream processing
-
----
-
-## 4. Context Management
-
-### `agent.forContext(context)`
-
-Creates a new agent instance with bound context for multi-turn conversations.
-
-**Signature:**
-```typescript
-forContext(context: Context): BoundAgent
-```
-
 **Example:**
 ```typescript
-// Bind session once
-const sessionAgent = agent.forContext({ sessionId: "user-123" });
+const loggingMiddleware: Middleware<any> = {
+    name: 'logger',
+    onRunStart: (session) => {
+        console.log("Starting run with", session.turns.length, "turns");
+        return session; // Must return the session (can be mutated for pruning)
+    }
+};
 
-// Multiple calls with same context
-const result1 = await sessionAgent.run({ message: "My name is John" });
-const result2 = await sessionAgent.run({ message: "What's my name?" });
-const result3 = await sessionAgent.run({ message: "Tell me a joke" });
-```
-
-**Use Case:** Multi-turn conversations where context should persist
-
-**Benefits:**
-- No need to pass context every call
-- Cleaner code for conversational flows
-- Each bound agent maintains separate context
-
-**Multiple Sessions:**
-```typescript
-const user1 = agent.forContext({ sessionId: "user-1" });
-const user2 = agent.forContext({ sessionId: "user-2" });
-
-await user1.run({ message: "I like pizza" });
-await user2.run({ message: "I like burgers" });
-// Each maintains separate context
+const agent = createAuwgent(ir, {
+    tools,
+    middleware: [loggingMiddleware]
+});
 ```
 
 ---
@@ -218,54 +164,28 @@ await user2.run({ message: "I like burgers" });
 
 ### Type Declarations
 
-Define reusable types in your DSL.
+Define reusable types natively in the Auwgent DSL.
 
 **Syntax:**
-```
-type TypeName {
-    property: type
-    optionalProp?: type
-}
-
-output type OutputType {
-    field: type @desc "Description"
-}
-```
-
-**Example:**
-```
+```typescript
 type Point {
     x: number
     y: number
 }
 
-type User {
-    id: string
-    name: string
-    address: Address  // Type reference
-}
-
 output type AnalysisResult {
     summary: string @desc "High-level summary"
     confidence: number @desc "Score between 0 and 1"
-    keyFindings: string[] @desc "List of findings"
 }
 ```
 
-**Supported Types:**
+**Supported Features:**
 - **Primitives**: `string`, `number`, `boolean`
-- **Arrays**: `string[]`, `Point[]`, `{ x: number, y: number }[]`
+- **Arrays**: `string[]`, `Point[]`
 - **Type References**: `User`, `Address`, `Point`
 - **Unions**: `"fast" | "thorough"`, `"red" | "green" | "blue"`
 - **Inline Objects**: `{ title: string, url: string }`
-- **Optional**: `zipCode?: string`
-
-**Type Resolution:**
-- Type references are recursively resolved to full JSON schemas
-- Descriptions preserved at all levels
-- Optional fields handled correctly in `required` arrays
-
-**See Also:** [ENHANCED_TYPE_SYSTEM_SUMMARY.md](./ENHANCED_TYPE_SYSTEM_SUMMARY.md)
+- **Optional Fields**: `zipCode?: string`
 
 ---
 
@@ -273,317 +193,86 @@ output type AnalysisResult {
 
 ### Tools
 
-External functions the agent can call.
+External functions the agent can call, enforced by the compiler.
 
 **DSL Syntax:**
-```
-tool functionName(param1: type, param2: type): returnType
-@desc "Tool description"
+```typescript
+tool calculateDistance(p1: Point, p2: Point): number
+@desc "Finds the distance"
 ```
 
 **TypeScript Implementation:**
 ```typescript
-const tools = {
-    calculateDistance: async ({ p1, p2 }: { p1: Point; p2: Point }) => {
-        return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+const agent = createAuwgent(ir, {
+    tools: {
+        calculateDistance: async ({ p1, p2 }) => {
+            return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+        }
     }
-};
-
-const agent = createAgent({
-    apiKeys,
-    ir,
-    tools  // Bind at creation
 });
 ```
 
-**Validation:**
-- Tools are validated against IR at creation time
-- Missing tools throw clear error messages
-- Type-safe tool signatures
-
----
-
 ### Workflows
 
-Multi-step logic defined in DSL, executed by the agent.
+Deterministic multi-step logic baked directly into the DSL. Workflows execute locally in the engine, eliminating unnecessary LLM round-trips while maintaining full access to tools and helpers.
 
 **DSL Syntax:**
-```
-workflow workflowName(param: type): returnType {
-    let result = toolCall(param)
-    if result == "success" {
-        return "Done"
+```typescript
+workflow verifyUser(id: string): boolean {
+    let result = checkDb(id)
+    if result == "found" {
+        return true
     } else {
-        return "Failed"
+        return false
     }
 }
 @desc "Workflow description"
 ```
 
-**Features:**
-- Variables, conditionals, tool calls
-- Helper calls (sub-agents)
-- Transfer statements (delegate to helper)
-- Return values
-
-**Execution:**
-- Workflows appear as tools to the LLM
-- Agent decides when to call them
-- Executed by `WorkflowRunner`
-
 ---
 
 ## 7. Helpers (Sub-Agents)
 
-Helpers are sub-agents that can be called by the main agent or workflows.
+Delegation to specialized sub-agents.
 
 **DSL Syntax:**
-```
-helper HelperName {
-    input { ... }
-    output { ... }
-    tools { ... }
-    default config { ... }
+```typescript
+helper SearchHelper {
+    input { query: string }
+    output { results: string[] }
+    tools [ searchWeb ]
 }
-@desc "Helper description"
 
 agent MainAgent {
-    helpers {
-        HelperName with tools [tool1, tool2]
-        // or
-        HelperName with all tools
-    }
+    helpers { SearchHelper }
 }
 ```
 
-**Transfer Statements:**
-```
-workflow delegateTask(request: string): string {
-    transfer HelperName(request)  // Direct transfer
-    // or
-    transfer HelperName(request) then continue  // Helper delivers, agent can add summary
-}
-```
-
-**Behavior:**
-- Helpers are cached for performance
-- Can be granted parent tools
-- Support streaming
-- Can transfer control (direct or thenContinue)
+Helpers run completely in the Rust engine! The engine dynamically routes state and tools between agents, preserving determinism and context without the latency of network-bound coordination.
 
 ---
 
-## 8. Lifecycle Hooks
+## 8. Model Configuration
 
-Memory management for conversational agents.
-
-**Interface:**
+**Providers Configuration DSL:**
 ```typescript
-interface Lifecycle<Context, Output> {
-    prune: (args: {
-        context: Context;
-        agent: Agent;
-        usage: {
-            currentTokens: number;
-            maxTokens: number;
-            currentMessages: number;
-            maxMessages: number;
-        };
-    }) => Promise<ConversationState>;
-    
-    load: (args: {
-        context: Context;
-    }) => Promise<ConversationState>;
-    
-    save: (args: {
-        newMessages: SyntheticMessage[];
-        context: Context;
-        output: Output;
-    }) => Promise<void>;
-}
-```
-
-**Example:**
-```typescript
-const lifecycle = {
-    prune: async ({ context, usage }) => {
-        // Decide what to keep in memory
-        if (usage.currentTokens > usage.maxTokens * 0.8) {
-            // Summarize or remove old messages
-        }
-        return { messages: [] };
-    },
-    
-    load: async ({ context }) => {
-        // Load conversation history from database
-        const messages = await db.getMessages(context.sessionId);
-        return { messages };
-    },
-    
-    save: async ({ newMessages, context, output }) => {
-        // Save new messages to database
-        await db.saveMessages(context.sessionId, newMessages);
-    }
-};
-```
-
-**DSL Configuration:**
-```
-agent MyAgent {
-    use lifecycle {
-        maxTokens: 100000
-        maxMessages: 100
-    }
-}
-```
-
-**Validation:**
-- If lifecycle enabled in DSL, hooks must be provided
-- Throws clear error if missing
-
----
-
-## 9. Model Configuration
-
-### Providers
-
-Supported LLM providers:
-- **Gemini**: `gemini("model-name")`
-- **OpenAI**: `openai("model-name")`
-- **Custom**: `custom("url", "model-name")`
-
-**DSL Syntax:**
-```
 agent MyAgent {
     default config {
         model: gemini("gemini-2.0-flash")
         prompt: "You are a helpful assistant."
     }
-    
-    config "advanced" {
-        model: openai("gpt-4")
-        prompt: "You are an expert analyst."
-    }
 }
 ```
 
-**TypeScript Usage:**
-```typescript
-// Use default config
-await agent.run(input);
-
-// Use named config
-await agent.run(input, { configName: "advanced" });
-```
-
-**Driver Auto-Creation:**
-- Factory automatically creates required drivers
-- Based on models used in IR
-- API keys validated at creation
+The underlying Rust engine actively uses this config internally to initialize native providers dynamically.
 
 ---
 
-## 10. Generated Types
+## 9. Generated Types
 
-### Type-Safe Interfaces
+The CLI generates strong TypeScript typing based on your `.agent` files so the integration with your TS/Node host environment is strictly verified:
+- **Input**: Strongly-typed payload to the agent.
+- **Output**: Typed payload extraction from responses.
+- **Tools**: Generates a signature-perfect interface block your bound TS tools must conform to.
 
-The CLI generates TypeScript interfaces for:
-- **Input**: `AgentNameInput`
-- **Output**: `AgentNameOutput`
-- **Context**: `AgentNameContext`
-- **Tools**: `AgentNameTools`
-- **Lifecycle**: `AgentNameLifecycle`
-- **Config**: `AgentNameConfig`
-- **Custom Types**: All DSL type declarations
-
-**Example:**
-```typescript
-// Generated from DSL
-export interface Point {
-    x: number;
-    y: number;
-}
-
-export interface AnalysisResult {
-    /** High-level summary of findings */
-    summary: string;
-    /** Confidence score between 0 and 1 */
-    confidence: number;
-    /** List of key findings */
-    keyFindings: string[];
-}
-
-export interface TypeSystemTestInput {
-    message: string;
-}
-
-export interface TypeSystemTestOutput {
-    analysis: AnalysisResult;
-    searchResults: SearchResult;
-}
-```
-
-**Benefits:**
-- Full TypeScript type safety
-- IntelliSense support
-- Compile-time validation
-- JSDoc comments from `@desc`
-
----
-
-## Quick Reference
-
-### Common Patterns
-
-**1. Simple Agent:**
-```typescript
-const agent = createAgent({ apiKeys, ir });
-const result = await agent.run(input);
-```
-
-**2. Agent with Tools:**
-```typescript
-const agent = createAgent({ apiKeys, ir, tools });
-const result = await agent.run(input);
-```
-
-**3. Streaming:**
-```typescript
-await agent.stream(input)
-    .onChunk(c => console.log(c))
-    .run();
-```
-
-**4. Multi-turn:**
-```typescript
-const session = agent.forContext({ sessionId: "123" });
-await session.run({ message: "First" });
-await session.run({ message: "Second" });
-```
-
-**5. Async Iteration:**
-```typescript
-for await (const chunk of agent.streamIterable(input)) {
-    if (chunk.type === 'text') console.log(chunk.delta);
-}
-```
-
----
-
-## Next Steps
-
-- **Getting Started**: See `javascript/example-usage.ts`
-- **Type System**: See `ENHANCED_TYPE_SYSTEM_SUMMARY.md`
-- **DX Improvements**: See `DX_IMPROVEMENTS.md`
-- **Testing**: See `javascript/TESTING_SCHEMA.md`
-- **Changelog**: See `changelog/2026-01-27.md`
-
----
-
-## Support
-
-For detailed documentation on specific topics:
-1. Read the relevant section above
-2. Check the linked documentation files
-3. Review example code in `javascript/example-usage.ts`
-4. Inspect generated types in `.agent.types.ts` files
+*Full robust completion is ready out-of-the-box in your IDE.*

@@ -98,7 +98,7 @@ LangChain and CrewAI rely heavily on the LLM to "figure out" the next step, ofte
 ```
 .agent file  ──▶  Compiler (Langium)  ──▶  IR (JSON) + Types (.ts)
                                                 │
-Your App  ◀──▶  @auwgent/runtime (Rust)  ◀───┘
+Your Node App  ◀──  NAPI-RS FFI Bridge  ──▶  @auwgent/runtime (Rust Core)
 ```
 
 ## DSL Reference
@@ -119,7 +119,7 @@ Your App  ◀──▶  @auwgent/runtime (Rust)  ◀───┘
 - [x] Streaming support (`onIntentPartial`)
 - [x] High-performance Rust engine
 - [x] YAML-based streaming protocol
-- [/] Intelligent Type Inference (In Progress)
+- [x] Intelligent Type Inference
 - [ ] VS Code Extension (Beta)
 - [ ] Python Runtime
 
