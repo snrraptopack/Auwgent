@@ -396,6 +396,12 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
 
     const configProps: string[] = [];
     configProps.push(`    tools: ${toolsType};`);
+    configProps.push(`    middleware?: import("@auwgent/runtime").Middleware<
+        typeof agentIR,
+        ${agent.name}CustomIntents,
+        ${agent.output ? `${agent.name}Output` : 'never'},
+        ${toolsType}
+    >[];`);
     if (hasContext) {
         configProps.push(`    context: ${agent.name}Context;`);
     }
@@ -416,16 +422,24 @@ export function create${agent.name}(config: ${agent.name}Config) {
         ${agent.name}Tools
     >(agentIR, {
         tools: config.tools,
+        middleware: config.middleware,
         ${hasContext ? 'context: config.context,' : ''}
         ${hasApiKeys ? 'apiKeys: config.apiKeys' : ''}
     });
 }
 
 export type ${agent.name}Agent = ReturnType<typeof create${agent.name}>;
+export type ${agent.name}Middleware = import("@auwgent/runtime").Middleware<
+    typeof agentIR,
+    ${agent.name}CustomIntents,
+    ${agent.output ? `${agent.name}Output` : 'never'},
+    ${toolsType}
+>;
 export const auwgent = create${agent.name};
 export type AuwgentTools = ${toolsType};
 export type AuwgentConfig = ${agent.name}Config;
 export type AuwgentAgent = ${agent.name}Agent;
+export type AuwgentMiddleware = ${agent.name}Middleware;
 export type AuwgentContext = ${agent.name}Context;
 `;
 }

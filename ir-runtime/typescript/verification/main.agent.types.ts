@@ -64,6 +64,12 @@ export type MangerApiKeys = {
 
 export type MangerConfig = {
     tools: MangerTools;
+    middleware?: import("@auwgent/runtime").Middleware<
+        typeof agentIR,
+        MangerCustomIntents,
+        MangerOutput,
+        MangerTools
+    >[];
     context: MangerContext;
     apiKeys: MangerApiKeys;
 }
@@ -76,14 +82,22 @@ export function createManger(config: MangerConfig) {
         MangerTools
     >(agentIR, {
         tools: config.tools,
+        middleware: config.middleware,
         context: config.context,
         apiKeys: config.apiKeys
     });
 }
 
 export type MangerAgent = ReturnType<typeof createManger>;
+export type MangerMiddleware = import("@auwgent/runtime").Middleware<
+    typeof agentIR,
+    MangerCustomIntents,
+    MangerOutput,
+    MangerTools
+>;
 export const auwgent = createManger;
 export type AuwgentTools = MangerTools;
 export type AuwgentConfig = MangerConfig;
 export type AuwgentAgent = MangerAgent;
+export type AuwgentMiddleware = MangerMiddleware;
 export type AuwgentContext = MangerContext;
