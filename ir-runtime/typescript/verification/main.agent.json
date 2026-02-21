@@ -57,7 +57,27 @@
     }
   ],
   "input": null,
-  "output": null,
+  "output": {
+    "simple_response": {
+      "type": "string",
+      "optional": true,
+      "description": "for direct response"
+    },
+    "structured_response": {
+      "type": {
+        "type": "object",
+        "properties": {
+          "student": {
+            "type": "typeRef",
+            "name": "Student"
+          },
+          "descriptions": "string"
+        }
+      },
+      "optional": true,
+      "description": "for returnin structured resonse"
+    }
+  },
   "context": {
     "user_name": {
       "type": "string",
@@ -123,6 +143,30 @@
             "items": "string"
           },
           "optional": false
+        }
+      }
+    },
+    "One": {
+      "isOutput": true,
+      "properties": {
+        "simple_response": {
+          "type": "string",
+          "optional": true,
+          "description": "for direct response"
+        },
+        "structured_response": {
+          "type": {
+            "type": "object",
+            "properties": {
+              "student": {
+                "type": "typeRef",
+                "name": "Student"
+              },
+              "descriptions": "string"
+            }
+          },
+          "optional": true,
+          "description": "for returnin structured resonse"
         }
       }
     }

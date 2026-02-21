@@ -18,34 +18,57 @@ pub fn format_schema_yaml(
                 name.clone()
             };
 
-            // Check if this field has an inline object type — if so, recurse
-            let type_val = def.get("type");
-            let is_inline_object = type_val
-                .and_then(|t| t.as_object())
-                .and_then(|o| o.get("type"))
-                .and_then(|t| t.as_str())
-                .map_or(false, |t| t == "object");
+            let mut resolved_props: Option<Value> = None;
 
-            if is_inline_object {
-                let nested_obj = type_val.unwrap();
+            // 1. Is the type an object describing an inline schema or typeRef?
+            if let Some(t_obj) = def.get("type").and_then(|t| t.as_object()) {
+                if t_obj.get("type").and_then(|t| t.as_str()) == Some("object") {
+                    if let Some(p) = t_obj.get("properties") {
+                        resolved_props = Some(p.clone());
+                    }
+                } else if t_obj.get("type").and_then(|t| t.as_str()) == Some("typeRef") {
+                    if let Some(ref_name) = t_obj.get("name").and_then(|n| n.as_str()) {
+                        if let Some(types_map) = types {
+                            if let Some(custom_type) = types_map.get(ref_name) {
+                                if let Ok(val) = serde_json::to_value(&custom_type.properties) {
+                                    resolved_props = Some(val);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Is the property itself a flat typeRef? (e.g., {"type": "typeRef", "name": "..."})
+            if resolved_props.is_none() {
+                if def.get("type").and_then(|t| t.as_str()) == Some("typeRef") {
+                    if let Some(ref_name) = def.get("name").and_then(|n| n.as_str()) {
+                        if let Some(types_map) = types {
+                            if let Some(custom_type) = types_map.get(ref_name) {
+                                if let Ok(val) = serde_json::to_value(&custom_type.properties) {
+                                    resolved_props = Some(val);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some(props) = resolved_props {
                 let mut line = format!("{}{}:", indent, name_tag);
-                if let Some(desc) = def["description"].as_str() {
+                if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
                     line.push_str(" // ");
                     line.push_str(desc);
                 }
                 lines.push(line);
-
-                // Recursively format the nested properties
-                if let Some(props) = nested_obj.as_object().and_then(|o| o.get("properties")) {
-                    let nested = format_schema_yaml(props, indent_level + 2, types);
-                    if !nested.is_empty() {
-                        lines.push(nested);
-                    }
+                let nested = format_schema_yaml(&props, indent_level + 2, types);
+                if !nested.is_empty() {
+                    lines.push(nested);
                 }
             } else {
                 let field_type = format_type_value(def, types);
                 let mut line = format!("{}{}: {}", indent, name_tag, field_type);
-                if let Some(desc) = def["description"].as_str() {
+                if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
                     line.push_str(" // ");
                     line.push_str(desc);
                 }
@@ -109,6 +132,11 @@ pub fn format_type_definitions_yaml(
 
 pub fn format_type_value(def: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = def.as_object() {
+        if let Some(type_str) = obj.get("type").and_then(|v| v.as_str()) {
+            if type_str == "typeRef" {
+                return format_type(def, types);
+            }
+        }
         if let Some(type_val) = obj.get("type") {
             return format_type(type_val, types);
         }
@@ -147,6 +175,8 @@ fn format_type(type_val: &Value, types: Option<&HashMap<String, TypeDefinition>>
                 }
                 "typeRef" => {
                     if let Some(name) = obj.get("name").and_then(|v| v.as_str()) {
+                        // For pure string formatting (like in array[] signatures) we just put the name.
+                        // Full object expansion happens in format_schema_yaml where we can indent.
                         return name.to_string();
                     }
                 }

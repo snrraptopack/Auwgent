@@ -33,17 +33,15 @@ chef.onIntentPartial((name, value) => {
         if (lastIntent === "response_text") {
             console.log(); // print newline to end the text stream
         }
-        if (name !== "response_text") {
+        if (name !== "response_schema") {
             console.log(`\n[Agent is working on: ${name}]`);
         }
         lastLength = 0;
         lastIntent = name;
     }
 
-    if (name === "response_text" && value && typeof value.text === "string") {
-        const newText = value.text.slice(lastLength);
-        process.stdout.write(newText);
-        lastLength = value.text.length;
+    if (name === "response_schema") {
+        console.log(value)
     }
 })
 

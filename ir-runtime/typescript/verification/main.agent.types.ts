@@ -17,12 +17,24 @@ export type Student = {
     grades: string[];
 }
 
+
+/** Output type */
+export type One = {
+
+    /** for direct response */
+    simple_response?: string;
+
+    /** for returnin structured resonse */
+    structured_response?: { student: Student; descriptions: string };
+}
+
 export type MangerInput = {
 
 }
 
 export type MangerOutput = {
-
+    simple_response?: string;
+    structured_response?: { student: Student; descriptions: string };
 }
 
 export type MangerContext = {
@@ -56,7 +68,7 @@ export function createManger(config: MangerConfig) {
     return createAuwgent<
         typeof agentIR,
         MangerCustomIntents,
-        never,
+        MangerOutput,
         MangerTools
     >(agentIR, {
         tools: config.tools,

@@ -7,6 +7,14 @@ type Student{
     grades:string[]
 }
 
+output type One{
+    simple_response?:string @desc "for direct response"
+    structured_response?:{
+        student:Student
+        descriptions:string
+    } @desc "for returnin structured resonse"
+}
+
 prompt Alone(user_name:string, id:string){
     """
     You are an ai agent that gives a user concise information about what they do....
@@ -24,6 +32,8 @@ agent Manger{
         user_name:string,
         id:string
     }
+
+    output:One
 
     tools{
         get_student_details(id:string):Student @desc "get the deatails of the the student"
