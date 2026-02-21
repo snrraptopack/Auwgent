@@ -402,7 +402,7 @@ export function create${agent.name}(config: ${agent.name}Config) {
         ${agent.output ? `${agent.name}Output` : 'any'},
         ${agent.name}Tools
     >(agentIR, {
-        tools: config.tools as unknown as ToolRegistry<typeof agentIR>,
+        tools: config.tools,
         ${hasContext ? 'context: config.context,' : ''}
         ${hasApiKeys ? 'apiKeys: config.apiKeys' : ''}
     });

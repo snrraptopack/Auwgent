@@ -179,10 +179,18 @@ export interface ErrorIntent { name: 'error'; value: { message: string } }
  * Sub-union for tool-related intents.
  */
 export type ToolIntents<Tools> =
-    | ToolCallIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolArgs<[Tools] extends [any] ? Tools[keyof Tools] : any>>
-    | ToolResultIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolResult<[Tools] extends [any] ? Tools[keyof Tools] : any>>
-    | ToolErrorIntent<[keyof Tools] extends [never] ? string : keyof Tools>
-    | ToolSkippedIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolArgs<[Tools] extends [any] ? Tools[keyof Tools] : any>>;
+    [Tools] extends [never] ? never :
+    [Tools] extends [Record<string, never>] ? never :
+    // If we have a generic string key, we can't narrow specifically, so return generic shapes.
+    string extends keyof Tools
+    ? (ToolCallIntent | ToolResultIntent | ToolErrorIntent | ToolSkippedIntent)
+    : {
+        [K in keyof Tools]:
+        | ToolCallIntent<K, GetToolArgs<Tools[K]>>
+        | ToolResultIntent<K, GetToolResult<Tools[K]>>
+        | ToolErrorIntent<K>
+        | ToolSkippedIntent<K, GetToolArgs<Tools[K]>>
+    }[keyof Tools];
 
 /** Standard intent shapes emitted by the engine */
 export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
@@ -406,13 +414,13 @@ export class TypedAuwgent<
 export function createAuwgent<
     const IR extends AgentIRShape,
     CustomIntents = never,
-    Output = IR['output'] extends null ? any : IR['output'],
-    Tools = ToolRegistry<IR>
+    Output = any,
+    Tools extends Record<string, any> = ToolRegistry<IR>
 >(
     ir: IR,
-    config: AuwgentConfig<IR>,
+    config: Omit<AuwgentConfig<IR>, 'tools'> & { tools: Tools }
 ): TypedAuwgent<IR, CustomIntents, Output, Tools> {
-    return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config as any);
+    return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config);
 }
 
 export function createAuwgentFromIRJson<

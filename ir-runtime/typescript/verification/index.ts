@@ -34,8 +34,8 @@ chef.onIntent((name, value) => {
         console.log(value)
     }
 
-    if (name === "tool_result") {
-        console.log("result", value.result)
+    if (name === "tool_result" && value.name === "get_student_details") {
+        console.log(value.result.name)
     }
 })
 

@@ -53,8 +53,13 @@ export type MangerConfig = {
 }
 
 export function createManger(config: MangerConfig) {
-    return createAuwgent<typeof agentIR, MangerCustomIntents>(agentIR, {
-        tools: config.tools as unknown as ToolRegistry<typeof agentIR>,
+    return createAuwgent<
+        typeof agentIR,
+        MangerCustomIntents,
+        any,
+        MangerTools
+    >(agentIR, {
+        tools: config.tools,
         context: config.context,
         apiKeys: config.apiKeys
     });
