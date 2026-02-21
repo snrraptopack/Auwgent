@@ -21,6 +21,7 @@ struct TokenizerState {
     /// Whether we're at line start
     at_line_start: bool,
     after_colon: bool,
+    pub partial_token: String,
 }
 
 impl Default for TokenizerState {
@@ -34,6 +35,7 @@ impl Default for TokenizerState {
             pending: Vec::new(),
             at_line_start: true,
             after_colon: false,
+            partial_token: String::new(),
         }
     }
 }
@@ -148,6 +150,10 @@ impl Tokenizer {
         tokens.push(self.create_token(TokenType::Eof, String::new()));
 
         tokens
+    }
+
+    pub fn get_partial_token(&self) -> String {
+        self.state.partial_token.clone()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -276,9 +282,17 @@ impl Tokenizer {
             if depth == 0 {
                 break;
             }
+            // Temporarily allow spanning lines for inline objects if needed,
+            // but the original had a break here. Flow collections are limited.
             if c == '\n' || c == '\r' {
                 break;
-            } // Don't span lines
+            }
+        }
+
+        if depth != 0 && !self.finishing {
+            self.state.partial_token = value.clone();
+        } else {
+            self.state.partial_token.clear();
         }
 
         self.state.after_colon = false;
@@ -319,11 +333,14 @@ impl Tokenizer {
 
         if self.state.pos >= self.input.len() && !self.finishing {
             // Incomplete, rewind
+            self.state.partial_token = value;
             self.state.pos = start_pos;
             self.state.column = start_col;
             self.state.line = start_line;
             return None;
         }
+
+        self.state.partial_token.clear();
 
         let value = value.trim().to_string();
 
@@ -382,21 +399,19 @@ impl Tokenizer {
                 continue;
             }
 
-            if c == '\n' || c == '\r' {
-                break;
-            }
-
             value.push(c);
             self.advance();
         }
 
         if !closed && !self.finishing {
+            self.state.partial_token = value;
             self.state.pos = start_pos;
             self.state.column = start_col;
             self.state.line = start_line;
             return None;
         }
 
+        self.state.partial_token.clear();
         self.state.after_colon = false;
         Some(Token {
             kind: TokenType::Quoted,
@@ -522,6 +537,8 @@ impl Tokenizer {
 
         if self.state.pos >= self.input.len() && !self.finishing {
             // Restore? The original code says "rewind()"
+            // For multiline, partial token is complicated, but we can store raw progress
+            self.state.partial_token = String::new(); // Hard to track perfectly, but better than nothing
             self.state.pos = start_pos;
             self.state.line = start_line;
             self.state.column = start_col;
@@ -642,6 +659,7 @@ impl Tokenizer {
         }
 
         if (incomplete || self.state.pos >= self.input.len()) && !self.finishing {
+            self.state.partial_token = lines.join("\n");
             self.state.pos = start_pos;
             self.state.line = start_line;
             self.state.column = start_col;
@@ -649,6 +667,7 @@ impl Tokenizer {
             return None;
         }
 
+        self.state.partial_token.clear();
         self.state.after_colon = false;
         Some(Token {
             kind: TokenType::Scalar,

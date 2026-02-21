@@ -25,22 +25,25 @@ let config: MangerConfig = {
 
 const chef = createManger(config)
 
-chef.onHandlers({
-    response_text: ({ text }) => console.log(text),
-    error: (error) => console.log(error)
-})
 
-chef.onIntent((name, value) => {
-    if (name === "response_text") {
-        console.log(value.text)
+let lastLength = 0;
+let lastIntent = "";
+chef.onIntentPartial((name, value) => {
+    if (name !== lastIntent) {
+        if (lastIntent === "response_text") {
+            console.log(); // print newline to end the text stream
+        }
+        if (name !== "response_text") {
+            console.log(`\n[Agent is working on: ${name}]`);
+        }
+        lastLength = 0;
+        lastIntent = name;
     }
 
-    if (name === "tool_call") {
-        console.log(value)
-    }
-
-    if (name === "tool_result" && value.name === "get_student_details") {
-        console.log(value.result.name)
+    if (name === "response_text" && value && typeof value.text === "string") {
+        const newText = value.text.slice(lastLength);
+        process.stdout.write(newText);
+        lastLength = value.text.length;
     }
 })
 
@@ -48,32 +51,8 @@ chef.onIntent((name, value) => {
 if (!geminiApiKey) {
     console.log(chef.generatePrompt())
 } else {
-    let session = await chef.run("hello what is my name,can you get my full details?")
+    let session = await chef.run("hello what is my name,can you get my full details and use it to write a story?")
     console.log(JSON.stringify(session.turns, null, 2))
 }
 
 
-
-// issues to solve....
-
-
-/**
- * {
-  "300, Location": {},
-  "Ghana, Grades": "A, B, C.",
-  "Hello Amihere Theophilus! Your full details are": {},
-  ID: {},
-  text: {},
-}
-[
-  {
-    "input": "hello what is my name,can you get my full details?",
-    "model_response": "```yaml\ntool_call:\n  type: get_student_details\n  args:\n    id: \"300\"\n```"     
-  },
-  {
-    "input": "tool_result:\n  name: get_student_details\n  result: {\"grades\":[\"A\",\"B\",\"C\"],\"id\":\"300\",\"location\":\"Ghana\",\"name\":\"Amihere Theophilus\"}",
-    "model_response": "```yaml\nresponse_text:\n  text: Hello Amihere Theophilus! Your full details are: ID: 300, Location: Ghana, Grades: A, B, C.\n```"
-  }
-]
-PS C:\Users\babyface\Desktop\auwgent\Auwgent\i
- */

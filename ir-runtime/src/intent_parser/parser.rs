@@ -116,6 +116,10 @@ impl Parser {
         &self.stack
     }
 
+    pub fn get_partial_token(&self) -> String {
+        self.tokenizer.get_partial_token()
+    }
+
     /// Get a reference to the node in a specific frame
     pub fn get_frame_node(&self, _depth: usize) -> Option<&ASTNode> {
         // This is tricky because FrameNode is not ASTNode.

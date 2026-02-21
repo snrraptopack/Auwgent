@@ -102,8 +102,14 @@ impl Orchestrator {
                 let identity = (entry.line, entry.column);
                 if !self.emitted_identities.contains(&identity) {
                     self.emitted_identities.insert(identity);
+                    let build_result = self.ir_builder.build(Some(&entry.value));
+
+                    // Emit a final partial event so UI hits 100% and catches fast chunks
+                    if let Some(handler) = &self.partial_handler {
+                        handler(entry.key.clone(), build_result.value.clone().into_json());
+                    }
+
                     if let Some(handler) = &self.intent_handler {
-                        let build_result = self.ir_builder.build(Some(&entry.value));
                         handler(entry.key.clone(), build_result.value.into_json());
                     }
                 }
@@ -114,13 +120,55 @@ impl Orchestrator {
         // We look at the stack to see what's currently being built.
         // If stack[i-1] has a pending_key that matches an intent, then stack[i].node is its partial value.
         let stack = self.parser.stack();
+        let partial_token = self.parser.get_partial_token();
         for i in 1..stack.len() {
             let parent = &stack[i - 1];
             if let Some(key) = &parent.pending_key {
                 if self.intent_keys.contains(key) {
                     if let Some(handler) = &self.partial_handler {
                         // Clone the node from stack to build partial IR
-                        let node = stack[i].node.to_ast_node();
+                        let mut node = stack[i].node.to_ast_node();
+
+                        // If this is the active leaf node and we have a partial token from the tokenizer,
+                        // forcibly inject it so the UI sees the live typing
+                        if i == stack.len() - 1 && !partial_token.is_empty() {
+                            match &mut node {
+                                super::types::ASTNode::Mapping(map) => {
+                                    if let Some(pk) = &stack[i].pending_key {
+                                        map.entries.push(super::types::MappingEntry {
+                                            key: pk.clone(),
+                                            value: super::types::ASTNode::Scalar(
+                                                super::types::ScalarNode {
+                                                    kind: "scalar".to_string(),
+                                                    value: partial_token.clone(),
+                                                    quoted: false,
+                                                    line: 0,
+                                                    column: 0,
+                                                },
+                                            ),
+                                            line: 0,
+                                            column: 0,
+                                        });
+                                    }
+                                }
+                                super::types::ASTNode::Sequence(seq) => {
+                                    seq.items.push(super::types::ASTNode::Scalar(
+                                        super::types::ScalarNode {
+                                            kind: "scalar".to_string(),
+                                            value: partial_token.clone(),
+                                            quoted: false,
+                                            line: 0,
+                                            column: 0,
+                                        },
+                                    ));
+                                }
+                                super::types::ASTNode::Scalar(scalar) => {
+                                    scalar.value = partial_token.clone();
+                                }
+                                _ => {}
+                            }
+                        }
+
                         let build_result = self.ir_builder.build(Some(&node));
                         handler(key.clone(), build_result.value.into_json());
                     }
