@@ -56,7 +56,7 @@ export function createManger(config: MangerConfig) {
     return createAuwgent<
         typeof agentIR,
         MangerCustomIntents,
-        any,
+        never,
         MangerTools
     >(agentIR, {
         tools: config.tools,

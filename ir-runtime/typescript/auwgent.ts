@@ -153,6 +153,11 @@ export type IntentControl =
 export type GetToolArgs<T> = T extends (args: infer A) => any ? A : Record<string, any>;
 
 /**
+ * Detect if a type is strictly 'any'.
+ */
+export type IsAny<T> = 0 extends (1 & T) ? true : false;
+
+/**
  * Extract result type from a tool implementation.
  */
 export type GetToolResult<T> = T extends (args: any) => Promise<infer R> ? R : any;
@@ -179,6 +184,7 @@ export interface ErrorIntent { name: 'error'; value: { message: string } }
  * Sub-union for tool-related intents.
  */
 export type ToolIntents<Tools> =
+    IsAny<Tools> extends true ? (ToolCallIntent | ToolResultIntent | ToolErrorIntent | ToolSkippedIntent) :
     [Tools] extends [never] ? never :
     [Tools] extends [Record<string, never>] ? never :
     // If we have a generic string key, we can't narrow specifically, so return generic shapes.
@@ -198,7 +204,7 @@ export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
     | ([IR['workflows']] extends [readonly [any, ...any[]]] ? WorkflowCallIntent | WorkflowResultIntent : never)
     | ([IR['helpers']] extends [readonly [any, ...any[]]] ? HelperCallIntent | HelperResultIntent : never)
     | (IR['output'] extends Record<string, any>
-        ? ResponseSchemaIntent<Output>
+        ? ([Output] extends [never] ? ResponseTextIntent : ResponseSchemaIntent<Output>)
         : ResponseTextIntent)
     | ErrorIntent
 );
@@ -222,6 +228,24 @@ export type IntentHandler<IR extends AgentIRShape = any, Custom = never, Output 
         ];
     }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
 ) => IntentControl | Promise<IntentControl>;
+
+/**
+ * Object-style handlers for improved DX.
+ */
+export type IntentHandlers<IR extends AgentIRShape = any, Custom = never, Output = any, Tools = any> = {
+    [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]?: (
+        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']
+    ) => IntentControl | Promise<IntentControl> | void | Promise<void>;
+};
+
+/**
+ * Object-style partial handlers for improved DX.
+ */
+export type PartialIntentHandlers<IR extends AgentIRShape = any, Custom = never, Output = any, Tools = any> = {
+    [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]?: (
+        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']
+    ) => void;
+};
 
 /**
  * Partial intent handler callback.
@@ -314,14 +338,6 @@ export class TypedAuwgent<
      * agent.onIntent((name, value) => {
      *   console.log(`[${name}]`, value);
      * });
-     *
-     * // Control specific intents
-     * agent.onIntent(async (name, value) => {
-     *   if (name === 'tool_call' && value.type === 'deleteFile') {
-     *     const ok = await confirm('Delete file?');
-     *     if (!ok) return { skip: true };
-     *   }
-     * });
      * ```
      */
     onIntent(handler: IntentHandler<IR, CustomIntents, Output, Tools>): void {
@@ -331,26 +347,57 @@ export class TypedAuwgent<
     }
 
     /**
-     * Register a partial intent callback for streaming updates.
-     *
-     * Fires as YAML data streams in, BEFORE the intent block is complete.
-     * Useful for streaming text to the UI token-by-token or showing
-     * tool call args as they arrive.
-     *
-     * Observational only — no control/skip/override.
+     * Register multiple intent handlers using an object-style API.
+     * This is the recommended way to handle intents with perfect type safety.
      *
      * @example
      * ```ts
-     * agent.onIntentPartial((name, value) => {
-     *   if (name === 'response_text') {
-     *     process.stdout.write(value.text ?? '');
+     * agent.onHandlers({
+     *   response_text: (v) => console.log(v.text),
+     *   tool_call: (v) => {
+     *     if (v.type === 'get_student') console.log(v.args.id);
      *   }
      * });
      * ```
      */
+    onHandlers(handlers: IntentHandlers<IR, CustomIntents, Output, Tools>): void {
+        this.onIntent(async (...args: any[]) => {
+            const [name, value] = args;
+            const h = handlers[name as keyof typeof handlers];
+            if (h) return await (h as any)(value);
+        });
+    }
+
+    /**
+     * Register a partial intent callback for streaming updates.
+     * Fires as YAML data streams in, BEFORE the intent block is complete.
+     *
+     * Observational only — no control/skip/override.
+     */
     onIntentPartial(handler: PartialIntentHandler<IR, CustomIntents, Output, Tools>): void {
         this.native.onIntentPartial((name: string, value: any) => {
             (handler as any)(name, value);
+        });
+    }
+
+    /**
+     * Register multiple partial intent handlers using an object-style API.
+     *
+     * @example
+     * ```ts
+     * agent.onHandlersPartial({
+     *   response_text: (v) => process.stdout.write(v.text ?? ''),
+     *   tool_call: (v) => {
+     *     if (v.type === 'get_student') console.log('Streaming args:', v.args);
+     *   }
+     * });
+     * ```
+     */
+    onHandlersPartial(handlers: PartialIntentHandlers<IR, CustomIntents, Output, Tools>): void {
+        this.onIntentPartial((...args: any[]) => {
+            const [name, value] = args;
+            const h = handlers[name as keyof typeof handlers];
+            if (h) (h as any)(value);
         });
     }
 

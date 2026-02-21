@@ -399,7 +399,7 @@ export function create${agent.name}(config: ${agent.name}Config) {
     return createAuwgent<
         typeof agentIR,
         ${agent.name}CustomIntents,
-        ${agent.output ? `${agent.name}Output` : 'any'},
+        ${agent.output ? `${agent.name}Output` : 'never'},
         ${agent.name}Tools
     >(agentIR, {
         tools: config.tools,

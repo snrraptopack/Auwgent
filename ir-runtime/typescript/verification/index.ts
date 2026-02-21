@@ -25,6 +25,11 @@ let config: MangerConfig = {
 
 const chef = createManger(config)
 
+chef.onHandlers({
+    response_text: ({ text }) => console.log(text),
+    error: (error) => console.log(error)
+})
+
 chef.onIntent((name, value) => {
     if (name === "response_text") {
         console.log(value.text)
