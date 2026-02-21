@@ -118,7 +118,52 @@
       }
     }
   ],
-  "workflows": [],
+  "workflows": [
+    {
+      "flowName": "get_student_grade",
+      "flowParams": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": {
+        "type": "array",
+        "items": "string"
+      },
+      "body": [
+        {
+          "name": "result",
+          "value": {
+            "value": "get_student_details",
+            "type": "functionCall",
+            "args": [
+              {
+                "value": "id",
+                "type": "varRef"
+              }
+            ]
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "memberAccess",
+            "object": {
+              "type": "varRef",
+              "value": "result"
+            },
+            "properties": [
+              "grades"
+            ]
+          }
+        }
+      ],
+      "description": "used for getting only the grade of the student",
+      "tools": []
+    }
+  ],
   "helpers": [],
   "tests": [],
   "types": {

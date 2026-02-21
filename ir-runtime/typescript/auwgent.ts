@@ -60,8 +60,16 @@ export interface IRModelConfigEntry {
     namedConfig?: IRNamedModelConfig[] | null;
 }
 
+export interface IRWorkflowDef {
+    flowName: string;
+    description?: string;
+    flowParams?: unknown;
+    returns?: unknown;
+}
+
 /** Minimal shape of a helper definition in the Agent IR */
 export interface IRHelperDef {
+    name: string;
     modelConfig?: IRModelConfigEntry[] | null;
 }
 
@@ -69,7 +77,7 @@ export interface IRHelperDef {
 export interface AgentIRShape {
     name: string;
     tools: readonly IRToolDef[];
-    workflows?: readonly unknown[];
+    workflows?: readonly IRWorkflowDef[];
     helpers?: readonly IRHelperDef[];
     output?: Record<string, unknown> | null;
     modelConfig?: IRModelConfigEntry[];
@@ -169,11 +177,11 @@ export interface ToolResultIntent<K = string, R = any> { name: 'tool_result'; va
 export interface ToolErrorIntent<K = string> { name: 'tool_error'; value: { tool: K; message: string } }
 export interface ToolSkippedIntent<K = string, A = any> { name: 'tool_skipped'; value: { type: K; args: A } }
 
-export interface WorkflowCallIntent { name: 'workflow_call'; value: { type: string; args: Record<string, any> } }
-export interface WorkflowResultIntent { name: 'workflow_result'; value: { name: string; result: any } }
+export interface WorkflowCallIntent<K = string, A = any> { name: 'workflow_call'; value: { type: K; args: A } }
+export interface WorkflowResultIntent<K = string, R = any> { name: 'workflow_result'; value: { name: K; result: R } }
 
-export interface HelperCallIntent { name: 'helper_call'; value: { type: string; args: Record<string, any> } }
-export interface HelperResultIntent { name: 'helper_result'; value: { name: string; result: any } }
+export interface HelperCallIntent<K = string, A = any> { name: 'helper_call'; value: { type: K; args: A } }
+export interface HelperResultIntent<K = string, R = any> { name: 'helper_result'; value: { name: K; result: R } }
 
 export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
 export interface ResponseSchemaIntent<Output = any> { name: 'response_schema'; value: Output }
@@ -198,11 +206,32 @@ export type ToolIntents<Tools> =
         | ToolSkippedIntent<K, GetToolArgs<Tools[K]>>
     }[keyof Tools];
 
-/** Standard intent shapes emitted by the engine */
+export type WorkflowIntents<IR extends AgentIRShape> =
+    IR['workflows'] extends readonly any[]
+    ? (IR['workflows'][number] extends never ? never :
+        IR['workflows'][number] extends infer W extends IRWorkflowDef
+        ? W extends { flowName: infer N extends string }
+        ? (WorkflowCallIntent<N, any> | WorkflowResultIntent<N, W['returns']>)
+        : (WorkflowCallIntent | WorkflowResultIntent)
+        : never
+    )
+    : never;
+
+export type HelperIntents<IR extends AgentIRShape> =
+    IR['helpers'] extends readonly any[]
+    ? (IR['helpers'][number] extends never ? never :
+        IR['helpers'][number] extends infer H extends IRHelperDef
+        ? H extends { name: infer N extends string }
+        ? (HelperCallIntent<N, any> | HelperResultIntent<N, any>) // Helpers don't have a 'returns' property in IRHelperDef
+        : (HelperCallIntent | HelperResultIntent)
+        : never
+    )
+    : never;
+
 export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
     | ToolIntents<Tools>
-    | ([IR['workflows']] extends [readonly [any, ...any[]]] ? WorkflowCallIntent | WorkflowResultIntent : never)
-    | ([IR['helpers']] extends [readonly [any, ...any[]]] ? HelperCallIntent | HelperResultIntent : never)
+    | WorkflowIntents<IR>
+    | HelperIntents<IR>
     | (IR['output'] extends Record<string, any>
         ? ([Output] extends [never] ? ResponseTextIntent : ResponseSchemaIntent<Output>)
         : ResponseTextIntent)

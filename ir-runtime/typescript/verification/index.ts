@@ -26,21 +26,8 @@ let config: MangerConfig = {
 const chef = createManger(config)
 
 
-let lastLength = 0;
-let lastIntent = "";
-chef.onIntentPartial((name, value) => {
-    if (name !== lastIntent) {
-        if (lastIntent === "response_text") {
-            console.log(); // print newline to end the text stream
-        }
-        if (name !== "response_schema") {
-            console.log(`\n[Agent is working on: ${name}]`);
-        }
-        lastLength = 0;
-        lastIntent = name;
-    }
-
-    if (name === "response_schema") {
+chef.onIntent((name, value) => {
+    if (name === "workflow_result") {
         console.log(value)
     }
 })
@@ -49,7 +36,7 @@ chef.onIntentPartial((name, value) => {
 if (!geminiApiKey) {
     console.log(chef.generatePrompt())
 } else {
-    let session = await chef.run("hello what is my name,can you get my full details and use it to write a story?")
+    let session = await chef.run("what is my grade")
     console.log(JSON.stringify(session.turns, null, 2))
 }
 

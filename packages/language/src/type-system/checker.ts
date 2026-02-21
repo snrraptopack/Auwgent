@@ -74,6 +74,47 @@ export class TypeChecker {
         void model;
     }
 
+    public buildEnvForNode(node: any): TypeEnv {
+        let container: Agent | Helper | undefined;
+        let current = node;
+        while (current) {
+            if (isAgent(current) || isHelper(current)) {
+                container = current;
+                break;
+            }
+            if (isNamedPrompt(current)) {
+                // If we hit a named prompt, build its param scope
+                const env = new TypeEnv();
+                for (const param of current.params ?? []) {
+                    env.set(param.name, { vars: [], type: this.mapTypes(param.t) });
+                }
+                return env; // Named prompts only have access to their params
+            }
+            current = current.$container;
+        }
+
+        return this.buildEnvForContainer(container);
+    }
+
+    public inferPathType(path: string[], env: TypeEnv): Type {
+        if (!path.length) return tError('empty path');
+
+        const rootName = path[0];
+        const scheme = env.get(rootName);
+        if (!scheme) return tError('unknown variable');
+
+        let current = scheme.type;
+        for (let i = 1; i < path.length; i++) {
+            const segment = path[i];
+            if (current.kind === 'record' && current.fields[segment]) {
+                current = current.fields[segment];
+            } else {
+                return tError(`property '${segment}' does not exist on type ${this.formatType(current)}`);
+            }
+        }
+        return current;
+    }
+
     checkWorkflow(workflow: WorkFlowConfig): TypeIssue[] {
         const issues: TypeIssue[] = [];
         const container = workflow.$container;

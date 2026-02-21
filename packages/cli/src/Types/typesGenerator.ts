@@ -58,9 +58,22 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
     const handoffHelpers = collectHandoffHelpers(agent);
     const outputHelpers = mergeHelpers(transferredHelpers, handoffHelpers);
 
-    // Generate IR import statement using baseName if provided, otherwise fall back to agent.name
+    // Generate literal types for workflows & helpers so auwgent.ts can infer exact string intents from the IR
+    const workflowTypes = agent.workflows?.length
+        ? agent.workflows.map(w => `{ flowName: "${w.flowName}"; returns: ${typeToTsString(w.returns)} }`).join(' | ')
+        : 'undefined';
+
+    const helperTypes = agent.helpers?.length
+        ? agent.helpers.map(h => `{ name: "${h.name}" }`).join(' | ')
+        : 'undefined';
+
     const fileName = baseName || agent.name;
-    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\nconst agentIR = _importedIR as typeof _importedIR;`;
+    const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\n` +
+        `type ${agent.name}IR = Omit<typeof _importedIR, "workflows" | "helpers"> & {\n` +
+        `  workflows: ${workflowTypes === 'undefined' ? 'undefined' : `(${workflowTypes})[]`};\n` +
+        `  helpers: ${helperTypes === 'undefined' ? 'undefined' : `(${helperTypes})[]`};\n` +
+        `};\n` +
+        `const agentIR = _importedIR as unknown as ${agent.name}IR;`;
 
     const sections = [
         `// Auto-generated types for ${agent.name}`,

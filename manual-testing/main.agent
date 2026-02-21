@@ -39,4 +39,10 @@ agent Manger{
         get_student_details(id:string):Student @desc "get the deatails of the the student"
         edit_student_details(id:string):Student @desc "edit the details of the student"
     }
+
+    workflow get_student_grade(id:string):string[]{
+        description: "used for getting only the grade of the student"
+        let result = get_student_details(id)
+        return result.grades
+    }
 }

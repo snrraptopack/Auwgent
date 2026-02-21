@@ -4,7 +4,11 @@
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-const agentIR = _importedIR as typeof _importedIR;
+type MangerIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
+  workflows: ({ flowName: "get_student_grade"; returns: string[] })[];
+  helpers: undefined;
+};
+const agentIR = _importedIR as unknown as MangerIR;
 
 export type Student = {
 
