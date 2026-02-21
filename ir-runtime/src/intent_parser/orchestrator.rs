@@ -110,7 +110,17 @@ impl Orchestrator {
                     }
 
                     if let Some(handler) = &self.intent_handler {
-                        handler(entry.key.clone(), build_result.value.into_json());
+                        let mut json_val = build_result.value.into_json();
+
+                        // Inject _raw: readable representation for middleware logging/audit
+                        if let Value::Object(ref mut map) = json_val {
+                            let body = serde_json::to_string_pretty(&Value::Object(map.clone()))
+                                .unwrap_or_default();
+                            let raw = format!("{}:\n{}", entry.key, body);
+                            map.insert("_raw".to_string(), Value::String(raw));
+                        }
+
+                        handler(entry.key.clone(), json_val);
                     }
                 }
             }

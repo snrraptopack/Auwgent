@@ -280,7 +280,8 @@ impl AuwgentEngine {
                 }
             }
 
-            self.orchestrator.end();
+            // Finalize parsing and get the full parsed JSON from the intent parser
+            let parsed_response = self.orchestrator.end();
             let (terminal, actions) = self.process_intents().await?;
             if terminal {
                 has_terminal_output = true;
@@ -289,8 +290,15 @@ impl AuwgentEngine {
                 actions_performed = true;
             }
 
-            // Record the raw model response in the session turn
-            self.session.set_model_response(&self.current_raw_response);
+            // Save the parsed JSON as model_response.
+            // The intent parser already converts the LLM's YAML output to JSON,
+            // so we just serialize it directly.
+            if parsed_response != Value::Null {
+                let parsed = serde_json::to_string(&parsed_response).unwrap_or_default();
+                self.session.set_model_response(&parsed);
+            } else {
+                self.session.set_model_response(&self.current_raw_response);
+            }
 
             // Decide if we loop or stop
             if has_terminal_output || !actions_performed {
@@ -351,7 +359,12 @@ impl AuwgentEngine {
         let mut has_actions = false;
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
-        for (name, value) in intents {
+        for (name, mut value) in intents {
+            // Drop _raw before passing to user callbacks / internal logic
+            if let Value::Object(ref mut map) = value {
+                map.remove("_raw");
+            }
+
             // Fire the user callback BEFORE execution
             let control = self.fire_intent(name.clone(), value.clone()).await;
 

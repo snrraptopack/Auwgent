@@ -168,6 +168,14 @@ export class TypedAuwgent<
         this.native.onIntent(async (name: string, value: any) => {
             const intentCtx: MiddlewareContext = { ...this.sharedContext };
 
+            // Extract _raw from Rust-injected field and move to ctx.rawBlock
+            // This keeps intent values clean and typed for the user,
+            // while making raw YAML available to middleware for logging/audit
+            if (value && typeof value === 'object' && '_raw' in value) {
+                intentCtx.rawBlock = value._raw;
+                delete value._raw;
+            }
+
             // Pipeline through middleware
             for (const m of this.middleware) {
                 if (m.onIntent) {

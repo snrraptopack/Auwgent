@@ -18,6 +18,9 @@ const LoggingMiddleware: MangerMiddleware = {
     },
     onIntent: (name, value, ctx) => {
         console.log(`[Middleware Intent] ${name}`);
+        if (ctx.rawBlock) {
+            console.log(`[Raw YAML]\n${ctx.rawBlock}`);
+        }
     },
     onRunComplete: async (session, ctx) => {
         console.log(`[Middleware] Run finished in ${Date.now() - ctx.startTime}ms`);
