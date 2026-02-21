@@ -80,6 +80,7 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
         generateOutputInterface(agent, outputHelpers),
         generateContextInterface(agent),
         hasTools ? generateToolsInterface(agent.name, allTools) : '',
+        generateCustomIntents(agent),
         requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
         generateAgentFactory(agent, hasTools, hasContext ?? false, requiredProviders),
     ];
@@ -365,6 +366,15 @@ ${toolMethods}
 }
 
 /**
+ * Generate CustomIntents union (presently placeholder for future DSL intents)
+ */
+function generateCustomIntents(agent: AgentIR): string {
+    return `/** Custom intents defined in the DSL (if any) */
+export type ${agent.name}CustomIntents = never;
+`;
+}
+
+/**
  * Generate factory function with unified configuration pattern
  */
 function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>): string {
@@ -386,7 +396,12 @@ ${configProps.join('\n')}
 }
 
 export function create${agent.name}(config: ${agent.name}Config) {
-    return createAuwgent(agentIR, {
+    return createAuwgent<
+        typeof agentIR,
+        ${agent.name}CustomIntents,
+        ${agent.output ? `${agent.name}Output` : 'any'},
+        ${agent.name}Tools
+    >(agentIR, {
         tools: config.tools as unknown as ToolRegistry<typeof agentIR>,
         ${hasContext ? 'context: config.context,' : ''}
         ${hasApiKeys ? 'apiKeys: config.apiKeys' : ''}

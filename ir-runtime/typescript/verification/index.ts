@@ -27,7 +27,15 @@ const chef = createManger(config)
 
 chef.onIntent((name, value) => {
     if (name === "response_text") {
+        console.log(value.text)
+    }
+
+    if (name === "tool_call") {
         console.log(value)
+    }
+
+    if (name === "tool_result") {
+        console.log("result", value.result)
     }
 })
 

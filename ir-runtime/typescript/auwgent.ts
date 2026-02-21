@@ -60,7 +60,8 @@ export interface IRModelConfigEntry {
     namedConfig?: IRNamedModelConfig[] | null;
 }
 
-export interface IRHelperShape {
+/** Minimal shape of a helper definition in the Agent IR */
+export interface IRHelperDef {
     modelConfig?: IRModelConfigEntry[] | null;
 }
 
@@ -68,9 +69,10 @@ export interface IRHelperShape {
 export interface AgentIRShape {
     name: string;
     tools: readonly IRToolDef[];
+    workflows?: readonly unknown[];
+    helpers?: readonly IRHelperDef[];
+    output?: Record<string, unknown> | null;
     modelConfig?: IRModelConfigEntry[];
-    helpers?: readonly IRHelperShape[];
-    [key: string]: unknown;
 }
 
 /**
@@ -121,7 +123,7 @@ function collectRequiredProviders(ir: AgentIRShape): Set<string> {
     addFromEntries(ir.modelConfig);
     if (ir.helpers) {
         for (const helper of ir.helpers) {
-            addFromEntries(helper.modelConfig);
+            addFromEntries(helper.modelConfig as IRModelConfigEntry[]);
         }
     }
 
@@ -143,28 +145,92 @@ export type IntentControl =
     | null
     | undefined;
 
+// ── Intent Helpers ───────────────────────────────────────────────────────
+
 /**
- * Intent handler callback.
- *
- * Receives the intent name and parsed value from the LLM's output:
- * - `"tool_call"` → `{ type: "toolName", args: {...} }`
- * - `"tool_result"` → `{ name: "toolName", result: {...} }`
- * - `"response_text"` → `{ text: "..." }`
- * - `"response_schema"` → structured output matching your output type
- * - `"workflow_call"` → `{ type: "wfName", args: {...} }`
- * - `"error"` → `{ source: "...", message: "..." }`
- * - Custom intents → as defined by the DSL
+ * Extract argument type from a tool implementation.
  */
-export type IntentHandler = (
-    name: string,
-    value: unknown,
+export type GetToolArgs<T> = T extends (args: infer A) => any ? A : Record<string, any>;
+
+/**
+ * Extract result type from a tool implementation.
+ */
+export type GetToolResult<T> = T extends (args: any) => Promise<infer R> ? R : any;
+
+// ── Intent Shapes ───────────────────────────────────────────────────────
+
+export interface ToolCallIntent<K = string, A = any> { name: 'tool_call'; value: { type: K; args: A } }
+export interface ToolResultIntent<K = string, R = any> { name: 'tool_result'; value: { name: K; result: R; overridden?: boolean } }
+export interface ToolErrorIntent<K = string> { name: 'tool_error'; value: { tool: K; message: string } }
+export interface ToolSkippedIntent<K = string, A = any> { name: 'tool_skipped'; value: { type: K; args: A } }
+
+export interface WorkflowCallIntent { name: 'workflow_call'; value: { type: string; args: Record<string, any> } }
+export interface WorkflowResultIntent { name: 'workflow_result'; value: { name: string; result: any } }
+
+export interface HelperCallIntent { name: 'helper_call'; value: { type: string; args: Record<string, any> } }
+export interface HelperResultIntent { name: 'helper_result'; value: { name: string; result: any } }
+
+export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
+export interface ResponseSchemaIntent<Output = any> { name: 'response_schema'; value: Output }
+
+export interface ErrorIntent { name: 'error'; value: { message: string } }
+
+/**
+ * Sub-union for tool-related intents.
+ */
+export type ToolIntents<Tools> =
+    | ToolCallIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolArgs<[Tools] extends [any] ? Tools[keyof Tools] : any>>
+    | ToolResultIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolResult<[Tools] extends [any] ? Tools[keyof Tools] : any>>
+    | ToolErrorIntent<[keyof Tools] extends [never] ? string : keyof Tools>
+    | ToolSkippedIntent<[keyof Tools] extends [never] ? string : keyof Tools, GetToolArgs<[Tools] extends [any] ? Tools[keyof Tools] : any>>;
+
+/** Standard intent shapes emitted by the engine */
+export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
+    | ToolIntents<Tools>
+    | ([IR['workflows']] extends [readonly [any, ...any[]]] ? WorkflowCallIntent | WorkflowResultIntent : never)
+    | ([IR['helpers']] extends [readonly [any, ...any[]]] ? HelperCallIntent | HelperResultIntent : never)
+    | (IR['output'] extends Record<string, any>
+        ? ResponseSchemaIntent<Output>
+        : ResponseTextIntent)
+    | ErrorIntent
+);
+
+/**
+ * A combined union of core intents and custom intents.
+ */
+export type AuwgentIntent<IR extends AgentIRShape, Custom = never, Output = any, Tools = any> =
+    | CoreIntents<IR, Output, Tools>
+    | (Custom extends never ? never : { name: string; value: any });
+
+/**
+ * Intent handler callback with automatic type inference.
+ * Uses a spread of parameter tuples to enable correlated narrowing in the implementation.
+ */
+export type IntentHandler<IR extends AgentIRShape = any, Custom = never, Output = any, Tools = any> = (
+    ...args: {
+        [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]: [
+            name: K,
+            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+        ];
+    }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
 ) => IntentControl | Promise<IntentControl>;
 
 /**
- * Partial intent handler — fires as YAML data streams in.
- * Observational only, no return value needed.
+ * Partial intent handler callback.
  */
-export type PartialIntentHandler = (name: string, value: unknown) => void;
+export type PartialIntentHandler<
+    IR extends AgentIRShape = any,
+    Custom = never,
+    Output = any,
+    Tools = any
+> = (
+    ...args: {
+        [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]: [
+            name: K,
+            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+        ];
+    }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
+) => void;
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -196,7 +262,12 @@ export interface SessionState {
 
 // ── Type-Safe Auwgent Wrapper ────────────────────────────────────────────
 
-export class TypedAuwgent<IR extends AgentIRShape> {
+export class TypedAuwgent<
+    IR extends AgentIRShape,
+    CustomIntents = never,
+    Output = IR['output'] extends null ? any : IR['output'],
+    Tools = ToolRegistry<IR>
+> {
     private native: InstanceType<typeof AuwgentNative>;
     private ir: IR;
 
@@ -245,9 +316,9 @@ export class TypedAuwgent<IR extends AgentIRShape> {
      * });
      * ```
      */
-    onIntent(handler: IntentHandler): void {
-        this.native.onIntent(async (name: string, value: unknown) => {
-            return handler(name, value);
+    onIntent(handler: IntentHandler<IR, CustomIntents, Output, Tools>): void {
+        this.native.onIntent(async (name: string, value: any) => {
+            return (handler as any)(name, value);
         });
     }
 
@@ -269,9 +340,9 @@ export class TypedAuwgent<IR extends AgentIRShape> {
      * });
      * ```
      */
-    onIntentPartial(handler: PartialIntentHandler): void {
-        this.native.onIntentPartial((name: string, value: unknown) => {
-            handler(name, value);
+    onIntentPartial(handler: PartialIntentHandler<IR, CustomIntents, Output, Tools>): void {
+        this.native.onIntentPartial((name: string, value: any) => {
+            (handler as any)(name, value);
         });
     }
 
@@ -332,19 +403,29 @@ export class TypedAuwgent<IR extends AgentIRShape> {
  * @param config - Config with tools and optional API key
  * @returns A type-safe Auwgent instance
  */
-export function createAuwgent<const IR extends AgentIRShape>(
+export function createAuwgent<
+    const IR extends AgentIRShape,
+    CustomIntents = never,
+    Output = IR['output'] extends null ? any : IR['output'],
+    Tools = ToolRegistry<IR>
+>(
     ir: IR,
     config: AuwgentConfig<IR>,
-): TypedAuwgent<IR> {
-    return new TypedAuwgent(ir, config);
+): TypedAuwgent<IR, CustomIntents, Output, Tools> {
+    return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config as any);
 }
 
-export function createAuwgentFromIRJson<const IR extends AgentIRShape>(
+export function createAuwgentFromIRJson<
+    const IR extends AgentIRShape,
+    CustomIntents = never,
+    Output = IR['output'] extends null ? any : IR['output'],
+    Tools = ToolRegistry<IR>
+>(
     irJson: string,
     config: AuwgentConfig<IR>,
-): TypedAuwgent<IR> {
+): TypedAuwgent<IR, CustomIntents, Output, Tools> {
     const ir = JSON.parse(irJson) as IR;
-    return new TypedAuwgent(ir, config);
+    return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config as any);
 }
 
 // ── Helper: Load IR with type inference ──────────────────────────────────
