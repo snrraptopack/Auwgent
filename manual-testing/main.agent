@@ -19,6 +19,8 @@ prompt Alone(user_name:string, id:string){
     """
     You are an ai agent that gives a user concise information about what they do....
     the user name is : {{user_name}} and wit an id of {{id}}
+
+    your output should be in this format though not all field will be required {{@schema(output)}}
     """
 }
 
@@ -26,6 +28,11 @@ agent Manger{
 
     default config{
         model:Gemini
+        prompt:Alone(ctx.user_name,ctx.id)
+    }
+
+    config another{
+        model: openai("gpt-anything")
         prompt:Alone(ctx.user_name,ctx.id)
     }
     context{

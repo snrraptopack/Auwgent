@@ -20,11 +20,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let filename = path.file_name().unwrap().to_str().unwrap();
             let content = fs::read_to_string(&path)?;
 
-            println!("Parsing {}...", filename);
+            let start = std::time::Instant::now();
 
             let mut orchestrator = Orchestrator::new(None);
             orchestrator.write(&content);
             let result = orchestrator.end();
+
+            let elapsed = start.elapsed();
+
+            println!("Parsed {} in {:?}", filename, elapsed);
 
             let output_filename = format!("{}.json", filename.strip_suffix(".yaml").unwrap());
             let output_path = output_dir.join(output_filename);

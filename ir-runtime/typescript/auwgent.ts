@@ -68,8 +68,7 @@ export interface AuwgentConfig<IR extends AgentIRShape> {
     tools: ToolRegistry<IR>;
     middleware?: Middleware<IR>[];
     context?: Record<string, unknown>;
-    apiKeys?: ApiKeys;
-    geminiApiKey?: string;
+    apiKeys: ApiKeys<IR>;
 }
 
 // ── Type-Safe Auwgent Wrapper ────────────────────────────────────────────
@@ -101,13 +100,14 @@ export class TypedAuwgent<
             this.native.setContext(config.context);
         }
 
-        const requiredProviders = collectRequiredProviders(ir);
-        const apiKeys = config.apiKeys ?? (config.geminiApiKey ? { geminiApiKey: config.geminiApiKey } : undefined);
-        const shouldSetGemini =
-            apiKeys?.geminiApiKey &&
-            (requiredProviders.size === 0 || requiredProviders.has('gemini'));
-        if (shouldSetGemini) {
-            this.native.setGeminiDriver(apiKeys.geminiApiKey!);
+        const apiKeys = config.apiKeys as Record<string, string | undefined>;
+
+        if (apiKeys?.geminiApiKey) {
+            this.native.setGeminiDriver(apiKeys.geminiApiKey);
+        }
+
+        if (apiKeys?.openaiApiKey) {
+            this.native.setOpenaiDriver(apiKeys.openaiApiKey);
         }
 
         // Register all tools — guaranteed complete by the type system

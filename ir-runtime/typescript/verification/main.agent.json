@@ -46,6 +46,14 @@
                 },
                 {
                   "type": "literal",
+                  "value": "\r\n\r\n    your output should be in this format though not all field will be required "
+                },
+                {
+                  "type": "schemaDirective",
+                  "path": "output"
+                },
+                {
+                  "type": "literal",
                   "value": "\r\n    "
                 }
               ]
@@ -53,7 +61,68 @@
           ]
         }
       },
-      "namedConfig": []
+      "namedConfig": [
+        {
+          "configName": "another",
+          "model": {
+            "type": "openai",
+            "modelName": "gpt-anything"
+          },
+          "prompt": {
+            "type": "promptRef",
+            "name": "Alone",
+            "params": [
+              "user_name",
+              "id"
+            ],
+            "args": [
+              {
+                "type": "contextRef",
+                "property": "user_name"
+              },
+              {
+                "type": "contextRef",
+                "property": "id"
+              }
+            ],
+            "value": [
+              {
+                "type": "template",
+                "value": [
+                  {
+                    "type": "literal",
+                    "value": "\r\n    You are an ai agent that gives a user concise information about what they do....\r\n    the user name is : "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "user_name"
+                  },
+                  {
+                    "type": "literal",
+                    "value": " and wit an id of "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "id"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n\r\n    your output should be in this format though not all field will be required "
+                  },
+                  {
+                    "type": "schemaDirective",
+                    "path": "output"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n    "
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
     }
   ],
   "input": null,

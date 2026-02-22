@@ -113,6 +113,36 @@ Your Node App  ◀──  NAPI-RS FFI Bridge  ──▶  @auwgent/runtime (Rust 
 - `workflow`: Deterministic logic block.
 - `prompt`: Dynamic template with conditionals (`if`, `ctx`).
 
+#### Helpers (Multi-Agent) Example
+```auwgent
+helper Researcher {
+    input { query: string }
+    output { results: string[] }
+    tools [ search_web ]
+}
+
+agent MainAgent {
+    helpers { Researcher }
+    
+    workflow answer_question(q: string): string {
+        // Delegate to the researcher helper synchronously
+        let facts = Researcher({ query: q })
+        return "Based on research: " + facts.results
+    }
+}
+```
+
+## Testing & Benchmarking
+
+The core intent parsing engine is extremely fast. You can test the performance of the YAML streaming parser locally against large payloads (like the ~2MB `large-benchmark.yaml` fixture):
+
+```bash
+cd ir-runtime
+cargo run --release --bin parse_fixtures
+```
+
+This will run the rust parser over all YAML files within `ir-runtime/src/intent_parser/fixtures/` and output the execution times.
+
 ## Roadmap
 
 - [x] Multi-agent orchestration (helpers)

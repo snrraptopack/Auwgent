@@ -2,6 +2,7 @@ import { createManger, MangerConfig, Student, type MangerMiddleware } from "./ma
 
 const geminiApiKey = Bun.env.GEMINI_API_KEY
 
+
 let student: Student = {
     name: "Amihere Theophilus",
     id: "300",
@@ -34,7 +35,8 @@ let config: MangerConfig = {
     },
     middleware: [LoggingMiddleware],
     apiKeys: {
-        geminiApiKey: geminiApiKey ?? ""
+        geminiApiKey: geminiApiKey ?? "",
+        openaiApiKey: ""
     },
     context: {
         user_name: "Theophilus",
@@ -43,6 +45,8 @@ let config: MangerConfig = {
 }
 
 const chef = createManger(config)
+
+console.log(chef.generatePrompt())
 
 
 chef.onIntent((name, value) => {

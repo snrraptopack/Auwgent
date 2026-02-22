@@ -50,7 +50,7 @@ pub struct AuwgentEngine {
     session: SessionState,
     tools: HashMap<String, ToolImplementation>,
     orchestrator: Orchestrator,
-    driver: Option<Box<dyn ModelDriver>>,
+    drivers: HashMap<String, Box<dyn ModelDriver>>,
     context: Option<Value>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
@@ -90,7 +90,7 @@ impl AuwgentEngine {
             session: SessionState::new(),
             tools: HashMap::new(),
             orchestrator,
-            driver: None,
+            drivers: HashMap::new(),
             context: None,
             pending_intents,
             pending_tool_results: Vec::new(),
@@ -100,8 +100,8 @@ impl AuwgentEngine {
         }
     }
 
-    pub fn set_driver(&mut self, driver: Box<dyn ModelDriver>) {
-        self.driver = Some(driver);
+    pub fn register_driver(&mut self, provider_type: &str, driver: Box<dyn ModelDriver>) {
+        self.drivers.insert(provider_type.to_string(), driver);
     }
 
     pub fn set_context(&mut self, context: Value) {
@@ -201,6 +201,7 @@ impl AuwgentEngine {
         }
 
         let model_info = evaluator.evaluate_model(default_config, &mut scope)?;
+        let provider_type = model_info["type"].as_str().unwrap_or("gemini");
         let model_name = model_info["modelName"]
             .as_str()
             .unwrap_or("gemini-2.0-flash");
@@ -246,7 +247,10 @@ impl AuwgentEngine {
 
             // Stream from the driver using full message history
             let mut stream = {
-                let driver = self.driver.as_ref().ok_or(AuwgentError::NoDriver)?;
+                let driver = self
+                    .drivers
+                    .get(provider_type)
+                    .ok_or_else(|| AuwgentError::NoDriver)?;
                 driver
                     .stream_generate(model_name, &messages, config_params.clone())
                     .await
@@ -355,18 +359,29 @@ impl AuwgentEngine {
             std::mem::take(&mut *pending)
         };
 
+        eprintln!(
+            "[DEBUG process_intents] drained {} intents: {:?}",
+            intents.len(),
+            intents.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
+        );
+
         let mut has_terminal = false;
         let mut has_actions = false;
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, mut value) in intents {
-            // Drop _raw before passing to user callbacks / internal logic
+            eprintln!("[DEBUG] firing intent callback for: {}", name);
+            // Fire the user callback BEFORE execution
+            // Note: _raw is intentionally kept in `value` here so that the host
+            // (TypeScript wrapper) can extract it for middleware logging/audit.
+            // The TS wrapper removes _raw from the value after extracting it.
+            let control = self.fire_intent(name.clone(), value.clone()).await;
+            eprintln!("[DEBUG] fire_intent returned for: {}", name);
+
+            // Strip _raw before internal processing (tool execution, etc.)
             if let Value::Object(ref mut map) = value {
                 map.remove("_raw");
             }
-
-            // Fire the user callback BEFORE execution
-            let control = self.fire_intent(name.clone(), value.clone()).await;
 
             match name.as_str() {
                 "tool_call" => {
@@ -599,28 +614,31 @@ impl AuwgentEngine {
                 format!("{}\n\n{}", helper_prompt, helper_intents)
             };
 
-            // If we have a driver, run a single LLM call for the helper
-            if let Some(driver) = self.driver.as_ref() {
+            // Evaluate the helper's model info to get credentials and provider type
+            let (provider_type, model_name) = if let Some(entry) = helper.model_config.first() {
+                if let Some(cfg) = &entry.default_config {
+                    let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
+                    let p_type = model_info["type"].as_str().unwrap_or("gemini").to_string();
+                    let m_name = model_info["modelName"]
+                        .as_str()
+                        .unwrap_or("gemini-2.0-flash")
+                        .to_string();
+                    (p_type, m_name)
+                } else {
+                    ("gemini".to_string(), "gemini-2.0-flash".to_string())
+                }
+            } else {
+                ("gemini".to_string(), "gemini-2.0-flash".to_string())
+            };
+
+            // If we have a driver for the requested type, run a single LLM call for the helper
+            if let Some(driver) = self.drivers.get(&provider_type) {
                 let messages = vec![
                     crate::runtime::session::Message::system(&full_prompt),
                     crate::runtime::session::Message::user(
                         serde_json::to_string(&args).unwrap_or_default(),
                     ),
                 ];
-
-                let model_name = if let Some(entry) = helper.model_config.first() {
-                    if let Some(cfg) = &entry.default_config {
-                        let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
-                        model_info["modelName"]
-                            .as_str()
-                            .unwrap_or("gemini-2.0-flash")
-                            .to_string()
-                    } else {
-                        "gemini-2.0-flash".to_string()
-                    }
-                } else {
-                    "gemini-2.0-flash".to_string()
-                };
 
                 let mut stream = driver
                     .stream_generate(&model_name, &messages, None)
@@ -639,7 +657,7 @@ impl AuwgentEngine {
             } else {
                 Ok((
                     helper_name,
-                    serde_json::json!({ "error": "No driver configured for helper execution" }),
+                    serde_json::json!({ "error": format!("No driver registered for provider type '{}'", provider_type) }),
                 ))
             }
         } else {

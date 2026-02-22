@@ -50,12 +50,57 @@ export type ToolRegistry<IR extends AgentIRShape> = {
     [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
 };
 
-export type ApiKeys = {
-    geminiApiKey?: string;
-    openaiApiKey?: string;
-    customApiKey?: string;
-    customUrl?: string;
+// ── Provider type extraction ─────────────────────────────────────────────
+
+/** Map from provider type string → the key field name the user must supply */
+type ProviderKeyMap = {
+    gemini: 'geminiApiKey';
+    openai: 'openaiApiKey';
+    custom: 'openaiApiKey'; // custom uses OpenAI-compatible key
 };
+
+/** Extract provider `type` from a single model config */
+type ExtractProviderType<T> = T extends { model?: { type: infer P } }
+    ? P extends string ? P : never
+    : never;
+
+/** Extract all provider types from an array of named configs */
+type ExtractNamedProviders<T> = T extends readonly (infer E)[]
+    ? ExtractProviderType<E>
+    : never;
+
+/** Extract all provider types from a single model config entry */
+type ExtractEntryProviders<T> = T extends { defaultConfig?: infer D; namedConfig?: infer N }
+    ? ExtractProviderType<D> | (N extends readonly (infer NC)[] ? ExtractProviderType<NC> : never)
+    : never;
+
+/** Extract all provider types from an array of model config entries */
+type ExtractAllProviders<T> = T extends readonly (infer E)[] ? ExtractEntryProviders<E> : never;
+
+/** Extract provider types from helpers */
+type ExtractHelperProviders<T> = T extends readonly (infer H)[]
+    ? H extends { modelConfig?: infer MC } ? ExtractAllProviders<MC> : never
+    : never;
+
+/** All providers used across the entire IR (agents + helpers) */
+type CollectProviders<IR extends AgentIRShape> =
+    ExtractAllProviders<IR['modelConfig']> | ExtractHelperProviders<IR['helpers']>;
+
+/** Pick only the key fields needed for the providers the IR actually uses */
+type RequiredKeyFields<IR extends AgentIRShape> =
+    CollectProviders<IR> extends infer P
+    ? P extends keyof ProviderKeyMap
+    ? ProviderKeyMap[P]
+    : never
+    : never;
+
+/** Dynamic ApiKeys – only demands the keys the IR needs */
+export type ApiKeys<IR extends AgentIRShape = AgentIRShape> =
+    string extends CollectProviders<IR>
+    ? { geminiApiKey?: string; openaiApiKey?: string }  // fallback when IR is not const
+    : [RequiredKeyFields<IR>] extends [never]
+    ? { geminiApiKey?: string; openaiApiKey?: string }  // no providers found
+    : { [K in RequiredKeyFields<IR>]: string };
 
 // ── Intent Types ─────────────────────────────────────────────────────────
 

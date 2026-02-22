@@ -6,6 +6,7 @@ use napi_derive::napi;
 
 use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::runtime::drivers::gemini::GeminiDriver;
+use ir_runtime::runtime::drivers::openai::OpenAIDriver;
 use ir_runtime::runtime::engine::{IntentControl, ToolImplementation};
 
 use ir_runtime::types::AgentIR;
@@ -59,7 +60,21 @@ impl Auwgent {
         let engine = self.engine.clone();
         self.rt.block_on(async {
             let mut eng = engine.lock().await;
-            eng.set_driver(Box::new(GeminiDriver::new(api_key)));
+            eng.register_driver("gemini", Box::new(GeminiDriver::new(api_key)));
+        });
+        Ok(())
+    }
+
+    /// Set the OpenAI driver with the given API key and optional Custom URL.
+    #[napi]
+    pub fn set_openai_driver(&self, api_key: String, base_url: Option<String>) -> Result<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.register_driver("openai", Box::new(OpenAIDriver::new(api_key.clone(), None)));
+            if let Some(url) = base_url {
+                eng.register_driver("custom", Box::new(OpenAIDriver::new(api_key, Some(url))));
+            }
         });
         Ok(())
     }

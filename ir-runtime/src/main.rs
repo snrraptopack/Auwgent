@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(key) = env::var("GEMINI_API_KEY") {
         println!("*** LIVE MODE ENABLED (Gemini) ***");
         let driver = GeminiDriver::new(key);
-        engine.set_driver(Box::new(driver));
+        engine.register_driver("gemini", Box::new(driver));
 
         println!("\nStarting Live Agentic Run...");
         // Ask a question that should trigger the "hello" tool

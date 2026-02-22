@@ -6,6 +6,7 @@ use std::pin::Pin;
 use crate::runtime::session::Message;
 
 pub mod gemini;
+pub mod openai;
 
 #[async_trait]
 pub trait ModelDriver: Send + Sync {

@@ -59,6 +59,7 @@ export type MangerCustomIntents = never;
  */
 export type MangerApiKeys = {
     geminiApiKey: string;
+    openaiApiKey: string;
 }
 
 
