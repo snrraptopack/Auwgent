@@ -291,7 +291,7 @@ impl AuwgentEngine {
             // );
 
             // Finalize parsing and get the full parsed JSON from the intent parser
-            let parsed_response = self.orchestrator.end();
+
             let (terminal, actions) = self.process_intents().await?;
             if terminal {
                 has_terminal_output = true;
@@ -300,15 +300,9 @@ impl AuwgentEngine {
                 actions_performed = true;
             }
 
-            // Save the parsed JSON as model_response.
-            // The intent parser already converts the LLM's YAML output to JSON,
-            // so we just serialize it directly.
-            if parsed_response != Value::Null {
-                let parsed = serde_json::to_string(&parsed_response).unwrap_or_default();
-                self.session.set_model_response(&parsed);
-            } else {
-                self.session.set_model_response(&self.current_raw_response);
-            }
+            // Save the raw LLM output in the session history so the exact
+            // YAML text is visible in logs and follow-up turns.
+            self.session.set_model_response(&self.current_raw_response);
 
             // Decide if we loop or stop
             if has_terminal_output || !actions_performed {
