@@ -192,6 +192,31 @@ export async function generateOutput(model: Model, source: string, destination: 
                 }
             }
 
+            // Handle union output types: output: Simple | Structured
+            if (agentIR.output && typeof agentIR.output === 'object' && '__unionTypes' in agentIR.output) {
+                const unionTypeNames = (agentIR.output as any).__unionTypes as string[];
+                const variants: Record<string, any> = {};
+
+                for (const typeName of unionTypeNames) {
+                    if (typeMap.has(typeName)) {
+                        const typeDef = typeMap.get(typeName)!;
+                        const props: any = {};
+
+                        for (const prop of typeDef.types) {
+                            props[prop.name] = {
+                                type: extractType(prop.t),
+                                optional: prop.isOptional,
+                                ...(prop.description && { description: prop.description })
+                            };
+                        }
+
+                        variants[typeName] = props;
+                    }
+                }
+
+                agentIR.output = { __variants: variants };
+            }
+
             // Add type definitions to IR (includes imported types)
             if (typeMap.size > 0) {
                 agentIR.types = extractTypeDefinitions(typeMap);

@@ -173,7 +173,11 @@ InputConfig:
     "input" "{" (inProperties+=TypeConfigDeclaration (","? inProperties+=TypeConfigDeclaration)*)? "}";
 
 OutputConfig:
-    "output" ("{" (outProperties+=Output (","? outProperties+=Output)*)? "}" | ":" directType=Types ("@desc" directTypeDesc=STRING)?);
+    "output" (
+        "{" (outProperties+=Output (","? outProperties+=Output)*)? "}"
+        | ":" unionTypes+=[TypeDeclaration:ID] ("|" unionTypes+=[TypeDeclaration:ID])+
+        | ":" directType=Types ("@desc" directTypeDesc=STRING)?
+    );
 
 ContextConfig:
     "context" "{" (contextProperties+=TypeConfigDeclaration (","? contextProperties+=TypeConfigDeclaration)*)? "}"

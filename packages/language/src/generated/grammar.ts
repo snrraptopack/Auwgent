@@ -2434,6 +2434,65 @@ export const AuwgentGrammar = (): Grammar => loadedAuwgentGrammar ?? (loadedAuwg
                   },
                   {
                     "$type": "Assignment",
+                    "feature": "unionTypes",
+                    "operator": "+=",
+                    "terminal": {
+                      "$type": "CrossReference",
+                      "type": {
+                        "$ref": "#/rules@46"
+                      },
+                      "terminal": {
+                        "$type": "RuleCall",
+                        "rule": {
+                          "$ref": "#/rules@79"
+                        },
+                        "arguments": []
+                      },
+                      "deprecatedSyntax": false,
+                      "isMulti": false
+                    }
+                  },
+                  {
+                    "$type": "Group",
+                    "elements": [
+                      {
+                        "$type": "Keyword",
+                        "value": "|"
+                      },
+                      {
+                        "$type": "Assignment",
+                        "feature": "unionTypes",
+                        "operator": "+=",
+                        "terminal": {
+                          "$type": "CrossReference",
+                          "type": {
+                            "$ref": "#/rules@46"
+                          },
+                          "terminal": {
+                            "$type": "RuleCall",
+                            "rule": {
+                              "$ref": "#/rules@79"
+                            },
+                            "arguments": []
+                          },
+                          "deprecatedSyntax": false,
+                          "isMulti": false
+                        }
+                      }
+                    ],
+                    "cardinality": "+"
+                  }
+                ]
+              },
+              {
+                "$type": "Group",
+                "elements": [
+                  {
+                    "$type": "Keyword",
+                    "value": ":"
+                  },
+                  {
+                    "$type": "Assignment",
                     "feature": "directType",
                     "operator": "=",
                     "terminal": {

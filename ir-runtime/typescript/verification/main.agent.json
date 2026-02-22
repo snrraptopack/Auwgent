@@ -127,24 +127,34 @@
   ],
   "input": null,
   "output": {
-    "simple_response": {
-      "type": "string",
-      "optional": true,
-      "description": "for direct response"
-    },
-    "structured_response": {
-      "type": {
-        "type": "object",
-        "properties": {
-          "student": {
-            "type": "typeRef",
-            "name": "Student"
-          },
-          "descriptions": "string"
+    "__variants": {
+      "Simple": {
+        "text": {
+          "type": "string",
+          "optional": false
         }
       },
-      "optional": true,
-      "description": "for returnin structured resonse"
+      "Student": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "id": {
+          "type": "string",
+          "optional": false
+        },
+        "location": {
+          "type": "string",
+          "optional": false
+        },
+        "grades": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
+        }
+      }
     }
   },
   "context": {
@@ -260,27 +270,12 @@
         }
       }
     },
-    "One": {
+    "Simple": {
       "isOutput": true,
       "properties": {
-        "simple_response": {
+        "text": {
           "type": "string",
-          "optional": true,
-          "description": "for direct response"
-        },
-        "structured_response": {
-          "type": {
-            "type": "object",
-            "properties": {
-              "student": {
-                "type": "typeRef",
-                "name": "Student"
-              },
-              "descriptions": "string"
-            }
-          },
-          "optional": true,
-          "description": "for returnin structured resonse"
+          "optional": false
         }
       }
     }

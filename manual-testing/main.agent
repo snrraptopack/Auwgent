@@ -7,13 +7,10 @@ type Student{
     grades:string[]
 }
 
-output type One{
-    simple_response?:string @desc "for direct response"
-    structured_response?:{
-        student:Student
-        descriptions:string
-    } @desc "for returnin structured resonse"
-}
+
+output type Simple{
+    text:string 
+} 
 
 prompt Alone(user_name:string, id:string){
     """
@@ -40,7 +37,7 @@ agent Manger{
         id:string
     }
 
-    output:One
+    output: Simple | Student 
 
     tools{
         get_student_details(id:string):Student @desc "get the deatails of the the student"

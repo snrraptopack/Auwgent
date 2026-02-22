@@ -212,10 +212,19 @@ function extractInOutConfig(inputConfig: InputConfig | OutputConfig | ContextCon
             result[input.name] = { type: extractType(input.t), optional: input.isOptional }
         })
     } else if (inputConfig.$type === "OutputConfig") {
+        // Handle union output types: output: Simple | Structured
+        if (inputConfig.unionTypes && inputConfig.unionTypes.length > 0) {
+            return {
+                __unionTypes: inputConfig.unionTypes
+                    .map((t: any) => t.ref?.name)
+                    .filter((n: any): n is string => !!n)
+            };
+        }
+
         // Handle direct type usage: output: User @desc "..."
         if (inputConfig.directType) {
             const extractedType = extractType(inputConfig.directType);
-            
+
             // If it's a type reference, flatten it
             if (extractedType && typeof extractedType === 'object' && extractedType.type === 'typeRef') {
                 // Return a marker that the generator should flatten this type
@@ -228,13 +237,13 @@ function extractInOutConfig(inputConfig: InputConfig | OutputConfig | ContextCon
                 return extractedType;
             }
         }
-        
+
         // Handle traditional nested syntax: output { field: Type }
         inputConfig.outProperties.map(output => {
-            result[output.td.name] = { 
-                type: extractType(output.td.t), 
+            result[output.td.name] = {
+                type: extractType(output.td.t),
                 optional: output.td.isOptional,
-                description: output.td.description ?? "no description" 
+                description: output.td.description ?? "no description"
                 //...(output.description && { description: output.description })
             }
         })

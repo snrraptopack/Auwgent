@@ -23,23 +23,25 @@ export type Student = {
 
 
 /** Output type */
-export type One = {
+export type Simple = {
 
-    /** for direct response */
-    simple_response?: string;
-
-    /** for returnin structured resonse */
-    structured_response?: { student: Student; descriptions: string };
+    text: string;
 }
 
 export type MangerInput = {
 
 }
 
-export type MangerOutput = {
-    simple_response?: string;
-    structured_response?: { student: Student; descriptions: string };
+export type MangerOutput =
+    | { type: "Simple";
+    text: string;
 }
+    | { type: "Student";
+    name: string;
+    id: string;
+    location: string;
+    grades: string[];
+};
 
 export type MangerContext = {
     user_name: string;

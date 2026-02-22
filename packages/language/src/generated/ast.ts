@@ -956,13 +956,15 @@ export interface OutputConfig extends langium.AstNode {
     directType?: Types;
     directTypeDesc?: string;
     outProperties: Array<Output>;
+    unionTypes: Array<langium.Reference<TypeDeclaration>>;
 }
 
 export const OutputConfig = {
     $type: 'OutputConfig',
     directType: 'directType',
     directTypeDesc: 'directTypeDesc',
-    outProperties: 'outProperties'
+    outProperties: 'outProperties',
+    unionTypes: 'unionTypes'
 } as const;
 
 export function isOutputConfig(item: unknown): item is OutputConfig {
@@ -2169,6 +2171,11 @@ export class AuwgentAstReflection extends langium.AbstractAstReflection {
                 outProperties: {
                     name: OutputConfig.outProperties,
                     defaultValue: []
+                },
+                unionTypes: {
+                    name: OutputConfig.unionTypes,
+                    defaultValue: [],
+                    referenceType: TypeDeclaration.$type
                 }
             },
             superTypes: [AgentConfigurations.$type]

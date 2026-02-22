@@ -299,6 +299,24 @@ ${props}
  * Generate Output interface (with union types for transfers)
  */
 function generateOutputInterface(agent: AgentIR, transferredHelpers: HelperType[]): string {
+    // Handle union output types: __variants
+    if (agent.output && '__variants' in agent.output) {
+        const variants = agent.output.__variants as Record<string, Record<string, any>>;
+        const variantMembers = Object.entries(variants).map(([variantName, variantProps]) => {
+            const props = Object.entries(variantProps)
+                .map(([name, val]) => {
+                    const optional = val?.optional ? '?' : '';
+                    return `    ${name}${optional}: ${typeToTsString(val)};`;
+                })
+                .join('\n');
+            return `{ type: "${variantName}";\n${props}\n}`;
+        });
+
+        const unionType = variantMembers.join('\n    | ');
+
+        return `export type ${agent.name}Output =\n    | ${unionType};\n`;
+    }
+
     const props = agent.output
         ? Object.entries(agent.output)
             .map(([name, val]) => {

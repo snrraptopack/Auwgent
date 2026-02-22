@@ -284,6 +284,12 @@ impl AuwgentEngine {
                 }
             }
 
+            // Log the raw model output for debugging
+            eprintln!(
+                "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
+                loop_count, self.current_raw_response
+            );
+
             // Finalize parsing and get the full parsed JSON from the intent parser
             let parsed_response = self.orchestrator.end();
             let (terminal, actions) = self.process_intents().await?;
@@ -359,24 +365,16 @@ impl AuwgentEngine {
             std::mem::take(&mut *pending)
         };
 
-        eprintln!(
-            "[DEBUG process_intents] drained {} intents: {:?}",
-            intents.len(),
-            intents.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>()
-        );
-
         let mut has_terminal = false;
         let mut has_actions = false;
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, mut value) in intents {
-            eprintln!("[DEBUG] firing intent callback for: {}", name);
             // Fire the user callback BEFORE execution
             // Note: _raw is intentionally kept in `value` here so that the host
             // (TypeScript wrapper) can extract it for middleware logging/audit.
             // The TS wrapper removes _raw from the value after extracting it.
             let control = self.fire_intent(name.clone(), value.clone()).await;
-            eprintln!("[DEBUG] fire_intent returned for: {}", name);
 
             // Strip _raw before internal processing (tool execution, etc.)
             if let Value::Object(ref mut map) = value {
