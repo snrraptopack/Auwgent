@@ -285,10 +285,10 @@ impl AuwgentEngine {
             }
 
             // Log the raw model output for debugging
-            eprintln!(
-                "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
-                loop_count, self.current_raw_response
-            );
+            // eprintln!(
+            //     "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
+            //     loop_count, self.current_raw_response
+            // );
 
             // Finalize parsing and get the full parsed JSON from the intent parser
             let parsed_response = self.orchestrator.end();
@@ -333,14 +333,23 @@ impl AuwgentEngine {
 
         let mut parts = Vec::new();
         for (name, result) in &self.pending_tool_results {
-            // Format as YAML blocks matching the intent schema
-            let result_str = match serde_json::to_string(result) {
-                Ok(s) => s,
-                Err(_) => format!("{:?}", result),
+            let indented_result = match serde_yaml::to_string(result) {
+                Ok(yaml_str) => {
+                    let trimmed = yaml_str.trim();
+                    let content = trimmed.strip_prefix("---\n").unwrap_or(trimmed);
+                    let indented: String = content
+                        .lines()
+                        .map(|line| format!("    {}", line))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("  result:\n{}", indented)
+                }
+                Err(_) => format!("  result: {:?}", result),
             };
+
             parts.push(format!(
-                "tool_result:\n  name: {}\n  result: {}",
-                name, result_str
+                "tool_result:\n  name: {}\n{}",
+                name, indented_result
             ));
         }
         parts.join("\n\n")

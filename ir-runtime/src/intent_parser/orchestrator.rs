@@ -114,9 +114,16 @@ impl Orchestrator {
 
                         // Inject _raw: readable representation for middleware logging/audit
                         if let Value::Object(ref mut map) = json_val {
-                            let body = serde_json::to_string_pretty(&Value::Object(map.clone()))
+                            let yaml_body = serde_yaml::to_string(&Value::Object(map.clone()))
                                 .unwrap_or_default();
-                            let raw = format!("{}:\n{}", entry.key, body);
+                            let trimmed = yaml_body.trim();
+                            let content = trimmed.strip_prefix("---\n").unwrap_or(trimmed);
+                            let indented: String = content
+                                .lines()
+                                .map(|line| format!("  {}", line))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            let raw = format!("{}:\n{}", entry.key, indented);
                             map.insert("_raw".to_string(), Value::String(raw));
                         }
 

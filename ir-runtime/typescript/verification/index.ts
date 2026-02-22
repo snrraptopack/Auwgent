@@ -50,9 +50,6 @@ console.log(chef.generatePrompt())
 
 
 chef.onIntent((name, value) => {
-    if (name === "workflow_result") {
-        console.log(value)
-    }
 
     if (name === "response_schema") {
         console.log(value.type === "Simple" ? value.text : value)
@@ -64,6 +61,6 @@ chef.onIntent((name, value) => {
 if (!geminiApiKey) {
     console.log(chef.generatePrompt())
 } else {
-    let session = await chef.run("helo")
+    let session = await chef.run("what my details")
     console.log(JSON.stringify(session.turns, null, 2))
 }
