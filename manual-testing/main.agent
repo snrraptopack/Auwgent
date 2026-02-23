@@ -13,6 +13,10 @@ agent Router{
         }
     }
 
+    input{
+        text:string
+    }
+
     helpers {
         FoodWizard handoff user
         Story handoff user then continue
@@ -33,6 +37,10 @@ helper FoodWizard{
             """
         }
     }
+
+     input{
+        text:string
+    }
 }
 
 helper Story{
@@ -45,5 +53,9 @@ helper Story{
                You are a specialized story teller come up with stories the user asks
             """
         }
+    }
+
+     input{
+        text:string
     }
 }

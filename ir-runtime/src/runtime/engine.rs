@@ -291,6 +291,9 @@ impl AuwgentEngine {
             // );
 
             // Finalize parsing and get the full parsed JSON from the intent parser
+            // This forces the orchestrator to flush the final pending YAML object
+            // (e.g. the final `response_text`) into the engine's pending_intents list.
+            let _final_val = self.orchestrator.end();
 
             let (terminal, actions) = self.process_intents().await?;
             if terminal {

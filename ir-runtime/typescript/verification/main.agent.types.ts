@@ -10,7 +10,7 @@ type RouterIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
 };
 const agentIR = _importedIR as unknown as RouterIR;
 export type RouterInput = {
-
+    text: string;
 }
 
 export type FoodWizardOutput = {

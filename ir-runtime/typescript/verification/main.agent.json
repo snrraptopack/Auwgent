@@ -20,7 +20,12 @@
       "namedConfig": []
     }
   ],
-  "input": null,
+  "input": {
+    "text": {
+      "type": "string",
+      "optional": false
+    }
+  },
   "output": null,
   "context": null,
   "tools": [],
@@ -49,7 +54,12 @@
           "namedConfig": []
         }
       ],
-      "input": null,
+      "input": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
       "output": null,
       "context": null,
       "tools": [],
