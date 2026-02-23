@@ -1,283 +1,173 @@
 {
-  "name": "Manger",
+  "name": "Basic",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "type": "openai",
+          "modelName": "...."
         },
         "prompt": {
-          "type": "promptRef",
-          "name": "Alone",
-          "params": [
-            "user_name",
-            "id"
-          ],
-          "args": [
-            {
-              "type": "contextRef",
-              "property": "user_name"
-            },
-            {
-              "type": "contextRef",
-              "property": "id"
-            }
-          ],
-          "value": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n    You are an ai agent that gives a user concise information about what they do....\r\n    the user name is : "
-                },
-                {
-                  "type": "varRef",
-                  "value": "user_name"
-                },
-                {
-                  "type": "literal",
-                  "value": " and wit an id of "
-                },
-                {
-                  "type": "varRef",
-                  "value": "id"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n\r\n    your output should be in this format though not all field will be required "
-                },
-                {
-                  "type": "schemaDirective",
-                  "path": "output"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n    "
-                }
-              ]
-            }
-          ]
+          "value": "a helpful agent",
+          "type": "literal"
         }
       },
-      "namedConfig": [
-        {
-          "configName": "another",
-          "model": {
-            "type": "openai",
-            "modelName": "gpt-anything"
-          },
-          "prompt": {
-            "type": "promptRef",
-            "name": "Alone",
-            "params": [
-              "user_name",
-              "id"
-            ],
-            "args": [
-              {
-                "type": "contextRef",
-                "property": "user_name"
-              },
-              {
-                "type": "contextRef",
-                "property": "id"
-              }
-            ],
-            "value": [
-              {
-                "type": "template",
-                "value": [
-                  {
-                    "type": "literal",
-                    "value": "\r\n    You are an ai agent that gives a user concise information about what they do....\r\n    the user name is : "
-                  },
-                  {
-                    "type": "varRef",
-                    "value": "user_name"
-                  },
-                  {
-                    "type": "literal",
-                    "value": " and wit an id of "
-                  },
-                  {
-                    "type": "varRef",
-                    "value": "id"
-                  },
-                  {
-                    "type": "literal",
-                    "value": "\r\n\r\n    your output should be in this format though not all field will be required "
-                  },
-                  {
-                    "type": "schemaDirective",
-                    "path": "output"
-                  },
-                  {
-                    "type": "literal",
-                    "value": "\r\n    "
-                  }
-                ]
-              }
-            ]
-          }
-        }
-      ]
+      "namedConfig": []
     }
   ],
   "input": null,
-  "output": {
-    "__variants": {
-      "Simple": {
-        "text": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "Student": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "location": {
-          "type": "string",
-          "optional": false
-        },
-        "grades": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false
-        }
-      }
-    }
-  },
-  "context": {
-    "user_name": {
-      "type": "string",
-      "optional": false
-    },
-    "id": {
-      "type": "string",
-      "optional": false
-    }
-  },
+  "output": null,
+  "context": null,
   "tools": [
     {
-      "description": "get the deatails of the the student",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "name": "get_student_details",
-      "returns": {
-        "type": "typeRef",
-        "name": "Student"
-      }
+      "description": "",
+      "params": {},
+      "name": "one",
+      "returns": "string"
     },
     {
-      "description": "edit the details of the student",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "name": "edit_student_details",
-      "returns": {
-        "type": "typeRef",
-        "name": "Student"
-      }
+      "description": "",
+      "params": {},
+      "name": "two",
+      "returns": "string"
     }
   ],
-  "workflows": [
+  "workflows": [],
+  "helpers": [
     {
-      "flowName": "get_student_grade",
-      "flowParams": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "returns": {
-        "type": "array",
-        "items": "string"
-      },
-      "body": [
+      "name": "BasicHelper1",
+      "description": "nothing",
+      "modelConfig": [
         {
-          "name": "result",
-          "value": {
-            "value": "get_student_details",
-            "type": "functionCall",
-            "args": [
-              {
-                "value": "id",
-                "type": "varRef"
-              }
-            ]
-          },
-          "type": "variableDeclaration"
-        },
-        {
-          "type": "return",
-          "value": {
-            "type": "memberAccess",
-            "object": {
-              "type": "varRef",
-              "value": "result"
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "....."
             },
-            "properties": [
-              "grades"
-            ]
-          }
+            "prompt": {
+              "value": "a helperful helper",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
         }
       ],
-      "description": "used for getting only the grade of the student",
-      "tools": []
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "BasicHelper2",
+      "description": "nothing2",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "....."
+            },
+            "prompt": {
+              "value": "a helperful helper",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "BasicHelper3",
+      "description": "nothing2",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "....."
+            },
+            "prompt": {
+              "value": "a helperful helper",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "BasicHelper4",
+      "description": "nothing2",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "....."
+            },
+            "prompt": {
+              "value": "a helperful helper",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "BasicHelper5",
+      "description": "nothing2",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "....."
+            },
+            "prompt": {
+              "value": "a helperful helper",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
     }
   ],
-  "helpers": [],
   "tests": [],
-  "types": {
-    "Student": {
-      "isOutput": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "location": {
-          "type": "string",
-          "optional": false
-        },
-        "grades": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false
-        }
-      }
-    },
-    "Simple": {
-      "isOutput": true,
-      "properties": {
-        "text": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    }
+  "helperToolGrants": {
+    "BasicHelper2": "all",
+    "BasicHelper3": [
+      "one"
+    ],
+    "BasicHelper4": "all",
+    "BasicHelper5": [
+      "one"
+    ]
+  },
+  "helperHandoff": {
+    "BasicHelper4": "user",
+    "BasicHelper5": "thenContinue"
   }
 }

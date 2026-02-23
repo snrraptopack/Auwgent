@@ -455,6 +455,21 @@ impl AuwgentEngine {
                     }
                     None => {
                         let (helper_name, result) = self.execute_helper(&value).await?;
+
+                        // Check if the helper signaled a hard stop (handoff mod="user")
+                        if let Some(obj) = result.as_object() {
+                            if obj
+                                .get("__handoff_stop")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
+                                // The helper already streamed its terminal intent directly to the user.
+                                // We tell the parent engine to stop looping immediately.
+                                has_terminal = true;
+                                break;
+                            }
+                        }
+
                         self.fire_intent(
                             "helper_result".to_string(),
                             serde_json::json!({
@@ -521,151 +536,311 @@ impl AuwgentEngine {
         }
     }
 
-    async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value)> {
+    async fn execute_workflow(&mut self, call: &Value) -> AuwgentResult<(String, Value)> {
         let wf_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
-        if let Some(wf) = self.ir.workflows.iter().find(|w| w.name == wf_name) {
-            // Create evaluator WITH tools so workflow body can call functions (#4)
-            let mut tool_fns: HashMap<String, crate::evaluator::SyncToolFn> = HashMap::new();
-            for (name, imp) in &self.tools {
-                let imp = imp.clone();
-                let name_clone = name.clone();
-                tool_fns.insert(
-                    name.clone(),
-                    Box::new(move |fn_args: Vec<Value>| {
-                        // Convert Vec<Value> to a single JSON object for the tool
-                        let arg_val = if fn_args.len() == 1 {
-                            fn_args.into_iter().next().unwrap_or(Value::Null)
-                        } else {
-                            Value::Array(fn_args)
-                        };
-                        // Block on the async tool — workflows are evaluated synchronously
-                        // This is a known limitation; async workflows would need a redesign
-                        let rt = tokio::runtime::Handle::current();
-                        let imp = imp.clone();
-                        std::thread::spawn(move || rt.block_on(imp(arg_val)))
-                            .join()
-                            .map_err(|_| format!("Tool '{}' panicked", name_clone))?
-                    }),
-                );
-            }
+        let body_clone = {
+            let wf = match self.ir.workflows.iter().find(|w| w.name == wf_name) {
+                Some(w) => w,
+                None => {
+                    return Ok((
+                        wf_name.clone(),
+                        serde_json::json!({ "error": format!("Workflow not found: {}", wf_name) }),
+                    ));
+                }
+            };
+            wf.body.clone()
+        };
 
-            let evaluator = Evaluator::with_tools(&self.ir, tool_fns);
-            let mut scope = HashMap::new();
-            if let Some(obj) = args.as_object() {
-                for (k, v) in obj {
-                    scope.insert(k.clone(), v.clone());
+        // Create evaluator WITH tools so workflow body can call functions (#4)
+        let mut tool_fns: HashMap<String, crate::evaluator::SyncToolFn> = HashMap::new();
+        for (name, imp) in &self.tools {
+            let imp = imp.clone();
+            let name_clone = name.clone();
+            tool_fns.insert(
+                name.clone(),
+                std::sync::Arc::new(move |fn_args: Vec<Value>| {
+                    // Convert Vec<Value> to a single JSON object for the tool
+                    let arg_val = if fn_args.len() == 1 {
+                        fn_args.into_iter().next().unwrap_or(Value::Null)
+                    } else {
+                        Value::Array(fn_args)
+                    };
+                    // Block on the async tool — workflows are evaluated synchronously
+                    // This is a known limitation; async workflows would need a redesign
+                    let rt = tokio::runtime::Handle::current();
+                    let imp = imp.clone();
+                    std::thread::spawn(move || rt.block_on(imp(arg_val)))
+                        .join()
+                        .map_err(|_| format!("Tool '{}' panicked", name_clone))?
+                }),
+            );
+        }
+
+        // Clone IR so Evaluator doesn't hold an immutable borrow on self,
+        // which allows us to mutably borrow self inside the loop.
+        let ir_clone = self.ir.clone();
+
+        let mut scope = HashMap::new();
+        if let Some(obj) = args.as_object() {
+            for (k, v) in obj {
+                scope.insert(k.clone(), v.clone());
+            }
+        }
+        // Inject context into workflow scope
+        if let Some(ctx) = self.context.as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
+        }
+
+        let mut last_result = Value::Null;
+        for stmt in &body_clone {
+            let eval_result = {
+                // Reconstruct evaluator for each statement using the cloned IR
+                // to completely avoid lifetime/borrow issues across await point
+                let evaluator = Evaluator::with_tools(&ir_clone, tool_fns.clone());
+                evaluator.evaluate(stmt, &mut scope)?
+            };
+
+            // Since workflows evaluate synchronously, but helper transfers require spinning up
+            // an async Engine, the evaluator returns a special control payload. We intercept it
+            // here and perform the async execution.
+            if let Some(obj) = eval_result.as_object() {
+                // Check for programmatic helper call
+                if obj
+                    .get("__requires_async_helper_call")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    let target_helper = obj
+                        .get("helper_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let helper_args = obj.get("args").unwrap_or(&Value::Null).clone();
+
+                    // Build a helper_call value and delegate to execute_helper
+                    let helper_call = serde_json::json!({
+                        "type": target_helper,
+                        "args": helper_args
+                    });
+                    let (_, sub_result) = self.execute_helper(&helper_call).await?;
+                    last_result = sub_result;
+                    continue;
+                }
+
+                // Check for programmatic transfer
+                if obj
+                    .get("__requires_async_transfer")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false)
+                {
+                    let target_helper = obj.get("target").and_then(|v| v.as_str()).unwrap_or("");
+                    let helper_call = serde_json::json!({
+                        "type": target_helper,
+                        "args": {}
+                    });
+                    let (_, sub_result) = self.execute_helper(&helper_call).await?;
+
+                    // If the transfer returned a hard stop signal (handoff user), bubble up
+                    if let Some(res_obj) = sub_result.as_object() {
+                        if res_obj
+                            .get("__handoff_stop")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                        {
+                            return Ok((wf_name, sub_result));
+                        }
+                    }
+
+                    last_result = sub_result;
+                    continue;
                 }
             }
-            // Inject context into workflow scope
-            if let Some(ctx) = self.context.as_ref() {
-                scope.insert("context".to_string(), ctx.clone());
-            }
 
-            let mut last_result = Value::Null;
-            for stmt in &wf.body {
-                last_result = evaluator.evaluate(stmt, &mut scope)?;
-            }
-
-            Ok((wf_name, last_result))
-        } else {
-            Ok((
-                wf_name.clone(),
-                serde_json::json!({ "error": format!("Workflow not found: {}", wf_name) }),
-            ))
+            last_result = eval_result;
         }
+
+        Ok((wf_name, last_result))
     }
 
-    /// Execute a helper by running a sub-engine with the helper's model config and prompt.
+    /// Execute a helper as a fully configured sub-agent.
+    ///
+    /// This builds a temporary sub-agent context (IR with authorized tools,
+    /// handoff mode), generates its prompt, runs the LLM stream using the
+    /// parent's registered drivers, and routes the response based on the
+    /// handoff configuration.
     async fn execute_helper(&mut self, call: &Value) -> AuwgentResult<(String, Value)> {
         let helper_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
-        if let Some(helper) = self.ir.helpers.iter().find(|h| h.name == helper_name) {
-            // Build a sub-prompt from the helper's model config
-            let evaluator = Evaluator::new(&self.ir);
-            let mut scope = HashMap::new();
-            if let Some(obj) = args.as_object() {
-                for (k, v) in obj {
-                    scope.insert(k.clone(), v.clone());
-                }
-            }
-            if let Some(ctx) = self.context.as_ref() {
-                scope.insert("context".to_string(), ctx.clone());
-            }
+        // 1. Build the sub-agent context (IR, authorized tools, handoff mode)
+        let sub_ctx =
+            crate::runtime::helper_runner::build_sub_agent_context(&self.ir, &helper_name)?;
 
-            // Evaluate the helper's prompt
-            let helper_prompt = if let Some(entry) = helper.model_config.first() {
-                if let Some(cfg) = &entry.default_config {
-                    let prompt_val = evaluator.evaluate(&cfg.prompt, &mut scope)?;
-                    prompt_val.as_str().unwrap_or("").to_string()
-                } else {
-                    String::new()
-                }
+        // 2. Evaluate the sub-agent's prompt
+        let evaluator = Evaluator::new(&sub_ctx.ir);
+        let mut scope = HashMap::new();
+        if let Some(obj) = args.as_object() {
+            for (k, v) in obj {
+                scope.insert(k.clone(), v.clone());
+            }
+        }
+        if let Some(ctx) = self.context.as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
+        }
+
+        let helper_prompt = if let Some(entry) = sub_ctx.ir.model_config.first() {
+            if let Some(cfg) = &entry.default_config {
+                let prompt_val = evaluator.evaluate(&cfg.prompt, &mut scope)?;
+                prompt_val.as_str().unwrap_or("").to_string()
             } else {
                 String::new()
-            };
-
-            // Append helper-specific intents
-            let helper_intents = crate::intents::generate_helper_intents(&self.ir, &helper_name);
-            let full_prompt = if helper_intents.is_empty() {
-                helper_prompt
-            } else {
-                format!("{}\n\n{}", helper_prompt, helper_intents)
-            };
-
-            // Evaluate the helper's model info to get credentials and provider type
-            let (provider_type, model_name) = if let Some(entry) = helper.model_config.first() {
-                if let Some(cfg) = &entry.default_config {
-                    let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
-                    let p_type = model_info["type"].as_str().unwrap_or("gemini").to_string();
-                    let m_name = model_info["modelName"]
-                        .as_str()
-                        .unwrap_or("gemini-2.0-flash")
-                        .to_string();
-                    (p_type, m_name)
-                } else {
-                    ("gemini".to_string(), "gemini-2.0-flash".to_string())
-                }
-            } else {
-                ("gemini".to_string(), "gemini-2.0-flash".to_string())
-            };
-
-            // If we have a driver for the requested type, run a single LLM call for the helper
-            if let Some(driver) = self.drivers.get(&provider_type) {
-                let messages = vec![
-                    crate::runtime::session::Message::system(&full_prompt),
-                    crate::runtime::session::Message::user(
-                        serde_json::to_string(&args).unwrap_or_default(),
-                    ),
-                ];
-
-                let mut stream = driver
-                    .stream_generate(&model_name, &messages, None)
-                    .await
-                    .map_err(AuwgentError::Driver)?;
-
-                let mut response = String::new();
-                while let Some(chunk_res) = stream.next().await {
-                    match chunk_res {
-                        Ok(text) => response.push_str(&text),
-                        Err(e) => return Err(AuwgentError::StreamError(e)),
-                    }
-                }
-
-                Ok((helper_name, Value::String(response)))
-            } else {
-                Ok((
-                    helper_name,
-                    serde_json::json!({ "error": format!("No driver registered for provider type '{}'", provider_type) }),
-                ))
             }
         } else {
-            Ok((
-                helper_name.clone(),
-                serde_json::json!({ "error": format!("Helper not found: {}", helper_name) }),
-            ))
+            String::new()
+        };
+
+        // 3. Append helper-specific intents (tools, workflows, output schemas)
+        let helper_intents = crate::intents::generate_intents(&sub_ctx.ir);
+        let full_prompt = if helper_intents.is_empty() {
+            helper_prompt
+        } else {
+            format!("{}\n\n{}", helper_prompt, helper_intents)
+        };
+
+        // 4. Resolve model provider and name
+        let (provider_type, model_name) = if let Some(entry) = sub_ctx.ir.model_config.first() {
+            if let Some(cfg) = &entry.default_config {
+                let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
+                let p_type = model_info["type"].as_str().unwrap_or("gemini").to_string();
+                let m_name = model_info["modelName"]
+                    .as_str()
+                    .unwrap_or("gemini-2.0-flash")
+                    .to_string();
+                (p_type, m_name)
+            } else {
+                ("gemini".to_string(), "gemini-2.0-flash".to_string())
+            }
+        } else {
+            ("gemini".to_string(), "gemini-2.0-flash".to_string())
+        };
+
+        // 5. Get the driver from the parent engine
+        let driver = self
+            .drivers
+            .get(&provider_type)
+            .ok_or_else(|| AuwgentError::NoDriver)?;
+
+        // 6. Build the messages for the sub-agent
+        let args_str = serde_json::to_string(&args).unwrap_or_default();
+        let messages = vec![
+            crate::runtime::session::Message::system(&full_prompt),
+            crate::runtime::session::Message::user(args_str),
+        ];
+
+        // 7. Set up an orchestrator for the sub-agent's response
+        let mut sub_orchestrator = Orchestrator::new(None);
+        sub_orchestrator.register_intent("tool_call");
+        sub_orchestrator.register_intent("workflow_call");
+        sub_orchestrator.register_intent("response_schema");
+        sub_orchestrator.register_intent("response_text");
+
+        let sub_intents: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sub_intents_clone = Arc::clone(&sub_intents);
+        sub_orchestrator.on_intent_ready(Arc::new(move |name, value| {
+            if let Ok(mut pending) = sub_intents_clone.lock() {
+                pending.push((name, value));
+            }
+        }));
+
+        // If handoff mode routes to user, wire partial handler too
+        use crate::runtime::helper_runner::HandoffMode;
+        if sub_ctx.handoff_mode == HandoffMode::User
+            || sub_ctx.handoff_mode == HandoffMode::ThenContinue
+        {
+            if let Some(ref handler) = self.partial_intent_handler {
+                let h = handler.clone();
+                sub_orchestrator.on_intent_partial(Arc::new(move |name, value| {
+                    h(name, value);
+                }));
+            }
+        }
+
+        // 8. Run the LLM stream for the sub-agent
+        let mut stream = driver
+            .stream_generate(&model_name, &messages, None)
+            .await
+            .map_err(AuwgentError::Driver)?;
+
+        let mut sub_response = String::new();
+        while let Some(chunk_res) = stream.next().await {
+            match chunk_res {
+                Ok(text) => {
+                    sub_response.push_str(&text);
+                    sub_orchestrator.write(&text);
+                }
+                Err(e) => return Err(AuwgentError::StreamError(e)),
+            }
+        }
+
+        // Finalize the orchestrator
+        let _parsed = sub_orchestrator.end();
+
+        // 9. Process the sub-agent's intents
+        let collected: Vec<(String, Value)> = {
+            let mut pending = sub_intents.lock().unwrap();
+            std::mem::take(&mut *pending)
+        };
+
+        // For intents that need to go to the user (handoff modes), fire them
+        // through the parent's intent handler
+        for (intent_name, intent_value) in &collected {
+            match intent_name.as_str() {
+                "tool_call" => {
+                    // Execute tool using the authorized parent tools
+                    let tool_name = intent_value["type"].as_str().unwrap_or("").to_string();
+                    if sub_ctx.authorized_parent_tool_names.contains(&tool_name) {
+                        if let Some(imp) = self.tools.get(&tool_name) {
+                            let tool_args = intent_value["args"].clone();
+                            match imp(tool_args).await {
+                                Ok(_result) => {
+                                    // Tool executed successfully for the sub-agent.
+                                    // In a full multi-turn sub-agent loop we'd feed this back.
+                                    // For now, single-turn sub-agent execution.
+                                }
+                                Err(_e) => {}
+                            }
+                        }
+                    }
+                }
+                "response_text" | "response_schema" => {
+                    // Route based on handoff mode
+                    match sub_ctx.handoff_mode {
+                        HandoffMode::User | HandoffMode::ThenContinue => {
+                            // Fire directly to the user via parent's intent handler
+                            self.fire_intent(intent_name.clone(), intent_value.clone())
+                                .await;
+                        }
+                        HandoffMode::Return => {
+                            // Don't fire to user — this is internal
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // 10. Return based on handoff mode
+        match sub_ctx.handoff_mode {
+            HandoffMode::User => Ok((helper_name, serde_json::json!({ "__handoff_stop": true }))),
+            HandoffMode::ThenContinue => {
+                let msg = format!(
+                    "Helper {} responded to the user. Continue your task.",
+                    &helper_name
+                );
+                Ok((helper_name, serde_json::json!({ "status": msg })))
+            }
+            HandoffMode::Return => Ok((helper_name, serde_json::json!({ "result": sub_response }))),
         }
     }
 

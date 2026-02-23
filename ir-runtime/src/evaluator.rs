@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// Synchronous tool handler for workflow-level function calls.
 /// For async tool execution (engine-level tool_call intents), the engine
 /// handles dispatch directly via its own ToolImplementation type.
-pub type SyncToolFn = Box<dyn Fn(Vec<Value>) -> Result<Value, String> + Send + Sync>;
+pub type SyncToolFn = std::sync::Arc<dyn Fn(Vec<Value>) -> Result<Value, String> + Send + Sync>;
 
 pub struct Evaluator<'a> {
     pub ir: &'a AgentIR,
@@ -354,24 +354,26 @@ impl<'a> Evaluator<'a> {
                     return Err(AuwgentError::UnknownHelper(helper_name.clone()));
                 }
 
-                // Mock Helper Execution
-                // In a real implementation, this would:
-                // 1. Create a new Helper Runtime
-                // 2. Pass input (args mapped to helper input schema)
-                // 3. Run the helper's default prompt/workflow
-                Ok(Value::String(format!(
-                    "Helper '{}' executed with args: {:?}",
-                    helper_name, arg_values
-                )))
+                // Actually running a helper from inside the sync evaluator is tricky because
+                // execute_sub_agent is async. Right now, evaluator.rs is completely synchronous.
+                // We will return a structured JSON to the Engine to handle this.
+                Ok(serde_json::json!({
+                    "__requires_async_helper_call": true,
+                    "helper_name": helper_name,
+                    "args": arg_values
+                }))
             }
 
             Expression::Transfer { target, mode } => {
                 let target_val = self.evaluate(target, scope)?;
-                // Mock Transfer Execution
-                Ok(Value::String(format!(
-                    "Transferred to '{}' with mode '{}'",
-                    target_val, mode
-                )))
+                let target_str = target_val.as_str().unwrap_or("").to_string();
+
+                // Similar to HelperCall, we return a structured payload for the engine to await.
+                Ok(serde_json::json!({
+                    "__requires_async_transfer": true,
+                    "target": target_str,
+                    "mode": mode
+                }))
             }
 
             Expression::Parallel { body } => {

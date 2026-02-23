@@ -1,106 +1,89 @@
-// Auto-generated types for Manger
+// Auto-generated types for Basic
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type MangerIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
-  workflows: ({ flowName: "get_student_grade"; returns: string[] })[];
-  helpers: undefined;
+type BasicIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
+  workflows: undefined;
+  helpers: ({ name: "BasicHelper1" } | { name: "BasicHelper2" } | { name: "BasicHelper3" } | { name: "BasicHelper4" } | { name: "BasicHelper5" })[];
 };
-const agentIR = _importedIR as unknown as MangerIR;
-
-export type Student = {
-
-    name: string;
-
-    id: string;
-
-    location: string;
-
-    grades: string[];
-}
-
-
-/** Output type */
-export type Simple = {
-
-    text: string;
-}
-
-export type MangerInput = {
+const agentIR = _importedIR as unknown as BasicIR;
+export type BasicInput = {
 
 }
 
-export type MangerOutput =
-    | { type: "Simple";
-    text: string;
-}
-    | { type: "Student";
-    name: string;
-    id: string;
-    location: string;
-    grades: string[];
-};
+export type BasicHelper4Output = {
 
-export type MangerContext = {
-    user_name: string;
-    id: string;
 }
 
-export type MangerTools = {
-    get_student_details: (args: { id: string }) => Promise<Student>;
-    edit_student_details: (args: { id: string }) => Promise<Student>;
+export type BasicHelper5Output = {
+
+}
+
+export type BasicBaseOutput = {
+
+}
+
+/** Union of possible output types (includes transfer destinations) */
+export type BasicOutput = BasicBaseOutput | BasicHelper4Output | BasicHelper5Output;
+
+export type BasicContext = {
+
+}
+
+export type BasicTools = {
+    one: (args: {  }) => Promise<string>;
+    two: (args: {  }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type MangerCustomIntents = never;
+export type BasicCustomIntents = never;
 
 /**
- * API keys required for Manger
+ * API keys required for Basic
  */
-export type MangerApiKeys = {
+export type BasicApiKeys = {
     geminiApiKey: string;
     openaiApiKey: string;
 }
 
 
-export type MangerConfig = {
-    tools: MangerTools;
+export type BasicConfig = {
+    tools: BasicTools;
     middleware?: import("@auwgent/runtime").Middleware<
         typeof agentIR,
-        MangerCustomIntents,
-        MangerOutput,
-        MangerTools
+        BasicCustomIntents,
+        never,
+        BasicTools
     >[];
-    context: MangerContext;
-    apiKeys: MangerApiKeys;
+    apiKeys: BasicApiKeys;
 }
 
-export function createManger(config: MangerConfig) {
+export function createBasic(config: BasicConfig) {
     return createAuwgent<
         typeof agentIR,
-        MangerCustomIntents,
-        MangerOutput,
-        MangerTools
+        BasicCustomIntents,
+        never,
+        BasicTools
     >(agentIR, {
         tools: config.tools,
         middleware: config.middleware,
-        context: config.context,
+        
         apiKeys: config.apiKeys
     });
 }
 
-export type MangerAgent = ReturnType<typeof createManger>;
-export type MangerMiddleware = import("@auwgent/runtime").Middleware<
+export type BasicAgent = ReturnType<typeof createBasic>;
+export type BasicMiddleware = import("@auwgent/runtime").Middleware<
     typeof agentIR,
-    MangerCustomIntents,
-    MangerOutput,
-    MangerTools
+    BasicCustomIntents,
+    never,
+    BasicTools
 >;
-export const auwgent = createManger;
-export type AuwgentTools = MangerTools;
-export type AuwgentConfig = MangerConfig;
-export type AuwgentAgent = MangerAgent;
-export type AuwgentMiddleware = MangerMiddleware;
-export type AuwgentContext = MangerContext;
+export const auwgent = createBasic;
+export type AuwgentTools = BasicTools;
+export type AuwgentConfig = BasicConfig;
+export type AuwgentAgent = BasicAgent;
+export type AuwgentMiddleware = BasicMiddleware;
+export type AuwgentContext = BasicContext;

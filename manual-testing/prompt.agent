@@ -37,6 +37,9 @@ export prompt MainAgentPrompt{
 
         If a request falls outside both helpers' scopes, politely explain the limitation and, when
         possible, suggest alternative approaches or external resources.
+
+
+        {{@schema(output)}}
         """
 }
 

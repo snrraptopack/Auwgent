@@ -1,52 +1,64 @@
-import {Gemini} from "./models"
-
-type Student{
-    name:string,
-    id:string,
-    location:string,
-    grades:string[]
-}
-
-
-output type Simple{
-    text:string 
-} 
-
-prompt Alone(user_name:string, id:string){
-    """
-    You are an ai agent that gives a user concise information about what they do....
-    the user name is : {{user_name}} and wit an id of {{id}}
-
-    your output should be in this format though not all field will be required {{@schema(output)}}
-    """
-}
-
-agent Manger{
+agent Basic{
 
     default config{
-        model:Gemini
-        prompt:Alone(ctx.user_name,ctx.id)
+        model:openai("....")
+        prompt:"a helpful agent"
     }
 
-    config another{
-        model: openai("gpt-anything")
-        prompt:Alone(ctx.user_name,ctx.id)
-    }
-    context{
-        user_name:string,
-        id:string
-    }
-
-    output: Simple | Student 
-
-    tools{
-        get_student_details(id:string):Student @desc "get the deatails of the the student"
-        edit_student_details(id:string):Student @desc "edit the details of the student"
+    // all every call here is from the parent model to select which helper
+    helpers{
+        BasicHelper1 // helpper with no inhrited tools from parent
+        BasicHelper2 with tools {all} // helper with tools from parent all tools
+        BasicHelper3 with tools {one} // helper with only tool name one inherited
+        BasicHelper4 with tools {all} handoff user // helper with inherited tool all from parent and a handoff to user
+        BasicHelper5 with tools {one} handoff user then continue   // helper with inherited tool all from parent and a handoff to user then the parent agent to continue
     }
 
-    workflow get_student_grade(id:string):string[]{
-        description: "used for getting only the grade of the student"
-        let result = get_student_details(id)
-        return result.grades
+    tool one():string 
+    tool two():string
+}
+
+helper BasicHelper1{
+    description:"nothing"
+
+    default config{
+        model:gemini(".....")
+        prompt: "a helperful helper"
+    }
+}
+
+helper BasicHelper2{
+     description:"nothing2"
+
+    default config{
+        model:gemini(".....")
+        prompt: "a helperful helper"
+    }
+}
+
+helper BasicHelper3{
+     description:"nothing2"
+
+    default config{
+        model:gemini(".....")
+        prompt: "a helperful helper"
+    }
+}
+
+helper BasicHelper4{
+     description:"nothing2"
+
+    default config{
+        model:gemini(".....")
+        prompt: "a helperful helper"
+    }
+}
+
+helper BasicHelper5{
+     description:"nothing2"
+
+    default config{
+        model:gemini(".....")
+        prompt: "a helperful helper"
     }
 }
