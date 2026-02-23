@@ -1,66 +1,31 @@
-import { createManger, MangerConfig, Student, type MangerMiddleware } from "./main.agent.types";
-
-const geminiApiKey = Bun.env.GEMINI_API_KEY
+import { createRouter, RouterMiddleware, type RouterConfig } from "./main.agent.types"
 
 
-let student: Student = {
-    name: "Amihere Theophilus",
-    id: "300",
-    location: "Ghana",
-    grades: ["A", "B", "C"]
+const Logging: RouterMiddleware = {
+    name: "Logging",
+    onIntent: (name, value, _ctx) => {
+        console.log(name, value)
+    },
+
+    onError: (error, session) => {
+        console.log(error)
+    }
 }
 
-const LoggingMiddleware: MangerMiddleware = {
-    name: "Logger",
-    onRunStart: async (session, ctx) => {
-        ctx.startTime = Date.now();
-        console.log(`[Middleware] Run starting with ${session.turns.length} past turns.`);
-        return session;
-    },
-    onIntent: (name, value, ctx) => {
-        console.log(`[Middleware Intent] ${name}`);
-        if (ctx.rawBlock) {
-            console.log(`[Raw YAML]\n${ctx.rawBlock}`);
-        }
-    },
-    onRunComplete: async (session, ctx) => {
-        console.log(`[Middleware] Run finished in ${Date.now() - ctx.startTime}ms`);
-    }
-};
 
-let config: MangerConfig = {
-    tools: {
-        get_student_details: async ({ id }) => student,
-        edit_student_details: async ({ id }) => student
-    },
-    middleware: [LoggingMiddleware],
+const config: RouterConfig = {
+    middleware: [Logging],
     apiKeys: {
-        geminiApiKey: geminiApiKey ?? "",
-        openaiApiKey: ""
+        geminiApiKey: Bun.env.GEMINI_API_KEY ?? ""
     },
-    context: {
-        user_name: "Theophilus",
-        id: "300"
-    }
 }
 
-const chef = createManger(config)
+const router = createRouter(config)
 
-console.log(chef.generatePrompt())
+const session = await router.run("hello")
 
 
-chef.onIntent((name, value) => {
-
-    if (name === "response_schema") {
-        console.log(value.type === "Simple" ? value.text : value)
-    }
-})
+console.log(JSON.stringify(session, null, 2))
 
 
 
-if (!geminiApiKey) {
-    console.log(chef.generatePrompt())
-} else {
-    let session = await chef.run("what my details")
-    console.log(JSON.stringify(session.turns, null, 2))
-}

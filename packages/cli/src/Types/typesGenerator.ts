@@ -411,15 +411,14 @@ export type ${agent.name}CustomIntents = never;
 function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boolean, requiredProviders: Set<string>): string {
     const toolsType = hasTools ? `${agent.name}Tools` : 'Record<string, never>';
     const hasApiKeys = requiredProviders.size > 0;
+    const outputType = agent.output ? `${agent.name}Output` : 'never';
 
     const configProps: string[] = [];
-    configProps.push(`    tools: ${toolsType};`);
-    configProps.push(`    middleware?: import("@auwgent/runtime").Middleware<
-        typeof agentIR,
-        ${agent.name}CustomIntents,
-        ${agent.output ? `${agent.name}Output` : 'never'},
-        ${toolsType}
-    >[];`);
+    if (hasTools) {
+        configProps.push(`    tools: ${toolsType};`);
+    }
+    // RouterMiddleware is derived below from the explicit RouterAgent type — no circular ref.
+    configProps.push(`    middleware?: ${agent.name}Middleware[];`);
     if (hasContext) {
         configProps.push(`    context: ${agent.name}Context;`);
     }
@@ -427,32 +426,43 @@ function generateAgentFactory(agent: AgentIR, hasTools: boolean, hasContext: boo
         configProps.push(`    apiKeys: ${agent.name}ApiKeys;`);
     }
 
+    const factoryToolsArg = hasTools ? 'tools: config.tools,' : 'tools: {} as Record<string, never>,';
+
     return `
+// Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
+export type ${agent.name}Agent = import("@auwgent/runtime").TypedAuwgent<
+    typeof agentIR,
+    ${agent.name}CustomIntents,
+    ${outputType},
+    ${toolsType}
+>;
+
+/** Middleware object type — consistent with \`${agent.name}Agent.onIntent\` intent narrowing */
+export type ${agent.name}Middleware = import("@auwgent/runtime").Middleware<
+    typeof agentIR,
+    ${agent.name}CustomIntents,
+    ${outputType},
+    ${toolsType}
+>;
+
 export type ${agent.name}Config = {
 ${configProps.join('\n')}
 }
 
-export function create${agent.name}(config: ${agent.name}Config) {
+export function create${agent.name}(config: ${agent.name}Config): ${agent.name}Agent {
     return createAuwgent<
         typeof agentIR,
         ${agent.name}CustomIntents,
-        ${agent.output ? `${agent.name}Output` : 'never'},
-        ${agent.name}Tools
+        ${outputType},
+        ${toolsType}
     >(agentIR, {
-        tools: config.tools,
-        middleware: config.middleware,
+        ${factoryToolsArg}
+        middleware: config.middleware as any,
         ${hasContext ? 'context: config.context,' : ''}
         ${hasApiKeys ? 'apiKeys: config.apiKeys' : ''}
     });
 }
 
-export type ${agent.name}Agent = ReturnType<typeof create${agent.name}>;
-export type ${agent.name}Middleware = import("@auwgent/runtime").Middleware<
-    typeof agentIR,
-    ${agent.name}CustomIntents,
-    ${agent.output ? `${agent.name}Output` : 'never'},
-    ${toolsType}
->;
 export const auwgent = create${agent.name};
 export type AuwgentTools = ${toolsType};
 export type AuwgentConfig = ${agent.name}Config;

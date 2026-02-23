@@ -5,6 +5,7 @@ use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, Threadsafe
 use napi_derive::napi;
 
 use ir_runtime::runtime::AuwgentEngine;
+use ir_runtime::runtime::drivers::ModelDriver;
 use ir_runtime::runtime::drivers::gemini::GeminiDriver;
 use ir_runtime::runtime::drivers::openai::OpenAIDriver;
 use ir_runtime::runtime::engine::{IntentControl, ToolImplementation};
@@ -60,7 +61,10 @@ impl Auwgent {
         let engine = self.engine.clone();
         self.rt.block_on(async {
             let mut eng = engine.lock().await;
-            eng.register_driver("gemini", Box::new(GeminiDriver::new(api_key)));
+            eng.register_driver(
+                "gemini",
+                std::sync::Arc::new(GeminiDriver::new(api_key)) as std::sync::Arc<dyn ModelDriver>,
+            );
         });
         Ok(())
     }
@@ -71,9 +75,17 @@ impl Auwgent {
         let engine = self.engine.clone();
         self.rt.block_on(async {
             let mut eng = engine.lock().await;
-            eng.register_driver("openai", Box::new(OpenAIDriver::new(api_key.clone(), None)));
+            eng.register_driver(
+                "openai",
+                std::sync::Arc::new(OpenAIDriver::new(api_key.clone(), None))
+                    as std::sync::Arc<dyn ModelDriver>,
+            );
             if let Some(url) = base_url {
-                eng.register_driver("custom", Box::new(OpenAIDriver::new(api_key, Some(url))));
+                eng.register_driver(
+                    "custom",
+                    std::sync::Arc::new(OpenAIDriver::new(api_key, Some(url)))
+                        as std::sync::Arc<dyn ModelDriver>,
+                );
             }
         });
         Ok(())

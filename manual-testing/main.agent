@@ -1,64 +1,49 @@
-agent Basic{
+
+
+
+agent Router{
 
     default config{
-        model:openai("....")
-        prompt:"a helpful agent"
+        model:gemini("gemini-2.5-flash")
+        prompt{
+            """
+                You are an inteligent router based on the question either answer 
+                or give to a dedicated helper to use
+            """
+        }
     }
 
-    // all every call here is from the parent model to select which helper
-    helpers{
-        BasicHelper1 // helpper with no inhrited tools from parent
-        BasicHelper2 with tools {all} // helper with tools from parent all tools
-        BasicHelper3 with tools {one} // helper with only tool name one inherited
-        BasicHelper4 with tools {all} handoff user // helper with inherited tool all from parent and a handoff to user
-        BasicHelper5 with tools {one} handoff user then continue   // helper with inherited tool all from parent and a handoff to user then the parent agent to continue
+    helpers {
+        FoodWizard handoff user
+        Story handoff user then continue
     }
 
-    tool one():string 
-    tool two():string
 }
 
-helper BasicHelper1{
-    description:"nothing"
+
+helper FoodWizard{
+    description:"it is specialized in food recommendations"
 
     default config{
-        model:gemini(".....")
-        prompt: "a helperful helper"
-    }
-}
-
-helper BasicHelper2{
-     description:"nothing2"
-
-    default config{
-        model:gemini(".....")
-        prompt: "a helperful helper"
-    }
-}
-
-helper BasicHelper3{
-     description:"nothing2"
-
-    default config{
-        model:gemini(".....")
-        prompt: "a helperful helper"
+        model:gemini("gemini-2.5-flash")
+        prompt{
+            """
+                You are a food recommender when someone want to have some food suggestion
+                please kindly help them....
+            """
+        }
     }
 }
 
-helper BasicHelper4{
-     description:"nothing2"
+helper Story{
+    description: "specialized for telling stories"
 
     default config{
-        model:gemini(".....")
-        prompt: "a helperful helper"
-    }
-}
-
-helper BasicHelper5{
-     description:"nothing2"
-
-    default config{
-        model:gemini(".....")
-        prompt: "a helperful helper"
+        model:gemini("gemini-2.5-flash")
+        prompt{
+            """
+               You are a specialized story teller come up with stories the user asks
+            """
+        }
     }
 }

@@ -1,89 +1,86 @@
-// Auto-generated types for Basic
+// Auto-generated types for Router
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type BasicIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
+type RouterIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
   workflows: undefined;
-  helpers: ({ name: "BasicHelper1" } | { name: "BasicHelper2" } | { name: "BasicHelper3" } | { name: "BasicHelper4" } | { name: "BasicHelper5" })[];
+  helpers: ({ name: "FoodWizard" } | { name: "Story" })[];
 };
-const agentIR = _importedIR as unknown as BasicIR;
-export type BasicInput = {
+const agentIR = _importedIR as unknown as RouterIR;
+export type RouterInput = {
 
 }
 
-export type BasicHelper4Output = {
+export type FoodWizardOutput = {
 
 }
 
-export type BasicHelper5Output = {
+export type StoryOutput = {
 
 }
 
-export type BasicBaseOutput = {
+export type RouterBaseOutput = {
 
 }
 
 /** Union of possible output types (includes transfer destinations) */
-export type BasicOutput = BasicBaseOutput | BasicHelper4Output | BasicHelper5Output;
+export type RouterOutput = RouterBaseOutput | FoodWizardOutput | StoryOutput;
 
-export type BasicContext = {
+export type RouterContext = {
 
-}
-
-export type BasicTools = {
-    one: (args: {  }) => Promise<string>;
-    two: (args: {  }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type BasicCustomIntents = never;
+export type RouterCustomIntents = never;
 
 /**
- * API keys required for Basic
+ * API keys required for Router
  */
-export type BasicApiKeys = {
+export type RouterApiKeys = {
     geminiApiKey: string;
-    openaiApiKey: string;
 }
 
 
-export type BasicConfig = {
-    tools: BasicTools;
-    middleware?: import("@auwgent/runtime").Middleware<
-        typeof agentIR,
-        BasicCustomIntents,
-        never,
-        BasicTools
-    >[];
-    apiKeys: BasicApiKeys;
+// Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
+export type RouterAgent = import("@auwgent/runtime").TypedAuwgent<
+    typeof agentIR,
+    RouterCustomIntents,
+    never,
+    Record<string, never>
+>;
+
+/** Middleware object type — consistent with `RouterAgent.onIntent` intent narrowing */
+export type RouterMiddleware = import("@auwgent/runtime").Middleware<
+    typeof agentIR,
+    RouterCustomIntents,
+    never,
+    Record<string, never>
+>;
+
+export type RouterConfig = {
+    middleware?: RouterMiddleware[];
+    apiKeys: RouterApiKeys;
 }
 
-export function createBasic(config: BasicConfig) {
+export function createRouter(config: RouterConfig): RouterAgent {
     return createAuwgent<
         typeof agentIR,
-        BasicCustomIntents,
+        RouterCustomIntents,
         never,
-        BasicTools
+        Record<string, never>
     >(agentIR, {
-        tools: config.tools,
-        middleware: config.middleware,
+        tools: {} as Record<string, never>,
+        middleware: config.middleware as any,
         
         apiKeys: config.apiKeys
     });
 }
 
-export type BasicAgent = ReturnType<typeof createBasic>;
-export type BasicMiddleware = import("@auwgent/runtime").Middleware<
-    typeof agentIR,
-    BasicCustomIntents,
-    never,
-    BasicTools
->;
-export const auwgent = createBasic;
-export type AuwgentTools = BasicTools;
-export type AuwgentConfig = BasicConfig;
-export type AuwgentAgent = BasicAgent;
-export type AuwgentMiddleware = BasicMiddleware;
-export type AuwgentContext = BasicContext;
+export const auwgent = createRouter;
+export type AuwgentTools = Record<string, never>;
+export type AuwgentConfig = RouterConfig;
+export type AuwgentAgent = RouterAgent;
+export type AuwgentMiddleware = RouterMiddleware;
+export type AuwgentContext = RouterContext;

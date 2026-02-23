@@ -1,15 +1,20 @@
 {
-  "name": "Basic",
+  "name": "Router",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "openai",
-          "modelName": "...."
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "value": "a helpful agent",
-          "type": "literal"
+          "type": "parts",
+          "value": [
+            {
+              "type": "literal",
+              "value": "\r\n                You are an inteligent router based on the question either answer \r\n                or give to a dedicated helper to use\r\n            "
+            }
+          ]
         }
       },
       "namedConfig": []
@@ -18,35 +23,27 @@
   "input": null,
   "output": null,
   "context": null,
-  "tools": [
-    {
-      "description": "",
-      "params": {},
-      "name": "one",
-      "returns": "string"
-    },
-    {
-      "description": "",
-      "params": {},
-      "name": "two",
-      "returns": "string"
-    }
-  ],
+  "tools": [],
   "workflows": [],
   "helpers": [
     {
-      "name": "BasicHelper1",
-      "description": "nothing",
+      "name": "FoodWizard",
+      "description": "it is specialized in food recommendations",
       "modelConfig": [
         {
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "....."
+              "modelName": "gemini-2.5-flash"
             },
             "prompt": {
-              "value": "a helperful helper",
-              "type": "literal"
+              "type": "parts",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n                You are a food recommender when someone want to have some food suggestion\r\n                please kindly help them....\r\n            "
+                }
+              ]
             }
           },
           "namedConfig": []
@@ -59,90 +56,23 @@
       "workflows": []
     },
     {
-      "name": "BasicHelper2",
-      "description": "nothing2",
+      "name": "Story",
+      "description": "specialized for telling stories",
       "modelConfig": [
         {
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "....."
+              "modelName": "gemini-2.5-flash"
             },
             "prompt": {
-              "value": "a helperful helper",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
-    },
-    {
-      "name": "BasicHelper3",
-      "description": "nothing2",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "....."
-            },
-            "prompt": {
-              "value": "a helperful helper",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
-    },
-    {
-      "name": "BasicHelper4",
-      "description": "nothing2",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "....."
-            },
-            "prompt": {
-              "value": "a helperful helper",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
-    },
-    {
-      "name": "BasicHelper5",
-      "description": "nothing2",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "....."
-            },
-            "prompt": {
-              "value": "a helperful helper",
-              "type": "literal"
+              "type": "parts",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n               You are a specialized story teller come up with stories the user asks\r\n            "
+                }
+              ]
             }
           },
           "namedConfig": []
@@ -156,18 +86,8 @@
     }
   ],
   "tests": [],
-  "helperToolGrants": {
-    "BasicHelper2": "all",
-    "BasicHelper3": [
-      "one"
-    ],
-    "BasicHelper4": "all",
-    "BasicHelper5": [
-      "one"
-    ]
-  },
   "helperHandoff": {
-    "BasicHelper4": "user",
-    "BasicHelper5": "thenContinue"
+    "FoodWizard": "user",
+    "Story": "thenContinue"
   }
 }

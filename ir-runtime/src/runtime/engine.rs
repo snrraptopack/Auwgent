@@ -50,7 +50,7 @@ pub struct AuwgentEngine {
     session: SessionState,
     tools: HashMap<String, ToolImplementation>,
     orchestrator: Orchestrator,
-    drivers: HashMap<String, Box<dyn ModelDriver>>,
+    drivers: HashMap<String, Arc<dyn ModelDriver>>,
     context: Option<Value>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
@@ -100,7 +100,7 @@ impl AuwgentEngine {
         }
     }
 
-    pub fn register_driver(&mut self, provider_type: &str, driver: Box<dyn ModelDriver>) {
+    pub fn register_driver(&mut self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
         self.drivers.insert(provider_type.to_string(), driver);
     }
 
@@ -663,185 +663,105 @@ impl AuwgentEngine {
         Ok((wf_name, last_result))
     }
 
-    /// Execute a helper as a fully configured sub-agent.
+    /// Execute a helper as a fully-featured nested engine.
     ///
-    /// This builds a temporary sub-agent context (IR with authorized tools,
-    /// handoff mode), generates its prompt, runs the LLM stream using the
-    /// parent's registered drivers, and routes the response based on the
-    /// handoff configuration.
-    async fn execute_helper(&mut self, call: &Value) -> AuwgentResult<(String, Value)> {
-        let helper_name = call["type"].as_str().unwrap_or("").to_string();
-        let args = call["args"].clone();
+    /// The helper gets:
+    ///  - Its own AgentIR (correct prompt, tools, workflows, output schema)
+    ///  - All authorized parent tools (filtered via `helperToolGrants`)
+    ///  - All parent drivers (shared via Arc — no recreation)
+    ///  - Full agentic loop via `sub_engine.run()` — multi-turn, tool calls,
+    ///    skip/override controls, workflows — everything the main agent can do.
+    ///
+    /// The only thing helpers cannot do is invoke other helpers.
+    ///
+    /// Returns a `BoxFuture` (heap-allocated future) to break the async recursion
+    /// cycle: `run → process_intents → execute_workflow → execute_helper → sub_engine.run()`
+    fn execute_helper<'a>(
+        &'a mut self,
+        call: &'a Value,
+    ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value)>> {
+        Box::pin(async move {
+            use crate::runtime::helper_runner::{HandoffMode, build_sub_agent_context};
 
-        // 1. Build the sub-agent context (IR, authorized tools, handoff mode)
-        let sub_ctx =
-            crate::runtime::helper_runner::build_sub_agent_context(&self.ir, &helper_name)?;
+            let helper_name = call["type"].as_str().unwrap_or("").to_string();
+            let args = call["args"].clone();
 
-        // 2. Evaluate the sub-agent's prompt
-        let evaluator = Evaluator::new(&sub_ctx.ir);
-        let mut scope = HashMap::new();
-        if let Some(obj) = args.as_object() {
-            for (k, v) in obj {
-                scope.insert(k.clone(), v.clone());
+            // 1. Build the sub-agent IR + determine which parent tools are authorized
+            let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
+
+            // 2. Construct a fresh sub-engine with the helper's IR
+            let mut sub_engine = AuwgentEngine::new(sub_ctx.ir);
+
+            // 3. Share all parent drivers (Arc clone, zero-cost)
+            for (provider_type, driver) in &self.drivers {
+                sub_engine
+                    .drivers
+                    .insert(provider_type.clone(), Arc::clone(driver));
             }
-        }
-        if let Some(ctx) = self.context.as_ref() {
-            scope.insert("context".to_string(), ctx.clone());
-        }
 
-        let helper_prompt = if let Some(entry) = sub_ctx.ir.model_config.first() {
-            if let Some(cfg) = &entry.default_config {
-                let prompt_val = evaluator.evaluate(&cfg.prompt, &mut scope)?;
-                prompt_val.as_str().unwrap_or("").to_string()
-            } else {
-                String::new()
-            }
-        } else {
-            String::new()
-        };
-
-        // 3. Append helper-specific intents (tools, workflows, output schemas)
-        let helper_intents = crate::intents::generate_intents(&sub_ctx.ir);
-        let full_prompt = if helper_intents.is_empty() {
-            helper_prompt
-        } else {
-            format!("{}\n\n{}", helper_prompt, helper_intents)
-        };
-
-        // 4. Resolve model provider and name
-        let (provider_type, model_name) = if let Some(entry) = sub_ctx.ir.model_config.first() {
-            if let Some(cfg) = &entry.default_config {
-                let model_info = evaluator.evaluate_model(cfg, &mut scope)?;
-                let p_type = model_info["type"].as_str().unwrap_or("gemini").to_string();
-                let m_name = model_info["modelName"]
-                    .as_str()
-                    .unwrap_or("gemini-2.0-flash")
-                    .to_string();
-                (p_type, m_name)
-            } else {
-                ("gemini".to_string(), "gemini-2.0-flash".to_string())
-            }
-        } else {
-            ("gemini".to_string(), "gemini-2.0-flash".to_string())
-        };
-
-        // 5. Get the driver from the parent engine
-        let driver = self
-            .drivers
-            .get(&provider_type)
-            .ok_or_else(|| AuwgentError::NoDriver)?;
-
-        // 6. Build the messages for the sub-agent
-        let args_str = serde_json::to_string(&args).unwrap_or_default();
-        let messages = vec![
-            crate::runtime::session::Message::system(&full_prompt),
-            crate::runtime::session::Message::user(args_str),
-        ];
-
-        // 7. Set up an orchestrator for the sub-agent's response
-        let mut sub_orchestrator = Orchestrator::new(None);
-        sub_orchestrator.register_intent("tool_call");
-        sub_orchestrator.register_intent("workflow_call");
-        sub_orchestrator.register_intent("response_schema");
-        sub_orchestrator.register_intent("response_text");
-
-        let sub_intents: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
-        let sub_intents_clone = Arc::clone(&sub_intents);
-        sub_orchestrator.on_intent_ready(Arc::new(move |name, value| {
-            if let Ok(mut pending) = sub_intents_clone.lock() {
-                pending.push((name, value));
-            }
-        }));
-
-        // If handoff mode routes to user, wire partial handler too
-        use crate::runtime::helper_runner::HandoffMode;
-        if sub_ctx.handoff_mode == HandoffMode::User
-            || sub_ctx.handoff_mode == HandoffMode::ThenContinue
-        {
-            if let Some(ref handler) = self.partial_intent_handler {
-                let h = handler.clone();
-                sub_orchestrator.on_intent_partial(Arc::new(move |name, value| {
-                    h(name, value);
-                }));
-            }
-        }
-
-        // 8. Run the LLM stream for the sub-agent
-        let mut stream = driver
-            .stream_generate(&model_name, &messages, None)
-            .await
-            .map_err(AuwgentError::Driver)?;
-
-        let mut sub_response = String::new();
-        while let Some(chunk_res) = stream.next().await {
-            match chunk_res {
-                Ok(text) => {
-                    sub_response.push_str(&text);
-                    sub_orchestrator.write(&text);
+            // 4. Inject authorized parent tools into the sub-engine
+            for tool_name in &sub_ctx.authorized_parent_tool_names {
+                if let Some(imp) = self.tools.get(tool_name) {
+                    sub_engine.tools.insert(tool_name.clone(), Arc::clone(imp));
                 }
-                Err(e) => return Err(AuwgentError::StreamError(e)),
             }
-        }
 
-        // Finalize the orchestrator
-        let _parsed = sub_orchestrator.end();
+            // 5. Propagate context
+            if let Some(ctx) = &self.context {
+                sub_engine.set_context(ctx.clone());
+            }
 
-        // 9. Process the sub-agent's intents
-        let collected: Vec<(String, Value)> = {
-            let mut pending = sub_intents.lock().unwrap();
-            std::mem::take(&mut *pending)
-        };
-
-        // For intents that need to go to the user (handoff modes), fire them
-        // through the parent's intent handler
-        for (intent_name, intent_value) in &collected {
-            match intent_name.as_str() {
-                "tool_call" => {
-                    // Execute tool using the authorized parent tools
-                    let tool_name = intent_value["type"].as_str().unwrap_or("").to_string();
-                    if sub_ctx.authorized_parent_tool_names.contains(&tool_name) {
-                        if let Some(imp) = self.tools.get(&tool_name) {
-                            let tool_args = intent_value["args"].clone();
-                            match imp(tool_args).await {
-                                Ok(_result) => {
-                                    // Tool executed successfully for the sub-agent.
-                                    // In a full multi-turn sub-agent loop we'd feed this back.
-                                    // For now, single-turn sub-agent execution.
-                                }
-                                Err(_e) => {}
-                            }
-                        }
+            // 6. Wire intent handlers based on handoff mode
+            match sub_ctx.handoff_mode {
+                HandoffMode::User | HandoffMode::ThenContinue => {
+                    // The helper speaks directly to the user —
+                    // give it the parent's exact intent + partial handlers
+                    if let Some(handler) = &self.intent_handler {
+                        sub_engine.on_intent(Arc::clone(handler));
+                    }
+                    if let Some(handler) = &self.partial_intent_handler {
+                        let h = Arc::clone(handler);
+                        sub_engine.on_intent_partial(Arc::new(move |name, value| {
+                            h(name, value);
+                        }));
                     }
                 }
-                "response_text" | "response_schema" => {
-                    // Route based on handoff mode
-                    match sub_ctx.handoff_mode {
-                        HandoffMode::User | HandoffMode::ThenContinue => {
-                            // Fire directly to the user via parent's intent handler
-                            self.fire_intent(intent_name.clone(), intent_value.clone())
-                                .await;
-                        }
-                        HandoffMode::Return => {
-                            // Don't fire to user — this is internal
-                        }
-                    }
+                HandoffMode::Return => {
+                    // The helper is an internal reasoning step — silent to the user.
+                    // We attach no handlers; sub_engine runs silently.
                 }
-                _ => {}
             }
-        }
 
-        // 10. Return based on handoff mode
-        match sub_ctx.handoff_mode {
-            HandoffMode::User => Ok((helper_name, serde_json::json!({ "__handoff_stop": true }))),
-            HandoffMode::ThenContinue => {
-                let msg = format!(
-                    "Helper {} responded to the user. Continue your task.",
-                    &helper_name
-                );
-                Ok((helper_name, serde_json::json!({ "status": msg })))
+            // 7. Run the full nested agentic loop
+            sub_engine.run(Some(args)).await?;
+
+            // 8. Extract the result & route based on handoff mode
+            let final_resp = sub_engine
+                .session
+                .turns
+                .last()
+                .map(|t| t.model_response.clone())
+                .unwrap_or_default();
+
+            match sub_ctx.handoff_mode {
+                HandoffMode::User => {
+                    // Helper spoke to user, parent engine stops this turn
+                    Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                }
+                HandoffMode::ThenContinue => {
+                    // Helper spoke to user, parent engine continues
+                    let msg = format!(
+                        "Helper {} delivered a response to the user. Continue your task.",
+                        &helper_name
+                    );
+                    Ok((helper_name, serde_json::json!({ "status": msg })))
+                }
+                HandoffMode::Return => {
+                    // Return the helper's final output to the parent as a tool result
+                    Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                }
             }
-            HandoffMode::Return => Ok((helper_name, serde_json::json!({ "result": sub_response }))),
-        }
+        }) // end Box::pin
     }
 
     pub fn write_llm_chunk(&mut self, chunk: &str) {
