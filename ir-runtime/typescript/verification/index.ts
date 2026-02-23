@@ -28,7 +28,7 @@ router.onIntent((name, value) => {
 })
 
 console.log(router.generatePrompt())
-const session = await router.run("suggest a food")
+const session = await router.run("tell me a story")
 
 //console.log(JSON.stringify(session, null, 2))
 
