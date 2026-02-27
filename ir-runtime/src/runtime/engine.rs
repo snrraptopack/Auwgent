@@ -213,13 +213,20 @@ impl AuwgentEngine {
 
         // 3. Build the initial user input
         let initial_user_input = match input {
-            Some(Value::String(s)) => s,
-            Some(v) => serde_json::to_string(&v).map_err(AuwgentError::Serialization)?,
-            None => "".to_string(),
+            Some(Value::String(s)) => Some(s),
+            Some(v) => Some(serde_json::to_string(&v).map_err(AuwgentError::Serialization)?),
+            None => None,
         };
 
-        // Start the first turn
-        self.session.start_turn(&initial_user_input);
+        // Start the first turn if an explicit input is provided.
+        // If not (e.g. None), we assume the host wrapper (like TS) already pushed the turn
+        // onto the session history, or we are continuing from where we left off.
+        if let Some(user_input) = initial_user_input {
+            self.session.start_turn(&user_input);
+        } else if self.session.turns.is_empty() {
+            // Safety fallback: if no input and session is empty, start one
+            self.session.start_turn("");
+        }
 
         // Read max loops from lifecycle config, fallback to 12
         let max_loops: usize = self

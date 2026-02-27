@@ -1,5 +1,5 @@
 // AUWGENT YAML-Lite v1 — PEG Grammar Specification
-// This is DOCUMENTATION ONLY. Not executed. Hand-implemented in TypeScript.
+// This is DOCUMENTATION ONLY. Not executed. Hand-implemented in Rust.
 //
 // Design Principles:
 //   - Streaming-safe (token-by-token)

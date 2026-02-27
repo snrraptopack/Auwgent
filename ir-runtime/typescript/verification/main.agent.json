@@ -1,5 +1,5 @@
 {
-  "name": "Router",
+  "name": "Manager",
   "modelConfig": [
     {
       "defaultConfig": {
@@ -8,11 +8,34 @@
           "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "type": "parts",
+          "type": "promptRef",
+          "name": "managerPrompt",
+          "params": [
+            "user_name"
+          ],
+          "args": [
+            {
+              "type": "contextRef",
+              "property": "user_name"
+            }
+          ],
           "value": [
             {
-              "type": "literal",
-              "value": "\r\n                You are an inteligent router based on the question either answer \r\n                or give to a dedicated helper to use\r\n            "
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n        You are helpful assistant you are to help student navigate and answer questions....\r\n        please be polite and be direct\r\n        the name of the user is "
+                },
+                {
+                  "type": "varRef",
+                  "value": "user_name"
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n    "
+                }
+              ]
             }
           ]
         }
@@ -20,89 +43,57 @@
       "namedConfig": []
     }
   ],
-  "input": {
-    "text": {
+  "input": null,
+  "output": null,
+  "context": {
+    "user_name": {
       "type": "string",
       "optional": false
     }
   },
-  "output": null,
-  "context": null,
-  "tools": [],
-  "workflows": [],
-  "helpers": [
+  "tools": [
     {
-      "name": "FoodWizard",
-      "description": "it is specialized in food recommendations",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash"
-            },
-            "prompt": {
-              "type": "parts",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n                You are a food recommender when someone want to have some food suggestion\r\n                please kindly help them....\r\n            "
-                }
-              ]
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": {
-        "text": {
+      "description": "This is used to get the details of the student",
+      "params": {
+        "id": {
           "type": "string",
           "optional": false
         }
       },
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
-    },
-    {
-      "name": "Story",
-      "description": "specialized for telling stories",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash"
-            },
-            "prompt": {
-              "type": "parts",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n               You are a specialized story teller come up with stories the user asks\r\n            "
-                }
-              ]
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": {
-        "text": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
+      "name": "getStudentDetails",
+      "returns": {
+        "type": "typeRef",
+        "name": "Student"
+      }
     }
   ],
+  "workflows": [],
+  "helpers": [],
   "tests": [],
-  "helperHandoff": {
-    "FoodWizard": "user",
-    "Story": "thenContinue"
+  "types": {
+    "Student": {
+      "isOutput": false,
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        },
+        "id": {
+          "type": "string",
+          "optional": false
+        },
+        "grades": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
+        }
+      }
+    }
   }
 }

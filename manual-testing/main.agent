@@ -1,61 +1,33 @@
 
 
+type Student{
+    user_name:string,
+    age:number,
+    id:string,
+    grades:string[]
+}
 
-agent Router{
-
+agent Manager{
+    
     default config{
         model:gemini("gemini-2.5-flash")
-        prompt{
-            """
-                You are an inteligent router based on the question either answer 
-                or give to a dedicated helper to use
-            """
-        }
+        prompt: managerPrompt(ctx.user_name)
     }
 
-    input{
-        text:string
+    context{
+        user_name:string
     }
 
-    helpers {
-        FoodWizard handoff user
-        Story handoff user then continue
-    }
+    
+    tool getStudentDetails(id:string):Student @desc "This is used to get the details of the student"
+    
 
 }
 
-
-helper FoodWizard{
-    description:"it is specialized in food recommendations"
-
-    default config{
-        model:gemini("gemini-2.5-flash")
-        prompt{
-            """
-                You are a food recommender when someone want to have some food suggestion
-                please kindly help them....
-            """
-        }
-    }
-
-     input{
-        text:string
-    }
-}
-
-helper Story{
-    description: "specialized for telling stories"
-
-    default config{
-        model:gemini("gemini-2.5-flash")
-        prompt{
-            """
-               You are a specialized story teller come up with stories the user asks
-            """
-        }
-    }
-
-     input{
-        text:string
-    }
+prompt managerPrompt(user_name:string){
+    """
+        You are helpful assistant you are to help student navigate and answer questions....
+        please be polite and be direct
+        the name of the user is {{user_name}}
+    """
 }

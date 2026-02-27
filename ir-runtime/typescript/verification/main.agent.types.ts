@@ -1,86 +1,93 @@
-// Auto-generated types for Router
+// Auto-generated types for Manager
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type RouterIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
+type ManagerIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
   workflows: undefined;
-  helpers: ({ name: "FoodWizard" } | { name: "Story" })[];
+  helpers: undefined;
 };
-const agentIR = _importedIR as unknown as RouterIR;
-export type RouterInput = {
-    text: string;
+const agentIR = _importedIR as unknown as ManagerIR;
+
+export type Student = {
+
+    user_name: string;
+
+    age: number;
+
+    id: string;
+
+    grades: string[];
 }
 
-export type FoodWizardOutput = {
+export type ManagerInput = {
 
 }
 
-export type StoryOutput = {
+export type ManagerOutput = {
 
 }
 
-export type RouterBaseOutput = {
-
+export type ManagerContext = {
+    user_name: string;
 }
 
-/** Union of possible output types (includes transfer destinations) */
-export type RouterOutput = RouterBaseOutput | FoodWizardOutput | StoryOutput;
-
-export type RouterContext = {
-
+export type ManagerTools = {
+    getStudentDetails: (args: { id: string }) => Promise<Student>;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type RouterCustomIntents = never;
+export type ManagerCustomIntents = never;
 
 /**
- * API keys required for Router
+ * API keys required for Manager
  */
-export type RouterApiKeys = {
+export type ManagerApiKeys = {
     geminiApiKey: string;
 }
 
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type RouterAgent = import("@auwgent/runtime").TypedAuwgent<
+export type ManagerAgent = import("@auwgent/runtime").TypedAuwgent<
     typeof agentIR,
-    RouterCustomIntents,
+    ManagerCustomIntents,
     never,
-    Record<string, never>
+    ManagerTools
 >;
 
-/** Middleware object type — consistent with `RouterAgent.onIntent` intent narrowing */
-export type RouterMiddleware = import("@auwgent/runtime").Middleware<
+/** Middleware object type — consistent with `ManagerAgent.onIntent` intent narrowing */
+export type ManagerMiddleware = import("@auwgent/runtime").Middleware<
     typeof agentIR,
-    RouterCustomIntents,
+    ManagerCustomIntents,
     never,
-    Record<string, never>
+    ManagerTools
 >;
 
-export type RouterConfig = {
-    middleware?: RouterMiddleware[];
-    apiKeys: RouterApiKeys;
+export type ManagerConfig = {
+    tools: ManagerTools;
+    middleware?: ManagerMiddleware[];
+    context: ManagerContext;
+    apiKeys: ManagerApiKeys;
 }
 
-export function createRouter(config: RouterConfig): RouterAgent {
+export function createManager(config: ManagerConfig): ManagerAgent {
     return createAuwgent<
         typeof agentIR,
-        RouterCustomIntents,
+        ManagerCustomIntents,
         never,
-        Record<string, never>
+        ManagerTools
     >(agentIR, {
-        tools: {} as Record<string, never>,
+        tools: config.tools,
         middleware: config.middleware as any,
-        
+        context: config.context,
         apiKeys: config.apiKeys
     });
 }
 
-export const auwgent = createRouter;
-export type AuwgentTools = Record<string, never>;
-export type AuwgentConfig = RouterConfig;
-export type AuwgentAgent = RouterAgent;
-export type AuwgentMiddleware = RouterMiddleware;
-export type AuwgentContext = RouterContext;
+export const auwgent = createManager;
+export type AuwgentTools = ManagerTools;
+export type AuwgentConfig = ManagerConfig;
+export type AuwgentAgent = ManagerAgent;
+export type AuwgentMiddleware = ManagerMiddleware;
+export type AuwgentContext = ManagerContext;
