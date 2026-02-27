@@ -221,9 +221,8 @@ export class TypedAuwgent<
         this.sharedContext = {}; // Clear context for new run
         let currentSession = this.exportSession();
 
-        if (input) {
-            currentSession.turns.push({ input, model_response: "" });
-        }
+        // We let the Rust engine handle appending the input to the session history
+        // so that there's a single source of truth for turn management.
 
         // Activate listeners just-in-time before running
         this.activateListeners();
@@ -238,7 +237,7 @@ export class TypedAuwgent<
 
             // Execute Native
             this.importSession(currentSession);
-            const json = await this.native.run(input ? null : (input ?? null));
+            const json = await this.native.run(input ?? null);
             currentSession = JSON.parse(json) as SessionState;
 
             // onRunComplete Interception
