@@ -4,7 +4,8 @@
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type ManagerIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
+type ManagerIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "Manager";
   workflows: undefined;
   helpers: ({ name: "Joker" })[];
 };

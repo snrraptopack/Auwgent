@@ -122,7 +122,7 @@ export class TypedAuwgent<
     }
 
     // Shared context storage for cross-hook state mapping
-    private sharedContext: MiddlewareContext = {};
+    private sharedContext: Partial<MiddlewareContext<IR>> = {};
 
     /**
      * Activate the native ThreadSafeFunction listeners just before run().
@@ -136,7 +136,10 @@ export class TypedAuwgent<
         // Always register an onIntent callback (even if user didn't provide one)
         // so middleware can still intercept intents.
         this.native.onIntent(async (name: string, value: any) => {
-            const intentCtx: MiddlewareContext = { ...this.sharedContext };
+            const intentCtx: MiddlewareContext<IR> = {
+                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
+                ...this.sharedContext
+            } as MiddlewareContext<IR>;
 
             // Extract _raw from Rust-injected field and move to ctx.rawBlock
             // This keeps intent values clean and typed for the user,
@@ -177,11 +180,15 @@ export class TypedAuwgent<
         // Register Sub-Engine Lifecycle Hooks
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
             let session = JSON.parse(emptySessionJson) as SessionState;
-            const ctx: MiddlewareContext = {
-                activeAgent: helperName,
+
+            // Push active helper to shared context for nested LLM hooks
+            this.sharedContext.activeAgent = helperName as any;
+
+            const ctx: MiddlewareContext<IR> = {
+                activeAgent: helperName as any,
                 systemPrompt: session.systemPrompt,
                 ...this.sharedContext
-            };
+            } as MiddlewareContext<IR>;
 
             for (const m of this.middleware) {
                 if (m.onRunStart) {
@@ -193,22 +200,29 @@ export class TypedAuwgent<
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
             const session = JSON.parse(completedSessionJson) as SessionState;
-            const ctx: MiddlewareContext = {
-                activeAgent: helperName,
+            const ctx: MiddlewareContext<IR> = {
+                activeAgent: helperName as any,
                 systemPrompt: session.systemPrompt,
                 ...this.sharedContext
-            };
+            } as MiddlewareContext<IR>;
 
             for (const m of this.middleware) {
                 if (m.onRunComplete) {
                     await m.onRunComplete(session, ctx);
                 }
             }
+
+            // Pop active helper from shared context
+            delete this.sharedContext.activeAgent;
         });
 
         // Register LLM Lifecycle Hooks
         this.native.onLlmStart(async (promptJson: string, systemPrompt: string) => {
-            const ctx: MiddlewareContext = { systemPrompt, ...this.sharedContext };
+            const ctx: MiddlewareContext<IR> = {
+                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
+                systemPrompt,
+                ...this.sharedContext
+            } as MiddlewareContext<IR>;
             let currentPrompt = promptJson;
             for (const m of this.middleware) {
                 if (m.onLLMStart) {
@@ -222,7 +236,11 @@ export class TypedAuwgent<
         });
 
         this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
-            const ctx: MiddlewareContext = { systemPrompt, ...this.sharedContext };
+            const ctx: MiddlewareContext<IR> = {
+                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
+                systemPrompt,
+                ...this.sharedContext
+            } as MiddlewareContext<IR>;
             for (const m of this.middleware) {
                 if (m.onLLMEnd) {
                     await m.onLLMEnd(responseString, ctx);
@@ -257,11 +275,17 @@ export class TypedAuwgent<
         // Activate listeners just-in-time before running
         this.activateListeners();
 
+        // Expand partial shared context into full context for root hooks
+        const runtimeCtx: MiddlewareContext<IR> = {
+            activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
+            ...this.sharedContext
+        } as MiddlewareContext<IR>;
+
         try {
             // onRunStart Interception
             for (const m of this.middleware) {
                 if (m.onRunStart) {
-                    currentSession = await m.onRunStart(currentSession, this.sharedContext);
+                    currentSession = await m.onRunStart(currentSession, runtimeCtx);
                 }
             }
 
@@ -273,7 +297,7 @@ export class TypedAuwgent<
             // onRunComplete Interception
             for (const m of this.middleware) {
                 if (m.onRunComplete) {
-                    await m.onRunComplete(currentSession, this.sharedContext);
+                    await m.onRunComplete(currentSession, runtimeCtx);
                 }
             }
 
@@ -283,7 +307,7 @@ export class TypedAuwgent<
             let handled = false;
             for (const m of this.middleware) {
                 if (m.onError) {
-                    const shouldSwallow = await m.onError(error as Error, currentSession, this.sharedContext);
+                    const shouldSwallow = await m.onError(error as Error, currentSession, runtimeCtx);
                     if (shouldSwallow) {
                         handled = true;
                         break;

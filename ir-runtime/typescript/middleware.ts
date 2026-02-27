@@ -6,9 +6,9 @@ import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent } from '.
  * A shared storage object that naturally lives for the duration of a single `agent.run()` call.
  * Middleware can write trace IDs and metadata here to share between hooks.
  */
-export type MiddlewareContext = {
+export type MiddlewareContext<IR extends AgentIRShape = any> = {
     /** The name of the currently executing agent (e.g. "Router", "FoodWizard", etc) */
-    activeAgent?: string;
+    activeAgent: (string extends IR['name'] ? never : IR['name']) | (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) | (string extends IR['name'] ? string : never);
     /** The raw unparsed YAML block for the current intent (only present during onIntent) */
     rawBlock?: string;
     /** The system prompt for the currently executing agent */
@@ -25,7 +25,7 @@ export type MiddlewareIntentHandler<
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]: [
             name: K,
             value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
-            ctx: MiddlewareContext
+            ctx: MiddlewareContext<IR>
         ];
     }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
 ) => IntentControl | Promise<IntentControl>;
@@ -51,7 +51,7 @@ export interface Middleware<
      */
     onRunStart?: (
         session: SessionState,
-        ctx: MiddlewareContext
+        ctx: MiddlewareContext<IR>
     ) => SessionState | Promise<SessionState>;
 
     /**
@@ -59,7 +59,7 @@ export interface Middleware<
      */
     onLLMStart?: (
         prompt: string,
-        ctx: MiddlewareContext
+        ctx: MiddlewareContext<IR>
     ) => void | Promise<void>;
 
     /**
@@ -73,7 +73,7 @@ export interface Middleware<
      */
     onLLMEnd?: (
         response: string,
-        ctx: MiddlewareContext
+        ctx: MiddlewareContext<IR>
     ) => void | Promise<void>;
 
     /**
@@ -81,7 +81,7 @@ export interface Middleware<
      */
     onRunComplete?: (
         finalSession: SessionState,
-        ctx: MiddlewareContext
+        ctx: MiddlewareContext<IR>
     ) => void | Promise<void>;
 
     /**
@@ -91,6 +91,6 @@ export interface Middleware<
     onError?: (
         error: Error,
         session: SessionState,
-        ctx: MiddlewareContext
+        ctx: MiddlewareContext<IR>
     ) => boolean | Promise<boolean> | void | Promise<void>;
 }

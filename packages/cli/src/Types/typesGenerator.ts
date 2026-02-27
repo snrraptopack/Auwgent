@@ -69,7 +69,8 @@ export function generateTypesFile(agent: AgentIR, baseName?: string): string {
 
     const fileName = baseName || agent.name;
     const irImportStatement = `import _importedIR from './${fileName}.agent.json' with { type: 'json' };\n` +
-        `type ${agent.name}IR = Omit<typeof _importedIR, "workflows" | "helpers"> & {\n` +
+        `type ${agent.name}IR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {\n` +
+        `  name: "${agent.name}";\n` +
         `  workflows: ${workflowTypes === 'undefined' ? 'undefined' : `(${workflowTypes})[]`};\n` +
         `  helpers: ${helperTypes === 'undefined' ? 'undefined' : `(${helperTypes})[]`};\n` +
         `};\n` +
