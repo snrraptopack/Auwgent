@@ -8,31 +8,28 @@ const student: Student = {
     grades: ["A", "B"]
 }
 
+const jokerMiddleware: ManagerMiddleware = {
+    name: "JokerLogger",
+    target: "Joker", // <--- Targeted!
+    onLLMEnd(response, ctx) {
+        ctx.activeAgent
+        console.log("[Jokey] response", response)
+    },
+    onRunComplete: (session, ctx) => {
+        console.log("*********************** turns **************")
+        console.log("turns", session)
+        console.log("*********************** turns **************")
+        console.log("*********************** ctx **************")
+        console.log("ctx", ctx)
+        console.log("*********************** ctx **************")
+    },
+};
+
 const loggingMiddleware: ManagerMiddleware = {
     name: "Logger",
-    onRunStart: (session, ctx) => {
-
-        return session;
-    },
     onLLMStart: (prompt, ctx) => {
         console.log("llm", prompt)
     },
-    onLLMEnd(response, ctx) {
-        if (ctx.activeAgent === "Joker") {
-            console.log("response", response)
-        }
-    },
-    onRunComplete: (session, ctx) => {
-        if (ctx.activeAgent === "Joker") {
-            console.log("*********************** turns **************")
-            console.log("turns", session)
-            console.log("*********************** turns **************")
-            console.log("*********************** ctx **************")
-            console.log("ctx", ctx)
-            console.log("*********************** ctx **************")
-        }
-    },
-
 };
 
 const config: ManagerConfig = {
@@ -45,7 +42,7 @@ const config: ManagerConfig = {
     tools: {
         getStudentDetails: async (id) => student
     },
-    middleware: [loggingMiddleware]
+    middleware: [loggingMiddleware, jokerMiddleware]
 }
 
 const router = createManager(config)

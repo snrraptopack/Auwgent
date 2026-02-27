@@ -152,7 +152,7 @@ export class TypedAuwgent<
             }
 
             // Pipeline through middleware
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(intentCtx)) {
                 if (m.onIntent) {
                     try {
                         const control = await (m.onIntent as any)(name, value, intentCtx);
@@ -196,9 +196,9 @@ export class TypedAuwgent<
                 ...this.sharedContext
             } as MiddlewareContext<IR>;
 
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(ctx)) {
                 if (m.onRunStart) {
-                    session = await m.onRunStart(session, ctx);
+                    session = await (m as any).onRunStart(session, ctx);
                 }
             }
             return JSON.stringify(session);
@@ -212,9 +212,9 @@ export class TypedAuwgent<
                 ...this.sharedContext
             } as MiddlewareContext<IR>;
 
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(ctx)) {
                 if (m.onRunComplete) {
-                    await m.onRunComplete(session, ctx);
+                    await (m as any).onRunComplete(session, ctx);
                 }
             }
 
@@ -232,9 +232,9 @@ export class TypedAuwgent<
             this.lastTurnIntentValue = null;
             this.lastTurnIntentName = null;
             let currentPrompt = promptJson;
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(ctx)) {
                 if (m.onLLMStart) {
-                    const modified = await m.onLLMStart(currentPrompt, ctx);
+                    const modified = await (m as any).onLLMStart(currentPrompt, ctx);
                     if (typeof modified === "string") {
                         currentPrompt = modified;
                     }
@@ -250,7 +250,7 @@ export class TypedAuwgent<
                 ...this.sharedContext
             } as MiddlewareContext<IR>;
             if (this.lastTurnIntentName === 'response_text' || this.lastTurnIntentName === 'response_schema') {
-                for (const m of this.middleware) {
+                for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMEnd) {
                         await (m.onLLMEnd as any)(this.lastTurnIntentValue || {}, ctx);
                     }
@@ -293,9 +293,9 @@ export class TypedAuwgent<
 
         try {
             // onRunStart Interception
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(runtimeCtx)) {
                 if (m.onRunStart) {
-                    currentSession = await m.onRunStart(currentSession, runtimeCtx);
+                    currentSession = await (m as any).onRunStart(currentSession, runtimeCtx);
                 }
             }
 
@@ -305,9 +305,9 @@ export class TypedAuwgent<
             currentSession = JSON.parse(json) as SessionState;
 
             // onRunComplete Interception
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(runtimeCtx)) {
                 if (m.onRunComplete) {
-                    await m.onRunComplete(currentSession, runtimeCtx);
+                    await (m as any).onRunComplete(currentSession, runtimeCtx);
                 }
             }
 
@@ -315,9 +315,9 @@ export class TypedAuwgent<
 
         } catch (error) {
             let handled = false;
-            for (const m of this.middleware) {
+            for (const m of this.getMiddleware(runtimeCtx)) {
                 if (m.onError) {
-                    const shouldSwallow = await m.onError(error as Error, currentSession, runtimeCtx);
+                    const shouldSwallow = await (m as any).onError(error as Error, currentSession, runtimeCtx);
                     if (shouldSwallow) {
                         handled = true;
                         break;
@@ -333,6 +333,17 @@ export class TypedAuwgent<
             // and allow the Node.js process to exit gracefully.
             this.deactivateListeners();
         }
+    }
+
+    /**
+     * Filter middleware based on the 'target' field and current active agent.
+     */
+    private getMiddleware(ctx: MiddlewareContext<IR>) {
+        return this.middleware.filter(m => {
+            if (!m.target) return true;
+            const targets = Array.isArray(m.target) ? m.target : [m.target];
+            return targets.includes(ctx.activeAgent as any);
+        });
     }
 
     /** Export session state for persistence. */

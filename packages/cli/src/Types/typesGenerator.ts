@@ -439,11 +439,12 @@ export type ${agent.name}Agent = import("@auwgent/runtime").TypedAuwgent<
 >;
 
 /** Middleware object type — consistent with \`${agent.name}Agent.onIntent\` intent narrowing */
-export type ${agent.name}Middleware = import("@auwgent/runtime").Middleware<
+export type ${agent.name}Middleware<T extends import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@auwgent/runtime").Middleware<
     typeof agentIR,
     ${agent.name}CustomIntents,
     ${outputType},
-    ${toolsType}
+    ${toolsType},
+    T
 >;
 
 export type ${agent.name}Config = {

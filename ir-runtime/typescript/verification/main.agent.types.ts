@@ -5,9 +5,9 @@ import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type ManagerIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "Manager";
-  workflows: undefined;
-  helpers: ({ name: "Joker" })[];
+    name: "Manager";
+    workflows: undefined;
+    helpers: ({ name: "Joker" })[];
 };
 const agentIR = _importedIR as unknown as ManagerIR;
 
@@ -65,11 +65,12 @@ export type ManagerAgent = import("@auwgent/runtime").TypedAuwgent<
 >;
 
 /** Middleware object type — consistent with `ManagerAgent.onIntent` intent narrowing */
-export type ManagerMiddleware = import("@auwgent/runtime").Middleware<
+export type ManagerMiddleware<T extends import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@auwgent/runtime").Middleware<
     typeof agentIR,
     ManagerCustomIntents,
     never,
-    ManagerTools
+    ManagerTools,
+    T
 >;
 
 export type ManagerConfig = {

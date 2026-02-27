@@ -1,4 +1,4 @@
-import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentModelIntent, AuwgentModelValue, AuwgentResponseValue } from './types.js';
+import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentModelIntent, AuwgentModelValue, AuwgentResponseValue, AuwgentTargetedResponseValue } from './types.js';
 
 // ── Middleware Types ───────────────────────────────────────────────────────
 
@@ -17,35 +17,16 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
     systemPrompt?: string;
 } & Record<string, any>;
 
-export type MiddlewareIntentHandler<
-    IR extends AgentIRShape = any,
-    Custom = never,
-    Output = any,
-    Tools = any
-> = (
-    ...args: {
-        [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]: [
-            name: K,
-            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
-            ctx: MiddlewareContext<IR>
-        ];
-    }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
-) => IntentControl | Promise<IntentControl>;
-
 /**
- * Interface for Auwgent Middleware Plugins.
- * Middleware intercept the execution lifecycle of the agent, allowing for context
- * compaction, tracing, metrics, and error handling.
+ * Internal base hook definitions for targeted scoping.
  */
-export interface Middleware<
+interface _MiddlewareHooks<
     IR extends AgentIRShape = any,
     CustomIntents = never,
     Output = any,
-    Tools = any
+    Tools = any,
+    T extends MiddlewareContext<IR>['activeAgent'] = any
 > {
-    /** Name of the middleware (for debug/tracing) */
-    name: string;
-
     /**
      * Fired when `agent.run()` is called, BEFORE the Rust engine executes.
      * Use this to mutate `session.turns` for context summarization/truncation.
@@ -53,27 +34,38 @@ export interface Middleware<
      */
     onRunStart?: (
         session: SessionState,
-        ctx: MiddlewareContext<IR>
+        ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => SessionState | Promise<SessionState>;
 
     /**
      * Fired when the engine is about to send a prompt to the underlying Model Provider.
+     * Return a string to replace the entire prompt JSON (RAG / prompt injection).
      */
     onLLMStart?: (
         prompt: string,
-        ctx: MiddlewareContext<IR>
-    ) => void | Promise<void>;
+        ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
+    ) => void | Promise<void> | string | Promise<string>;
 
     /**
      * Fired when the generic execution intent stream emits an event.
      * You can optionally return an `IntentControl` (e.g. `{skip: true}`) to short-circuit.
      */
-    onIntent?: MiddlewareIntentHandler<IR, CustomIntents, Output, Tools>;
+    onIntent?: (
+        ...args: {
+            [K in AuwgentIntent<IR, CustomIntents, Output, Tools>['name']]: [
+                name: K,
+                value: Extract<AuwgentIntent<IR, CustomIntents, Output, Tools>, { name: K }>['value'],
+                ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
+            ];
+        }[AuwgentIntent<IR, CustomIntents, Output, Tools>['name']]
+    ) => IntentControl | Promise<IntentControl>;
 
+    /**
+     * Fired when the model emits a terminal response (text or schema).
+     */
     onLLMEnd?: (
-        ...args:
-            | [response: AuwgentModelValue<IR, CustomIntents, Output, Tools>, ctx: Extract<MiddlewareContext<IR>, { activeAgent: (string extends IR['name'] ? string : IR['name']) }>]
-            | [response: AuwgentResponseValue<IR, CustomIntents, Output, Tools>, ctx: Extract<MiddlewareContext<IR>, { activeAgent: (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) }>]
+        response: AuwgentTargetedResponseValue<IR, T, CustomIntents, Output, Tools>,
+        ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => void | Promise<void>;
 
     /**
@@ -81,7 +73,7 @@ export interface Middleware<
      */
     onRunComplete?: (
         finalSession: SessionState,
-        ctx: MiddlewareContext<IR>
+        ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => void | Promise<void>;
 
     /**
@@ -91,6 +83,31 @@ export interface Middleware<
     onError?: (
         error: Error,
         session: SessionState,
-        ctx: MiddlewareContext<IR>
+        ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => boolean | Promise<boolean> | void | Promise<void>;
 }
+
+/**
+ * Interface for Auwgent Middleware Plugins.
+ * Middleware intercept the execution lifecycle of the agent, allowing for context
+ * compaction, tracing, metrics, and error handling.
+ * 
+ * Narrowing: If a 'target' is specified, hooks automatically narrow their 'ctx.activeAgent'.
+ */
+export type Middleware<
+    IR extends AgentIRShape = any,
+    CustomIntents = never,
+    Output = any,
+    Tools = any,
+    Target extends MiddlewareContext<IR>['activeAgent'] = MiddlewareContext<IR>['activeAgent']
+> =
+    | ({ name: string; target?: undefined } & _MiddlewareHooks<IR, CustomIntents, Output, Tools, MiddlewareContext<IR>['activeAgent']>)
+    | {
+        [T in MiddlewareContext<IR>['activeAgent']]: {
+            name: string;
+            target: T | T[] | ReadonlyArray<T>;
+        } & _MiddlewareHooks<IR, CustomIntents, Output, Tools, T>
+    }[MiddlewareContext<IR>['activeAgent'] & Target];
+
+/** @deprecated Use Middleware union directly */
+export type MiddlewareIntentHandler = any;

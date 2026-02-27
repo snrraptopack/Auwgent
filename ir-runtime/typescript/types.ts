@@ -192,6 +192,26 @@ export type AuwgentResponseValue<IR extends AgentIRShape, Custom = never, Output
 export type AuwgentModelValue<IR extends AgentIRShape, Custom = never, Output = any, Tools = any> =
     AuwgentResponseValue<IR, Custom, Output, Tools>;
 
+/** 
+ * Narrowed response value for a specific target agent.
+ * If target is the root agent, returns full Output-aware value.
+ * If target is a helper, returns helper's specific output or {text: string}.
+ */
+export type AuwgentTargetedResponseValue<
+    IR extends AgentIRShape,
+    T extends string,
+    Custom = never,
+    Output = any,
+    Tools = any
+> =
+    T extends (string extends IR['name'] ? string : IR['name'])
+    ? AuwgentResponseValue<IR, Custom, Output, Tools>
+    : (IR['helpers'] extends readonly any[]
+        ? (Extract<IR['helpers'][number], { name: T }> extends { output: infer O }
+            ? (O extends null ? { text: string } : O)
+            : { text: string })
+        : { text: string });
+
 export type IntentHandler<IR extends AgentIRShape = any, Custom = never, Output = any, Tools = any> = (
     ...args: {
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name']]: [
