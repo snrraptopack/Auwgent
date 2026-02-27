@@ -62,6 +62,7 @@ export class TypedAuwgent<
     private storedPartialHandler: PartialIntentHandler<IR, CustomIntents, Output, Tools> | null = null;
     private lastTurnIntentValue: any = null;
     private lastTurnIntentName: string | null = null;
+    private agentStack: string[] = [];
 
     constructor(ir: IR, config: AuwgentConfig<IR>) {
         this.ir = ir;
@@ -124,7 +125,17 @@ export class TypedAuwgent<
     }
 
     // Shared context storage for cross-hook state mapping
-    private sharedContext: Partial<MiddlewareContext<IR>> = {};
+    private sharedContext: Record<string, any> = {};
+
+    private getBuildContext(): MiddlewareContext<IR> {
+        const activeAgent = this.agentStack[this.agentStack.length - 1] ?? this.ir.name;
+        return {
+            activeAgent: activeAgent as any,
+            stack: [...this.agentStack],
+            rootAgent: this.ir.name,
+            ...this.sharedContext
+        } as MiddlewareContext<IR>;
+    }
 
     /**
      * Activate the native ThreadSafeFunction listeners just before run().
@@ -138,10 +149,7 @@ export class TypedAuwgent<
         // Always register an onIntent callback (even if user didn't provide one)
         // so middleware can still intercept intents.
         this.native.onIntent(async (name: string, value: any) => {
-            const intentCtx: MiddlewareContext<IR> = {
-                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
-                ...this.sharedContext
-            } as MiddlewareContext<IR>;
+            const intentCtx = this.getBuildContext();
 
             // Extract _raw from Rust-injected field and move to ctx.rawBlock
             // This keeps intent values clean and typed for the user,
@@ -187,14 +195,11 @@ export class TypedAuwgent<
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
             let session = JSON.parse(emptySessionJson) as SessionState;
 
-            // Push active helper to shared context for nested LLM hooks
-            this.sharedContext.activeAgent = helperName as any;
+            // Maintain execution stack
+            this.agentStack.push(helperName);
 
-            const ctx: MiddlewareContext<IR> = {
-                activeAgent: helperName as any,
-                systemPrompt: session.systemPrompt,
-                ...this.sharedContext
-            } as MiddlewareContext<IR>;
+            const ctx = this.getBuildContext();
+            ctx.systemPrompt = session.systemPrompt;
 
             for (const m of this.getMiddleware(ctx)) {
                 if (m.onRunStart) {
@@ -206,11 +211,8 @@ export class TypedAuwgent<
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
             const session = JSON.parse(completedSessionJson) as SessionState;
-            const ctx: MiddlewareContext<IR> = {
-                activeAgent: helperName as any,
-                systemPrompt: session.systemPrompt,
-                ...this.sharedContext
-            } as MiddlewareContext<IR>;
+            const ctx = this.getBuildContext();
+            ctx.systemPrompt = session.systemPrompt;
 
             for (const m of this.getMiddleware(ctx)) {
                 if (m.onRunComplete) {
@@ -218,17 +220,14 @@ export class TypedAuwgent<
                 }
             }
 
-            // Pop active helper from shared context
-            delete this.sharedContext.activeAgent;
+            // Pop active helper
+            this.agentStack.pop();
         });
 
         // Register LLM Lifecycle Hooks
         this.native.onLlmStart(async (promptJson: string, systemPrompt: string) => {
-            const ctx: MiddlewareContext<IR> = {
-                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
-                systemPrompt,
-                ...this.sharedContext
-            } as MiddlewareContext<IR>;
+            const ctx = this.getBuildContext();
+            ctx.systemPrompt = systemPrompt;
             this.lastTurnIntentValue = null;
             this.lastTurnIntentName = null;
             let currentPrompt = promptJson;
@@ -244,11 +243,8 @@ export class TypedAuwgent<
         });
 
         this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
-            const ctx: MiddlewareContext<IR> = {
-                activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
-                systemPrompt,
-                ...this.sharedContext
-            } as MiddlewareContext<IR>;
+            const ctx = this.getBuildContext();
+            ctx.systemPrompt = systemPrompt;
             if (this.lastTurnIntentName === 'response_text' || this.lastTurnIntentName === 'response_schema') {
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMEnd) {
@@ -277,19 +273,13 @@ export class TypedAuwgent<
     /** Run the agentic loop. Returns the exported session state. */
     async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
+        this.agentStack = [this.ir.name]; // Initialize stack with root agent
         let currentSession = this.exportSession();
 
-        // We let the Rust engine handle appending the input to the session history
-        // so that there's a single source of truth for turn management.
-
-        // Activate listeners just-in-time before running
+        // Activation / ThreadSafeFunction binding
         this.activateListeners();
 
-        // Expand partial shared context into full context for root hooks
-        const runtimeCtx: MiddlewareContext<IR> = {
-            activeAgent: (this.sharedContext.activeAgent ?? this.ir.name) as any,
-            ...this.sharedContext
-        } as MiddlewareContext<IR>;
+        const runtimeCtx = this.getBuildContext();
 
         try {
             // onRunStart Interception

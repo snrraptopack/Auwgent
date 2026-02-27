@@ -11,6 +11,10 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
     | { /** The name of a helper being executed */ activeAgent: (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) }
     | { /** Fallback for generic string IRs */ activeAgent: (string extends IR['name'] ? string : never) }
 ) & {
+    /** The full execution stack (breadcrumbs). Index 0 is rootAgent. */
+    stack: string[];
+    /** The name of the root orchestrator for this entire session */
+    rootAgent: string;
     /** The raw unparsed YAML block for the current intent (only present during onIntent) */
     rawBlock?: string;
     /** The system prompt for the currently executing agent */

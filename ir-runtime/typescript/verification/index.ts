@@ -16,12 +16,10 @@ const jokerMiddleware: ManagerMiddleware = {
         console.log("[Jokey] response", response)
     },
     onRunComplete: (session, ctx) => {
-        console.log("*********************** turns **************")
-        console.log("turns", session)
-        console.log("*********************** turns **************")
-        console.log("*********************** ctx **************")
-        console.log("ctx", ctx)
-        console.log("*********************** ctx **************")
+        console.log("--- [JOKER COMPLETE] ---")
+        console.log("Active:", ctx.activeAgent)
+        console.log("Path:", ctx.stack.join(" > "))
+        console.log("------------------------")
     },
 };
 
@@ -30,6 +28,9 @@ const loggingMiddleware: ManagerMiddleware = {
     onLLMStart: (prompt, ctx) => {
         console.log("llm", prompt)
     },
+    onError: (err, s, ctx) => {
+        console.log(err)
+    }
 };
 
 const config: ManagerConfig = {
@@ -40,7 +41,10 @@ const config: ManagerConfig = {
         user_name: "Amihere"
     },
     tools: {
-        getStudentDetails: async (id) => student
+        getStudentDetails: async (id) => {
+            if (id) throw new Error("error occured")
+            return student
+        }
     },
     middleware: [loggingMiddleware, jokerMiddleware]
 }
