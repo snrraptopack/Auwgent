@@ -60,6 +60,8 @@ export class TypedAuwgent<
     // N-API TSFN from keeping the Node.js event loop alive forever.
     private storedIntentHandler: IntentHandler<IR, CustomIntents, Output, Tools> | null = null;
     private storedPartialHandler: PartialIntentHandler<IR, CustomIntents, Output, Tools> | null = null;
+    private lastTurnIntentValue: any = null;
+    private lastTurnIntentName: string | null = null;
 
     constructor(ir: IR, config: AuwgentConfig<IR>) {
         this.ir = ir;
@@ -163,6 +165,10 @@ export class TypedAuwgent<
                 }
             }
 
+            // Track last intent value for onLLMEnd
+            this.lastTurnIntentValue = value;
+            this.lastTurnIntentName = name;
+
             // Forward to user handler
             if (userHandler) {
                 return (userHandler as any)(name, value);
@@ -223,6 +229,8 @@ export class TypedAuwgent<
                 systemPrompt,
                 ...this.sharedContext
             } as MiddlewareContext<IR>;
+            this.lastTurnIntentValue = null;
+            this.lastTurnIntentName = null;
             let currentPrompt = promptJson;
             for (const m of this.middleware) {
                 if (m.onLLMStart) {
@@ -241,9 +249,11 @@ export class TypedAuwgent<
                 systemPrompt,
                 ...this.sharedContext
             } as MiddlewareContext<IR>;
-            for (const m of this.middleware) {
-                if (m.onLLMEnd) {
-                    await m.onLLMEnd(responseString, ctx);
+            if (this.lastTurnIntentName === 'response_text' || this.lastTurnIntentName === 'response_schema') {
+                for (const m of this.middleware) {
+                    if (m.onLLMEnd) {
+                        await (m.onLLMEnd as any)(this.lastTurnIntentValue || {}, ctx);
+                    }
                 }
             }
         });

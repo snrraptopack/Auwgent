@@ -51,18 +51,18 @@ const config: ManagerConfig = {
 const router = createManager(config)
 
 
-// router.onIntent((name, value) => {
-//     if (name === "response_text") {
-//         console.log(`\n[AGENT SAYS] ${value.text}\n`)
-//     } else if (name === "tool_call") {
-//         console.log(`\n[TOOL CALL] ${value.type}`)
-//     } else if (name === "helper_call") {
-//         console.log(`\n[HELPER CALL] ${value.type}`)
-//     }
-//     if (name === "helper_result") {
-//         console.log("result", value.result)
-//     }
-// })
+router.onIntent((name, value) => {
+    if (name === "response_text") {
+        console.log(`\n[AGENT SAYS] ${value.text}\n`)
+    } else if (name === "tool_call") {
+        console.log(`\n[TOOL CALL] ${value.type}`)
+    } else if (name === "helper_call") {
+        console.log(`\n[HELPER CALL] ${value.type}`)
+    }
+    if (name === "helper_result") {
+        console.log("result", value.result)
+    }
+})
 
 
 //console.log(router.generatePrompt())

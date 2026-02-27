@@ -1,4 +1,4 @@
-import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent } from './types.js';
+import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentModelIntent, AuwgentModelValue, AuwgentResponseValue } from './types.js';
 
 // ── Middleware Types ───────────────────────────────────────────────────────
 
@@ -6,9 +6,11 @@ import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent } from '.
  * A shared storage object that naturally lives for the duration of a single `agent.run()` call.
  * Middleware can write trace IDs and metadata here to share between hooks.
  */
-export type MiddlewareContext<IR extends AgentIRShape = any> = {
-    /** The name of the currently executing agent (e.g. "Router", "FoodWizard", etc) */
-    activeAgent: (string extends IR['name'] ? never : IR['name']) | (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) | (string extends IR['name'] ? string : never);
+export type MiddlewareContext<IR extends AgentIRShape = any> = (
+    | { /** The name of the root agent */ activeAgent: (string extends IR['name'] ? never : IR['name']) }
+    | { /** The name of a helper being executed */ activeAgent: (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) }
+    | { /** Fallback for generic string IRs */ activeAgent: (string extends IR['name'] ? string : never) }
+) & {
     /** The raw unparsed YAML block for the current intent (only present during onIntent) */
     rawBlock?: string;
     /** The system prompt for the currently executing agent */
@@ -68,12 +70,10 @@ export interface Middleware<
      */
     onIntent?: MiddlewareIntentHandler<IR, CustomIntents, Output, Tools>;
 
-    /**
-     * Fired when the underlying Model Provider successfully finishes generating.
-     */
     onLLMEnd?: (
-        response: string,
-        ctx: MiddlewareContext<IR>
+        ...args:
+            | [response: AuwgentModelValue<IR, CustomIntents, Output, Tools>, ctx: Extract<MiddlewareContext<IR>, { activeAgent: (string extends IR['name'] ? string : IR['name']) }>]
+            | [response: AuwgentResponseValue<IR, CustomIntents, Output, Tools>, ctx: Extract<MiddlewareContext<IR>, { activeAgent: (IR['helpers'] extends readonly any[] ? IR['helpers'][number]['name'] : never) }>]
     ) => void | Promise<void>;
 
     /**
