@@ -308,6 +308,77 @@ impl Auwgent {
         Ok(())
     }
 
+    /// Hook for TypeScript to receive the prompt before LLM generation
+    #[napi(
+        ts_args_type = "callback: (prompt: string, systemPrompt: string) => Promise<string | undefined>"
+    )]
+    pub fn on_llm_start(&self, callback: JsFunction) -> Result<()> {
+        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
+                let prompt = ctx.env.create_string(&ctx.value.0)?;
+                let sys = ctx.env.create_string(&ctx.value.1)?;
+                Ok(vec![prompt.into_unknown(), sys.into_unknown()])
+            })?;
+
+        let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
+            Arc::new(move |prompt_str: String, sys_str: String| {
+                let tsfn = tsfn.clone();
+                Box::pin(async move {
+                    let result = tsfn
+                        .call_async::<Promise<Option<String>>>((prompt_str, sys_str))
+                        .await;
+                    if let Ok(promise) = result {
+                        if let Ok(Some(new_prompt)) = promise.await {
+                            return Some(new_prompt);
+                        }
+                    }
+                    None
+                })
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_llm_start(handler);
+        });
+
+        Ok(())
+    }
+
+    /// Hook for TypeScript to receive the unparsed response after LLM generation
+    #[napi(
+        ts_args_type = "callback: (responseString: string, systemPrompt: string) => Promise<void>"
+    )]
+    pub fn on_llm_end(&self, callback: JsFunction) -> Result<()> {
+        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
+                let response = ctx.env.create_string(&ctx.value.0)?;
+                let sys = ctx.env.create_string(&ctx.value.1)?;
+                Ok(vec![response.into_unknown(), sys.into_unknown()])
+            })?;
+
+        let handler: ir_runtime::runtime::engine::AsyncLlmEndCallback =
+            Arc::new(move |response_string: String, sys_string: String| {
+                let tsfn = tsfn.clone();
+                Box::pin(async move {
+                    let result = tsfn
+                        .call_async::<Promise<()>>((response_string, sys_string))
+                        .await;
+                    if let Ok(promise) = result {
+                        let _ = promise.await;
+                    }
+                })
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_llm_end(handler);
+        });
+
+        Ok(())
+    }
+
     /// Run the agentic loop with the given input.
     /// Returns the exported session state as JSON.
     ///

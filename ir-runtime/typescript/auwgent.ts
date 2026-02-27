@@ -177,7 +177,11 @@ export class TypedAuwgent<
         // Register Sub-Engine Lifecycle Hooks
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
             let session = JSON.parse(emptySessionJson) as SessionState;
-            const ctx: MiddlewareContext = { activeAgent: helperName, ...this.sharedContext };
+            const ctx: MiddlewareContext = {
+                activeAgent: helperName,
+                systemPrompt: session.systemPrompt,
+                ...this.sharedContext
+            };
 
             for (const m of this.middleware) {
                 if (m.onRunStart) {
@@ -189,11 +193,39 @@ export class TypedAuwgent<
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
             const session = JSON.parse(completedSessionJson) as SessionState;
-            const ctx: MiddlewareContext = { activeAgent: helperName, ...this.sharedContext };
+            const ctx: MiddlewareContext = {
+                activeAgent: helperName,
+                systemPrompt: session.systemPrompt,
+                ...this.sharedContext
+            };
 
             for (const m of this.middleware) {
                 if (m.onRunComplete) {
                     await m.onRunComplete(session, ctx);
+                }
+            }
+        });
+
+        // Register LLM Lifecycle Hooks
+        this.native.onLlmStart(async (promptJson: string, systemPrompt: string) => {
+            const ctx: MiddlewareContext = { systemPrompt, ...this.sharedContext };
+            let currentPrompt = promptJson;
+            for (const m of this.middleware) {
+                if (m.onLLMStart) {
+                    const modified = await m.onLLMStart(currentPrompt, ctx);
+                    if (typeof modified === "string") {
+                        currentPrompt = modified;
+                    }
+                }
+            }
+            return currentPrompt;
+        });
+
+        this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
+            const ctx: MiddlewareContext = { systemPrompt, ...this.sharedContext };
+            for (const m of this.middleware) {
+                if (m.onLLMEnd) {
+                    await m.onLLMEnd(responseString, ctx);
                 }
             }
         });
@@ -210,6 +242,8 @@ export class TypedAuwgent<
         this.native.onIntentPartial(() => { });
         this.native.onSubEngineStart(async () => undefined);
         this.native.onSubEngineComplete(async () => { });
+        this.native.onLlmStart(async () => undefined);
+        this.native.onLlmEnd(async () => { });
     }
 
     /** Run the agentic loop. Returns the exported session state. */

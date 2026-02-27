@@ -72,6 +72,10 @@ export declare class Auwgent {
   onSubEngineStart(callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined>): void
   /** Hook for TypeScript to save a helper session after sub_engine.run() */
   onSubEngineComplete(callback: (helperName: string, completedSessionJson: string) => Promise<void>): void
+  /** Hook for TypeScript to receive the prompt before LLM generation */
+  onLlmStart(callback: (prompt: string, systemPrompt: string) => Promise<string | undefined>): void
+  /** Hook for TypeScript to receive the unparsed response after LLM generation */
+  onLlmEnd(callback: (responseString: string, systemPrompt: string) => Promise<void>): void
   /**
    * Run the agentic loop with the given input.
    * Returns the exported session state as JSON.

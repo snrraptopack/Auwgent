@@ -54,6 +54,20 @@ pub type AsyncSessionPreloadCallback = Arc<
 pub type SessionSaveCallback =
     Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
 
+/// Async callback that fires right before the LLM generates a response.
+/// Receives the full resolved prompt/messages payload and the system prompt.
+/// Returns an optional String to dynamically modify the user's prompt (Interceptor Pattern).
+pub type AsyncLlmStartCallback = Arc<
+    dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, Option<String>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback that fires right after the LLM completes its generation stream.
+/// Receives the full raw LLM response and the system prompt.
+pub type AsyncLlmEndCallback =
+    Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -80,6 +94,10 @@ pub struct AuwgentEngine {
     session_preload_handler: Option<AsyncSessionPreloadCallback>,
     /// Hook for TypeScript to save a helper session after sub_engine.run()
     session_save_handler: Option<SessionSaveCallback>,
+    /// Hook that fires before LLM generation
+    llm_start_handler: Option<AsyncLlmStartCallback>,
+    /// Hook that fires after LLM generation
+    llm_end_handler: Option<AsyncLlmEndCallback>,
 }
 
 impl AuwgentEngine {
@@ -116,6 +134,8 @@ impl AuwgentEngine {
             partial_intent_handler: None,
             session_preload_handler: None,
             session_save_handler: None,
+            llm_start_handler: None,
+            llm_end_handler: None,
         }
     }
 
@@ -125,6 +145,14 @@ impl AuwgentEngine {
 
     pub fn on_sub_engine_complete(&mut self, handler: SessionSaveCallback) {
         self.session_save_handler = Some(handler);
+    }
+
+    pub fn on_llm_start(&mut self, handler: AsyncLlmStartCallback) {
+        self.llm_start_handler = Some(handler);
+    }
+
+    pub fn on_llm_end(&mut self, handler: AsyncLlmEndCallback) {
+        self.llm_end_handler = Some(handler);
     }
 
     pub fn register_driver(&mut self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
@@ -276,7 +304,22 @@ impl AuwgentEngine {
             self.pending_tool_results.clear();
             self.orchestrator.reset();
 
-            // Build message history from session state
+            // If this is the first turn (the actual user prompt, not a tool feedback cycle),
+            // fire the onLlmStart interceptor. It can return a modified string.
+            if loop_count == 1 {
+                if let Some(handler) = &self.llm_start_handler {
+                    let sys_prompt = self.session.system_prompt.clone().unwrap_or_default();
+                    if let Some(last_turn) = self.session.current_turn_mut() {
+                        if let Some(modified_prompt) =
+                            handler(last_turn.input.clone(), sys_prompt).await
+                        {
+                            last_turn.input = modified_prompt;
+                        }
+                    }
+                }
+            }
+
+            // Build message history from session state (AFTER potential interception)
             let messages = self.session.to_messages();
 
             // Stream from the driver using full message history
@@ -335,6 +378,11 @@ impl AuwgentEngine {
             }
             if actions {
                 actions_performed = true;
+            }
+
+            if let Some(handler) = &self.llm_end_handler {
+                let sys_prompt = self.session.system_prompt.clone().unwrap_or_default();
+                handler(self.current_raw_response.clone(), sys_prompt).await;
             }
 
             // Save the raw LLM output in the session history so the exact
@@ -770,6 +818,12 @@ impl AuwgentEngine {
                     // The helper is an internal reasoning step — silent to the user.
                     // We attach no handlers; sub_engine runs silently.
                 }
+            }
+
+            // 6.2 Pre-generate the helper's system prompt so it is available
+            // to the TypeScript middleware during the "onSubEngineStart" hook.
+            if let Ok(system_prompt) = sub_engine.generate_prompt() {
+                sub_engine.session.set_system_prompt(&system_prompt);
             }
 
             // 6.5 Preload session from host if handler exists

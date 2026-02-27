@@ -11,6 +11,8 @@ export type MiddlewareContext = {
     activeAgent?: string;
     /** The raw unparsed YAML block for the current intent (only present during onIntent) */
     rawBlock?: string;
+    /** The system prompt for the currently executing agent */
+    systemPrompt?: string;
 } & Record<string, any>;
 
 export type MiddlewareIntentHandler<

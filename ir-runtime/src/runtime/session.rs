@@ -88,6 +88,7 @@ impl Turn {
 /// The host runtime is responsible for long-term persistence;
 /// this is the temporal working memory.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionState {
     /// The system prompt for this session
     pub system_prompt: Option<String>,
