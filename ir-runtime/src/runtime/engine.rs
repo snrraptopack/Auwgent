@@ -820,6 +820,14 @@ impl AuwgentEngine {
                 }
             }
 
+            // 6.1 ALWAYS inherit LLM execution hooks so middleware can trace helper generations
+            if let Some(handler) = &self.llm_start_handler {
+                sub_engine.on_llm_start(Arc::clone(handler));
+            }
+            if let Some(handler) = &self.llm_end_handler {
+                sub_engine.on_llm_end(Arc::clone(handler));
+            }
+
             // 6.2 Pre-generate the helper's system prompt so it is available
             // to the TypeScript middleware during the "onSubEngineStart" hook.
             if let Ok(system_prompt) = sub_engine.generate_prompt() {

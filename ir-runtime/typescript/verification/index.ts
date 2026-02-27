@@ -11,10 +11,16 @@ const student: Student = {
 const loggingMiddleware: ManagerMiddleware = {
     name: "Logger",
     onRunStart: (session, ctx) => {
+
         return session;
     },
     onLLMStart: (prompt, ctx) => {
         console.log("llm", prompt)
+    },
+    onLLMEnd(response, ctx) {
+        if (ctx.activeAgent === "Joker") {
+            console.log("response", response)
+        }
     },
     onRunComplete: (session, ctx) => {
         if (ctx.activeAgent === "Joker") {
@@ -44,6 +50,7 @@ const config: ManagerConfig = {
 
 const router = createManager(config)
 
+
 // router.onIntent((name, value) => {
 //     if (name === "response_text") {
 //         console.log(`\n[AGENT SAYS] ${value.text}\n`)
@@ -60,6 +67,7 @@ const router = createManager(config)
 
 //console.log(router.generatePrompt())
 const session = await router.run("hello please get the details for student with id 100, and then ask the Joker helper to tell me a school joke")
+
 
 //console.log("session", JSON.stringify(session, null, 2))
 
