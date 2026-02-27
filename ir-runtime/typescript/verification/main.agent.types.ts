@@ -6,7 +6,7 @@ import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type ManagerIR = Omit<typeof _importedIR, "workflows" | "helpers"> & {
   workflows: undefined;
-  helpers: undefined;
+  helpers: ({ name: "Joker" })[];
 };
 const agentIR = _importedIR as unknown as ManagerIR;
 
@@ -25,9 +25,16 @@ export type ManagerInput = {
 
 }
 
-export type ManagerOutput = {
+export type JokerOutput = {
 
 }
+
+export type ManagerBaseOutput = {
+
+}
+
+/** Union of possible output types (includes transfer destinations) */
+export type ManagerOutput = ManagerBaseOutput | JokerOutput;
 
 export type ManagerContext = {
     user_name: string;

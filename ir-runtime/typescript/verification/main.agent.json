@@ -68,7 +68,37 @@
     }
   ],
   "workflows": [],
-  "helpers": [],
+  "helpers": [
+    {
+      "name": "Joker",
+      "description": "very good at telling jokes",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "gemini-2.5-flash"
+            },
+            "prompt": {
+              "value": "You are a helpful assistant your sole aim is crack jokes to student to help them relax",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ],
   "tests": [],
   "types": {
     "Student": {
@@ -95,5 +125,13 @@
         }
       }
     }
+  },
+  "helperToolGrants": {
+    "Joker": [
+      "getStudentDetails"
+    ]
+  },
+  "helperHandoff": {
+    "Joker": "thenContinue"
   }
 }

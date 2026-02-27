@@ -17,11 +17,25 @@ agent Manager{
     context{
         user_name:string
     }
-
+    helpers{
+        Joker with tools {getStudentDetails} handoff user then continue
+    }
     
     tool getStudentDetails(id:string):Student @desc "This is used to get the details of the student"
     
 
+}
+
+helper Joker{
+    description:"very good at telling jokes"
+
+    default config{
+        model:gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant your sole aim is crack jokes to student to help them relax"
+    }
+    input{
+        text:string
+    }
 }
 
 prompt managerPrompt(user_name:string){

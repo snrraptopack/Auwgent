@@ -6,7 +6,12 @@ import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent } from '.
  * A shared storage object that naturally lives for the duration of a single `agent.run()` call.
  * Middleware can write trace IDs and metadata here to share between hooks.
  */
-export type MiddlewareContext = Record<string, any>;
+export type MiddlewareContext = {
+    /** The name of the currently executing agent (e.g. "Router", "FoodWizard", etc) */
+    activeAgent?: string;
+    /** The raw unparsed YAML block for the current intent (only present during onIntent) */
+    rawBlock?: string;
+} & Record<string, any>;
 
 export type MiddlewareIntentHandler<
     IR extends AgentIRShape = any,

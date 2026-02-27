@@ -68,6 +68,10 @@ export declare class Auwgent {
    * ```
    */
   onIntentPartial(callback: (name: string, value: any) => void): void
+  /** Hook for TypeScript to preload a helper session before sub_engine.run() */
+  onSubEngineStart(callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined>): void
+  /** Hook for TypeScript to save a helper session after sub_engine.run() */
+  onSubEngineComplete(callback: (helperName: string, completedSessionJson: string) => Promise<void>): void
   /**
    * Run the agentic loop with the given input.
    * Returns the exported session state as JSON.

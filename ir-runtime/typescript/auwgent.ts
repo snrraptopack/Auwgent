@@ -31,36 +31,6 @@ import type { Middleware, MiddlewareContext } from './middleware.js';
 export * from './types.js';
 export * from './middleware.js';
 
-function collectRequiredProviders(ir: AgentIRShape): Set<string> {
-    const providers = new Set<string>();
-    const addProvider = (value?: string) => {
-        if (value) {
-            providers.add(value.toLowerCase());
-        }
-    };
-    const addFromEntries = (entries?: IRModelConfigEntry[] | null) => {
-        if (!entries) {
-            return;
-        }
-        for (const entry of entries) {
-            addProvider(entry.defaultConfig?.model?.type);
-            if (entry.namedConfig) {
-                for (const named of entry.namedConfig) {
-                    addProvider(named.model?.type);
-                }
-            }
-        }
-    };
-
-    addFromEntries(ir.modelConfig);
-    if (ir.helpers) {
-        for (const helper of ir.helpers) {
-            addFromEntries(helper.modelConfig as IRModelConfigEntry[]);
-        }
-    }
-
-    return providers;
-}
 
 // ── Configuration ────────────────────────────────────────────────────────
 
@@ -203,6 +173,30 @@ export class TypedAuwgent<
                 (partialHandler as any)(name, value);
             });
         }
+
+        // Register Sub-Engine Lifecycle Hooks
+        this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
+            let session = JSON.parse(emptySessionJson) as SessionState;
+            const ctx: MiddlewareContext = { activeAgent: helperName, ...this.sharedContext };
+
+            for (const m of this.middleware) {
+                if (m.onRunStart) {
+                    session = await m.onRunStart(session, ctx);
+                }
+            }
+            return JSON.stringify(session);
+        });
+
+        this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
+            const session = JSON.parse(completedSessionJson) as SessionState;
+            const ctx: MiddlewareContext = { activeAgent: helperName, ...this.sharedContext };
+
+            for (const m of this.middleware) {
+                if (m.onRunComplete) {
+                    await m.onRunComplete(session, ctx);
+                }
+            }
+        });
     }
 
     /**
@@ -214,6 +208,8 @@ export class TypedAuwgent<
         // the old Arc<ThreadsafeFunction>, which releases the libuv ref.
         this.native.onIntent(() => undefined);
         this.native.onIntentPartial(() => { });
+        this.native.onSubEngineStart(async () => undefined);
+        this.native.onSubEngineComplete(async () => { });
     }
 
     /** Run the agentic loop. Returns the exported session state. */

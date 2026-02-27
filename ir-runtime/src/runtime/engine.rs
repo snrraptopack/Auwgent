@@ -41,6 +41,19 @@ pub type AsyncIntentCallback = Arc<
         + Sync,
 >;
 
+/// Async callback for preloading a helper's session history before it runs.
+/// Receives `(helper_name, empty_session_json)`. Returns an optional `SessionState` JSON string.
+pub type AsyncSessionPreloadCallback = Arc<
+    dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, Option<String>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback for saving a helper's session history after it completes.
+/// Receives `(helper_name, completed_session_json)`.
+pub type SessionSaveCallback =
+    Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -63,6 +76,10 @@ pub struct AuwgentEngine {
     intent_handler: Option<AsyncIntentCallback>,
     /// User-facing partial intent callback (fires as data streams in)
     partial_intent_handler: Option<Arc<dyn Fn(String, Value) + Send + Sync>>,
+    /// Hook for TypeScript to preload a helper session before sub_engine.run()
+    session_preload_handler: Option<AsyncSessionPreloadCallback>,
+    /// Hook for TypeScript to save a helper session after sub_engine.run()
+    session_save_handler: Option<SessionSaveCallback>,
 }
 
 impl AuwgentEngine {
@@ -97,7 +114,17 @@ impl AuwgentEngine {
             current_raw_response: String::new(),
             intent_handler: None,
             partial_intent_handler: None,
+            session_preload_handler: None,
+            session_save_handler: None,
         }
+    }
+
+    pub fn on_sub_engine_start(&mut self, handler: AsyncSessionPreloadCallback) {
+        self.session_preload_handler = Some(handler);
+    }
+
+    pub fn on_sub_engine_complete(&mut self, handler: SessionSaveCallback) {
+        self.session_save_handler = Some(handler);
     }
 
     pub fn register_driver(&mut self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
@@ -690,6 +717,9 @@ impl AuwgentEngine {
         &'a mut self,
         call: &'a Value,
     ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value)>> {
+        let session_preload_handler = self.session_preload_handler.clone();
+        let session_save_handler = self.session_save_handler.clone();
+
         Box::pin(async move {
             use crate::runtime::helper_runner::{HandoffMode, build_sub_agent_context};
 
@@ -742,8 +772,27 @@ impl AuwgentEngine {
                 }
             }
 
+            // 6.5 Preload session from host if handler exists
+            if let Some(preload_fn) = &session_preload_handler {
+                let empty_session = sub_engine
+                    .export_session()
+                    .unwrap_or_else(|_| "{}".to_string());
+                if let Some(loaded_json) = preload_fn(helper_name.clone(), empty_session).await {
+                    if let Err(e) = sub_engine.import_session(&loaded_json) {
+                        eprintln!("Failed to import loaded helper session: {}", e);
+                    }
+                }
+            }
+
             // 7. Run the full nested agentic loop
             sub_engine.run(Some(args)).await?;
+
+            // 7.5 Save session to host if handler exists
+            if let Some(save_fn) = &session_save_handler {
+                if let Ok(completed_json) = sub_engine.export_session() {
+                    save_fn(helper_name.clone(), completed_json).await;
+                }
+            }
 
             // 8. Extract the result & route based on handoff mode
             let final_resp = sub_engine

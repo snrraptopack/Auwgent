@@ -239,6 +239,75 @@ impl Auwgent {
         Ok(())
     }
 
+    /// Hook for TypeScript to preload a helper session before sub_engine.run()
+    #[napi(
+        ts_args_type = "callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined>"
+    )]
+    pub fn on_sub_engine_start(&self, callback: JsFunction) -> Result<()> {
+        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
+                let name = ctx.env.create_string(&ctx.value.0)?;
+                let session = ctx.env.create_string(&ctx.value.1)?;
+                Ok(vec![name.into_unknown(), session.into_unknown()])
+            })?;
+
+        let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
+            Arc::new(move |name: String, empty_session: String| {
+                let tsfn = tsfn.clone();
+                Box::pin(async move {
+                    let result = tsfn
+                        .call_async::<Promise<Option<String>>>((name, empty_session))
+                        .await;
+                    match result {
+                        Ok(promise) => promise.await.unwrap_or(None),
+                        Err(_) => None,
+                    }
+                })
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_sub_engine_start(handler);
+        });
+
+        Ok(())
+    }
+
+    /// Hook for TypeScript to save a helper session after sub_engine.run()
+    #[napi(
+        ts_args_type = "callback: (helperName: string, completedSessionJson: string) => Promise<void>"
+    )]
+    pub fn on_sub_engine_complete(&self, callback: JsFunction) -> Result<()> {
+        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
+                let name = ctx.env.create_string(&ctx.value.0)?;
+                let session = ctx.env.create_string(&ctx.value.1)?;
+                Ok(vec![name.into_unknown(), session.into_unknown()])
+            })?;
+
+        let handler: ir_runtime::runtime::engine::SessionSaveCallback =
+            Arc::new(move |name: String, completed_session: String| {
+                let tsfn = tsfn.clone();
+                Box::pin(async move {
+                    let result = tsfn
+                        .call_async::<Promise<()>>((name, completed_session))
+                        .await;
+                    if let Ok(promise) = result {
+                        let _ = promise.await;
+                    }
+                })
+            });
+
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.on_sub_engine_complete(handler);
+        });
+
+        Ok(())
+    }
+
     /// Run the agentic loop with the given input.
     /// Returns the exported session state as JSON.
     ///
