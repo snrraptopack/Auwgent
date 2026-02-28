@@ -127,8 +127,8 @@ impl Auwgent {
                 // Call the JS function from the Rust async context
                 let result = tsfn.call_async::<Promise<Value>>(args).await;
                 match result {
-                    Ok(promise) => promise.await.map_err(|e| format!("Tool JS error: {}", e)),
-                    Err(e) => Err(format!("Tool call failed: {}", e)),
+                    Ok(promise) => promise.await.map_err(|e| e.reason.clone()),
+                    Err(e) => Err(e.reason.clone()),
                 }
             })
         });
@@ -513,11 +513,12 @@ impl Auwgent {
         let result: std::result::Result<String, String> = tokio::task::spawn_blocking(move || {
             rt.block_on(async {
                 let mut eng = engine.lock().await;
-                let (terminal, actions) =
+                let (terminal, actions, hard_stop) =
                     eng.process_intents().await.map_err(|e| format!("{}", e))?;
                 Ok(serde_json::json!({
                     "terminal": terminal,
                     "actions": actions,
+                    "hard_stop": hard_stop,
                 })
                 .to_string())
             })

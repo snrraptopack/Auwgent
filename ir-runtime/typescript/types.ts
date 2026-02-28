@@ -34,6 +34,16 @@ export interface IRHelperDef {
     modelConfig?: IRModelConfigEntry[] | null;
 }
 
+/**
+ * Custom error thrown/emitted when a tool execution fails.
+ */
+export class AuwgentToolError extends Error {
+    constructor(public toolName: string, message: string) {
+        super(`Tool [${toolName}] failed: ${message}`);
+        this.name = 'AuwgentToolError';
+    }
+}
+
 export interface AgentIRShape {
     name: string;
     tools: readonly IRToolDef[];

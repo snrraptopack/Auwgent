@@ -12,6 +12,10 @@ import { Auwgent as AuwgentNative } from './index.js';
 // Re-export the native class for advanced users who want raw access
 export { AuwgentNative };
 
+import {
+    AuwgentToolError,
+} from './types.js';
+
 import type {
     AgentIRShape,
     ToolRegistry,
@@ -179,7 +183,30 @@ export class TypedAuwgent<
 
             // Forward to user handler
             if (userHandler) {
-                return (userHandler as any)(name, value);
+                const result = await (userHandler as any)(name, value);
+
+                // Unified Error Hook Bridge:
+                // If this turn was a tool error, trigger the onError lifecycle hook.
+                if (name === 'tool_error' && value && typeof value === 'object') {
+                    const toolErr = new AuwgentToolError(value.tool || 'unknown', value.message || 'unknown');
+                    for (const m of this.getMiddleware(intentCtx)) {
+                        if (m.onError) {
+                            await (m as any).onError(toolErr, undefined, intentCtx);
+                        }
+                    }
+                }
+
+                return result ?? null;
+            }
+
+            // Unified Error Hook Bridge (when no user handler is defined)
+            if (name === 'tool_error' && value && typeof value === 'object') {
+                const toolErr = new AuwgentToolError(value.tool || 'unknown', value.message || 'unknown');
+                for (const m of this.getMiddleware(intentCtx)) {
+                    if (m.onError) {
+                        await (m as any).onError(toolErr, undefined, intentCtx);
+                    }
+                }
             }
         });
 

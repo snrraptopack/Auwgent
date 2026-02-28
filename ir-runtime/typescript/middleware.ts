@@ -86,7 +86,7 @@ interface _MiddlewareHooks<
      */
     onError?: (
         error: Error,
-        session: SessionState,
+        session: SessionState | undefined,
         ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => boolean | Promise<boolean> | void | Promise<void>;
 }

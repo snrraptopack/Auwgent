@@ -334,7 +334,6 @@ impl AuwgentEngine {
                     .map_err(AuwgentError::Driver)?
             };
 
-            let mut has_terminal_output = false;
             let mut actions_performed = false;
 
             while let Some(chunk_res) = stream.next().await {
@@ -344,12 +343,12 @@ impl AuwgentEngine {
                             self.current_raw_response.push_str(&text);
                         }
                         self.orchestrator.write(&text);
-                        let (terminal, actions) = self.process_intents().await?;
-                        if terminal {
-                            has_terminal_output = true;
-                        }
+                        let (_terminal, actions, hard_stop) = self.process_intents().await?;
                         if actions {
                             actions_performed = true;
+                        }
+                        if hard_stop {
+                            break;
                         }
                     }
                     Err(e) => {
@@ -372,10 +371,7 @@ impl AuwgentEngine {
             // (e.g. the final `response_text`) into the engine's pending_intents list.
             let _final_val = self.orchestrator.end();
 
-            let (terminal, actions) = self.process_intents().await?;
-            if terminal {
-                has_terminal_output = true;
-            }
+            let (_terminal, actions, hard_stop) = self.process_intents().await?;
             if actions {
                 actions_performed = true;
             }
@@ -390,7 +386,13 @@ impl AuwgentEngine {
             self.session.set_model_response(&self.current_raw_response);
 
             // Decide if we loop or stop
-            if has_terminal_output || !actions_performed {
+            if hard_stop {
+                break;
+            }
+
+            // If the model performed actions, we MUST loop to feed the results back.
+            // We only stop if there are no pending tool/helper results to provide.
+            if !actions_performed {
                 break;
             }
 
@@ -444,7 +446,7 @@ impl AuwgentEngine {
         }
     }
 
-    pub async fn process_intents(&mut self) -> AuwgentResult<(bool, bool)> {
+    pub async fn process_intents(&mut self) -> AuwgentResult<(bool, bool, bool)> {
         let intents = {
             let mut pending = self
                 .pending_intents
@@ -455,6 +457,8 @@ impl AuwgentEngine {
 
         let mut has_terminal = false;
         let mut has_actions = false;
+        let mut hard_stop = false;
+
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, mut value) in intents {
@@ -551,6 +555,7 @@ impl AuwgentEngine {
                                 // The helper already streamed its terminal intent directly to the user.
                                 // We tell the parent engine to stop looping immediately.
                                 has_terminal = true;
+                                hard_stop = true;
                                 break;
                             }
                         }
@@ -580,7 +585,7 @@ impl AuwgentEngine {
         // Store tool results so build_results_payload() can feed them back
         self.pending_tool_results.extend(tool_results);
 
-        Ok((has_terminal, has_actions))
+        Ok((has_terminal, has_actions, hard_stop))
     }
 
     async fn execute_tool(&self, call: &Value) -> AuwgentResult<(String, Value)> {
