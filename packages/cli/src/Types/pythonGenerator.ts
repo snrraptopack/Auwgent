@@ -56,7 +56,16 @@ export function generatePythonTypesFile(agent: AgentIR, baseName?: string): stri
 
     // Standard Python typing imports for stubs
     const imports = [
+        "import os",
+        "import json",
         "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, NotRequired",
+        "try:",
+        "    from auwgent import TypedAuwgent, create_auwgent",
+        "except ImportError:",
+        "    # For local testing if auwgent is not installed via pip",
+        "    import sys",
+        "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
+        "    from auwgent import TypedAuwgent, create_auwgent",
         ""
     ];
 
@@ -73,10 +82,38 @@ export function generatePythonTypesFile(agent: AgentIR, baseName?: string): stri
         generateOutputInterface(agent, transferredHelpers),
         generateContextInterface(agent),
         generateToolsProtocol(agent.name, allTools),
-        requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : ''
+        requiredProviders.size > 0 ? generateApiKeysInterface(agent, requiredProviders) : '',
+        generateFactoryFunction(agent, requiredProviders, baseName)
     ];
 
     return sections.filter(Boolean).join('\n');
+}
+
+function generateFactoryFunction(agent: AgentIR, providers: Set<string>, baseName?: string): string {
+    const configClassName = `${agent.name}Config`;
+    const configKeys: string[] = [];
+
+    configKeys.push(`    tools: NotRequired['${agent.name}Tools']`);
+    if (agent.context) {
+        configKeys.push(`    context: NotRequired['${agent.name}Context']`);
+    }
+    if (providers.size > 0) {
+        configKeys.push(`    apiKeys: NotRequired['${agent.name}ApiKeys']`);
+    }
+
+    const configClass = `class ${configClassName}(TypedDict, total=False):\n${configKeys.join('\n')}\n`;
+
+    // Fall back to agent.name.toLowerCase() if no baseName is provided
+    const jsonFileName = baseName ? `${baseName}.agent.json` : `${agent.name.toLowerCase()}.agent.json`;
+
+    const factory = `def create${agent.name}(config: ${configClassName}) -> TypedAuwgent:
+    ir_path = os.path.join(os.path.dirname(__file__), "${jsonFileName}")
+    with open(ir_path, "r", encoding="utf-8") as f:
+        ir_dict = json.load(f)
+    return create_auwgent(ir_dict, config)
+`;
+
+    return `${configClass}\n${factory}`;
 }
 
 function collectProvidersFromModelConfig(modelConfig?: AgentIR["modelConfig"]): Set<string> {

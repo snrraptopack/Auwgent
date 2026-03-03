@@ -265,7 +265,7 @@ export async function generateOutput(model: Model, source: string, destination: 
                 const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
                 fs.writeFileSync(typesPath, generateTypesFile(agentIR, baseName));
             } else if (target === 'python') {
-                const typesPath = path.join(destDir, `${baseName}_types.pyi`);
+                const typesPath = path.join(destDir, `${baseName}_types.py`);
                 fs.writeFileSync(typesPath, generatePythonTypesFile(agentIR, baseName));
             }
         }
