@@ -52,6 +52,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { handleAgentConfig } from "./agentConfig.js";
 import { generateTypesFile } from "./Types/typesGenerator.js";
+import { generatePythonTypesFile } from "./Types/pythonGenerator.js";
 import { CrossFileResolver } from "./cross-file-resolver.js";
 import { NodeFileSystem } from 'langium/node';
 import { URI } from 'langium';
@@ -99,7 +100,7 @@ type HelperType = {
 } /// returns: string | undefined, has be removed requires changes in the loader too
 
 
-export async function generateOutput(model: Model, source: string, destination: string) {
+export async function generateOutput(model: Model, source: string, destination: string, target: 'ts' | 'python' = 'ts') {
     const destDir = resolveDestinationDir(destination);
     if (!fs.existsSync(destDir)) {
         fs.mkdirSync(destDir, { recursive: true });
@@ -259,8 +260,14 @@ export async function generateOutput(model: Model, source: string, destination: 
             }
 
             fs.writeFileSync(outputPath, JSON.stringify(agentIR, null, 2));
-            const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
-            fs.writeFileSync(typesPath, generateTypesFile(agentIR, baseName));
+
+            if (target === 'ts') {
+                const typesPath = path.join(destDir, `${baseName}.agent.types.ts`);
+                fs.writeFileSync(typesPath, generateTypesFile(agentIR, baseName));
+            } else if (target === 'python') {
+                const typesPath = path.join(destDir, `${baseName}_types.pyi`);
+                fs.writeFileSync(typesPath, generatePythonTypesFile(agentIR, baseName));
+            }
         }
 
         if (currentElement.$type === "NamedPrompt") continue;

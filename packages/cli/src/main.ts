@@ -13,10 +13,11 @@ const __dirname = url.fileURLToPath(new URL('.', import.meta.url));
 const packagePath = path.resolve(__dirname, '..', 'package.json');
 const packageContent = await fs.readFile(packagePath, 'utf-8');
 
-export const generateAction = async (source: string, destination: string): Promise<void> => {
+export const generateAction = async (source: string, destination: string, options: { target: string }): Promise<void> => {
     const services = createAuwgentServices(NodeFileSystem).Auwgent;
     const model = await extractAstNode<Model>(source, services);
-    const generatedFilePath = await generateOutput(model, source, destination);
+    const target = options.target === 'python' ? 'python' : 'ts';
+    const generatedFilePath = await generateOutput(model, source, destination, target);
     console.log(chalk.green(`Code generated succesfully: ${generatedFilePath}`));
 };
 
@@ -31,6 +32,7 @@ export default function (): void {
         .command('generate')
         .argument('<file>', `source file (possible file extensions: ${fileExtensions})`)
         .argument('<destination>', 'destination file or directory')
+        .option('-t, --target <lang>', 'target language to generate (ts or python)', 'ts')
         .description('Generates code for a provided source file.')
         .action(generateAction);
 

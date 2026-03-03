@@ -42,7 +42,6 @@ const config: ManagerConfig = {
     },
     tools: {
         getStudentDetails: async (id) => {
-            if (id) throw new Error("error occured")
             return student
         }
     },
