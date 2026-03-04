@@ -1,13 +1,9 @@
 import json
-import os
 import asyncio
 from dotenv import load_dotenv
+import os
 
-# Ensure parent directory is in path to import auwgent.py
-import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# We can import the generated types for static typing
+# Generated types handle all imports (including auwgent SDK)
 from main_types import Student, ManagerTools, createManager
 
 class MyManagerTools:
@@ -20,24 +16,16 @@ class MyManagerTools:
         }
 
 async def main():
-
-    # Load the .env file
     load_dotenv()
     gemini_key = os.getenv("GEMINI_API_KEY", "")
 
-    tools = MyManagerTools()
-    config = {
-        "tools": tools,
+    agent = createManager({
+        "tools": MyManagerTools(),
         "context": {"user_name": "sysadmin"},
         "apiKeys": {"geminiApiKey": gemini_key}
-    }
+    })
 
-    # Initialize the engine natively via generated factory
-    agent = createManager(config)
-
-    # Listen to intent streams in real-time
     async def log_intent(name: str, value: dict):
-        # We can selectively log intents to the console as they happen
         if name == "response_text":
             print(f"🤖 Agent says: {value.get('text')}")
         elif name == "tool_call":
@@ -49,12 +37,9 @@ async def main():
 
     agent.on_intent(log_intent)
 
-    # Run the agent with a basic input
     try:
-        _results = await agent.run("what is the deatails for student with id 10")
-
-        print(f"output : {json.dumps(_results)}")
-
+        result = await agent.run("what is the deatails for student with id 10")
+        print(f"output : {json.dumps(result)}")
     except Exception as e:
         print(f"Engine Exception: {e}")
 

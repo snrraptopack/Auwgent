@@ -54,18 +54,25 @@ export function generatePythonTypesFile(agent: AgentIR, baseName?: string): stri
     // Collect API keys
     const requiredProviders = collectRequiredProviders(agent);
 
-    // Standard Python typing imports for stubs
+    // Standard Python typing imports for stubs (with NotRequired fallback)
     const imports = [
         "import os",
         "import json",
-        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, NotRequired",
+        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol",
+        "",
+        "# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10",
         "try:",
-        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext",
+        "    from typing import NotRequired",
+        "except ImportError:",
+        "    from typing_extensions import NotRequired",
+        "",
+        "try:",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
         ""
     ];
 
@@ -94,6 +101,7 @@ function generateFactoryFunction(agent: AgentIR, providers: Set<string>, baseNam
     const configKeys: string[] = [];
 
     configKeys.push(`    tools: NotRequired['${agent.name}Tools']`);
+    configKeys.push(`    middleware: NotRequired[List['${agent.name}Middleware']]`);
     if (agent.context) {
         configKeys.push(`    context: NotRequired['${agent.name}Context']`);
     }
@@ -103,17 +111,34 @@ function generateFactoryFunction(agent: AgentIR, providers: Set<string>, baseNam
 
     const configClass = `class ${configClassName}(TypedDict, total=False):\n${configKeys.join('\n')}\n`;
 
+    // Agent type alias
+    const agentType = `${agent.name}Agent = TypedAuwgent\n`;
+
+    // Middleware type alias
+    const middlewareType = `${agent.name}Middleware = Middleware\n`;
+
     // Fall back to agent.name.toLowerCase() if no baseName is provided
     const jsonFileName = baseName ? `${baseName}.agent.json` : `${agent.name.toLowerCase()}.agent.json`;
 
-    const factory = `def create${agent.name}(config: ${configClassName}) -> TypedAuwgent:
+    const factory = `def create${agent.name}(config: ${configClassName}) -> '${agent.name}Agent':
+    """Create a fully configured ${agent.name} agent from config."""
     ir_path = os.path.join(os.path.dirname(__file__), "${jsonFileName}")
     with open(ir_path, "r", encoding="utf-8") as f:
         ir_dict = json.load(f)
     return create_auwgent(ir_dict, config)
 `;
 
-    return `${configClass}\n${factory}`;
+    // Convenience aliases (matching TS output)
+    const aliases = [
+        `auwgent = create${agent.name}`,
+        `AuwgentTools = ${agent.name}Tools`,
+        `AuwgentConfig = ${agent.name}Config`,
+        `AuwgentAgent = ${agent.name}Agent`,
+        `AuwgentMiddleware = ${agent.name}Middleware`,
+        `AuwgentContext = ${agent.name}Context`,
+    ].join('\n');
+
+    return `${agentType}\n${middlewareType}\n${configClass}\n${factory}\n${aliases}\n`;
 }
 
 function collectProvidersFromModelConfig(modelConfig?: AgentIR["modelConfig"]): Set<string> {
