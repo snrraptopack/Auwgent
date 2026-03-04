@@ -1,37 +1,6 @@
-import { createManager, ManagerMiddleware, type ManagerConfig, Student } from "./main.agent.types"
+import { createManager, type ManagerConfig } from "./main.agent.types"
+import { getStudentDetails } from "./tools";
 
-
-const student: Student = {
-    user_name: "Amihere",
-    age: 10,
-    id: "100",
-    grades: ["A", "B"]
-}
-
-const jokerMiddleware: ManagerMiddleware = {
-    name: "JokerLogger",
-    target: "Joker", // <--- Targeted!
-    onLLMEnd(response, ctx) {
-        ctx.activeAgent
-        console.log("[Jokey] response", response)
-    },
-    onRunComplete: (session, ctx) => {
-        console.log("--- [JOKER COMPLETE] ---")
-        console.log("Active:", ctx.activeAgent)
-        console.log("Path:", ctx.stack.join(" > "))
-        console.log("------------------------")
-    },
-};
-
-const loggingMiddleware: ManagerMiddleware = {
-    name: "Logger",
-    onLLMStart: (prompt, ctx) => {
-        console.log("llm", prompt)
-    },
-    onError: (err, s, ctx) => {
-        console.log(err)
-    }
-};
 
 const config: ManagerConfig = {
     apiKeys: {
@@ -40,12 +9,7 @@ const config: ManagerConfig = {
     context: {
         user_name: "Amihere"
     },
-    tools: {
-        getStudentDetails: async (id) => {
-            return student
-        }
-    },
-    middleware: [loggingMiddleware, jokerMiddleware]
+    tools: { getStudentDetails }
 }
 
 const router = createManager(config)
@@ -53,20 +17,19 @@ const router = createManager(config)
 
 router.onIntent((name, value) => {
     if (name === "response_text") {
-        console.log(`\n[AGENT SAYS] ${value.text}\n`)
-    } else if (name === "tool_call") {
-        console.log(`\n[TOOL CALL] ${value.type}`)
-    } else if (name === "helper_call") {
-        console.log(`\n[HELPER CALL] ${value.type}`)
+        console.log(`answer: ${value.text}`)
     }
-    if (name === "helper_result") {
-        console.log("result", value.result)
+
+    if (name === "tool_call") {
+        console.log(`[tool call] ${value.type} with args of ${value.args}`)
     }
 })
 
+const session = await router.run("what is the deatails for student with id 10")
+
+
 
 //console.log(router.generatePrompt())
-const session = await router.run("what is the deatails for student with id 10")
 
 
 //console.log("session", JSON.stringify(session, null, 2))

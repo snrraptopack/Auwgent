@@ -375,22 +375,25 @@ function generateToolsProtocol(agentName: string, tools: ToolDef[]): string {
         return `class ${agentName}Tools(TypedDict, total=False):\n    pass\n`;
     }
 
-    const toolMethods = tools.map(tool => {
-        const paramsArgs = Object.entries(tool.params)
+    const toolFields = tools.map(tool => {
+        // Build the parameter type hints for the Callable signature
+        const paramTypes = Object.entries(tool.params)
             .map(([name, typeObj]: [string, any]) => {
                 let pythonType = typeToPythonString(typeObj);
                 if (typeObj?.optional) pythonType = `Optional[${pythonType}]`;
-                return `        ${name}: ${pythonType}`;
-            })
-            .join(',\n');
+                return pythonType;
+            });
 
-        const methodComment = tool.description ? `        """${tool.description}"""\n` : '';
+        const methodComment = tool.description ? `    # ${tool.description}\n` : '';
         const returns = typeToPythonString(tool.returns);
 
-        return `    def ${tool.name}(\n        self,\n${paramsArgs ? paramsArgs + '\n' : ''}    ) -> Awaitable[${returns}]:\n${methodComment}        ...`;
+        // Generate as Callable with keyword args hint via Protocol isn't needed;
+        // use a simple Callable[[param_types], Awaitable[ReturnType]]
+        const paramList = paramTypes.length > 0 ? paramTypes.join(', ') : '';
+        return `${methodComment}    ${tool.name}: Callable[[${paramList}], Awaitable[${returns}]]`;
     }).join('\n\n');
 
-    return `class ${agentName}Tools(Protocol):\n${toolMethods}\n`;
+    return `class ${agentName}Tools(TypedDict, total=False):\n${toolFields}\n`;
 }
 
 function typeToPythonString(typeVal: any): string {

@@ -30,13 +30,9 @@ class ManagerOutput(TypedDict, total=False):
 class ManagerContext(TypedDict, total=False):
     user_name: str
 
-class ManagerTools(Protocol):
-    def getStudentDetails(
-        self,
-        id: str
-    ) -> Awaitable["Student"]:
-        """This is used to get the details of the student"""
-        ...
+class ManagerTools(TypedDict, total=False):
+    # This is used to get the details of the student
+    getStudentDetails: Callable[[str], Awaitable["Student"]]
 
 class ManagerApiKeys(TypedDict, total=False):
     geminiApiKey: str
