@@ -60,12 +60,12 @@ export function generatePythonTypesFile(agent: AgentIR, baseName?: string): stri
         "import json",
         "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, NotRequired",
         "try:",
-        "    from auwgent import TypedAuwgent, create_auwgent",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent import TypedAuwgent, create_auwgent",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext",
         ""
     ];
 

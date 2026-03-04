@@ -53,8 +53,7 @@ async def main():
     try:
         _results = await agent.run("what is the deatails for student with id 10")
 
-        # print("\nProcessed Output:")
-        # print(json.dumps(results, indent=2))
+        print(f"output : {json.dumps(_results)}")
 
     except Exception as e:
         print(f"Engine Exception: {e}")

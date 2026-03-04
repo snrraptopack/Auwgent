@@ -112,6 +112,54 @@ impl Orchestrator {
                     if let Some(handler) = &self.intent_handler {
                         let mut json_val = build_result.value.into_json();
 
+                        // ── Fix multi-line text merging ──
+                        // When the LLM outputs response_text with indented continuation
+                        // lines (e.g. "text: Hello:\n    Name: Babyface\n    Age: 22"),
+                        // the YAML parser treats the indented lines as sibling keys
+                        // instead of multi-line text. Merge extra keys back into `text`.
+                        if entry.key == "response_text" || entry.key == "response_schema" {
+                            if let Value::Object(ref mut map) = json_val {
+                                let main_key = if entry.key == "response_text" {
+                                    "text"
+                                } else {
+                                    "data"
+                                };
+                                // Collect extra keys (anything that isn't the main key)
+                                let extra_keys: Vec<(String, Value)> = map
+                                    .iter()
+                                    .filter(|(k, _)| k.as_str() != main_key)
+                                    .map(|(k, v)| (k.clone(), v.clone()))
+                                    .collect();
+
+                                if !extra_keys.is_empty() {
+                                    // Build continuation text from extra keys
+                                    let mut continuation = String::new();
+                                    for (k, v) in &extra_keys {
+                                        let val_str = match v {
+                                            Value::String(s) => s.clone(),
+                                            Value::Number(n) => n.to_string(),
+                                            Value::Bool(b) => b.to_string(),
+                                            Value::Null => "null".to_string(),
+                                            other => {
+                                                serde_json::to_string(other).unwrap_or_default()
+                                            }
+                                        };
+                                        continuation.push_str(&format!("\n{}: {}", k, val_str));
+                                    }
+
+                                    // Append continuation to main text
+                                    if let Some(Value::String(text)) = map.get_mut(main_key) {
+                                        text.push_str(&continuation);
+                                    }
+
+                                    // Remove the extra keys from the map
+                                    for (k, _) in &extra_keys {
+                                        map.remove(k);
+                                    }
+                                }
+                            }
+                        }
+
                         // Inject _raw: readable representation for middleware logging/audit
                         if let Value::Object(ref mut map) = json_val {
                             let yaml_body = serde_yaml::to_string(&Value::Object(map.clone()))
