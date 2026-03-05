@@ -1,0 +1,11 @@
+[package]
+name = "auwgent-ir"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+auwgent-errors = { path = "../auwgent-errors" }
+auwgent-ast = { path = "../auwgent-ast" }
+auwgent-checker = { path = "../auwgent-checker" }
+serde = { workspace = true }
+serde_json = { workspace = true }

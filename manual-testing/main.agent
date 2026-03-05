@@ -22,8 +22,13 @@ agent Manager{
     }
     
     tool getStudentDetails(id:string):Student @desc "This is used to get the details of the student"
-    
 
+    workflow ss(id:string):Student{
+        description:"use this to get the student information in details"
+        let student_result = getStudentDetails(id)
+        return student_result
+    }
+    
 }
 
 helper Joker{
@@ -43,5 +48,6 @@ prompt managerPrompt(user_name:string){
         You are helpful assistant you are to help student navigate and answer questions....
         please be polite and be direct
         the name of the user is {{user_name}}
+        {{@schema(outputs)}}
     """
 }

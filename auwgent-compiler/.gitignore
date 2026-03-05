@@ -1,0 +1,6 @@
+# Rust build artifacts
+target/
+
+# Cargo lock (workspace)
+# Cargo.lock is committed for binaries, uncomment if you want to ignore it
+# Cargo.lock

@@ -1,0 +1,184 @@
+{
+  "context": {
+    "user_name": {
+      "optional": false,
+      "type": "string"
+    }
+  },
+  "helperHandoff": {
+    "Joker": "thenContinue"
+  },
+  "helperToolGrants": {
+    "Joker": [
+      "getStudentDetails"
+    ]
+  },
+  "helpers": [
+    {
+      "context": null,
+      "description": "very good at telling jokes",
+      "input": {
+        "text": {
+          "optional": false,
+          "type": "string"
+        }
+      },
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "modelName": "gemini-2.5-flash",
+              "type": "gemini"
+            },
+            "prompt": {
+              "type": "literal",
+              "value": "You are a helpful assistant your sole aim is crack jokes to student to help them relax"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "name": "Joker",
+      "output": null,
+      "tools": [],
+      "workflows": []
+    }
+  ],
+  "input": null,
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "modelName": "gemini-2.5-flash",
+          "type": "gemini"
+        },
+        "prompt": {
+          "args": [
+            {
+              "property": "user_name",
+              "type": "contextRef"
+            }
+          ],
+          "name": "managerPrompt",
+          "params": [
+            "user_name"
+          ],
+          "type": "promptRef",
+          "value": [
+            {
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n        You are helpful assistant you are to help student navigate and answer questions....\r\n        please be polite and be direct\r\n        the name of the user is "
+                },
+                {
+                  "type": "varRef",
+                  "value": "user_name"
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n        "
+                },
+                {
+                  "path": "outputs",
+                  "type": "schema"
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n    "
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "name": "Manager",
+  "output": null,
+  "tests": [],
+  "tools": [
+    {
+      "description": "This is used to get the details of the student",
+      "name": "getStudentDetails",
+      "params": {
+        "id": {
+          "optional": false,
+          "type": "string"
+        }
+      },
+      "returns": {
+        "name": "Student",
+        "type": "typeRef"
+      }
+    }
+  ],
+  "types": {
+    "Student": {
+      "isOutput": false,
+      "properties": {
+        "age": {
+          "optional": false,
+          "type": "number"
+        },
+        "grades": {
+          "optional": false,
+          "type": {
+            "items": "string",
+            "type": "array"
+          }
+        },
+        "id": {
+          "optional": false,
+          "type": "string"
+        },
+        "user_name": {
+          "optional": false,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "workflows": [
+    {
+      "body": [
+        {
+          "name": "student_result",
+          "type": "let",
+          "value": {
+            "args": [
+              {
+                "type": "varRef",
+                "value": "id"
+              }
+            ],
+            "name": "getStudentDetails",
+            "type": "functionCall"
+          }
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "varRef",
+            "value": "student_result"
+          }
+        }
+      ],
+      "description": "use this to get the student information in details",
+      "name": "ss",
+      "params": {
+        "id": {
+          "optional": false,
+          "type": "string"
+        }
+      },
+      "returns": {
+        "name": "Student",
+        "type": "typeRef"
+      },
+      "tools": []
+    }
+  ]
+}

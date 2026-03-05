@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/auwgent-errors",
+    "crates/auwgent-ast",
+    "crates/auwgent-lexer",
+    "crates/auwgent-parser",
+    "crates/auwgent-checker",
+    "crates/auwgent-ir",
+    "crates/auwgent-codegen",
+    "crates/auwgent-cli",
+    # "crates/auwgent-lsp",  # Enable when ready
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Shared across crates
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chumsky = "0.9"
+ariadne = "0.4"
+clap = { version = "4", features = ["derive"] }

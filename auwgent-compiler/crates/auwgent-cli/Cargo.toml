@@ -1,0 +1,19 @@
+[package]
+name = "auwgent-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "auwgent"
+path = "src/main.rs"
+
+[dependencies]
+auwgent-errors = { path = "../auwgent-errors" }
+auwgent-ast = { path = "../auwgent-ast" }
+auwgent-lexer = { path = "../auwgent-lexer" }
+auwgent-parser = { path = "../auwgent-parser" }
+auwgent-checker = { path = "../auwgent-checker" }
+auwgent-ir = { path = "../auwgent-ir" }
+auwgent-codegen = { path = "../auwgent-codegen" }
+clap = { workspace = true }
+serde_json = { workspace = true }

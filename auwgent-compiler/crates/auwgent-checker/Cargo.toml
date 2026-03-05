@@ -1,0 +1,8 @@
+[package]
+name = "auwgent-checker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+auwgent-errors = { path = "../auwgent-errors" }
+auwgent-ast = { path = "../auwgent-ast" }

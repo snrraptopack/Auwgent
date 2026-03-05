@@ -1,0 +1,8 @@
+[package]
+name = "auwgent-codegen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+auwgent-ir = { path = "../auwgent-ir" }
+serde_json = { workspace = true }

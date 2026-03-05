@@ -1,0 +1,541 @@
+//! Agent config parsers: model config, tool, helpers, lifecycle, test,
+//! workflow, prompt statements, and the overall agent_config combinator.
+
+use auwgent_ast::*;
+use auwgent_errors::Span;
+use auwgent_lexer::TokenKind;
+use chumsky::prelude::*;
+
+use crate::expr::{condition_parser, expr_parser};
+use crate::primitives::*;
+use crate::stmt::statement_parser;
+use crate::types::{type_config_decl_parser, type_expr_parser};
+
+// ── Model Provider ───────────────────────────────────────────────────────
+
+pub(crate) fn model_provider_parser(
+) -> impl Parser<TokenKind, ModelProvider, Error = Simple<TokenKind>> + Clone {
+    let obj_arg = expr_parser()
+        .separated_by(tok(TokenKind::Comma))
+        .allow_trailing()
+        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace));
+
+    let gemini = tok(TokenKind::Gemini)
+        .ignore_then(
+            string_lit()
+                .then(tok(TokenKind::Comma).ignore_then(obj_arg.clone()).or_not())
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .map_with_span(|(name, _config), span| ModelProvider::Gemini {
+            model_name: name,
+            config: None,
+            span: s(span),
+        });
+
+    let openai = tok(TokenKind::Openai)
+        .ignore_then(
+            string_lit()
+                .then(tok(TokenKind::Comma).ignore_then(obj_arg.clone()).or_not())
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .map_with_span(|(name, _config), span| ModelProvider::OpenAI {
+            model_name: name,
+            config: None,
+            span: s(span),
+        });
+
+    let custom = tok(TokenKind::Custom)
+        .ignore_then(
+            string_lit()
+                .then_ignore(tok(TokenKind::Comma))
+                .then(string_lit())
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .map_with_span(|(url, model_name), span| ModelProvider::Custom {
+            url,
+            model_name,
+            config: None,
+            span: s(span),
+        });
+
+    choice((gemini, openai, custom))
+}
+
+// ── Prompt Statement ─────────────────────────────────────────────────────
+
+pub(crate) fn prompt_stmt_parser(
+) -> impl Parser<TokenKind, PromptStatement, Error = Simple<TokenKind>> + Clone {
+    recursive(
+        |pstmt: Recursive<'_, TokenKind, PromptStatement, Simple<TokenKind>>| {
+            let expr = expr_parser();
+
+            // Example blocks
+            let message = choice((
+                tok(TokenKind::User).map_with_span(|_, span| sp("user".to_string(), span)),
+                tok(TokenKind::Assistant)
+                    .map_with_span(|_, span| sp("assistant".to_string(), span)),
+            ))
+            .then_ignore(tok(TokenKind::Colon))
+            .then(any_string())
+            .map_with_span(|(role, text), span| ExampleMessage {
+                role,
+                text,
+                span: s(span),
+            });
+
+            let example = tok(TokenKind::Example)
+                .ignore_then(
+                    message
+                        .repeated()
+                        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+                )
+                .map_with_span(|messages, span| {
+                    PromptStatement::Example(ExampleBlock {
+                        messages,
+                        span: s(span),
+                    })
+                });
+
+            // if/else in prompt
+            let prompt_block = pstmt
+                .clone()
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace));
+
+            let prompt_if = tok(TokenKind::If)
+                .ignore_then(
+                    condition_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+                )
+                .then(prompt_block.clone())
+                .then(tok(TokenKind::Else).ignore_then(prompt_block).or_not())
+                .map_with_span(|((condition, then_stmts), else_stmts), span| {
+                    let then_block = then_stmts
+                        .into_iter()
+                        .map(|ps| match ps {
+                            PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
+                                span: Span::new(0, 0),
+                                value: e,
+                            }),
+                            _ => Statement::Return(ReturnStatement {
+                                span: Span::new(0, 0),
+                                value: Expr::StringLit(sp(String::new(), span.clone())),
+                            }),
+                        })
+                        .collect();
+                    let else_block = else_stmts
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|ps| match ps {
+                            PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
+                                span: Span::new(0, 0),
+                                value: e,
+                            }),
+                            _ => Statement::Return(ReturnStatement {
+                                span: Span::new(0, 0),
+                                value: Expr::StringLit(sp(String::new(), span.clone())),
+                            }),
+                        })
+                        .collect();
+                    PromptStatement::If(IfStatement {
+                        condition,
+                        then_block,
+                        else_block,
+                        span: s(span),
+                    })
+                });
+
+            choice((example, prompt_if, expr.map(PromptStatement::Expr)))
+        },
+    )
+}
+
+// ── Model Config Block ───────────────────────────────────────────────────
+
+pub(crate) fn model_config_parser(
+) -> impl Parser<TokenKind, ModelConfig, Error = Simple<TokenKind>> + Clone {
+    let model_ref = choice((
+        model_provider_parser().map(ModelProviderRef::Inline),
+        ident().map(ModelProviderRef::Ref),
+    ));
+
+    let prompt_block = tok(TokenKind::Prompt).ignore_then(choice((
+        // prompt { ... } (block form)
+        prompt_stmt_parser()
+            .repeated()
+            .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+            .map(|parts| (parts, None)),
+        // prompt: expr (expression form)
+        tok(TokenKind::Colon)
+            .ignore_then(expr_parser())
+            .map(|e| (vec![], Some(e))),
+    )));
+
+    tok(TokenKind::Model)
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(model_ref)
+        .then(prompt_block.or_not())
+        .map_with_span(|(model, prompt_opt), span| {
+            let (prompt_block, prompt_expr) = prompt_opt.unwrap_or((vec![], None));
+            ModelConfig {
+                model,
+                prompt_block,
+                prompt_expr,
+                span: s(span),
+            }
+        })
+}
+
+pub(crate) fn agent_model_config_parser(
+) -> impl Parser<TokenKind, AgentModelConfig, Error = Simple<TokenKind>> + Clone {
+    let named_config = ident()
+        .then_ignore(tok(TokenKind::Config))
+        .then(model_config_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
+        .map_with_span(|(name, config), span| NamedModelConfig {
+            name,
+            config,
+            span: s(span),
+        });
+
+    tok(TokenKind::Default)
+        .or_not()
+        .ignore_then(tok(TokenKind::Config))
+        .ignore_then(
+            model_config_parser()
+                .then(named_config.repeated())
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|(default_config, named_configs), span| AgentModelConfig {
+            default_config,
+            named_configs,
+            span: s(span),
+        })
+}
+
+// ── Tool Function ────────────────────────────────────────────────────────
+
+pub(crate) fn tool_function_parser(
+) -> impl Parser<TokenKind, ToolFunction, Error = Simple<TokenKind>> + Clone {
+    ident()
+        .then(
+            type_config_decl_parser()
+                .separated_by(tok(TokenKind::Comma))
+                .allow_trailing()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .then_ignore(tok(TokenKind::Colon))
+        .then(type_expr_parser())
+        .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).repeated())
+        .map_with_span(|(((name, params), returns), desc), span| ToolFunction {
+            name,
+            params,
+            returns,
+            description: desc,
+            span: s(span),
+        })
+}
+
+// ── Helpers Config ───────────────────────────────────────────────────────
+
+pub(crate) fn helper_ref_parser(
+) -> impl Parser<TokenKind, HelperRef, Error = Simple<TokenKind>> + Clone {
+    let tool_grant = tok(TokenKind::With)
+        .ignore_then(choice((
+            tok(TokenKind::All)
+                .ignore_then(tok(TokenKind::Tools))
+                .to((true, vec![])),
+            tok(TokenKind::Tools)
+                .ignore_then(
+                    ident()
+                        .separated_by(tok(TokenKind::Comma))
+                        .allow_trailing()
+                        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+                )
+                .map(|tools| (false, tools)),
+        )))
+        .or_not()
+        .map(|opt| opt.unwrap_or((false, vec![])));
+
+    let handoff = tok(TokenKind::Handoff)
+        .ignore_then(tok(TokenKind::User))
+        .or_not()
+        .map(|opt| opt.is_some());
+
+    let then_continue = tok(TokenKind::Then)
+        .ignore_then(tok(TokenKind::Continue))
+        .or_not()
+        .map(|opt| opt.is_some());
+
+    ident()
+        .then(tool_grant)
+        .then(handoff)
+        .then(then_continue)
+        .map_with_span(
+            |(((name, (with_all, tools)), handoff_user), tc), span| HelperRef {
+                name,
+                with_all_tools: with_all,
+                granted_tools: tools,
+                handoff_user,
+                handoff_then_continue: tc,
+                span: s(span),
+            },
+        )
+}
+
+// ── Lifecycle Config ─────────────────────────────────────────────────────
+
+pub(crate) fn lifecycle_parser(
+) -> impl Parser<TokenKind, LifecycleConfig, Error = Simple<TokenKind>> + Clone {
+    let setting = choice((
+        tok(TokenKind::MaxTokens)
+            .ignore_then(tok(TokenKind::Colon))
+            .ignore_then(number_int())
+            .map(LifecycleSetting::MaxTokens),
+        tok(TokenKind::MaxMessages)
+            .ignore_then(tok(TokenKind::Colon))
+            .ignore_then(number_int())
+            .map(LifecycleSetting::MaxMessages),
+    ));
+
+    tok(TokenKind::Use)
+        .ignore_then(tok(TokenKind::Lifecycle))
+        .ignore_then(
+            setting
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|settings, span| {
+            let mut max_tokens = None;
+            let mut max_messages = None;
+            for setting in settings {
+                match setting {
+                    LifecycleSetting::MaxTokens(n) => max_tokens = Some(n),
+                    LifecycleSetting::MaxMessages(n) => max_messages = Some(n),
+                }
+            }
+            LifecycleConfig {
+                max_tokens,
+                max_messages,
+                span: s(span),
+            }
+        })
+}
+
+#[derive(Clone)]
+enum LifecycleSetting {
+    MaxTokens(Spanned<i64>),
+    MaxMessages(Spanned<i64>),
+}
+
+// ── Test Config ──────────────────────────────────────────────────────────
+
+pub(crate) fn test_config_parser(
+) -> impl Parser<TokenKind, TestConfig, Error = Simple<TokenKind>> + Clone {
+    tok(TokenKind::Test)
+        .ignore_then(string_lit())
+        .then(
+            tok(TokenKind::Config)
+                .ignore_then(tok(TokenKind::Colon))
+                .ignore_then(ident())
+                .or_not(),
+        )
+        .then(
+            // Skip test body for now — consume balanced braces
+            none_of(TokenKind::RBrace)
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|((name, config_name), _body), span| TestConfig {
+            name,
+            config_name,
+            input: None,
+            tool_stubs: vec![],
+            expectations: vec![],
+            model: None,
+            span: s(span),
+        })
+}
+
+// ── Agent Config (combined) ──────────────────────────────────────────────
+
+pub(crate) fn agent_config_parser(
+) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone {
+    let input_config = tok(TokenKind::Input)
+        .ignore_then(
+            type_config_decl_parser()
+                .separated_by(tok(TokenKind::Comma))
+                .allow_trailing()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|props, span| {
+            AgentConfig::Input(InputConfig {
+                properties: props,
+                span: s(span),
+            })
+        });
+
+    let output_props = tok(TokenKind::Output)
+        .ignore_then(
+            tok(TokenKind::Colon)
+                .ignore_then(
+                    ident()
+                        .then(
+                            tok(TokenKind::Pipe)
+                                .ignore_then(ident())
+                                .repeated()
+                                .at_least(1),
+                        )
+                        .map_with_span(|(first, rest), span| {
+                            let mut all = vec![first];
+                            all.extend(rest);
+                            OutputConfig {
+                                shape: OutputShape::Union(all),
+                                span: s(span),
+                            }
+                        })
+                        .or(type_expr_parser()
+                            .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
+                            .map_with_span(|(ty, desc), span| OutputConfig {
+                                shape: OutputShape::Direct { ty, desc },
+                                span: s(span),
+                            })),
+                )
+                .or(type_config_decl_parser()
+                    .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
+                    .map(|(decl, desc)| OutputProperty {
+                        decl,
+                        description: desc,
+                    })
+                    .separated_by(tok(TokenKind::Comma))
+                    .allow_trailing()
+                    .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+                    .map_with_span(|props, span| OutputConfig {
+                        shape: OutputShape::Properties(props),
+                        span: s(span),
+                    })),
+        )
+        .map(AgentConfig::Output);
+
+    let context_config = tok(TokenKind::Context)
+        .ignore_then(
+            type_config_decl_parser()
+                .separated_by(tok(TokenKind::Comma))
+                .allow_trailing()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|props, span| {
+            AgentConfig::Context(ContextConfig {
+                properties: props,
+                span: s(span),
+            })
+        });
+
+    let tool_single = tok(TokenKind::Tool)
+        .ignore_then(tool_function_parser())
+        .map(AgentConfig::Tool);
+
+    let tools_block = tok(TokenKind::Tools)
+        .ignore_then(
+            tool_function_parser()
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map(AgentConfig::Tools);
+
+    let helpers_config = tok(TokenKind::Helpers)
+        .ignore_then(
+            helper_ref_parser()
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|helpers, span| {
+            AgentConfig::Helpers(HelpersConfig {
+                helpers,
+                span: s(span),
+            })
+        });
+
+    let workflow = tok(TokenKind::Workflow)
+        .ignore_then(ident())
+        .then(
+            type_config_decl_parser()
+                .separated_by(tok(TokenKind::Comma))
+                .allow_trailing()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .then(
+            tok(TokenKind::Colon)
+                .ignore_then(type_expr_parser())
+                .or_not(),
+        )
+        .then(workflow_body_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
+        .map_with_span(
+            |(((name, params), ret_ty), (desc, tool_configs, body)), span| {
+                AgentConfig::Workflow(WorkflowConfig {
+                    name,
+                    params,
+                    return_type: ret_ty.unwrap_or(TypeExpr::String(s(span.clone()))),
+                    description: desc,
+                    tool_configs,
+                    body,
+                    span: s(span),
+                })
+            },
+        );
+
+    let model_config = agent_model_config_parser().map(AgentConfig::Model);
+    let lifecycle = lifecycle_parser().map(AgentConfig::Lifecycle);
+    let test = test_config_parser().map(AgentConfig::Test);
+
+    choice((
+        input_config,
+        output_props,
+        context_config,
+        tools_block,
+        tool_single,
+        helpers_config,
+        workflow,
+        model_config,
+        lifecycle,
+        test,
+    ))
+    .recover_with(nested_delimiters(
+        TokenKind::LBrace,
+        TokenKind::RBrace,
+        [(TokenKind::LParen, TokenKind::RParen)],
+        |_| {
+            AgentConfig::Input(InputConfig {
+                properties: vec![],
+                span: Span::new(0, 0),
+            })
+        },
+    ))
+}
+
+fn workflow_body_parser() -> impl Parser<
+    TokenKind,
+    (Spanned<String>, Vec<ToolFunction>, Vec<Statement>),
+    Error = Simple<TokenKind>,
+> + Clone {
+    let desc = tok(TokenKind::Description)
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(string_lit())
+        .or_not()
+        .map(|opt| opt.unwrap_or(Spanned::new(String::new(), Span::new(0, 0))));
+
+    let tools = choice((
+        tok(TokenKind::Tool)
+            .ignore_then(tool_function_parser())
+            .map(|t| vec![t]),
+        tok(TokenKind::Tools).ignore_then(
+            tool_function_parser()
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        ),
+    ))
+    .repeated()
+    .map(|v| v.into_iter().flatten().collect::<Vec<_>>());
+
+    let stmts = statement_parser().repeated();
+
+    desc.then(tools).then(stmts).map(|((d, t), s)| (d, t, s))
+}

@@ -1,0 +1,8 @@
+[package]
+name = "auwgent-lexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+auwgent-errors = { path = "../auwgent-errors" }
+logos = "0.14"
