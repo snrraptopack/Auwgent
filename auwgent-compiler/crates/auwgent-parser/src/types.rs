@@ -33,8 +33,8 @@ pub(crate) fn type_expr_parser(
             });
 
         let object_type = prop_type
-            .separated_by(tok(TokenKind::Comma))
-            .allow_trailing()
+            .then_ignore(tok(TokenKind::Comma).or_not())
+            .repeated()
             .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
             .map_with_span(|props, span| TypeExpr::Object {
                 properties: props,
@@ -47,12 +47,9 @@ pub(crate) fn type_expr_parser(
         let union_option = string_lit();
         let union_type = union_option
             .clone()
-            .then(
-                tok(TokenKind::Pipe)
-                    .ignore_then(union_option)
-                    .repeated()
-                    .at_least(1),
-            )
+            .then(tok(TokenKind::Pipe)
+                .ignore_then(union_option)
+                .repeated())
             .map_with_span(|(first, rest), span| {
                 let mut options = vec![first];
                 options.extend(rest);
@@ -98,4 +95,11 @@ pub(crate) fn type_config_decl_parser(
             description: desc,
             span: s(span),
         })
+}
+
+pub(crate) fn type_config_decl_block_parser(
+) -> impl Parser<TokenKind, Vec<TypeConfigDecl>, Error = Simple<TokenKind>> + Clone {
+    type_config_decl_parser()
+        .then_ignore(tok(TokenKind::Comma).or_not())
+        .repeated()
 }

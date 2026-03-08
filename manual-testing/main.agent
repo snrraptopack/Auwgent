@@ -1,53 +1,36 @@
 
 
-type Student{
-    user_name:string,
-    age:number,
-    id:string,
-    grades:string[]
-}
-
-agent Manager{
-    
-    default config{
-        model:gemini("gemini-2.5-flash")
-        prompt: managerPrompt(ctx.user_name)
-    }
-
-    context{
-        user_name:string
-    }
-    helpers{
-        Joker with tools {getStudentDetails} handoff user then continue
-    }
-    
-    tool getStudentDetails(id:string):Student @desc "This is used to get the details of the student"
-
-    workflow ss(id:string):Student{
-        description:"use this to get the student information in details"
-        let student_result = getStudentDetails(id)
-        return student_result
-    }
-    
-}
-
-helper Joker{
-    description:"very good at telling jokes"
+agent Test{
 
     default config{
-        model:gemini("gemini-2.5-flash")
-        prompt: "You are a helpful assistant your sole aim is crack jokes to student to help them relax"
+        model:gemini("gemini-2.5-flash",{
+            thinking:"low",
+            maxToken:2000
+        })
+        prompt:"Hello" 
     }
-    input{
-        text:string
+
+    helpers{Kojo with tools{one} handoff user then continue}
+    tool one():string @desc "one"
+
+    workflow hey():string{
+        description: "one"
+
+        let a = hlp.Kojo()
+
+        return ""
     }
+
 }
 
-prompt managerPrompt(user_name:string){
-    """
-        You are helpful assistant you are to help student navigate and answer questions....
-        please be polite and be direct
-        the name of the user is {{user_name}}
-        {{@schema(outputs)}}
-    """
+helper Kojo{
+    description:"kojo"
+
+    default config{
+        model:gemini("gemini-2.5-flash",{
+            thinking:"low",
+            maxToken:2000
+        })
+        prompt: "one"
+    }
 }

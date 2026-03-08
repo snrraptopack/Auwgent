@@ -9,6 +9,26 @@ use crate::primitives::*;
 
 // ── Expression Parser ────────────────────────────────────────────────────
 
+pub(crate) fn object_literal_parser(
+) -> impl Parser<TokenKind, ObjectLiteral, Error = Simple<TokenKind>> + Clone {
+    let obj_prop = property_name()
+        .then(tok(TokenKind::Colon).ignore_then(expr_parser()).or_not())
+        .map_with_span(|(name, value), span| PropertyValue {
+            name,
+            value,
+            span: s(span),
+        });
+
+    obj_prop
+        .separated_by(tok(TokenKind::Comma))
+        .allow_trailing()
+        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+        .map_with_span(|properties, span| ObjectLiteral {
+            properties,
+            span: s(span),
+        })
+}
+
 pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<TokenKind>> + Clone {
     recursive(|expr: Recursive<'_, TokenKind, Expr, Simple<TokenKind>>| {
         let args = expr
@@ -58,6 +78,19 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             .map_with_span(|properties, span| {
                 Expr::Object(ObjectLiteral {
                     properties,
+                    span: s(span),
+                })
+            });
+
+        // Inline prompt block: { "text" someExpr }
+        // Keep object literal precedence so { name: value } and { name } stay objects.
+        let inline_prompt = expr
+            .clone()
+            .repeated()
+            .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+            .map_with_span(|parts, span| {
+                Expr::InlinePrompt(InlinePromptBlock {
+                    parts: parts.into_iter().map(PromptStatement::Expr).collect(),
                     span: s(span),
                 })
             });
@@ -144,7 +177,7 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
 
         // All atoms
         let atom = choice((
-            ctx_ref, hlp_call, grouped, array_lit, object_lit, str_lit, ml_str, num_lit, bool_lit,
+            ctx_ref, hlp_call, grouped, array_lit, object_lit, inline_prompt, str_lit, ml_str, num_lit, bool_lit,
             ident_expr,
         ));
 

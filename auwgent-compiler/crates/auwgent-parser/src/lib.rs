@@ -87,8 +87,12 @@ fn get_help(expected: &[String], _found: &str) -> Option<String> {
     let joined = expected.join(" ");
     if joined.contains("':'") {
         Some("Properties need a colon between name and type, e.g. `name: string`. Tools need a return type: `tool name(params): ReturnType`".into())
+    } else if joined.contains("','") {
+        Some("This usually means a separator issue. In field blocks like `type`, `input`, `context`, and `output`, try adding a comma or starting the next field on a new entry after the previous type/description is complete.".into())
     } else if joined.contains("'{'") {
         Some("Every agent, helper, and config block must be wrapped in { }".into())
+    } else if joined.contains("'|'") {
+        Some("This often means the previous field used a string-literal type and the next field started immediately after it. In `type` and object type blocks, finish the field first, then start the next one on a new entry or add a comma for clarity.".into())
     } else if joined.contains("identifier") {
         Some("Names must start with a letter or underscore".into())
     } else {

@@ -1,4 +1,4 @@
-# Auto-generated types for Manager
+# Auto-generated types for Test
 # Do not edit manually
 import os
 import json
@@ -15,48 +15,41 @@ except ImportError:
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
-class Student(TypedDict, total=False):
-    user_name: str
-    age: float
-    id: str
-    grades: List[str]
-
-class ManagerInput(TypedDict, total=False):
+class TestInput(TypedDict, total=False):
     pass
 
-class ManagerOutput(TypedDict, total=False):
+class TestOutput(TypedDict, total=False):
     pass
 
-class ManagerContext(TypedDict, total=False):
-    user_name: str
+class TestContext(TypedDict, total=False):
+    pass
 
-class ManagerTools(TypedDict, total=False):
-    # This is used to get the details of the student
-    getStudentDetails: Callable[[str], Awaitable["Student"]]
+class TestTools(TypedDict, total=False):
+    # one
+    one: Callable[[], Awaitable[str]]
 
-class ManagerApiKeys(TypedDict, total=False):
+class TestApiKeys(TypedDict, total=False):
     geminiApiKey: str
 
-ManagerAgent = TypedAuwgent
+TestAgent = TypedAuwgent
 
-ManagerMiddleware = Middleware
+TestMiddleware = Middleware
 
-class ManagerConfig(TypedDict, total=False):
-    tools: NotRequired['ManagerTools']
-    middleware: NotRequired[List['ManagerMiddleware']]
-    context: NotRequired['ManagerContext']
-    apiKeys: NotRequired['ManagerApiKeys']
+class TestConfig(TypedDict, total=False):
+    tools: NotRequired['TestTools']
+    middleware: NotRequired[List['TestMiddleware']]
+    apiKeys: NotRequired['TestApiKeys']
 
-def createManager(config: ManagerConfig) -> 'ManagerAgent':
-    """Create a fully configured Manager agent from config."""
+def createTest(config: TestConfig) -> 'TestAgent':
+    """Create a fully configured Test agent from config."""
     ir_path = os.path.join(os.path.dirname(__file__), "main.agent.json")
     with open(ir_path, "r", encoding="utf-8") as f:
         ir_dict = json.load(f)
     return create_auwgent(ir_dict, config)
 
-auwgent = createManager
-AuwgentTools = ManagerTools
-AuwgentConfig = ManagerConfig
-AuwgentAgent = ManagerAgent
-AuwgentMiddleware = ManagerMiddleware
-AuwgentContext = ManagerContext
+auwgent = createTest
+AuwgentTools = TestTools
+AuwgentConfig = TestConfig
+AuwgentAgent = TestAgent
+AuwgentMiddleware = TestMiddleware
+AuwgentContext = TestContext

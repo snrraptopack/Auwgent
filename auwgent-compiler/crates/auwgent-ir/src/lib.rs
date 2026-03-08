@@ -271,15 +271,19 @@ fn lower_agent_model_config(mc: &AgentModelConfig, prompts: &[&NamedPrompt]) -> 
     let named: Vec<Value> = mc
         .named_configs
         .iter()
-        .map(|nc| {
-            json!({
-                "name": nc.name.value,
-                "config": lower_model_config(&nc.config, prompts)
-            })
-        })
+        .map(|nc| lower_named_model_config(nc, prompts))
         .collect();
     obj.insert("namedConfig".into(), Value::Array(named));
 
+    Value::Object(obj)
+}
+
+fn lower_named_model_config(nc: &NamedModelConfig, prompts: &[&NamedPrompt]) -> Value {
+    let mut obj = match lower_model_config(&nc.config, prompts) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    obj.insert("configName".into(), json!(nc.name.value));
     Value::Object(obj)
 }
 
@@ -299,6 +303,8 @@ fn lower_model_config(mc: &ModelConfig, prompts: &[&NamedPrompt]) -> Value {
             .filter_map(|ps| lower_prompt_statement(ps))
             .collect();
         obj.insert("prompt".into(), json!({ "type": "block", "value": parts }));
+    } else {
+        obj.insert("prompt".into(), Value::Null);
     }
 
     Value::Object(obj)
@@ -320,7 +326,7 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
             obj.insert("type".into(), json!("gemini"));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {
-                obj.insert("config".into(), lower_object_literal(c));
+                obj.insert("config".into(), lower_model_provider_config(c));
             }
             Value::Object(obj)
         }
@@ -331,7 +337,7 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
             obj.insert("type".into(), json!("openai"));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {
-                obj.insert("config".into(), lower_object_literal(c));
+                obj.insert("config".into(), lower_model_provider_config(c));
             }
             Value::Object(obj)
         }
@@ -346,11 +352,18 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
             obj.insert("url".into(), json!(url.value));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {
-                obj.insert("config".into(), lower_object_literal(c));
+                obj.insert("config".into(), lower_model_provider_config(c));
             }
             Value::Object(obj)
         }
     }
+}
+
+fn lower_model_provider_config(obj: &ObjectLiteral) -> Value {
+    json!({
+        "type": "object",
+        "value": lower_object_literal(obj)
+    })
 }
 
 // ── Prompt Lowering ──────────────────────────────────────────────────────
@@ -367,36 +380,90 @@ fn lower_prompt_expr(expr: &Expr, prompts: &[&NamedPrompt]) -> Value {
             json!({ "type": "template", "value": template })
         }
         // prompt: managerPrompt(ctx.user_name)
-        Expr::FunctionCall(fc) => {
-            // Look up the prompt definition
-            let prompt_def = prompts.iter().find(|p| p.name.value == fc.name.value);
-            let mut obj = Map::new();
-            obj.insert("type".into(), json!("promptRef"));
-            obj.insert("name".into(), json!(fc.name.value));
-
-            if let Some(pdef) = prompt_def {
-                let param_names: Vec<Value> =
-                    pdef.params.iter().map(|p| json!(p.name.value)).collect();
-                obj.insert("params".into(), Value::Array(param_names));
-            }
-
-            let args: Vec<Value> = fc.args.iter().map(|a| lower_expression(a)).collect();
-            obj.insert("args".into(), Value::Array(args));
-
-            // Inline the resolved prompt body
-            if let Some(pdef) = prompt_def {
-                let body: Vec<Value> = pdef
-                    .body
-                    .iter()
-                    .filter_map(|ps| lower_prompt_statement(ps))
-                    .collect();
-                obj.insert("value".into(), Value::Array(body));
-            }
-
-            Value::Object(obj)
+        Expr::FunctionCall(fc) => lower_prompt_function_call(fc, prompts),
+        // prompt: SomePrompt
+        Expr::VarRef(v) => lower_prompt_var_ref(v, prompts),
+        // prompt: left + right
+        Expr::BinaryOp(bo) => {
+            let op = match bo.op {
+                BinOperator::Add => "+",
+                BinOperator::Sub => "-",
+                BinOperator::Mul => "*",
+                BinOperator::Div => "/",
+            };
+            json!({
+                "type": "binaryOp",
+                "op": op,
+                "left": lower_prompt_expr(&bo.left, prompts),
+                "right": lower_prompt_expr(&bo.right, prompts)
+            })
         }
-        // prompt: someExpr + "text"
+        Expr::InlinePrompt(ip) => {
+            let parts: Vec<Value> = ip
+                .parts
+                .iter()
+                .filter_map(|ps| lower_prompt_statement(ps))
+                .collect();
+            json!({ "type": "inlinePrompt", "parts": parts })
+        }
+        Expr::Grouped(inner, _) => lower_prompt_expr(inner, prompts),
+        // prompt: someExpr
         _ => lower_expression(expr),
+    }
+}
+
+fn lower_prompt_var_ref(v: &Spanned<String>, prompts: &[&NamedPrompt]) -> Value {
+    let prompt_def = prompts.iter().find(|p| p.name.value == v.value);
+    if let Some(pdef) = prompt_def {
+        let mut obj = Map::new();
+        obj.insert("type".into(), json!("promptRef"));
+        obj.insert("name".into(), json!(v.value));
+
+        let param_names: Vec<Value> = pdef.params.iter().map(|p| json!(p.name.value)).collect();
+        obj.insert("params".into(), Value::Array(param_names));
+        obj.insert("args".into(), Value::Array(vec![]));
+
+        let body: Vec<Value> = pdef
+            .body
+            .iter()
+            .filter_map(lower_prompt_statement)
+            .collect();
+        obj.insert("value".into(), Value::Array(body));
+
+        Value::Object(obj)
+    } else {
+        json!({ "type": "varRef", "value": v.value })
+    }
+}
+
+fn lower_prompt_function_call(fc: &FunctionCall, prompts: &[&NamedPrompt]) -> Value {
+    let prompt_def = prompts.iter().find(|p| p.name.value == fc.name.value);
+    if let Some(pdef) = prompt_def {
+        let mut obj = Map::new();
+        obj.insert("type".into(), json!("promptRef"));
+        obj.insert("name".into(), json!(fc.name.value));
+
+        let param_names: Vec<Value> = pdef.params.iter().map(|p| json!(p.name.value)).collect();
+        obj.insert("params".into(), Value::Array(param_names));
+
+        let args: Vec<Value> = fc.args.iter().map(lower_expression).collect();
+        obj.insert("args".into(), Value::Array(args));
+
+        let body: Vec<Value> = pdef
+            .body
+            .iter()
+            .filter_map(lower_prompt_statement)
+            .collect();
+        obj.insert("value".into(), Value::Array(body));
+
+        Value::Object(obj)
+    } else {
+        let args: Vec<Value> = fc.args.iter().map(lower_expression).collect();
+        json!({
+            "type": "functionCall",
+            "value": fc.name.value,
+            "args": args
+        })
     }
 }
 
@@ -465,59 +532,7 @@ fn lower_prompt_expression(expr: &Expr) -> Value {
 /// Process `{{var}}` interpolations in multiline strings.
 /// Produces an array of { type: "literal" } and { type: "varRef" } segments.
 fn process_template_string(content: &str) -> Vec<Value> {
-    let mut segments = Vec::new();
-    let mut pos = 0;
-    let bytes = content.as_bytes();
-
-    while pos < bytes.len() {
-        if pos + 1 < bytes.len() && bytes[pos] == b'{' && bytes[pos + 1] == b'{' {
-            // Check for {{@schema(...)}}
-            let inner_start = pos + 2;
-            if let Some(end) = find_closing_braces(content, inner_start) {
-                let inner = content[inner_start..end].trim();
-                if inner.starts_with("@schema") {
-                    // {{@schema(path)}}
-                    let path = inner
-                        .trim_start_matches("@schema")
-                        .trim_start_matches('(')
-                        .trim_end_matches(')')
-                        .trim();
-                    segments.push(json!({ "type": "schema", "path": path }));
-                } else if inner.starts_with("#if") {
-                    // Skip #if blocks for now — they're complex
-                    segments.push(json!({ "type": "literal", "value": &content[pos..end+2] }));
-                } else {
-                    // {{variable}} or {{expr.prop}}
-                    if inner.contains('.') {
-                        let parts: Vec<&str> = inner.splitn(2, '.').collect();
-                        segments.push(json!({
-                            "type": "memberAccess",
-                            "object": parts[0],
-                            "property": parts[1]
-                        }));
-                    } else {
-                        segments.push(json!({ "type": "varRef", "value": inner }));
-                    }
-                }
-                pos = end + 2; // skip past }}
-                continue;
-            }
-        }
-
-        // Regular text — collect until next {{ or end
-        let text_start = pos;
-        while pos < bytes.len() {
-            if pos + 1 < bytes.len() && bytes[pos] == b'{' && bytes[pos + 1] == b'{' {
-                break;
-            }
-            pos += 1;
-        }
-        if pos > text_start {
-            segments.push(json!({ "type": "literal", "value": &content[text_start..pos] }));
-        }
-    }
-
-    segments
+    parse_template_segments(content)
 }
 
 fn find_closing_braces(content: &str, start: usize) -> Option<usize> {
@@ -530,6 +545,181 @@ fn find_closing_braces(content: &str, start: usize) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+fn parse_template_segments(content: &str) -> Vec<Value> {
+    let mut segments = Vec::new();
+    let mut pos = 0;
+    let bytes = content.as_bytes();
+
+    while pos < bytes.len() {
+        if let Some(tag_start) = find_next_tag(content, pos) {
+            if tag_start > pos {
+                segments.push(json!({ "type": "literal", "value": &content[pos..tag_start] }));
+            }
+
+            if let Some((segment, next_pos)) = parse_template_tag(content, tag_start) {
+                segments.push(segment);
+                pos = next_pos;
+                continue;
+            }
+
+            segments.push(json!({ "type": "literal", "value": "{{" }));
+            pos = tag_start + 2;
+            continue;
+        }
+
+        if pos < content.len() {
+            segments.push(json!({ "type": "literal", "value": &content[pos..] }));
+        }
+        break;
+    }
+
+    segments
+}
+
+fn find_next_tag(content: &str, start: usize) -> Option<usize> {
+    content[start..].find("{{").map(|offset| start + offset)
+}
+
+fn parse_template_tag(content: &str, tag_start: usize) -> Option<(Value, usize)> {
+    let inner_start = tag_start + 2;
+    let tag_end = find_closing_braces(content, inner_start)?;
+    let inner = content[inner_start..tag_end].trim();
+
+    if inner.starts_with("@schema") {
+        let path = inner
+            .trim_start_matches("@schema")
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .trim();
+        return Some((json!({ "type": "schemaDirective", "path": path }), tag_end + 2));
+    }
+
+    if let Some(condition) = inner.strip_prefix("#if") {
+        return parse_inline_if_block(content, tag_start, tag_end + 2, condition.trim());
+    }
+
+    if inner == "else" || inner == "/if" {
+        return None;
+    }
+
+    Some((lower_template_reference(inner), tag_end + 2))
+}
+
+fn parse_inline_if_block(
+    content: &str,
+    tag_start: usize,
+    body_start: usize,
+    condition: &str,
+) -> Option<(Value, usize)> {
+    let (then_end, else_range, close_range) = find_inline_if_bounds(content, body_start)?;
+
+    let then_value = parse_template_segments(&content[body_start..then_end]);
+    let else_value = else_range
+        .map(|(else_start, else_end)| parse_template_segments(&content[else_start..else_end]))
+        .unwrap_or_default();
+
+    let next_pos = close_range.1;
+    let inline_if = json!({
+        "type": "inlineIf",
+        "condition": lower_template_condition(condition),
+        "then": then_value,
+        "else": else_value
+    });
+
+    if tag_start >= next_pos {
+        return None;
+    }
+
+    Some((inline_if, next_pos))
+}
+
+fn find_inline_if_bounds(
+    content: &str,
+    body_start: usize,
+) -> Option<(usize, Option<(usize, usize)>, (usize, usize))> {
+    let mut pos = body_start;
+    let mut depth = 0usize;
+    let mut else_tag: Option<(usize, usize)> = None;
+
+    while let Some(tag_start) = find_next_tag(content, pos) {
+        let inner_start = tag_start + 2;
+        let tag_end = find_closing_braces(content, inner_start)?;
+        let inner = content[inner_start..tag_end].trim();
+        let next_pos = tag_end + 2;
+
+        if inner.starts_with("#if") {
+            depth += 1;
+        } else if inner == "/if" {
+            if depth == 0 {
+                let then_end = else_tag.map(|(start, _)| start).unwrap_or(tag_start);
+                let else_range = else_tag.map(|(_, end)| (end, tag_start));
+                return Some((then_end, else_range, (tag_start, next_pos)));
+            }
+            depth -= 1;
+        } else if inner == "else" && depth == 0 {
+            else_tag = Some((tag_start, next_pos));
+        }
+
+        pos = next_pos;
+    }
+
+    None
+}
+
+fn lower_template_reference(inner: &str) -> Value {
+    if inner.contains('.') {
+        let parts: Vec<&str> = inner.split('.').collect();
+        let object = parts.first().copied().unwrap_or("");
+        let properties: Vec<&str> = parts.iter().skip(1).copied().collect();
+        json!({
+            "type": "memberAccess",
+            "object": {
+                "type": "varRef",
+                "value": object
+            },
+            "properties": properties
+        })
+    } else {
+        json!({ "type": "varRef", "value": inner })
+    }
+}
+
+fn lower_template_condition(condition: &str) -> Value {
+    for operator in ["==", "!=", ">=", "<=", ">", "<"] {
+        if let Some((left, right)) = condition.split_once(operator) {
+            return json!({
+                "left": lower_template_condition_operand(left.trim()),
+                "operator": operator,
+                "right": lower_template_condition_operand(right.trim())
+            });
+        }
+    }
+
+    lower_template_condition_operand(condition.trim())
+}
+
+fn lower_template_condition_operand(operand: &str) -> Value {
+    if operand.eq("true") {
+        return json!({ "type": "literal", "value": true });
+    }
+    if operand.eq("false") {
+        return json!({ "type": "literal", "value": false });
+    }
+    if let Ok(value) = operand.parse::<f64>() {
+        return json!({ "type": "literal", "value": value });
+    }
+    if (operand.starts_with('"') && operand.ends_with('"'))
+        || (operand.starts_with('\'') && operand.ends_with('\''))
+    {
+        return json!({
+            "type": "literal",
+            "value": operand[1..operand.len() - 1].to_string()
+        });
+    }
+
+    lower_template_reference(operand)
 }
 
 // ── Expression Lowering ──────────────────────────────────────────────────
@@ -556,8 +746,11 @@ fn lower_expression(expr: &Expr) -> Value {
             }
             json!({
                 "type": "memberAccess",
-                "object": ma.object.value,
-                "property": chain.join(".")
+                "object": {
+                    "type": "varRef",
+                    "value": ma.object.value
+                },
+                "properties": chain
             })
         }
         Expr::IndexAccess(ia) => {
@@ -585,7 +778,7 @@ fn lower_expression(expr: &Expr) -> Value {
             let args: Vec<Value> = fc.args.iter().map(|a| lower_expression(a)).collect();
             json!({
                 "type": "functionCall",
-                "name": fc.name.value,
+                "value": fc.name.value,
                 "args": args
             })
         }
@@ -593,7 +786,7 @@ fn lower_expression(expr: &Expr) -> Value {
             let args: Vec<Value> = hc.args.iter().map(|a| lower_expression(a)).collect();
             json!({
                 "type": "helperCall",
-                "name": hc.helper.value,
+                "value": hc.helper.value,
                 "args": args
             })
         }
@@ -601,7 +794,7 @@ fn lower_expression(expr: &Expr) -> Value {
             let args: Vec<Value> = pc.args.iter().map(|a| lower_expression(a)).collect();
             json!({
                 "type": "promptCall",
-                "name": pc.prompt.value,
+                "value": pc.prompt.value,
                 "args": args
             })
         }
@@ -614,7 +807,7 @@ fn lower_expression(expr: &Expr) -> Value {
                 .iter()
                 .filter_map(|ps| lower_prompt_statement(ps))
                 .collect();
-            json!({ "type": "block", "value": parts })
+            json!({ "type": "inlinePrompt", "parts": parts })
         }
         Expr::Grouped(inner, _) => lower_expression(inner),
     }
@@ -650,7 +843,7 @@ fn lower_condition(cond: &Condition) -> Value {
             };
             json!({
                 "type": "comparison",
-                "op": op_str,
+                "operator": op_str,
                 "left": lower_expression(left),
                 "right": lower_expression(right)
             })
@@ -677,18 +870,23 @@ fn lower_condition(cond: &Condition) -> Value {
 
 fn lower_workflow(wf: &WorkflowConfig) -> Value {
     let mut obj = Map::new();
-    obj.insert("name".into(), json!(wf.name.value));
-    obj.insert("description".into(), json!(wf.description.value));
+    obj.insert("flowName".into(), json!(wf.name.value));
 
-    let params = lower_properties(&wf.params);
-    obj.insert("params".into(), params);
+    let params = if wf.params.is_empty() {
+        Value::Object(Map::new())
+    } else {
+        lower_properties(&wf.params)
+    };
+    obj.insert("flowParams".into(), params);
     obj.insert("returns".into(), lower_type_expr_value(&wf.return_type));
-
-    let tools: Vec<Value> = wf.tool_configs.iter().map(|t| lower_tool(t)).collect();
-    obj.insert("tools".into(), Value::Array(tools));
 
     let body: Vec<Value> = wf.body.iter().map(|s| lower_statement(s)).collect();
     obj.insert("body".into(), Value::Array(body));
+
+    obj.insert("description".into(), json!(wf.description.value));
+
+    let tools: Vec<Value> = wf.tool_configs.iter().map(|t| lower_tool(t)).collect();
+    obj.insert("tools".into(), Value::Array(tools));
 
     Value::Object(obj)
 }
@@ -697,7 +895,7 @@ fn lower_statement(stmt: &Statement) -> Value {
     match stmt {
         Statement::Let(ls) => {
             json!({
-                "type": "let",
+                "type": "variableDeclaration",
                 "name": ls.name.value,
                 "value": lower_expression(&ls.value)
             })

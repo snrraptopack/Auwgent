@@ -1,184 +1,117 @@
 {
-  "context": {
-    "user_name": {
-      "optional": false,
-      "type": "string"
-    }
-  },
-  "helperHandoff": {
-    "Joker": "thenContinue"
-  },
-  "helperToolGrants": {
-    "Joker": [
-      "getStudentDetails"
-    ]
-  },
-  "helpers": [
-    {
-      "context": null,
-      "description": "very good at telling jokes",
-      "input": {
-        "text": {
-          "optional": false,
-          "type": "string"
-        }
-      },
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "modelName": "gemini-2.5-flash",
-              "type": "gemini"
-            },
-            "prompt": {
-              "type": "literal",
-              "value": "You are a helpful assistant your sole aim is crack jokes to student to help them relax"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "name": "Joker",
-      "output": null,
-      "tools": [],
-      "workflows": []
-    }
-  ],
-  "input": null,
+  "name": "Test",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
+          "type": "gemini",
           "modelName": "gemini-2.5-flash",
-          "type": "gemini"
+          "config": {
+            "type": "object",
+            "value": {
+              "thinking": {
+                "type": "literal",
+                "value": "low"
+              },
+              "maxToken": {
+                "type": "number",
+                "value": 2000.0
+              }
+            }
+          }
         },
         "prompt": {
-          "args": [
-            {
-              "property": "user_name",
-              "type": "contextRef"
-            }
-          ],
-          "name": "managerPrompt",
-          "params": [
-            "user_name"
-          ],
-          "type": "promptRef",
-          "value": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n        You are helpful assistant you are to help student navigate and answer questions....\r\n        please be polite and be direct\r\n        the name of the user is "
-                },
-                {
-                  "type": "varRef",
-                  "value": "user_name"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n        "
-                },
-                {
-                  "path": "outputs",
-                  "type": "schema"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n    "
-                }
-              ]
-            }
-          ]
+          "value": "Hello",
+          "type": "literal"
         }
       },
       "namedConfig": []
     }
   ],
-  "name": "Manager",
+  "input": null,
   "output": null,
-  "tests": [],
+  "context": null,
   "tools": [
     {
-      "description": "This is used to get the details of the student",
-      "name": "getStudentDetails",
-      "params": {
-        "id": {
-          "optional": false,
-          "type": "string"
-        }
-      },
-      "returns": {
-        "name": "Student",
-        "type": "typeRef"
-      }
+      "description": "one",
+      "params": {},
+      "name": "one",
+      "returns": "string"
     }
   ],
-  "types": {
-    "Student": {
-      "isOutput": false,
-      "properties": {
-        "age": {
-          "optional": false,
-          "type": "number"
-        },
-        "grades": {
-          "optional": false,
-          "type": {
-            "items": "string",
-            "type": "array"
-          }
-        },
-        "id": {
-          "optional": false,
-          "type": "string"
-        },
-        "user_name": {
-          "optional": false,
-          "type": "string"
-        }
-      }
-    }
-  },
   "workflows": [
     {
+      "flowName": "hey",
+      "flowParams": {},
+      "returns": "string",
       "body": [
         {
-          "name": "student_result",
-          "type": "let",
+          "type": "variableDeclaration",
+          "name": "a",
           "value": {
-            "args": [
-              {
-                "type": "varRef",
-                "value": "id"
-              }
-            ],
-            "name": "getStudentDetails",
-            "type": "functionCall"
+            "type": "helperCall",
+            "value": "Kojo",
+            "args": []
           }
         },
         {
           "type": "return",
           "value": {
-            "type": "varRef",
-            "value": "student_result"
+            "type": "literal",
+            "value": ""
           }
         }
       ],
-      "description": "use this to get the student information in details",
-      "name": "ss",
-      "params": {
-        "id": {
-          "optional": false,
-          "type": "string"
-        }
-      },
-      "returns": {
-        "name": "Student",
-        "type": "typeRef"
-      },
+      "description": "one",
       "tools": []
     }
-  ]
+  ],
+  "helpers": [
+    {
+      "name": "Kojo",
+      "description": "kojo",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "gemini-2.5-flash",
+              "config": {
+                "type": "object",
+                "value": {
+                  "thinking": {
+                    "type": "literal",
+                    "value": "low"
+                  },
+                  "maxToken": {
+                    "type": "number",
+                    "value": 2000.0
+                  }
+                }
+              }
+            },
+            "prompt": {
+              "value": "one",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ],
+  "tests": [],
+  "helperToolGrants": {
+    "Kojo": [
+      "one"
+    ]
+  },
+  "helperHandoff": {
+    "Kojo": "thenContinue"
+  }
 }

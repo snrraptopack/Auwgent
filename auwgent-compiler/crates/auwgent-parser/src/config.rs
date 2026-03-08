@@ -6,19 +6,16 @@ use auwgent_errors::Span;
 use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
-use crate::expr::{condition_parser, expr_parser};
+use crate::expr::{condition_parser, expr_parser, object_literal_parser};
 use crate::primitives::*;
 use crate::stmt::statement_parser;
-use crate::types::{type_config_decl_parser, type_expr_parser};
+use crate::types::{type_config_decl_block_parser, type_config_decl_parser, type_expr_parser};
 
 // ── Model Provider ───────────────────────────────────────────────────────
 
 pub(crate) fn model_provider_parser(
 ) -> impl Parser<TokenKind, ModelProvider, Error = Simple<TokenKind>> + Clone {
-    let obj_arg = expr_parser()
-        .separated_by(tok(TokenKind::Comma))
-        .allow_trailing()
-        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace));
+    let obj_arg = object_literal_parser();
 
     let gemini = tok(TokenKind::Gemini)
         .ignore_then(
@@ -26,9 +23,9 @@ pub(crate) fn model_provider_parser(
                 .then(tok(TokenKind::Comma).ignore_then(obj_arg.clone()).or_not())
                 .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
         )
-        .map_with_span(|(name, _config), span| ModelProvider::Gemini {
+        .map_with_span(|(name, config), span| ModelProvider::Gemini {
             model_name: name,
-            config: None,
+            config,
             span: s(span),
         });
 
@@ -38,9 +35,9 @@ pub(crate) fn model_provider_parser(
                 .then(tok(TokenKind::Comma).ignore_then(obj_arg.clone()).or_not())
                 .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
         )
-        .map_with_span(|(name, _config), span| ModelProvider::OpenAI {
+        .map_with_span(|(name, config), span| ModelProvider::OpenAI {
             model_name: name,
-            config: None,
+            config,
             span: s(span),
         });
 
@@ -49,12 +46,13 @@ pub(crate) fn model_provider_parser(
             string_lit()
                 .then_ignore(tok(TokenKind::Comma))
                 .then(string_lit())
+                .then(tok(TokenKind::Comma).ignore_then(obj_arg).or_not())
                 .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
         )
-        .map_with_span(|(url, model_name), span| ModelProvider::Custom {
+        .map_with_span(|((url, model_name), config), span| ModelProvider::Custom {
             url,
             model_name,
-            config: None,
+            config,
             span: s(span),
         });
 
@@ -187,8 +185,12 @@ pub(crate) fn model_config_parser(
 
 pub(crate) fn agent_model_config_parser(
 ) -> impl Parser<TokenKind, AgentModelConfig, Error = Simple<TokenKind>> + Clone {
-    let named_config = ident()
-        .then_ignore(tok(TokenKind::Config))
+    let default_config = tok(TokenKind::Default)
+        .ignore_then(tok(TokenKind::Config))
+        .ignore_then(model_config_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)));
+
+    let named_config = tok(TokenKind::Config)
+        .ignore_then(ident())
         .then(model_config_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
         .map_with_span(|(name, config), span| NamedModelConfig {
             name,
@@ -196,14 +198,8 @@ pub(crate) fn agent_model_config_parser(
             span: s(span),
         });
 
-    tok(TokenKind::Default)
-        .or_not()
-        .ignore_then(tok(TokenKind::Config))
-        .ignore_then(
-            model_config_parser()
-                .then(named_config.repeated())
-                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
-        )
+    default_config
+        .then(named_config.repeated())
         .map_with_span(|(default_config, named_configs), span| AgentModelConfig {
             default_config,
             named_configs,
@@ -361,9 +357,7 @@ pub(crate) fn agent_config_parser(
 ) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone {
     let input_config = tok(TokenKind::Input)
         .ignore_then(
-            type_config_decl_parser()
-                .separated_by(tok(TokenKind::Comma))
-                .allow_trailing()
+            type_config_decl_block_parser()
                 .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
         )
         .map_with_span(|props, span| {
@@ -405,8 +399,8 @@ pub(crate) fn agent_config_parser(
                         decl,
                         description: desc,
                     })
-                    .separated_by(tok(TokenKind::Comma))
-                    .allow_trailing()
+                    .then_ignore(tok(TokenKind::Comma).or_not())
+                    .repeated()
                     .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
                     .map_with_span(|props, span| OutputConfig {
                         shape: OutputShape::Properties(props),
@@ -417,9 +411,7 @@ pub(crate) fn agent_config_parser(
 
     let context_config = tok(TokenKind::Context)
         .ignore_then(
-            type_config_decl_parser()
-                .separated_by(tok(TokenKind::Comma))
-                .allow_trailing()
+            type_config_decl_block_parser()
                 .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
         )
         .map_with_span(|props, span| {

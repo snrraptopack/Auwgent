@@ -491,8 +491,29 @@ impl Checker {
                     if let Some(end) = text[i + 2..].find("}}") {
                         let var_name = text[i + 2..i + 2 + end].trim();
 
-                        // Ignore built-in @schema directive
+                        // Ignore built-in @schema directive but validate arguments
                         if var_name.starts_with("@schema(") && var_name.ends_with(')') {
+                            let schema_args = &var_name[8..var_name.len() - 1];
+                            if schema_args != "input" && schema_args != "output" {
+                                diags.push(
+                                    Diagnostic::error(
+                                        format!("Invalid schema argument '{}'", schema_args),
+                                        span,
+                                    )
+                                    .with_help("The @schema directive only supports 'input' or 'output' as arguments.")
+                                );
+                            }
+                            i = i + 2 + end + 2;
+                            continue;
+                        }
+
+                        if let Some(condition) = var_name.strip_prefix("#if") {
+                            self.check_template_condition_vars(condition.trim(), params, span, diags);
+                            i = i + 2 + end + 2;
+                            continue;
+                        }
+
+                        if var_name == "else" || var_name == "/if" {
                             i = i + 2 + end + 2;
                             continue;
                         }
@@ -522,6 +543,41 @@ impl Checker {
                 } else {
                     i += 1;
                 }
+            }
+        }
+    }
+
+    fn check_template_condition_vars(
+        &self,
+        condition: &str,
+        params: &[&str],
+        span: Span,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let mut seen: Vec<String> = Vec::new();
+        for reference in extract_template_condition_refs(condition) {
+            if seen.iter().any(|existing| existing == &reference) {
+                continue;
+            }
+            seen.push(reference.clone());
+
+            if !params.contains(&reference.as_str()) {
+                let suggestion = find_closest(&reference, params);
+                let help = if let Some(s) = suggestion {
+                    format!("Did you mean '{}' ?", s)
+                } else {
+                    format!("Available params: {}", params.join(", "))
+                };
+                diags.push(
+                    Diagnostic::error(
+                        format!(
+                            "Unknown template variable '{{{{#if {}}}}}' in prompt",
+                            condition
+                        ),
+                        span,
+                    )
+                    .with_help(help),
+                );
             }
         }
     }
@@ -647,9 +703,18 @@ impl Checker {
 
     fn check_condition(&self, cond: &Condition, env: &TypeEnv, diags: &mut Vec<Diagnostic>) {
         match cond {
-            Condition::Comparison { left, right, .. } => {
-                self.infer_expression(left, env, diags);
-                self.infer_expression(right, env, diags);
+            Condition::Comparison {
+                left,
+                op,
+                right,
+                span,
+            } => {
+                let left_ty = self.infer_expression(left, env, diags);
+                let right_ty = self.infer_expression(right, env, diags);
+
+                if let Some(message) = self.validate_comparison_types(op, &left_ty, &right_ty) {
+                    diags.push(Diagnostic::error(message, *span));
+                }
             }
             Condition::Logical { left, right, .. } => {
                 self.check_condition(left, env, diags);
@@ -691,6 +756,28 @@ impl Checker {
             Expr::VarRef(v) => {
                 if let Some(ty) = env.get(&v.value) {
                     ty.clone()
+                } else if let Some(params) = self.prompt_map.get(&v.value) {
+                    if params.is_empty() {
+                        Type::string()
+                    } else {
+                        let signature = params
+                            .iter()
+                            .map(|param| format!("{}: {}", param.name.value, self.map_type_expr(&param.ty).format()))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+
+                        diags.push(
+                            Diagnostic::error(
+                                format!("Prompt '{}' requires arguments", v.value),
+                                v.span,
+                            )
+                            .with_help(format!(
+                                "Use prompt {}({}) or {}(...).",
+                                v.value, signature, v.value
+                            )),
+                        );
+                        Type::error("missing prompt arguments")
+                    }
                 } else {
                     diags.push(
                         Diagnostic::error(format!("Unknown variable '{}'", v.value), v.span)
@@ -714,10 +801,7 @@ impl Checker {
                             fc.span,
                         ));
                     }
-                    // Infer argument types
-                    for arg in &fc.args {
-                        self.infer_expression(arg, env, diags);
-                    }
+                    self.check_call_args(&fc.args, &tool.params, &fc.name.value, fc.span, env, diags);
                     return self.map_type_expr(&tool.returns);
                 }
                 // Could be a prompt call
@@ -733,9 +817,7 @@ impl Checker {
                             fc.span,
                         ));
                     }
-                    for arg in &fc.args {
-                        self.infer_expression(arg, env, diags);
-                    }
+                    self.check_call_args(&fc.args, params, &fc.name.value, fc.span, env, diags);
                     return Type::string();
                 }
 
@@ -786,26 +868,41 @@ impl Checker {
                             pc.span,
                         ));
                     }
+                    self.check_call_args(&pc.args, params, &pc.prompt.value, pc.span, env, diags);
                 } else {
                     diags.push(Diagnostic::error(
                         format!("Unknown prompt '{}'", pc.prompt.value),
                         pc.span,
                     ));
                 }
-                for arg in &pc.args {
-                    self.infer_expression(arg, env, diags);
-                }
                 Type::string()
             }
             Expr::MemberAccess(ma) => {
-                if let Some(ty) = env.get(&ma.object.value) {
-                    if let Type::Record { fields, .. } = ty {
-                        if let Some(field_ty) = fields.get(&ma.property.value) {
-                            return field_ty.clone();
+                let mut current_ty = if let Some(ty) = env.get(&ma.object.value) {
+                    ty.clone()
+                } else {
+                    return Type::error("unknown");
+                };
+
+                let mut path = vec![ma.property.value.as_str()];
+                for segment in &ma.chain {
+                    path.push(segment.value.as_str());
+                }
+
+                for segment in path {
+                    match current_ty {
+                        Type::Record { ref fields, .. } => {
+                            if let Some(field_ty) = fields.get(segment) {
+                                current_ty = field_ty.clone();
+                            } else {
+                                return Type::error("unknown");
+                            }
                         }
+                        _ => return Type::error("unknown"),
                     }
                 }
-                Type::error("unknown")
+
+                current_ty
             }
             Expr::IndexAccess(ia) => {
                 let arr_ty = if let Some(ty) = env.get(&ia.object.value) {
@@ -910,6 +1007,101 @@ impl Checker {
             _ => false,
         }
     }
+
+    fn check_call_args(
+        &self,
+        args: &[Expr],
+        params: &[TypeConfigDecl],
+        callee_name: &str,
+        span: Span,
+        env: &TypeEnv,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        for (index, (arg, param)) in args.iter().zip(params.iter()).enumerate() {
+            let arg_ty = self.infer_expression(arg, env, diags);
+            let param_ty = self.map_type_expr(&param.ty);
+
+            if !self.types_compatible(&param_ty, &arg_ty) {
+                diags.push(
+                    Diagnostic::error(
+                        format!(
+                            "Argument {} type mismatch for '{}': expected {} but got {} (Type mismatch: {} vs {})",
+                            index + 1,
+                            callee_name,
+                            param_ty.format(),
+                            arg_ty.format(),
+                            param_ty.format(),
+                            arg_ty.format()
+                        ),
+                        span,
+                    )
+                    .with_help(format!(
+                        "Parameter '{}' expects {}.",
+                        param.name.value,
+                        param_ty.format()
+                    )),
+                );
+            }
+        }
+
+        for arg in args.iter().skip(params.len()) {
+            self.infer_expression(arg, env, diags);
+        }
+    }
+
+    fn validate_comparison_types(
+        &self,
+        op: &ComparisonOp,
+        left: &Type,
+        right: &Type,
+    ) -> Option<String> {
+        if matches!(left, Type::Error(_)) || matches!(right, Type::Error(_)) {
+            return None;
+        }
+
+        let left_kind = self.comparison_kind(left);
+        let right_kind = self.comparison_kind(right);
+
+        match op {
+            ComparisonOp::Eq | ComparisonOp::Neq => {
+                if left_kind == right_kind {
+                    None
+                } else {
+                    Some(format!(
+                        "Condition type mismatch: {} vs {} (Type mismatch: {} vs {})",
+                        left_kind, right_kind, left_kind, right_kind
+                    ))
+                }
+            }
+            ComparisonOp::Gt | ComparisonOp::Lt | ComparisonOp::Gte | ComparisonOp::Lte => {
+                if left_kind == "number" && right_kind == "number" {
+                    None
+                } else {
+                    Some(format!(
+                        "Condition type mismatch: {} vs {} (Type mismatch: {} vs {})",
+                        left_kind, right_kind, left_kind, right_kind
+                    ))
+                }
+            }
+        }
+    }
+
+    fn comparison_kind(&self, ty: &Type) -> String {
+        match ty {
+            Type::Const(name) if name == "string" || name == "number" || name == "boolean" => {
+                name.clone()
+            }
+            Type::Const(_) => "string".into(),
+            Type::Union(options) => {
+                if options.iter().all(|opt| matches!(opt, Type::Const(_))) {
+                    "string".into()
+                } else {
+                    ty.format()
+                }
+            }
+            _ => ty.format(),
+        }
+    }
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────
@@ -974,4 +1166,46 @@ fn levenshtein(a: &str, b: &str) -> usize {
     }
 
     row[len_b]
+}
+
+fn extract_template_condition_refs(condition: &str) -> Vec<String> {
+    let mut refs = Vec::new();
+    let operators = ["==", "!=", ">=", "<=", ">", "<"];
+
+    let mut matched = false;
+    for operator in operators {
+        if let Some((left, right)) = condition.split_once(operator) {
+            matched = true;
+            collect_template_ref(left, &mut refs);
+            collect_template_ref(right, &mut refs);
+            break;
+        }
+    }
+
+    if !matched {
+        collect_template_ref(condition, &mut refs);
+    }
+
+    refs
+}
+
+fn collect_template_ref(token: &str, refs: &mut Vec<String>) {
+    let trimmed = token
+        .trim()
+        .trim_matches(|c: char| matches!(c, '(' | ')' | '{' | '}' | '[' | ']'));
+
+    if trimmed.is_empty()
+        || trimmed == "true"
+        || trimmed == "false"
+        || trimmed.parse::<f64>().is_ok()
+        || ((trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
+    {
+        return;
+    }
+
+    let root = trimmed.split('.').next().unwrap_or(trimmed).trim();
+    if !root.is_empty() {
+        refs.push(root.to_string());
+    }
 }

@@ -1,43 +1,28 @@
 {
-  "name": "Manager",
+  "name": "Test",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": {
+            "type": "object",
+            "value": {
+              "thinking": {
+                "value": "low",
+                "type": "literal"
+              },
+              "maxToken": {
+                "value": 2000,
+                "type": "literal"
+              }
+            }
+          }
         },
         "prompt": {
-          "type": "promptRef",
-          "name": "managerPrompt",
-          "params": [
-            "user_name"
-          ],
-          "args": [
-            {
-              "type": "contextRef",
-              "property": "user_name"
-            }
-          ],
-          "value": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n        You are helpful assistant you are to help student navigate and answer questions....\r\n        please be polite and be direct\r\n        the name of the user is "
-                },
-                {
-                  "type": "varRef",
-                  "value": "user_name"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n    "
-                }
-              ]
-            }
-          ]
+          "value": "Hello",
+          "type": "literal"
         }
       },
       "namedConfig": []
@@ -45,54 +30,75 @@
   ],
   "input": null,
   "output": null,
-  "context": {
-    "user_name": {
-      "type": "string",
-      "optional": false
-    }
-  },
+  "context": null,
   "tools": [
     {
-      "description": "This is used to get the details of the student",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "name": "getStudentDetails",
-      "returns": {
-        "type": "typeRef",
-        "name": "Student"
-      }
+      "description": "one",
+      "params": {},
+      "name": "one",
+      "returns": "string"
     }
   ],
-  "workflows": [],
+  "workflows": [
+    {
+      "flowName": "hey",
+      "flowParams": {},
+      "returns": "string",
+      "body": [
+        {
+          "name": "a",
+          "value": {
+            "type": "helperCall",
+            "value": "Kojo",
+            "args": []
+          },
+          "type": "variableDeclaration"
+        },
+        {
+          "type": "return",
+          "value": {
+            "value": "",
+            "type": "literal"
+          }
+        }
+      ],
+      "description": "one",
+      "tools": []
+    }
+  ],
   "helpers": [
     {
-      "name": "Joker",
-      "description": "very good at telling jokes",
+      "name": "Kojo",
+      "description": "kojo",
       "modelConfig": [
         {
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "gemini-2.5-flash"
+              "modelName": "gemini-2.5-flash",
+              "config": {
+                "type": "object",
+                "value": {
+                  "thinking": {
+                    "value": "low",
+                    "type": "literal"
+                  },
+                  "maxToken": {
+                    "value": 2000,
+                    "type": "literal"
+                  }
+                }
+              }
             },
             "prompt": {
-              "value": "You are a helpful assistant your sole aim is crack jokes to student to help them relax",
+              "value": "one",
               "type": "literal"
             }
           },
           "namedConfig": []
         }
       ],
-      "input": {
-        "text": {
-          "type": "string",
-          "optional": false
-        }
-      },
+      "input": null,
       "output": null,
       "context": null,
       "tools": [],
@@ -100,38 +106,12 @@
     }
   ],
   "tests": [],
-  "types": {
-    "Student": {
-      "isOutput": false,
-      "properties": {
-        "user_name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        },
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "grades": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false
-        }
-      }
-    }
-  },
   "helperToolGrants": {
-    "Joker": [
-      "getStudentDetails"
+    "Kojo": [
+      "one"
     ]
   },
   "helperHandoff": {
-    "Joker": "thenContinue"
+    "Kojo": "thenContinue"
   }
 }

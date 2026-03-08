@@ -7,7 +7,7 @@ use chumsky::prelude::*;
 
 use crate::config::{agent_config_parser, model_provider_parser, prompt_stmt_parser};
 use crate::primitives::*;
-use crate::types::type_config_decl_parser;
+use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
 
 pub(crate) fn agent_parser() -> impl Parser<TokenKind, Agent, Error = Simple<TokenKind>> + Clone {
     tok(TokenKind::Agent)
@@ -48,9 +48,7 @@ pub(crate) fn type_decl_parser(
     tok(TokenKind::Type)
         .ignore_then(ident())
         .then(
-            type_config_decl_parser()
-                .separated_by(tok(TokenKind::Comma))
-                .allow_trailing()
+            type_config_decl_block_parser()
                 .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
         )
         .map_with_span(|(name, fields), span| TypeDeclaration {
