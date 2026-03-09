@@ -41,7 +41,8 @@ class TestTools(TypedDict, total=False):
     pass
 
 class TestApiKeys(TypedDict, total=False):
-    geminiApiKey: str
+    openaiApiKey: str
+    customUrl: NotRequired[str]  # type: ignore
 
 TestAgent = TypedAuwgent
 

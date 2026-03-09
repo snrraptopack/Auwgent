@@ -241,11 +241,10 @@ function generateApiKeysInterface(agent: AgentIR, providers: Set<string>): strin
     if (providers.has("gemini")) {
         keys.push("    geminiApiKey: string;");
     }
-    if (providers.has("openai")) {
+    if (providers.has("openai") || providers.has("custom")) {
         keys.push("    openaiApiKey: string;");
     }
     if (providers.has("custom")) {
-        keys.push("    customApiKey: string;");
         keys.push("    customUrl?: string;  // Optional override for custom provider URL");
     }
 

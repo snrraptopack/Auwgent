@@ -84,7 +84,7 @@ export class TypedAuwgent<
         }
 
         if (apiKeys?.openaiApiKey) {
-            this.native.setOpenaiDriver(apiKeys.openaiApiKey);
+            this.native.setOpenaiDriver(apiKeys.openaiApiKey, apiKeys.customUrl);
         }
 
         // Register all tools — guaranteed complete by the type system

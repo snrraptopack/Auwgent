@@ -4,8 +4,9 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "type": "custom",
+          "url": "anymodel",
+          "modelName": "www.the url"
         },
         "prompt": {
           "value": "Hello",

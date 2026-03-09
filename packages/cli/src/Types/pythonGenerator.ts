@@ -179,11 +179,10 @@ function generateApiKeysInterface(agent: AgentIR, providers: Set<string>): strin
     if (providers.has("gemini")) {
         keys.push("    geminiApiKey: str");
     }
-    if (providers.has("openai")) {
+    if (providers.has("openai") || providers.has("custom")) {
         keys.push("    openaiApiKey: str");
     }
     if (providers.has("custom")) {
-        keys.push("    customApiKey: str");
         keys.push("    customUrl: NotRequired[str]  # type: ignore") // standard Python 3.11+ TypedDict
     }
 

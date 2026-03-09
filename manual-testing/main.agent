@@ -11,7 +11,7 @@ type A{
 agent Test{
 
     default config{
-        model:Gemini
+        model:custom("anymodel","www.the url")
         prompt:"Hello" 
     }
 

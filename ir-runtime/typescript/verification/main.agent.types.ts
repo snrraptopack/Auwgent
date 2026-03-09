@@ -1,102 +1,97 @@
-// Auto-generated types for Manager
+// Auto-generated types for Test
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@auwgent/runtime";
 import type { ToolRegistry } from "@auwgent/runtime";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type ManagerIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "Manager";
+type TestIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "Test";
   workflows: undefined;
-  helpers: ({ name: "Joker" })[];
+  helpers: undefined;
 };
-const agentIR = _importedIR as unknown as ManagerIR;
+const agentIR = _importedIR as unknown as TestIR;
 
-export type Student = {
+export type Hey = {
 
-    user_name: string;
+    name: string;
 
     age: number;
-
-    id: string;
-
-    grades: string[];
 }
 
-export type ManagerInput = {
 
+export type A = {
+
+    wow: string;
 }
 
-export type JokerOutput = {
-
+export type TestInput = {
+    text: string;
 }
 
-export type ManagerBaseOutput = {
-
+export type TestOutput =
+    | { type: "Hey";
+    name: string;
+    age: number;
 }
+    | { type: "A";
+    wow: string;
+};
 
-/** Union of possible output types (includes transfer destinations) */
-export type ManagerOutput = ManagerBaseOutput | JokerOutput;
+export type TestContext = {
 
-export type ManagerContext = {
-    user_name: string;
-}
-
-export type ManagerTools = {
-    getStudentDetails: (args: { id: string }) => Promise<Student>;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type ManagerCustomIntents = never;
+export type TestCustomIntents = never;
 
 /**
- * API keys required for Manager
+ * API keys required for Test
  */
-export type ManagerApiKeys = {
-    geminiApiKey: string;
+export type TestApiKeys = {
+    openaiApiKey: string;
+    customUrl?: string;  // Optional override for custom provider URL
 }
 
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type ManagerAgent = import("@auwgent/runtime").TypedAuwgent<
+export type TestAgent = import("@auwgent/runtime").TypedAuwgent<
     typeof agentIR,
-    ManagerCustomIntents,
-    never,
-    ManagerTools
+    TestCustomIntents,
+    TestOutput,
+    Record<string, never>
 >;
 
-/** Middleware object type — consistent with `ManagerAgent.onIntent` intent narrowing */
-export type ManagerMiddleware<T extends import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@auwgent/runtime").Middleware<
+/** Middleware object type — consistent with `TestAgent.onIntent` intent narrowing */
+export type TestMiddleware<T extends import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@auwgent/runtime").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@auwgent/runtime").Middleware<
     typeof agentIR,
-    ManagerCustomIntents,
-    never,
-    ManagerTools,
+    TestCustomIntents,
+    TestOutput,
+    Record<string, never>,
     T
 >;
 
-export type ManagerConfig = {
-    tools: ManagerTools;
-    middleware?: ManagerMiddleware[];
-    context: ManagerContext;
-    apiKeys: ManagerApiKeys;
+export type TestConfig = {
+    middleware?: TestMiddleware[];
+    apiKeys: TestApiKeys;
 }
 
-export function createManager(config: ManagerConfig): ManagerAgent {
+export function createTest(config: TestConfig): TestAgent {
     return createAuwgent<
         typeof agentIR,
-        ManagerCustomIntents,
-        never,
-        ManagerTools
+        TestCustomIntents,
+        TestOutput,
+        Record<string, never>
     >(agentIR, {
-        tools: config.tools,
+        tools: {} as Record<string, never>,
         middleware: config.middleware as any,
-        context: config.context,
+        
         apiKeys: config.apiKeys
     });
 }
 
-export const auwgent = createManager;
-export type AuwgentTools = ManagerTools;
-export type AuwgentConfig = ManagerConfig;
-export type AuwgentAgent = ManagerAgent;
-export type AuwgentMiddleware = ManagerMiddleware;
-export type AuwgentContext = ManagerContext;
+export const auwgent = createTest;
+export type AuwgentTools = Record<string, never>;
+export type AuwgentConfig = TestConfig;
+export type AuwgentAgent = TestAgent;
+export type AuwgentMiddleware = TestMiddleware;
+export type AuwgentContext = TestContext;

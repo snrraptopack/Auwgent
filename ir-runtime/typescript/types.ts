@@ -107,10 +107,10 @@ type RequiredKeyFields<IR extends AgentIRShape> =
 /** Dynamic ApiKeys – only demands the keys the IR needs */
 export type ApiKeys<IR extends AgentIRShape = AgentIRShape> =
     string extends CollectProviders<IR>
-    ? { geminiApiKey?: string; openaiApiKey?: string }  // fallback when IR is not const
+    ? { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }  // fallback when IR is not const
     : [RequiredKeyFields<IR>] extends [never]
-    ? { geminiApiKey?: string; openaiApiKey?: string }  // no providers found
-    : { [K in RequiredKeyFields<IR>]: string };
+    ? { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }  // no providers found
+    : { [K in RequiredKeyFields<IR>]: string } & (Extract<CollectProviders<IR>, 'custom'> extends never ? {} : { customUrl?: string });
 
 // ── Intent Types ─────────────────────────────────────────────────────────
 

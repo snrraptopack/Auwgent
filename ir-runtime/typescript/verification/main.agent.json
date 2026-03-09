@@ -1,137 +1,74 @@
 {
-  "name": "Manager",
+  "name": "Test",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "type": "custom",
+          "url": "anymodel",
+          "modelName": "www.the url"
         },
         "prompt": {
-          "type": "promptRef",
-          "name": "managerPrompt",
-          "params": [
-            "user_name"
-          ],
-          "args": [
-            {
-              "type": "contextRef",
-              "property": "user_name"
-            }
-          ],
-          "value": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n        You are helpful assistant you are to help student navigate and answer questions....\r\n        please be polite and be direct\r\n        the name of the user is "
-                },
-                {
-                  "type": "varRef",
-                  "value": "user_name"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n    "
-                }
-              ]
-            }
-          ]
+          "value": "Hello",
+          "type": "literal"
         }
       },
       "namedConfig": []
     }
   ],
-  "input": null,
-  "output": null,
-  "context": {
-    "user_name": {
+  "input": {
+    "text": {
       "type": "string",
       "optional": false
     }
   },
-  "tools": [
-    {
-      "description": "This is used to get the details of the student",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "name": "getStudentDetails",
-      "returns": {
-        "type": "typeRef",
-        "name": "Student"
-      }
-    }
-  ],
-  "workflows": [],
-  "helpers": [
-    {
-      "name": "Joker",
-      "description": "very good at telling jokes",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash"
-            },
-            "prompt": {
-              "value": "You are a helpful assistant your sole aim is crack jokes to student to help them relax",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": {
-        "text": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": []
-    }
-  ],
-  "tests": [],
-  "types": {
-    "Student": {
-      "isOutput": false,
-      "properties": {
-        "user_name": {
+  "output": {
+    "__variants": {
+      "Hey": {
+        "name": {
           "type": "string",
           "optional": false
         },
         "age": {
           "type": "number",
           "optional": false
-        },
-        "id": {
+        }
+      },
+      "A": {
+        "wow": {
           "type": "string",
-          "optional": false
-        },
-        "grades": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
           "optional": false
         }
       }
     }
   },
-  "helperToolGrants": {
-    "Joker": [
-      "getStudentDetails"
-    ]
-  },
-  "helperHandoff": {
-    "Joker": "thenContinue"
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [],
+  "tests": [],
+  "types": {
+    "Hey": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      }
+    },
+    "A": {
+      "isOutput": false,
+      "properties": {
+        "wow": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    }
   }
 }
