@@ -1,4 +1,5 @@
-
+import {MainAgentPrompt} from "./prompt"
+import {Gemini} from "./models"
 prompt One{
 
    example{
@@ -9,17 +10,14 @@ prompt One{
     assistant: "sure what is it"
    }
 
-}
 
+}
 
 agent Test{
 
     default config{
-        model:gemini("gemini-2.5-flash",{
-            thinking:"low",
-            maxToken:2000
-        })
-        prompt:"Hello" + One
+        model:Gemini
+        prompt:"Hello" + One + MainAgentPrompt
     }
 
     input{

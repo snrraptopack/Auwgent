@@ -302,7 +302,7 @@ fn lower_model_config(mc: &ModelConfig, prompts: &[&NamedPrompt]) -> Value {
         let parts: Vec<Value> = mc
             .prompt_block
             .iter()
-            .filter_map(|ps| lower_prompt_statement(ps))
+            .filter_map(|ps| lower_prompt_statement(ps, prompts))
             .collect();
         obj.insert("prompt".into(), json!({ "type": "block", "value": parts }));
     } else {
@@ -404,7 +404,7 @@ fn lower_prompt_expr(expr: &Expr, prompts: &[&NamedPrompt]) -> Value {
             let parts: Vec<Value> = ip
                 .parts
                 .iter()
-                .filter_map(|ps| lower_prompt_statement(ps))
+                .filter_map(|ps| lower_prompt_statement(ps, prompts))
                 .collect();
             json!({ "type": "inlinePrompt", "parts": parts })
         }
@@ -428,7 +428,7 @@ fn lower_prompt_var_ref(v: &Spanned<String>, prompts: &[&NamedPrompt]) -> Value 
         let body: Vec<Value> = pdef
             .body
             .iter()
-            .filter_map(lower_prompt_statement)
+            .filter_map(|ps| lower_prompt_statement(ps, prompts))
             .collect();
         obj.insert("value".into(), Value::Array(body));
 
@@ -454,7 +454,7 @@ fn lower_prompt_function_call(fc: &FunctionCall, prompts: &[&NamedPrompt]) -> Va
         let body: Vec<Value> = pdef
             .body
             .iter()
-            .filter_map(lower_prompt_statement)
+            .filter_map(|ps| lower_prompt_statement(ps, prompts))
             .collect();
         obj.insert("value".into(), Value::Array(body));
 
@@ -469,9 +469,9 @@ fn lower_prompt_function_call(fc: &FunctionCall, prompts: &[&NamedPrompt]) -> Va
     }
 }
 
-fn lower_prompt_statement(ps: &PromptStatement) -> Option<Value> {
+fn lower_prompt_statement(ps: &PromptStatement, prompts: &[&NamedPrompt]) -> Option<Value> {
     match ps {
-        PromptStatement::Expr(expr) => Some(lower_prompt_expression(expr)),
+        PromptStatement::Expr(expr) => Some(lower_prompt_expression(expr, prompts)),
         PromptStatement::Example(eb) => Some(lower_prompt_example_block(eb)),
         PromptStatement::If(ifs) => Some(lower_statement(&Statement::If(ifs.clone()))),
         PromptStatement::Statement(stmt) => Some(lower_statement(stmt)),
@@ -500,14 +500,14 @@ fn lower_prompt_example_block(eb: &ExampleBlock) -> Value {
     })
 }
 
-fn lower_prompt_expression(expr: &Expr) -> Value {
+fn lower_prompt_expression(expr: &Expr, prompts: &[&NamedPrompt]) -> Value {
     match expr {
         Expr::StringLit(s) => json!({ "type": "literal", "value": s.value }),
         Expr::MultilineStringLit(s) => {
             let template = process_template_string(&s.value);
             json!({ "type": "template", "value": template })
         }
-        _ => lower_expression(expr),
+        _ => lower_prompt_expr(expr, prompts),
     }
 }
 
@@ -789,7 +789,7 @@ fn lower_expression(expr: &Expr) -> Value {
             let parts: Vec<Value> = ip
                 .parts
                 .iter()
-                .filter_map(|ps| lower_prompt_statement(ps))
+                .filter_map(|ps| lower_prompt_statement(ps, &[]))
                 .collect();
             json!({ "type": "inlinePrompt", "parts": parts })
         }
