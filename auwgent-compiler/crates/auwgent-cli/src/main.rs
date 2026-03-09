@@ -94,11 +94,21 @@ fn generate(file: &PathBuf, target: &str, output: Option<&Path>) {
         Err(()) => std::process::exit(1),
     };
 
-    let ir = auwgent_ir::lower(&model).unwrap();
+    let ir = match auwgent_ir::lower(&model) {
+        Ok(ir) => ir,
+        Err(errs) => {
+            for error in &errs {
+                eprintln!("Error: {}", error);
+            }
+            std::process::exit(1);
+        }
+    };
+
+    let stem = file.file_stem().unwrap().to_string_lossy();
 
     let code = match target {
-        "ts" | "typescript" => auwgent_codegen::generate_typescript(&ir),
-        "py" | "python" => auwgent_codegen::generate_python(&ir),
+        "ts" | "typescript" => auwgent_codegen::generate_typescript(&ir, &stem),
+        "py" | "python" => auwgent_codegen::generate_python(&ir, &stem),
         _ => {
             eprintln!("Unknown target '{}'. Use 'ts' or 'python'.", target);
             std::process::exit(1);
@@ -106,13 +116,12 @@ fn generate(file: &PathBuf, target: &str, output: Option<&Path>) {
     };
 
     let out_dir = output.unwrap_or_else(|| file.parent().unwrap());
-    let stem = file.file_stem().unwrap().to_string_lossy();
-    let ext = if target.starts_with("ts") {
-        "types.ts"
+    let file_name = if target.starts_with("ts") {
+        format!("{}.agent.types.ts", stem)
     } else {
-        "_types.py"
+        format!("{}_types.py", stem)
     };
-    let out_path = out_dir.join(format!("{}.agent.{}", stem, ext));
+    let out_path = out_dir.join(file_name);
 
     std::fs::write(&out_path, code).unwrap();
     eprintln!("\x1b[Generated → {}\x1b[0m", out_path.display());

@@ -1,0 +1,338 @@
+use crate::common::{
+    array_at, collect_required_providers, collect_transferred_helpers, collect_workflow_tools,
+    join_sections, merge_tool_defs, object_at, string_at,
+};
+use serde_json::{Map, Value};
+
+pub fn generate(ir: &Value, base_name: &str) -> String {
+    let agent_name = string_at(ir, &["name"]).unwrap_or("Agent");
+    let workflow_tools = collect_workflow_tools(ir);
+    let all_tools = merge_tool_defs(array_at(ir, &["tools"]), workflow_tools);
+    let transferred_helpers = collect_transferred_helpers(ir);
+    let required_providers = collect_required_providers(ir);
+
+    let imports = [
+        "import os",
+        "import json",
+        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol",
+        "",
+        "# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10",
+        "try:",
+        "    from typing import NotRequired",
+        "except ImportError:",
+        "    from typing_extensions import NotRequired",
+        "",
+        "try:",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "except ImportError:",
+        "    # For local testing if auwgent is not installed via pip",
+        "    import sys",
+        "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
+        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "",
+    ]
+    .join("\n");
+
+    let mut sections = vec![
+        format!("# Auto-generated types for {agent_name}"),
+        "# Do not edit manually".to_string(),
+        String::new(),
+        imports,
+    ];
+
+    if let Some(types) = ir.get("types").and_then(Value::as_object) {
+        sections.push(generate_custom_types(types));
+    }
+
+    sections.push(generate_typed_dict(agent_name, "Input", ir.get("input")));
+    for helper in &transferred_helpers {
+        sections.push(generate_helper_output_interface(helper));
+    }
+    sections.push(generate_output_interface(ir, agent_name, &transferred_helpers));
+    sections.push(generate_typed_dict(agent_name, "Context", ir.get("context")));
+    sections.push(generate_tools_protocol(agent_name, &all_tools));
+
+    if !required_providers.is_empty() {
+        sections.push(generate_api_keys(agent_name, &required_providers));
+    }
+
+    sections.push(generate_factory_function(
+        ir,
+        agent_name,
+        !required_providers.is_empty(),
+        base_name,
+    ));
+
+    join_sections(&sections)
+}
+
+fn generate_custom_types(types: &Map<String, Value>) -> String {
+    let mut blocks = Vec::new();
+    for (type_name, type_def) in types {
+        let mut lines = vec![format!("class {type_name}(TypedDict, total=False):")];
+        if let Some(properties) = object_at(type_def, &["properties"]) {
+            if properties.is_empty() {
+                lines.push("    pass".to_string());
+            } else {
+                for (prop_name, prop_info) in properties {
+                    if let Some(description) = string_at(prop_info, &["description"]) {
+                        lines.push(format!("    # {description}"));
+                    }
+
+                    let mut python_type = type_to_python_string(prop_info);
+                    if prop_info
+                        .get("optional")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        python_type = format!("Optional[{python_type}]");
+                    }
+
+                    lines.push(format!("    {prop_name}: {python_type}"));
+                }
+            }
+        } else {
+            lines.push("    pass".to_string());
+        }
+        blocks.push(lines.join("\n"));
+    }
+    blocks.join("\n\n")
+}
+
+fn generate_helper_output_interface(helper: &Value) -> String {
+    let helper_name = string_at(helper, &["name"]).unwrap_or("Helper");
+    generate_typed_dict(helper_name, "Output", helper.get("output"))
+}
+
+fn generate_output_interface(ir: &Value, agent_name: &str, transferred_helpers: &[Value]) -> String {
+    if let Some(variants) = object_at(ir, &["output", "__variants"]) {
+        let mut blocks = Vec::new();
+        let mut class_names = Vec::new();
+
+        for (variant_name, variant_props) in variants {
+            let class_name = format!("{agent_name}Output_{variant_name}");
+            class_names.push(class_name.clone());
+            blocks.push(generate_typed_dict_raw(&class_name, Some(variant_props)));
+        }
+
+        blocks.push(format!("{agent_name}Output = Union[{}]\n", class_names.join(", ")));
+        return blocks.join("\n");
+    }
+
+    if transferred_helpers.is_empty() {
+        return generate_typed_dict(agent_name, "Output", ir.get("output"));
+    }
+
+    let base_output = generate_typed_dict(agent_name, "BaseOutput", ir.get("output"));
+    let union_members = std::iter::once(format!("{agent_name}BaseOutput"))
+        .chain(transferred_helpers.iter().filter_map(|helper| {
+            string_at(helper, &["name"]).map(|name| format!("{name}Output"))
+        }))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!("{base_output}\n{agent_name}Output = Union[{union_members}]\n")
+}
+
+fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
+    if tools.is_empty() {
+        return format!("class {agent_name}Tools(TypedDict, total=False):\n    pass\n");
+    }
+
+    let mut lines = vec![format!("class {agent_name}Tools(TypedDict, total=False):")];
+    for tool in tools {
+        if let Some(description) = string_at(tool, &["description"]) {
+            lines.push(format!("    # {description}"));
+        }
+
+        let tool_name = string_at(tool, &["name"]).unwrap_or("tool");
+        let param_types = object_at(tool, &["params"])
+            .map(|params| {
+                params
+                    .values()
+                    .map(|type_obj| {
+                        let mut python_type = type_to_python_string(type_obj);
+                        if type_obj
+                            .get("optional")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                        {
+                            python_type = format!("Optional[{python_type}]");
+                        }
+                        python_type
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        let returns = type_to_python_string(tool.get("returns").unwrap_or(&Value::Null));
+        lines.push(format!(
+            "    {tool_name}: Callable[[{param_types}], Awaitable[{returns}]]"
+        ));
+        lines.push(String::new());
+    }
+
+    while matches!(lines.last(), Some(last) if last.is_empty()) {
+        lines.pop();
+    }
+
+    lines.join("\n") + "\n"
+}
+
+fn generate_api_keys(agent_name: &str, providers: &std::collections::BTreeSet<String>) -> String {
+    let mut keys = Vec::new();
+    if providers.contains("gemini") {
+        keys.push("    geminiApiKey: str".to_string());
+    }
+    if providers.contains("openai") || providers.contains("custom") {
+        keys.push("    openaiApiKey: str".to_string());
+    }
+    if providers.contains("custom") {
+        keys.push("    customUrl: NotRequired[str]  # type: ignore".to_string());
+    }
+
+    format!("class {agent_name}ApiKeys(TypedDict, total=False):\n{}\n", keys.join("\n"))
+}
+
+fn generate_factory_function(ir: &Value, agent_name: &str, has_api_keys: bool, base_name: &str) -> String {
+    let mut config_keys = vec![
+        format!("    tools: NotRequired['{agent_name}Tools']"),
+        format!("    middleware: NotRequired[List['{agent_name}Middleware']]"),
+    ];
+
+    if matches!(ir.get("context"), Some(context) if !context.is_null()) {
+        config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));
+    }
+    if has_api_keys {
+        config_keys.push(format!("    apiKeys: NotRequired['{agent_name}ApiKeys']"));
+    }
+
+    [
+        format!("{agent_name}Agent = TypedAuwgent"),
+        String::new(),
+        format!("{agent_name}Middleware = Middleware"),
+        String::new(),
+        format!("class {agent_name}Config(TypedDict, total=False):"),
+        config_keys.join("\n"),
+        String::new(),
+        format!("def create{agent_name}(config: {agent_name}Config) -> '{agent_name}Agent':"),
+        format!("    \"\"\"Create a fully configured {agent_name} agent from config.\"\"\""),
+        format!("    ir_path = os.path.join(os.path.dirname(__file__), \"{base_name}.agent.json\")"),
+        "    with open(ir_path, \"r\", encoding=\"utf-8\") as f:".to_string(),
+        "        ir_dict = json.load(f)".to_string(),
+        "    return create_auwgent(ir_dict, config)".to_string(),
+        String::new(),
+        format!("auwgent = create{agent_name}"),
+        format!("AuwgentTools = {agent_name}Tools"),
+        format!("AuwgentConfig = {agent_name}Config"),
+        format!("AuwgentAgent = {agent_name}Agent"),
+        format!("AuwgentMiddleware = {agent_name}Middleware"),
+        format!("AuwgentContext = {agent_name}Context"),
+    ]
+    .join("\n")
+}
+
+fn generate_typed_dict(name: &str, suffix: &str, value: Option<&Value>) -> String {
+    generate_typed_dict_raw(&format!("{name}{suffix}"), value)
+}
+
+fn generate_typed_dict_raw(class_name: &str, value: Option<&Value>) -> String {
+    let mut lines = vec![format!("class {class_name}(TypedDict, total=False):")];
+
+    match value.and_then(Value::as_object) {
+        Some(properties) if !properties.is_empty() => {
+            for (prop_name, prop_info) in properties {
+                let mut python_type = type_to_python_string(prop_info);
+                if prop_info
+                    .get("optional")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    python_type = format!("Optional[{python_type}]");
+                }
+                lines.push(format!("    {prop_name}: {python_type}"));
+            }
+        }
+        _ => lines.push("    pass".to_string()),
+    }
+
+    lines.join("\n") + "\n"
+}
+
+fn type_to_python_string(type_val: &Value) -> String {
+    if let Some(raw) = type_val.as_str() {
+        return normalize_python_type(raw);
+    }
+
+    if string_at(type_val, &["type"]) == Some("typeRef") {
+        if let Some(name) = string_at(type_val, &["name"]) {
+            return format!("\"{name}\"");
+        }
+    }
+
+    if string_at(type_val, &["type"]) == Some("array") {
+        if let Some(items) = type_val.get("items") {
+            return format!("List[{}]", type_to_python_string(items));
+        }
+    }
+
+    if string_at(type_val, &["type"]) == Some("union") {
+        if type_val.get("options").and_then(Value::as_array).is_some() {
+            return "str".to_string();
+        }
+    }
+
+    if string_at(type_val, &["type"]) == Some("object") {
+        if type_val.get("properties").and_then(Value::as_object).is_some() {
+            return "Dict[str, Any]".to_string();
+        }
+    }
+
+    if let Some(nested) = type_val.get("type") {
+        if nested.is_object() {
+            return type_to_python_string(nested);
+        }
+        if let Some(raw) = nested.as_str() {
+            return normalize_python_type(raw);
+        }
+    }
+
+    "Any".to_string()
+}
+
+fn normalize_python_type(raw: &str) -> String {
+    match raw.to_ascii_lowercase().as_str() {
+        "int" | "number" | "float" => "float".to_string(),
+        "bool" | "boolean" => "bool".to_string(),
+        "string" => "str".to_string(),
+        other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate;
+    use serde_json::json;
+
+    #[test]
+    fn emits_custom_provider_keys() {
+        let ir = json!({
+            "name": "Test",
+            "modelConfig": [{
+                "defaultConfig": { "model": { "type": "custom" }, "prompt": { "type": "literal", "value": "Hello" } },
+                "namedConfig": []
+            }],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&ir, "main");
+        assert!(output.contains("openaiApiKey: str"));
+        assert!(output.contains("customUrl: NotRequired[str]"));
+        assert!(output.contains("main.agent.json"));
+    }
+}
