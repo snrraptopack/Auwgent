@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies]
 auwgent-errors = { path = "../auwgent-errors" }
 auwgent-ast = { path = "../auwgent-ast" }
+
+[dev-dependencies]
+auwgent-lexer = { path = "../auwgent-lexer" }
+auwgent-parser = { path = "../auwgent-parser" }

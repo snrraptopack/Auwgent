@@ -16,17 +16,17 @@ except ImportError:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
 class TestInput(TypedDict, total=False):
-    pass
+    text: str
 
 class TestOutput(TypedDict, total=False):
-    pass
+    name: str
+    age: str
 
 class TestContext(TypedDict, total=False):
     pass
 
 class TestTools(TypedDict, total=False):
-    # one
-    one: Callable[[], Awaitable[str]]
+    pass
 
 class TestApiKeys(TypedDict, total=False):
     geminiApiKey: str

@@ -102,6 +102,8 @@ version = "0.1.0"
 dependencies = [
  "auwgent-ast",
  "auwgent-errors",
+ "auwgent-lexer",
+ "auwgent-parser",
 ]
 
 [[package]]
@@ -141,6 +143,8 @@ dependencies = [
  "auwgent-ast",
  "auwgent-checker",
  "auwgent-errors",
+ "auwgent-lexer",
+ "auwgent-parser",
  "serde",
  "serde_json",
 ]

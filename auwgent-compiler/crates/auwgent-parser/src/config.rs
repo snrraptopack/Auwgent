@@ -66,6 +66,7 @@ pub(crate) fn prompt_stmt_parser(
     recursive(
         |pstmt: Recursive<'_, TokenKind, PromptStatement, Simple<TokenKind>>| {
             let expr = expr_parser();
+            let statement = statement_parser().map(PromptStatement::Statement);
 
             // Example blocks
             let message = choice((
@@ -110,10 +111,12 @@ pub(crate) fn prompt_stmt_parser(
                     let then_block = then_stmts
                         .into_iter()
                         .map(|ps| match ps {
+                            PromptStatement::Statement(stmt) => stmt,
                             PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
                                 span: Span::new(0, 0),
                                 value: e,
                             }),
+                            PromptStatement::If(ifs) => Statement::If(ifs),
                             _ => Statement::Return(ReturnStatement {
                                 span: Span::new(0, 0),
                                 value: Expr::StringLit(sp(String::new(), span.clone())),
@@ -124,10 +127,12 @@ pub(crate) fn prompt_stmt_parser(
                         .unwrap_or_default()
                         .into_iter()
                         .map(|ps| match ps {
+                            PromptStatement::Statement(stmt) => stmt,
                             PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
                                 span: Span::new(0, 0),
                                 value: e,
                             }),
+                            PromptStatement::If(ifs) => Statement::If(ifs),
                             _ => Statement::Return(ReturnStatement {
                                 span: Span::new(0, 0),
                                 value: Expr::StringLit(sp(String::new(), span.clone())),
@@ -142,7 +147,7 @@ pub(crate) fn prompt_stmt_parser(
                     })
                 });
 
-            choice((example, prompt_if, expr.map(PromptStatement::Expr)))
+            choice((example, prompt_if, statement, expr.map(PromptStatement::Expr)))
         },
     )
 }

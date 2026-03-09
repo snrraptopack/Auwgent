@@ -106,7 +106,7 @@ pub fn check(model: &Model) -> Vec<Diagnostic> {
     let mut checker = Checker::new(model);
 
     // Collect types and prompts
-    checker.collect_declarations(model);
+    checker.collect_declarations(model, &mut diags);
 
     for element in &model.elements {
         match element {
@@ -127,6 +127,7 @@ struct Checker {
     type_map: HashMap<String, Vec<TypeConfigDecl>>,
     prompt_map: HashMap<String, Vec<TypeConfigDecl>>,
     tool_map: HashMap<String, ToolFunction>,
+    top_level_names: HashMap<String, (&'static str, Span)>,
     /// Context fields for validating ctx.property references
     context_fields: HashMap<String, Span>,
 }
@@ -137,24 +138,100 @@ impl Checker {
             type_map: HashMap::new(),
             prompt_map: HashMap::new(),
             tool_map: HashMap::new(),
+            top_level_names: HashMap::new(),
             context_fields: HashMap::new(),
         }
     }
 
-    fn collect_declarations(&mut self, model: &Model) {
+    fn collect_declarations(&mut self, model: &Model, diags: &mut Vec<Diagnostic>) {
         for el in &model.elements {
             match el {
+                Element::Agent(agent) => {
+                    self.register_top_level_name(&agent.name, "agent", diags);
+                }
+                Element::Helper(helper) => {
+                    self.register_top_level_name(&helper.name, "helper", diags);
+                }
                 Element::TypeDecl(td) => {
+                    self.register_top_level_name(&td.name, "type", diags);
                     self.type_map
-                        .insert(td.name.value.clone(), td.fields.clone());
+                        .entry(td.name.value.clone())
+                        .or_insert_with(|| td.fields.clone());
                 }
                 Element::NamedPrompt(p) => {
+                    self.register_top_level_name(&p.name, "prompt", diags);
                     self.prompt_map
-                        .insert(p.name.value.clone(), p.params.clone());
+                        .entry(p.name.value.clone())
+                        .or_insert_with(|| p.params.clone());
                 }
-                _ => {}
+                Element::ModelDef(model) => {
+                    self.register_top_level_name(&model.name, "model", diags);
+                }
             }
         }
+    }
+
+    fn register_top_level_name(
+        &mut self,
+        name: &Spanned<String>,
+        kind: &'static str,
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        if let Some((prev_kind, _)) = self.top_level_names.get(&name.value) {
+            let message = if *prev_kind == kind {
+                format!("Duplicate {} name '{}'", kind, name.value)
+            } else {
+                format!(
+                    "Name collision: {} '{}' conflicts with existing {} '{}'",
+                    kind, name.value, prev_kind, name.value
+                )
+            };
+            let help = if *prev_kind == kind {
+                format!(
+                    "Rename one of the '{}' {} declarations so the top-level name is unique.",
+                    name.value, kind
+                )
+            } else {
+                "Agents, helpers, prompts, types, and models share one top-level namespace. Rename one of them.".to_string()
+            };
+            diags.push(Diagnostic::error(message, name.span).with_help(help));
+            return;
+        }
+
+        self.top_level_names
+            .insert(name.value.clone(), (kind, name.span));
+    }
+
+    fn declare_scope_name(
+        &self,
+        bindings: &mut HashMap<String, (&'static str, Span)>,
+        name: &Spanned<String>,
+        kind: &'static str,
+        diags: &mut Vec<Diagnostic>,
+    ) -> bool {
+        if let Some((prev_kind, _)) = bindings.get(&name.value) {
+            let message = if *prev_kind == kind {
+                format!("Duplicate {} '{}'", kind, name.value)
+            } else {
+                format!(
+                    "Name collision: {} '{}' conflicts with existing {} '{}'",
+                    kind, name.value, prev_kind, name.value
+                )
+            };
+            let help = if *prev_kind == kind {
+                format!("Rename one of the '{}' declarations in this scope.", name.value)
+            } else {
+                format!(
+                    "Rename '{}' so it does not shadow the existing {} in this scope.",
+                    name.value, prev_kind
+                )
+            };
+            diags.push(Diagnostic::error(message, name.span).with_help(help));
+            return false;
+        }
+
+        bindings.insert(name.value.clone(), (kind, name.span));
+        true
     }
 
     // ── Agent / Helper Validation ────────────────────────────────────
@@ -455,6 +532,17 @@ impl Checker {
     }
 
     fn check_named_prompt(&self, prompt: &NamedPrompt, diags: &mut Vec<Diagnostic>) {
+        let mut param_bindings: HashMap<String, (&'static str, Span)> = HashMap::new();
+        for param in &prompt.params {
+            self.declare_scope_name(
+                &mut param_bindings,
+                &param.name,
+                "prompt parameter",
+                diags,
+            );
+            self.check_type_ref_exists(&param.ty, diags);
+        }
+
         // Collect declared param names
         let param_names: Vec<&str> = prompt
             .params
@@ -592,16 +680,21 @@ impl Checker {
     ) {
         // Build env from agent/helper input+context
         let mut env = TypeEnv::new();
+        let mut bindings: HashMap<String, (&'static str, Span)> = HashMap::new();
         for config in parent_configs {
             match config {
                 AgentConfig::Input(ic) => {
                     for p in &ic.properties {
-                        env.set(&p.name.value, self.map_type_expr(&p.ty));
+                        if self.declare_scope_name(&mut bindings, &p.name, "input field", diags) {
+                            env.set(&p.name.value, self.map_type_expr(&p.ty));
+                        }
                     }
                 }
                 AgentConfig::Context(cc) => {
                     for p in &cc.properties {
-                        env.set(&p.name.value, self.map_type_expr(&p.ty));
+                        if self.declare_scope_name(&mut bindings, &p.name, "context field", diags) {
+                            env.set(&p.name.value, self.map_type_expr(&p.ty));
+                        }
                     }
                 }
                 _ => {}
@@ -610,7 +703,9 @@ impl Checker {
 
         // Add workflow params to env
         for p in &wf.params {
-            env.set(&p.name.value, self.map_type_expr(&p.ty));
+            if self.declare_scope_name(&mut bindings, &p.name, "workflow parameter", diags) {
+                env.set(&p.name.value, self.map_type_expr(&p.ty));
+            }
         }
 
         let expected = self.map_type_expr(&wf.return_type);
@@ -621,13 +716,14 @@ impl Checker {
         }
 
         // Check statements
-        self.check_statements(&wf.body, &mut env, &expected, diags);
+        self.check_statements(&wf.body, &mut env, &mut bindings, &expected, diags);
     }
 
     fn check_statements(
         &self,
         stmts: &[Statement],
         env: &mut TypeEnv,
+        bindings: &mut HashMap<String, (&'static str, Span)>,
         expected_return: &Type,
         diags: &mut Vec<Diagnostic>,
     ) {
@@ -635,6 +731,8 @@ impl Checker {
             match stmt {
                 Statement::Let(ls) => {
                     let val_ty = self.infer_expression(&ls.value, env, diags);
+                    let is_new_binding =
+                        self.declare_scope_name(bindings, &ls.name, "variable", diags);
                     if let Some(declared) = &ls.ty {
                         let decl_ty = self.map_type_expr(declared);
                         if !self.types_compatible(&decl_ty, &val_ty) {
@@ -648,9 +746,13 @@ impl Checker {
                                 ls.name.span,
                             ));
                         }
-                        env.set(&ls.name.value, decl_ty);
+                        if is_new_binding {
+                            env.set(&ls.name.value, decl_ty);
+                        }
                     } else {
-                        env.set(&ls.name.value, val_ty);
+                        if is_new_binding {
+                            env.set(&ls.name.value, val_ty);
+                        }
                     }
                 }
                 Statement::Assign(as_) => {
@@ -682,12 +784,21 @@ impl Checker {
                 Statement::If(ifs) => {
                     self.check_condition(&ifs.condition, env, diags);
                     let mut then_env = env.extend();
-                    self.check_statements(&ifs.then_block, &mut then_env, expected_return, diags);
+                    let mut then_bindings = bindings.clone();
+                    self.check_statements(
+                        &ifs.then_block,
+                        &mut then_env,
+                        &mut then_bindings,
+                        expected_return,
+                        diags,
+                    );
                     if !ifs.else_block.is_empty() {
                         let mut else_env = env.extend();
+                        let mut else_bindings = bindings.clone();
                         self.check_statements(
                             &ifs.else_block,
                             &mut else_env,
+                            &mut else_bindings,
                             expected_return,
                             diags,
                         );
@@ -695,7 +806,7 @@ impl Checker {
                 }
                 Statement::Transfer(_) => {}
                 Statement::Parallel(ps) => {
-                    self.check_statements(&ps.body, env, expected_return, diags);
+                    self.check_statements(&ps.body, env, bindings, expected_return, diags);
                 }
             }
         }
@@ -1207,5 +1318,92 @@ fn collect_template_ref(token: &str, refs: &mut Vec<String>) {
     let root = trimmed.split('.').next().unwrap_or(trimmed).trim();
     if !root.is_empty() {
         refs.push(root.to_string());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check;
+
+    fn parse_and_check(source: &str) -> Vec<String> {
+        let (tokens, lex_errors) = auwgent_lexer::tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {:?}", lex_errors);
+
+        let (model, parse_errors) = auwgent_parser::parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {:?}", parse_errors);
+
+        check(&model)
+            .into_iter()
+            .map(|diag| diag.message)
+            .collect()
+    }
+
+    #[test]
+    fn rejects_top_level_name_collision_between_prompt_and_agent() {
+        let diags = parse_and_check(
+            r#"
+prompt Test{
+   example{
+    user: "hello"
+    assistant: "world"
+   }
+}
+
+agent Test{
+    default config{
+        model:gemini("gemini-2.5-flash")
+        prompt:"Hello" + Test
+    }
+
+    input{
+        text:string
+    }
+
+    output{
+        name:string
+    }
+}
+"#,
+        );
+
+        assert!(
+            diags.iter().any(|message| {
+                message.contains("Name collision: agent 'Test' conflicts with existing prompt 'Test'")
+            }),
+            "expected name collision diagnostic, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn rejects_workflow_variable_shadowing_input_field() {
+        let diags = parse_and_check(
+            r#"
+agent Demo {
+  default config {
+    model: gemini("gemini-2.5-flash")
+    prompt: "Hello"
+  }
+
+  input {
+    text: string
+  }
+
+  workflow w(): string {
+    description: "w"
+    let text = "override"
+    return text
+  }
+}
+"#,
+        );
+
+        assert!(
+            diags.iter().any(|message| {
+                message.contains("Name collision: variable 'text' conflicts with existing input field 'text'")
+            }),
+            "expected variable collision diagnostic, got: {:?}",
+            diags
+        );
     }
 }

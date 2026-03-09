@@ -264,6 +264,7 @@ pub enum PromptStatement {
     Expr(Expr),
     Example(ExampleBlock),
     If(IfStatement),
+    Statement(Statement),
 }
 
 #[derive(Debug, Clone)]

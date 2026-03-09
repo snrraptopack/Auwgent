@@ -1,4 +1,16 @@
 
+prompt One{
+
+   example{
+    user: "hello"
+    assistant: "how may i help you"
+
+    user: "can you help me with something"
+    assistant: "sure what is it"
+   }
+
+}
+
 
 agent Test{
 
@@ -7,30 +19,17 @@ agent Test{
             thinking:"low",
             maxToken:2000
         })
-        prompt:"Hello" 
+        prompt:"Hello" + One
     }
 
-    helpers{Kojo with tools{one} handoff user then continue}
-    tool one():string @desc "one"
+    input{
+        text:string
+    }
 
-    workflow hey():string{
-        description: "one"
-
-        let a = hlp.Kojo()
-
-        return ""
+    output{
+        name:string
+        age:string
     }
 
 }
 
-helper Kojo{
-    description:"kojo"
-
-    default config{
-        model:gemini("gemini-2.5-flash",{
-            thinking:"low",
-            maxToken:2000
-        })
-        prompt: "one"
-    }
-}

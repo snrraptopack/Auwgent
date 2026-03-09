@@ -171,6 +171,8 @@ fn lower_output(shape: &OutputShape) -> Value {
                     prop.insert("description".into(), json!(desc.value));
                 } else if let Some(desc) = &p.decl.description {
                     prop.insert("description".into(), json!(desc.value));
+                } else {
+                    prop.insert("description".into(), json!("no description"));
                 }
                 map.insert(p.decl.name.value.clone(), Value::Object(prop));
             }
@@ -470,50 +472,32 @@ fn lower_prompt_function_call(fc: &FunctionCall, prompts: &[&NamedPrompt]) -> Va
 fn lower_prompt_statement(ps: &PromptStatement) -> Option<Value> {
     match ps {
         PromptStatement::Expr(expr) => Some(lower_prompt_expression(expr)),
-        PromptStatement::Example(eb) => {
-            let msgs: Vec<Value> = eb
-                .messages
-                .iter()
-                .map(|m| {
-                    json!({
-                        "role": m.role.value,
-                        "text": m.text.value
-                    })
-                })
-                .collect();
-            Some(json!({ "type": "example", "messages": msgs }))
-        }
-        PromptStatement::If(ifs) => {
-            let then_parts: Vec<Value> = ifs
-                .then_block
-                .iter()
-                .filter_map(|s| {
-                    if let Statement::Return(r) = s {
-                        Some(lower_expression(&r.value))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            let else_parts: Vec<Value> = ifs
-                .else_block
-                .iter()
-                .filter_map(|s| {
-                    if let Statement::Return(r) = s {
-                        Some(lower_expression(&r.value))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            Some(json!({
-                "type": "conditional",
-                "condition": lower_condition(&ifs.condition),
-                "then": then_parts,
-                "else": else_parts
-            }))
+        PromptStatement::Example(eb) => Some(lower_prompt_example_block(eb)),
+        PromptStatement::If(ifs) => Some(lower_statement(&Statement::If(ifs.clone()))),
+        PromptStatement::Statement(stmt) => Some(lower_statement(stmt)),
+    }
+}
+
+fn lower_prompt_example_block(eb: &ExampleBlock) -> Value {
+    let mut examples = Vec::new();
+    let mut current_user_text = String::new();
+
+    for message in &eb.messages {
+        if message.role.value == "user" {
+            current_user_text = message.text.value.clone();
+        } else if message.role.value == "assistant" {
+            examples.push(json!({
+                "user": current_user_text,
+                "assistant": message.text.value
+            }));
+            current_user_text.clear();
         }
     }
+
+    json!({
+        "type": "promptExamples",
+        "examples": examples
+    })
 }
 
 fn lower_prompt_expression(expr: &Expr) -> Value {
@@ -731,8 +715,8 @@ fn lower_expression(expr: &Expr) -> Value {
             let template = process_template_string(&s.value);
             json!({ "type": "template", "value": template })
         }
-        Expr::NumberLit(n) => json!({ "type": "number", "value": n.value }),
-        Expr::BooleanLit(b) => json!({ "type": "boolean", "value": b.value }),
+        Expr::NumberLit(n) => json!({ "type": "literal", "value": n.value }),
+        Expr::BooleanLit(b) => json!({ "type": "literal", "value": b.value }),
         Expr::Array(a) => {
             let elems: Vec<Value> = a.elements.iter().map(|e| lower_expression(e)).collect();
             json!({ "type": "array", "value": elems })
@@ -1003,4 +987,106 @@ fn lower_type_declaration(td: &TypeDeclaration) -> Value {
     obj.insert("properties".into(), Value::Object(props));
 
     Value::Object(obj)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use auwgent_checker::check;
+    use auwgent_lexer::tokenize;
+    use auwgent_parser::parse;
+
+    fn lower_source(source: &str) -> Value {
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+
+        let diagnostics = check(&model);
+        assert!(diagnostics.is_empty(), "checker diagnostics: {diagnostics:?}");
+
+        lower(&model).expect("IR lowering should succeed")
+    }
+
+    #[test]
+    fn output_fields_default_description_and_provider_config_literals_match_langium() {
+        let ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash", {
+                        thinking: "low",
+                        maxToken: 2000
+                    })
+                    prompt: "Hello"
+                }
+
+                input {
+                    text: string
+                }
+
+                output {
+                    name: string
+                    age: string
+                }
+            }
+            "#,
+        );
+
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["thinking"]["type"], json!("literal"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["type"], json!("literal"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"], json!(2000.0));
+        assert_eq!(ir["output"]["name"]["description"], json!("no description"));
+        assert_eq!(ir["output"]["age"]["description"], json!("no description"));
+    }
+
+    #[test]
+    fn named_prompt_body_accepts_statement_level_if_and_return() {
+        let ir = lower_source(
+            r#"
+            prompt One {
+                """
+                {{#if 1 == 10}}
+                    "hel"
+                {{else}}
+                    "wow"
+                {{/if}}
+                """
+
+                if (10 > 20) {
+                    return ""
+                } else {
+                    return "wow"
+                }
+            }
+
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash", {
+                        thinking: "low",
+                        maxToken: 2000
+                    })
+                    prompt: "Hello" + One
+                }
+
+                input {
+                    text: string
+                }
+
+                output {
+                    name: string
+                    age: string
+                }
+            }
+            "#,
+        );
+
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["type"], json!("binaryOp"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["type"], json!("promptRef"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][0]["type"], json!("template"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["type"], json!("if"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["then"][0]["type"], json!("return"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["else"][0]["value"]["value"], json!("wow"));
+    }
 }
