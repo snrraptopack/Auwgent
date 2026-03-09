@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
     // Collect type declarations for the types map
     let mut type_decls: Vec<&TypeDeclaration> = Vec::new();
+    let mut model_defs: Vec<&ModelDefinition> = Vec::new();
     let mut prompts: Vec<&NamedPrompt> = Vec::new();
     let mut helpers_vec: Vec<&Helper> = Vec::new();
     let mut agent: Option<&Agent> = None;
@@ -20,8 +21,8 @@ pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
             Element::Agent(a) => agent = Some(a),
             Element::Helper(h) => helpers_vec.push(h),
             Element::TypeDecl(td) => type_decls.push(td),
+            Element::ModelDef(md) => model_defs.push(md),
             Element::NamedPrompt(p) => prompts.push(p),
-            Element::ModelDef(_) => {}
         }
     }
 
@@ -49,7 +50,7 @@ pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
                 input_val = lower_properties(&ic.properties);
             }
             AgentConfig::Output(oc) => {
-                output_val = lower_output(&oc.shape);
+                output_val = lower_output(&oc.shape, &type_decls);
             }
             AgentConfig::Context(cc) => {
                 context_val = lower_properties(&cc.properties);
@@ -63,7 +64,7 @@ pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
                 }
             }
             AgentConfig::Model(mc) => {
-                model_config.push(lower_agent_model_config(mc, &prompts));
+                model_config.push(lower_agent_model_config(mc, &prompts, &model_defs));
             }
             AgentConfig::Workflow(wf) => {
                 workflows_val.push(lower_workflow(wf));
@@ -105,7 +106,7 @@ pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
 
     // Process helper definitions
     for helper in &helpers_vec {
-        helpers_ir.push(lower_helper(helper, &prompts));
+        helpers_ir.push(lower_helper(helper, &prompts, &model_defs));
     }
 
     ir.insert("modelConfig".into(), Value::Array(model_config));
@@ -156,7 +157,7 @@ fn lower_properties(props: &[TypeConfigDecl]) -> Value {
     Value::Object(map)
 }
 
-fn lower_output(shape: &OutputShape) -> Value {
+fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
     match shape {
         OutputShape::Properties(props) => {
             if props.is_empty() {
@@ -179,10 +180,35 @@ fn lower_output(shape: &OutputShape) -> Value {
             Value::Object(map)
         }
         OutputShape::Union(types) => {
+            let mut variants = Map::new();
+            let mut all_variants_resolved = true;
+
+            for variant in types {
+                if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == variant.value) {
+                    variants.insert(
+                        variant.value.clone(),
+                        lower_output_type_decl_fields(type_decl),
+                    );
+                } else {
+                    all_variants_resolved = false;
+                    break;
+                }
+            }
+
+            if all_variants_resolved && !variants.is_empty() {
+                return json!({ "__variants": variants });
+            }
+
             let names: Vec<Value> = types.iter().map(|t| json!(t.value)).collect();
             json!({ "type": "union", "options": names })
         }
         OutputShape::Direct { ty, desc } => {
+            if let TypeExpr::TypeRef(name) = ty {
+                if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == name.value) {
+                    return lower_output_type_decl_fields(type_decl);
+                }
+            }
+
             let mut obj = Map::new();
             obj.insert("type".into(), lower_type_expr_value(ty));
             if let Some(d) = desc {
@@ -191,6 +217,20 @@ fn lower_output(shape: &OutputShape) -> Value {
             Value::Object(obj)
         }
     }
+}
+
+fn lower_output_type_decl_fields(type_decl: &TypeDeclaration) -> Value {
+    let mut map = Map::new();
+    for field in &type_decl.fields {
+        let mut prop = Map::new();
+        prop.insert("type".into(), lower_type_expr_value(&field.ty));
+        prop.insert("optional".into(), json!(field.optional));
+        if let Some(field_desc) = &field.description {
+            prop.insert("description".into(), json!(field_desc.value));
+        }
+        map.insert(field.name.value.clone(), Value::Object(prop));
+    }
+    Value::Object(map)
 }
 
 // ── Type Expressions ─────────────────────────────────────────────────────
@@ -263,25 +303,33 @@ fn lower_tool(tf: &ToolFunction) -> Value {
 
 // ── Model Config ─────────────────────────────────────────────────────────
 
-fn lower_agent_model_config(mc: &AgentModelConfig, prompts: &[&NamedPrompt]) -> Value {
+fn lower_agent_model_config(
+    mc: &AgentModelConfig,
+    prompts: &[&NamedPrompt],
+    model_defs: &[&ModelDefinition],
+) -> Value {
     let mut obj = Map::new();
     obj.insert(
         "defaultConfig".into(),
-        lower_model_config(&mc.default_config, prompts),
+        lower_model_config(&mc.default_config, prompts, model_defs),
     );
 
     let named: Vec<Value> = mc
         .named_configs
         .iter()
-        .map(|nc| lower_named_model_config(nc, prompts))
+        .map(|nc| lower_named_model_config(nc, prompts, model_defs))
         .collect();
     obj.insert("namedConfig".into(), Value::Array(named));
 
     Value::Object(obj)
 }
 
-fn lower_named_model_config(nc: &NamedModelConfig, prompts: &[&NamedPrompt]) -> Value {
-    let mut obj = match lower_model_config(&nc.config, prompts) {
+fn lower_named_model_config(
+    nc: &NamedModelConfig,
+    prompts: &[&NamedPrompt],
+    model_defs: &[&ModelDefinition],
+) -> Value {
+    let mut obj = match lower_model_config(&nc.config, prompts, model_defs) {
         Value::Object(map) => map,
         _ => Map::new(),
     };
@@ -289,11 +337,15 @@ fn lower_named_model_config(nc: &NamedModelConfig, prompts: &[&NamedPrompt]) -> 
     Value::Object(obj)
 }
 
-fn lower_model_config(mc: &ModelConfig, prompts: &[&NamedPrompt]) -> Value {
+fn lower_model_config(
+    mc: &ModelConfig,
+    prompts: &[&NamedPrompt],
+    model_defs: &[&ModelDefinition],
+) -> Value {
     let mut obj = Map::new();
 
     // Model provider
-    obj.insert("model".into(), lower_model_provider_ref(&mc.model));
+    obj.insert("model".into(), lower_model_provider_ref(&mc.model, model_defs));
 
     // Prompt
     if let Some(expr) = &mc.prompt_expr {
@@ -312,10 +364,14 @@ fn lower_model_config(mc: &ModelConfig, prompts: &[&NamedPrompt]) -> Value {
     Value::Object(obj)
 }
 
-fn lower_model_provider_ref(mpr: &ModelProviderRef) -> Value {
+fn lower_model_provider_ref(mpr: &ModelProviderRef, model_defs: &[&ModelDefinition]) -> Value {
     match mpr {
         ModelProviderRef::Inline(p) => lower_model_provider(p),
-        ModelProviderRef::Ref(name) => json!({ "type": "modelRef", "name": name.value }),
+        ModelProviderRef::Ref(name) => model_defs
+            .iter()
+            .find(|model| model.name.value == name.value)
+            .map(|model| lower_model_provider(&model.provider))
+            .unwrap_or_else(|| json!({ "type": "modelRef", "name": name.value })),
     }
 }
 
@@ -927,7 +983,11 @@ fn lower_statement(stmt: &Statement) -> Value {
 
 // ── Helper Lowering ──────────────────────────────────────────────────────
 
-fn lower_helper(helper: &Helper, prompts: &[&NamedPrompt]) -> Value {
+fn lower_helper(
+    helper: &Helper,
+    prompts: &[&NamedPrompt],
+    model_defs: &[&ModelDefinition],
+) -> Value {
     let mut obj = Map::new();
     obj.insert("name".into(), json!(helper.name.value));
     obj.insert("description".into(), json!(helper.description.value));
@@ -942,7 +1002,7 @@ fn lower_helper(helper: &Helper, prompts: &[&NamedPrompt]) -> Value {
     for config in &helper.configs {
         match config {
             AgentConfig::Input(ic) => input_val = lower_properties(&ic.properties),
-            AgentConfig::Output(oc) => output_val = lower_output(&oc.shape),
+            AgentConfig::Output(oc) => output_val = lower_output(&oc.shape, &[]),
             AgentConfig::Context(cc) => context_val = lower_properties(&cc.properties),
             AgentConfig::Tool(tf) => tools_val.push(lower_tool(tf)),
             AgentConfig::Tools(tfs) => {
@@ -951,7 +1011,7 @@ fn lower_helper(helper: &Helper, prompts: &[&NamedPrompt]) -> Value {
                 }
             }
             AgentConfig::Model(mc) => {
-                model_config.push(lower_agent_model_config(mc, prompts));
+                model_config.push(lower_agent_model_config(mc, prompts, model_defs));
             }
             AgentConfig::Workflow(wf) => workflows_val.push(lower_workflow(wf)),
             _ => {}
@@ -1088,5 +1148,107 @@ mod tests {
         assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["type"], json!("if"));
         assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["then"][0]["type"], json!("return"));
         assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["else"][0]["value"]["value"], json!("wow"));
+    }
+
+    #[test]
+    fn direct_output_type_ref_is_flattened_but_types_map_is_preserved() {
+        let ir = lower_source(
+            r#"
+            type Hey {
+                name: string
+                age: number
+            }
+
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input {
+                    text: string
+                }
+
+                output: Hey
+            }
+            "#,
+        );
+
+        assert_eq!(ir["output"]["name"]["type"], json!("string"));
+        assert_eq!(ir["output"]["age"]["type"], json!("number"));
+        assert_eq!(ir["output"]["name"]["description"], Value::Null);
+        assert_eq!(ir["types"]["Hey"]["properties"]["name"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn output_union_of_named_types_is_lowered_to_variants() {
+        let ir = lower_source(
+            r#"
+            type Hey {
+                name: string
+                age: number
+            }
+
+            type A {
+                wow: string
+            }
+
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input {
+                    text: string
+                }
+
+                output: Hey | A
+            }
+            "#,
+        );
+
+        assert_eq!(ir["output"]["__variants"]["Hey"]["name"]["type"], json!("string"));
+        assert_eq!(ir["output"]["__variants"]["Hey"]["age"]["type"], json!("number"));
+        assert_eq!(ir["output"]["__variants"]["A"]["wow"]["type"], json!("string"));
+        assert_eq!(ir["types"]["Hey"]["properties"]["name"]["type"], json!("string"));
+        assert_eq!(ir["types"]["A"]["properties"]["wow"]["type"], json!("string"));
+    }
+
+    #[test]
+    fn exported_model_definition_is_inlined_when_referenced() {
+        let ir = lower_source(
+            r#"
+            export model Gemini {
+                provider: gemini("gemini-2.5-flash")
+            }
+
+            prompt One {
+                example {
+                    user: "hello"
+                    assistant: "how may i help you"
+                }
+            }
+
+            agent Test {
+                default config {
+                    model: Gemini
+                    prompt: "Hello" + One
+                }
+
+                input {
+                    text: string
+                }
+
+                output {
+                    name: string
+                    age: string
+                }
+            }
+            "#,
+        );
+
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["type"], json!("gemini"));
+        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["modelName"], json!("gemini-2.5-flash"));
     }
 }

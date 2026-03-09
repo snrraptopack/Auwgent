@@ -1,33 +1,25 @@
 import {MainAgentPrompt} from "./prompt"
 import {Gemini} from "./models"
-prompt One{
-
-   example{
-    user: "hello"
-    assistant: "how may i help you"
-
-    user: "can you help me with something"
-    assistant: "sure what is it"
-   }
+import {Hey} from "./types"
 
 
+type A{
+    wow:string
 }
+
 
 agent Test{
 
     default config{
         model:Gemini
-        prompt:"Hello" + One + MainAgentPrompt
+        prompt:"Hello" 
     }
 
     input{
         text:string
     }
 
-    output{
-        name:string
-        age:string
-    }
+    output:Hey | A 
 
 }
 

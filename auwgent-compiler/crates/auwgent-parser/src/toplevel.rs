@@ -88,10 +88,18 @@ pub(crate) fn named_prompt_parser(
 
 pub(crate) fn model_def_parser(
 ) -> impl Parser<TokenKind, ModelDefinition, Error = Simple<TokenKind>> + Clone {
+    let provider_block = tok(TokenKind::Provider)
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(model_provider_parser())
+        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace));
+
     tok(TokenKind::Model)
         .ignore_then(ident())
-        .then_ignore(tok(TokenKind::Eq))
-        .then(model_provider_parser())
+        .then(
+            tok(TokenKind::Eq)
+                .ignore_then(model_provider_parser())
+                .or(provider_block),
+        )
         .map_with_span(|(name, provider), span| ModelDefinition {
             exported: false,
             name,

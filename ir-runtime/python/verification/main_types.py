@@ -15,12 +15,24 @@ except ImportError:
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
+class Hey(TypedDict, total=False):
+    name: str
+    age: float
+
+class A(TypedDict, total=False):
+    wow: str
+
 class TestInput(TypedDict, total=False):
     text: str
 
-class TestOutput(TypedDict, total=False):
+class TestOutput_Hey(TypedDict, total=False):
     name: str
-    age: str
+    age: float
+
+class TestOutput_A(TypedDict, total=False):
+    wow: str
+
+TestOutput = Union[TestOutput_Hey, TestOutput_A]
 
 class TestContext(TypedDict, total=False):
     pass

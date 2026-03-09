@@ -8,62 +8,8 @@
           "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "type": "binaryOp",
-          "op": "+",
-          "left": {
-            "type": "binaryOp",
-            "op": "+",
-            "left": {
-              "value": "Hello",
-              "type": "literal"
-            },
-            "right": {
-              "type": "promptRef",
-              "name": "One",
-              "params": [],
-              "args": [],
-              "value": [
-                {
-                  "type": "promptExamples",
-                  "examples": [
-                    {
-                      "user": "hello",
-                      "assistant": "how may i help you"
-                    },
-                    {
-                      "user": "can you help me with something",
-                      "assistant": "sure what is it"
-                    }
-                  ]
-                }
-              ]
-            }
-          },
-          "right": {
-            "type": "promptRef",
-            "name": "MainAgentPrompt",
-            "params": [],
-            "args": [],
-            "value": [
-              {
-                "type": "template",
-                "value": [
-                  {
-                    "type": "literal",
-                    "value": "\r\n        You are the Main Agent in a multi-agent system. Your primary responsibility is to receive user\r\n        requests and intelligently delegate tasks to specialized helper agents based on their expertise.\r\n        "
-                  },
-                  {
-                    "type": "schemaDirective",
-                    "path": "output"
-                  },
-                  {
-                    "type": "literal",
-                    "value": "\r\n        "
-                  }
-                ]
-              }
-            ]
-          }
+          "value": "Hello",
+          "type": "literal"
         }
       },
       "namedConfig": []
@@ -76,20 +22,52 @@
     }
   },
   "output": {
-    "name": {
-      "type": "string",
-      "optional": false,
-      "description": "no description"
-    },
-    "age": {
-      "type": "string",
-      "optional": false,
-      "description": "no description"
+    "__variants": {
+      "Hey": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "A": {
+        "wow": {
+          "type": "string",
+          "optional": false
+        }
+      }
     }
   },
   "context": null,
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "tests": [],
+  "types": {
+    "Hey": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      }
+    },
+    "A": {
+      "isOutput": false,
+      "properties": {
+        "wow": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    }
+  }
 }
