@@ -12,7 +12,7 @@ mod utils;
 
 use auwgent_ast::*;
 use auwgent_errors::{Diagnostic, Span};
-use state::{Type, TypeEnv};
+use state::TypeEnv;
 use std::collections::HashMap;
 use utils::{find_closest};
 
