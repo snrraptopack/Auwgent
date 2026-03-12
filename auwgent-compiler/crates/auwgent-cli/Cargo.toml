@@ -8,6 +8,7 @@ name = "auwgent"
 path = "src/main.rs"
 
 [dependencies]
+auwgent-analysis = { path = "../auwgent-analysis" }
 auwgent-errors = { path = "../auwgent-errors" }
 auwgent-ast = { path = "../auwgent-ast" }
 auwgent-lexer = { path = "../auwgent-lexer" }

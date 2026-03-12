@@ -1,0 +1,15 @@
+[package]
+name = "auwgent-lsp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "auwgent-lsp"
+path = "src/main.rs"
+
+[dependencies]
+auwgent-analysis = { path = "../auwgent-analysis" }
+auwgent-checker = { path = "../auwgent-checker" }
+auwgent-errors = { path = "../auwgent-errors" }
+tokio = { workspace = true }
+tower-lsp = { workspace = true }

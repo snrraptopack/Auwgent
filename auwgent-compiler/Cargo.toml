@@ -5,10 +5,11 @@ members = [
     "crates/auwgent-lexer",
     "crates/auwgent-parser",
     "crates/auwgent-checker",
+    "crates/auwgent-analysis",
+    "crates/auwgent-lsp",
     "crates/auwgent-ir",
     "crates/auwgent-codegen",
     "crates/auwgent-cli",
-    # "crates/auwgent-lsp",  # Enable when ready
 ]
 resolver = "2"
 
@@ -19,3 +20,5 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 chumsky = "0.9"
 ariadne = "0.4"
 clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tower-lsp = "0.20"
