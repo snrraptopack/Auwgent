@@ -3,6 +3,7 @@ use crate::definition::analysis_definition_to_lsp;
 use crate::diagnostics::{compiler_diagnostic_to_lsp, diagnostics_from_error};
 use crate::hover::analysis_hover_to_lsp;
 use crate::reference::analysis_reference_to_lsp;
+use crate::rename::analysis_rename_to_lsp;
 use crate::util::{extract_full_text, path_from_uri, position_to_offset};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
@@ -11,8 +12,9 @@ use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
     DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams,
     GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability, InitializeParams,
-    InitializeResult, InitializedParams, MessageType, OneOf, ReferencesOptions,
-    ReferenceParams, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Url,
+    InitializeResult, InitializedParams, MessageType, OneOf, ReferenceParams,
+    ReferencesOptions, RenameOptions, RenameParams, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
 
@@ -83,6 +85,10 @@ impl LanguageServer for Backend {
                 references_provider: Some(OneOf::Right(ReferencesOptions {
                     work_done_progress_options: Default::default(),
                 })),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(false),
+                    work_done_progress_options: Default::default(),
+                })),
                 ..ServerCapabilities::default()
             },
             ..InitializeResult::default()
@@ -93,7 +99,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                "Auwgent Rust LSP initialized with diagnostics, completion, hover, definition, and references support.",
+                "Auwgent Rust LSP initialized with diagnostics, completion, hover, definition, references, and rename support.",
             )
             .await;
     }
@@ -217,5 +223,26 @@ impl LanguageServer for Backend {
             .collect::<Vec<_>>();
 
         Ok(Some(references))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let path = match path_from_uri(&uri) {
+            Some(path) => path,
+            None => return Ok(None),
+        };
+
+        let text = {
+            let documents = self.documents.read().await;
+            documents.get(&uri).cloned()
+        };
+        let Some(text) = text else {
+            return Ok(None);
+        };
+
+        let offset = position_to_offset(&text, params.text_document_position.position);
+        let edit = auwgent_analysis::rename_for_source(&path, &text, offset, &params.new_name);
+
+        Ok(analysis_rename_to_lsp(edit))
     }
 }

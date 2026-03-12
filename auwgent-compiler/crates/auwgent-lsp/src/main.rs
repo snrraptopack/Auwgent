@@ -4,6 +4,7 @@ mod definition;
 mod diagnostics;
 mod hover;
 mod reference;
+mod rename;
 mod util;
 
 use backend::Backend;
