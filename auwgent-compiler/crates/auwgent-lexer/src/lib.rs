@@ -118,6 +118,8 @@ pub enum TokenKind {
     #[token("description")]
     Description,
 
+    ErrorToken,
+
     // ── Type Keywords ────────────────────────────────────────────────
     #[token("string")]
     StringType,
@@ -185,10 +187,9 @@ pub enum TokenKind {
     Ctx,
 
     // ── Literals ─────────────────────────────────────────────────────
-    #[regex(r#""""([^"]|"[^"]|""[^"])*""""#, |lex| {
-        let s = lex.slice();
-        s[3..s.len()-3].to_string()
-    })]
+    // Match 3 quotes, then any characters (lazily), and optionally up to 3 quotes.
+    // We validate in the closure if it actually ended with 3 quotes.
+    #[regex(r#""""(?:[^"]|"[^"]|""[^"])*("{0,3})"#, |lex| lex.slice().to_string())]
     MultilineString(String),
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| {
@@ -315,6 +316,7 @@ impl fmt::Display for TokenKind {
             Self::Number(_) => write!(f, "number"),
             Self::DoubleString(_) | Self::SingleString(_) => write!(f, "string"),
             Self::MultilineString(_) => write!(f, "multiline string"),
+            Self::ErrorToken => write!(f, "error token"),
         }
     }
 }
@@ -337,6 +339,27 @@ pub fn tokenize(source: &str) -> (Vec<Token>, Vec<auwgent_errors::Diagnostic>) {
     while let Some(result) = lexer.next() {
         let span = Span::new(lexer.span().start, lexer.span().end);
         match result {
+            Ok(TokenKind::MultilineString(_)) => {
+                let slice = lexer.slice();
+                if slice.ends_with("\"\"\"") && slice.len() >= 6 {
+                    tokens.push(Token {
+                        kind: TokenKind::MultilineString(slice[3..slice.len() - 3].to_string()),
+                        text: slice.to_string(),
+                        span,
+                    });
+                } else {
+                    errors.push(auwgent_errors::Diagnostic::error(
+                        "Unclosed multiline string",
+                        span,
+                    ).with_help("Make sure the string ends with \"\"\""));
+                    // Push anyway so parser can try to recover
+                    tokens.push(Token {
+                        kind: TokenKind::ErrorToken,
+                        text: slice.to_string(),
+                        span,
+                    });
+                }
+            }
             Ok(kind) => {
                 tokens.push(Token {
                     kind,
@@ -349,6 +372,11 @@ pub fn tokenize(source: &str) -> (Vec<Token>, Vec<auwgent_errors::Diagnostic>) {
                     format!("unexpected character: '{}'", lexer.slice()),
                     span,
                 ));
+                tokens.push(Token {
+                    kind: TokenKind::ErrorToken,
+                    text: lexer.slice().to_string(),
+                    span,
+                });
             }
         }
     }

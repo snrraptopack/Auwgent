@@ -145,7 +145,7 @@ pub struct ContextConfig {
 pub struct ToolFunction {
     pub name: Spanned<String>,
     pub params: Vec<TypeConfigDecl>,
-    pub returns: TypeExpr,
+    pub returns: Option<TypeExpr>,
     pub description: Vec<Spanned<String>>,
     pub span: Span,
 }

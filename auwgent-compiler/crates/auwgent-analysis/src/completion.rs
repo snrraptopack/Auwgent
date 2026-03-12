@@ -550,14 +550,18 @@ fn tool_return_map(
             AgentConfig::Tool(tool) => {
                 returns.insert(
                     tool.name.value.clone(),
-                    value_type_from_type_expr(&tool.returns, type_map),
+                    tool.returns.as_ref()
+                        .map(|ty| value_type_from_type_expr(ty, type_map))
+                        .unwrap_or(ValueType::Unknown),
                 );
             }
             AgentConfig::Tools(tools) => {
                 for tool in tools {
                     returns.insert(
                         tool.name.value.clone(),
-                        value_type_from_type_expr(&tool.returns, type_map),
+                        tool.returns.as_ref()
+                            .map(|ty| value_type_from_type_expr(ty, type_map))
+                            .unwrap_or(ValueType::Unknown),
                     );
                 }
             }
@@ -568,7 +572,9 @@ fn tool_return_map(
     for tool in workflow_tools {
         returns.insert(
             tool.name.value.clone(),
-            value_type_from_type_expr(&tool.returns, type_map),
+            tool.returns.as_ref()
+                .map(|ty| value_type_from_type_expr(ty, type_map))
+                .unwrap_or(ValueType::Unknown),
         );
     }
 
@@ -808,7 +814,9 @@ pub(crate) fn tool_signature(
         .map(|param| type_config_signature(param, type_map))
         .collect::<Vec<_>>()
         .join(", ");
-    let returns = value_type_from_type_expr(&tool.returns, type_map).format();
+    let returns = tool.returns.as_ref()
+        .map(|ty| value_type_from_type_expr(ty, type_map).format())
+        .unwrap_or_else(|| "unknown".to_string());
     format!("({params}) -> {returns}")
 }
 

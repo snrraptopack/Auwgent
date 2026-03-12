@@ -311,7 +311,7 @@ fn symbol_in_tool(tool: &auwgent_ast::ToolFunction, offset: usize) -> Option<Sym
         }
     }
 
-    symbol_in_type_expr(&tool.returns, offset)
+    tool.returns.as_ref().and_then(|ty| symbol_in_type_expr(ty, offset))
 }
 
 fn symbol_in_workflow(workflow: &WorkflowConfig, offset: usize) -> Option<SymbolTarget> {
@@ -772,7 +772,9 @@ fn collect_tool_symbols(tool: &auwgent_ast::ToolFunction, symbols: &mut Vec<Symb
     for param in &tool.params {
         collect_type_expr_symbols(&param.ty, symbols);
     }
-    collect_type_expr_symbols(&tool.returns, symbols);
+    if let Some(ty) = &tool.returns {
+        collect_type_expr_symbols(ty, symbols);
+    }
 }
 
 fn collect_workflow_symbols(workflow: &WorkflowConfig, symbols: &mut Vec<SymbolTarget>) {

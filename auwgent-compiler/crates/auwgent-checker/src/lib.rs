@@ -119,13 +119,31 @@ impl Checker {
         for config in &agent.configs {
             match config {
                 AgentConfig::Model(mc) => {
-                    // Validate prompt args
+                    let mut scope_params = Vec::new();
+                    for config in &agent.configs {
+                        if let AgentConfig::Input(ic) = config {
+                            scope_params.extend(ic.properties.iter().map(|p| p.name.value.clone()));
+                        }
+                        if let AgentConfig::Context(cc) = config {
+                            scope_params.extend(cc.properties.iter().map(|p| p.name.value.clone()));
+                        }
+                    }
+
+                    // Validate default config
                     if let Some(expr) = &mc.default_config.prompt_expr {
                         self.infer_expression(expr, &TypeEnv::new(), diags);
                     }
+                    if !mc.default_config.prompt_block.is_empty() {
+                        self.check_prompt_statements(&mc.default_config.prompt_block, &scope_params, diags);
+                    }
+
+                    // Validate named configs
                     for nc in &mc.named_configs {
                         if let Some(expr) = &nc.config.prompt_expr {
                             self.infer_expression(expr, &TypeEnv::new(), diags);
+                        }
+                        if !nc.config.prompt_block.is_empty() {
+                            self.check_prompt_statements(&nc.config.prompt_block, &scope_params, diags);
                         }
                     }
                 }
@@ -237,7 +255,14 @@ impl Checker {
             ));
         }
 
-        self.check_type_ref_exists(&tf.returns, diags);
+        if let Some(returns) = &tf.returns {
+            self.check_type_ref_exists(returns, diags);
+        } else {
+            diags.push(Diagnostic::error(
+                format!("Tool '{}' does not specify a return type", tf.name.value),
+                tf.name.span,
+            ).with_help("A tool must specify a return type, e.g. `tool one(id: string): string`"));
+        }
         for p in &tf.params {
             self.check_type_ref_exists(&p.ty, diags);
         }

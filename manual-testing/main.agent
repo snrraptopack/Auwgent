@@ -7,8 +7,7 @@ prompt Hell{
     """
      {{@schema(input)}}
 
-     {{#if 10 > }}
-
+     {{#if 10 > 10}}
      {{/if}}
     """
 }
@@ -28,7 +27,7 @@ agent Test{
     }
 
 
-    tool one(id:string)
+    tool one(id:string):string
 
     input{
         text:string
@@ -41,9 +40,9 @@ agent Test{
     output:Hey | A
 
     workflow hello(id:A):string{
-        description: "hello"
+        
 
-        let a = id.wows
+        let a = id.wow
         return "hello"
     }
 

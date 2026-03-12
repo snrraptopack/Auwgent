@@ -223,8 +223,11 @@ pub(crate) fn tool_function_parser(
                 .allow_trailing()
                 .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
         )
-        .then_ignore(tok(TokenKind::Colon))
-        .then(type_expr_parser())
+        .then(
+            tok(TokenKind::Colon)
+                .ignore_then(type_expr_parser())
+                .or_not(),
+        )
         .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).repeated())
         .map_with_span(|(((name, params), returns), desc), span| ToolFunction {
             name,

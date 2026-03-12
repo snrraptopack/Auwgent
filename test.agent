@@ -1,0 +1,33 @@
+type A{
+    wow:string
+}
+
+agent Test{
+
+    default config{
+        model:gemini("anymodel")
+        prompt: Hell("argument")
+    }
+
+    tool one(id:string)
+
+    input{
+        text:string
+    }
+
+    workflow run() {
+        let a: A = { wow: "test" }
+        let oops = a.wows
+        one("123")
+    }
+}
+
+prompt Hell(name: string) {
+    """
+     {{@schema(hello)}}
+
+     {{#if oops_var}}
+        hello
+     {{/if}}
+    """
+}

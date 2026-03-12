@@ -3,6 +3,7 @@ use crate::utils::{extract_template_condition_refs, find_closest};
 use auwgent_ast::{Expr, NamedPrompt, PromptStatement};
 use auwgent_errors::{Diagnostic, Span};
 use std::collections::HashMap;
+use crate::state::Type;
 
 impl Checker {
     pub(crate) fn check_named_prompt(&self, prompt: &NamedPrompt, diags: &mut Vec<Diagnostic>) {
@@ -52,10 +53,11 @@ impl Checker {
                         if var_name.starts_with("@schema(") && var_name.ends_with(')') {
                             let schema_args = &var_name[8..var_name.len() - 1];
                             if schema_args != "input" && schema_args != "output" {
+                                let tag_span = Span::new(span.start + i, span.start + i + 2 + end + 2);
                                 diags.push(
                                     Diagnostic::error(
                                         format!("Invalid schema argument '{}'", schema_args),
-                                        span,
+                                        tag_span,
                                     )
                                     .with_help("The @schema directive only supports 'input' or 'output' as arguments."),
                                 );
@@ -65,7 +67,8 @@ impl Checker {
                         }
 
                         if let Some(condition) = var_name.strip_prefix("#if") {
-                            self.check_template_condition_vars(condition.trim(), params, span, diags);
+                            let cond_span = Span::new(span.start + i, span.start + i + 2 + end + 2);
+                            self.check_template_condition_vars(condition.trim(), params, cond_span, diags);
                             i = i + 2 + end + 2;
                             continue;
                         }
@@ -82,13 +85,14 @@ impl Checker {
                             } else {
                                 format!("Available params: {}", params.join(", "))
                             };
+                            let tag_span = Span::new(span.start + i, span.start + i + 2 + end + 2);
                             diags.push(
                                 Diagnostic::error(
                                     format!(
                                         "Unknown template variable '{{{{{}}}}}' in prompt",
                                         var_name
                                     ),
-                                    span,
+                                    tag_span,
                                 )
                                 .with_help(help),
                             );
@@ -135,6 +139,47 @@ impl Checker {
                     )
                     .with_help(help),
                 );
+            }
+        }
+    }
+
+    pub(crate) fn check_prompt_statements(
+        &self,
+        stmts: &[PromptStatement],
+        params: &[String],
+        diags: &mut Vec<Diagnostic>,
+    ) {
+        let mut env = crate::state::TypeEnv::new();
+        // Add all params to a dummy environment so infer_expression doesn't complain about unknown variables
+        for p in params {
+            env.set(p, Type::string()); // For prompt checking we just assume they are strings
+        }
+
+        for stmt in stmts {
+            match stmt {
+                PromptStatement::Expr(e) => {
+                    self.infer_expression(e, &env, diags);
+                }
+                PromptStatement::If(ifs) => {
+                    self.check_condition(&ifs.condition, &env, diags);
+                    let mut bindings = HashMap::new();
+                    let expected_return = Type::string();
+                    self.check_statements(&ifs.then_block, &mut env, &mut bindings, &expected_return, diags);
+                    self.check_statements(&ifs.else_block, &mut env, &mut bindings, &expected_return, diags);
+                }
+                PromptStatement::Statement(s) => {
+                    let mut bindings = HashMap::new();
+                    let expected_return = Type::string();
+                    self.check_statements(&[s.clone()], &mut env, &mut bindings, &expected_return, diags);
+                }
+                PromptStatement::Example(ex) => {
+                    let param_strs: Vec<&str> = params.iter().map(|s| s.as_str()).collect();
+                    for msg in &ex.messages {
+                        // pass a string literal expr
+                        let dummy_expr = Expr::StringLit(auwgent_ast::Spanned::new(msg.text.value.clone(), msg.text.span));
+                        self.check_prompt_template_vars(&dummy_expr, &param_strs, diags);
+                    }
+                }
             }
         }
     }

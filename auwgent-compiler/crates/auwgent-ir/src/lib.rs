@@ -296,7 +296,11 @@ fn lower_tool(tf: &ToolFunction) -> Value {
     tool.insert("name".into(), json!(tf.name.value));
 
     // Returns
-    tool.insert("returns".into(), lower_type_expr_value(&tf.returns));
+    if let Some(returns) = &tf.returns {
+        tool.insert("returns".into(), lower_type_expr_value(returns));
+    } else {
+        tool.insert("returns".into(), Value::String("any".into()));
+    }
 
     Value::Object(tool)
 }

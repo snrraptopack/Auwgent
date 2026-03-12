@@ -253,7 +253,11 @@ impl Checker {
                         ));
                     }
                     self.check_call_args(&fc.args, &tool.params, &fc.name.value, fc.span, env, diags);
-                    return self.map_type_expr(&tool.returns);
+                    if let Some(ret_type) = &tool.returns {
+                        return self.map_type_expr(ret_type);
+                    } else {
+                        return Type::error("unknown");
+                    }
                 }
                 if let Some(params) = self.prompt_map.get(&fc.name.value) {
                     if fc.args.len() != params.len() {
@@ -343,10 +347,20 @@ impl Checker {
                             if let Some(field_ty) = fields.get(segment) {
                                 current_ty = field_ty.clone();
                             } else {
+                                diags.push(Diagnostic::error(
+                                    format!("Unknown property '{}' on type", segment),
+                                    ma.property.span,
+                                ));
                                 return Type::error("unknown");
                             }
                         }
-                        _ => return Type::error("unknown"),
+                        _ => {
+                            diags.push(Diagnostic::error(
+                                "Cannot access property on this type",
+                                ma.property.span,
+                            ));
+                            return Type::error("unknown");
+                        }
                     }
                 }
 
