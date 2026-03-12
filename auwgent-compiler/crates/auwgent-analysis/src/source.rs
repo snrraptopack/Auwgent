@@ -107,6 +107,30 @@ pub fn load_model_from_source_with_imports(
     load_model_recursive(&canonical, &mut visited, Some(source))
 }
 
+pub fn best_effort_model_from_source_with_imports(
+    file: &Path,
+    source: &str,
+) -> Result<(Model, Vec<Diagnostic>), AnalysisError> {
+    let canonical = std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
+        path: file.to_path_buf(),
+        message: error.to_string(),
+    })?;
+
+    let parsed = parse_source(source);
+    let mut diagnostics = parsed.lex_diagnostics.clone();
+    diagnostics.extend(parsed.parse_diagnostics.clone());
+
+    let mut merged_elements = parsed.model.elements.clone();
+    merged_elements.extend(load_import_elements_best_effort(&canonical, &parsed.model.imports));
+
+    let merged_model = Model {
+        imports: parsed.model.imports,
+        elements: merged_elements,
+    };
+
+    Ok((merged_model, diagnostics))
+}
+
 pub fn resolve_import_path(
     current_file: &Path,
     import_path: &str,

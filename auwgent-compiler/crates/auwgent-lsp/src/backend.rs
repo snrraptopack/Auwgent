@@ -4,34 +4,59 @@ use crate::diagnostics::{compiler_diagnostic_to_lsp, diagnostics_from_error};
 use crate::hover::analysis_hover_to_lsp;
 use crate::reference::analysis_reference_to_lsp;
 use crate::rename::analysis_rename_to_lsp;
-use crate::util::{extract_full_text, path_from_uri, position_to_offset};
+use crate::util::{apply_content_changes, path_from_uri, position_to_offset};
+use auwgent_analysis::AnalysisError;
+use auwgent_errors::Diagnostic as CompilerDiagnostic;
 use std::collections::HashMap;
+use std::panic::AssertUnwindSafe;
+use std::path::PathBuf;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidCloseTextDocumentParams, DidOpenTextDocumentParams, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability, InitializeParams,
-    InitializeResult, InitializedParams, MessageType, OneOf, ReferenceParams,
-    ReferencesOptions, RenameOptions, RenameParams, ServerCapabilities,
-    TextDocumentSyncCapability, TextDocumentSyncKind, Url, WorkspaceEdit,
+    DidCloseTextDocumentParams, DidOpenTextDocumentParams, DidSaveTextDocumentParams,
+    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, HoverProviderCapability,
+    InitializeParams, InitializeResult, InitializedParams, MessageType, OneOf, ReferenceParams,
+    ReferencesOptions, RenameOptions, RenameParams, SaveOptions, ServerCapabilities,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextDocumentSyncOptions,
+    TextDocumentSyncSaveOptions, Url, WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer};
 
+/// Debounce delay for `did_change` analysis — prevents flickering from
+/// transient parse errors while the user is actively typing.
+const DEBOUNCE_MS: u64 = 120;
+
+#[derive(Clone)]
+struct DocumentState {
+    text: String,
+    version: i32,
+}
+
 pub struct Backend {
     client: Client,
-    documents: RwLock<HashMap<Url, String>>,
+    documents: RwLock<HashMap<Url, DocumentState>>,
+    /// Monotonic version counter per URI, used to debounce `did_change`.
+    change_versions: RwLock<HashMap<Url, u64>>,
 }
+
+/// Result produced by the blocking analysis thread.
+type AnalysisResult = Vec<(Url, String, Vec<CompilerDiagnostic>)>;
 
 impl Backend {
     pub fn new(client: Client) -> Self {
         Self {
             client,
             documents: RwLock::new(HashMap::new()),
+            change_versions: RwLock::new(HashMap::new()),
         }
     }
 
-    async fn analyze_and_publish(&self, uri: &Url) {
+    /// Run analysis off the async runtime (via `spawn_blocking`) and publish
+    /// the resulting diagnostics. Panics inside the analysis pipeline are
+    /// caught so they never silently kill the handler.
+    async fn analyze_and_publish(&self, uri: &Url, expected_change_version: Option<u64>) {
         let Some(path) = path_from_uri(uri) else {
             self.client
                 .log_message(MessageType::ERROR, format!("Unsupported URI: {uri}"))
@@ -39,35 +64,114 @@ impl Backend {
             return;
         };
 
-        let text = {
+        let state = {
             let documents = self.documents.read().await;
             documents.get(uri).cloned()
         };
 
-        let Some(text) = text else {
+        let Some(state) = state else {
+            self.client
+                .log_message(MessageType::WARNING, format!("No document content for: {uri}"))
+                .await;
             return;
         };
 
-        let publish = match auwgent_analysis::load_model_from_source_with_imports(&path, &text) {
-            Ok(model) => {
-                let diagnostics = auwgent_checker::check(&model);
-                vec![(uri.clone(), text.clone(), diagnostics)]
+        let text = state.text.clone();
+        let document_version = state.version;
+
+        // Clone values for the blocking closure.
+        let uri_clone = uri.clone();
+        let path_clone = path.clone();
+        let text_clone = text.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            std::panic::catch_unwind(AssertUnwindSafe(|| {
+                run_analysis(&uri_clone, &path_clone, &text_clone)
+            }))
+        })
+        .await;
+
+        let publish = match result {
+            Ok(Ok(items)) => items,
+            Ok(Err(_panic)) => {
+                self.client
+                    .log_message(
+                        MessageType::ERROR,
+                        format!("Analysis panicked for {uri}. Diagnostics may be stale."),
+                    )
+                    .await;
+                return;
             }
-            Err(error) => diagnostics_from_error(uri, &path, &text, error),
+            Err(join_err) => {
+                self.client
+                    .log_message(
+                        MessageType::ERROR,
+                        format!("Analysis task failed for {uri}: {join_err}"),
+                    )
+                    .await;
+                return;
+            }
         };
 
+        if let Some(expected) = expected_change_version {
+            let current = {
+                let versions = self.change_versions.read().await;
+                versions.get(uri).copied().unwrap_or(0)
+            };
+            if current != expected {
+                return;
+            }
+        }
+
+        let current_document_version = {
+            let documents = self.documents.read().await;
+            documents.get(uri).map(|document| document.version)
+        };
+        if current_document_version != Some(document_version) {
+            return;
+        }
+
         for (diagnostic_uri, source, diagnostics) in publish {
+            let publish_uri = diagnostic_uri.clone();
+            let publish_version = if publish_uri == *uri {
+                Some(document_version)
+            } else {
+                None
+            };
             self.client
                 .publish_diagnostics(
-                    diagnostic_uri,
+                    publish_uri,
                     diagnostics
                         .iter()
-                        .map(|diagnostic| compiler_diagnostic_to_lsp(diagnostic, &source))
+                        .map(|d| compiler_diagnostic_to_lsp(d, &diagnostic_uri, &source))
                         .collect(),
-                    None,
+                    publish_version,
                 )
                 .await;
         }
+    }
+}
+
+/// Pure, blocking analysis that can safely run on a worker thread.
+fn run_analysis(uri: &Url, path: &PathBuf, text: &str) -> AnalysisResult {
+    match auwgent_analysis::load_model_from_source_with_imports(path, text) {
+        Ok(model) => {
+            let diagnostics = auwgent_checker::check(&model);
+            vec![(uri.clone(), text.to_string(), diagnostics)]
+        }
+        Err(AnalysisError::Lex {
+            path: error_path, ..
+        })
+        | Err(AnalysisError::Parse {
+            path: error_path, ..
+        }) if error_path == *path => match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
+            Ok((model, mut diagnostics)) => {
+                diagnostics.extend(auwgent_checker::check(&model));
+                vec![(uri.clone(), text.to_string(), diagnostics)]
+            }
+            Err(error) => diagnostics_from_error(uri, path, text, error),
+        },
+        Err(error) => diagnostics_from_error(uri, path, text, error),
     }
 }
 
@@ -76,10 +180,21 @@ impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
+                text_document_sync: Some(TextDocumentSyncCapability::Options(
+                    TextDocumentSyncOptions {
+                        open_close: Some(true),
+                        change: Some(TextDocumentSyncKind::INCREMENTAL),
+                        will_save: None,
+                        will_save_wait_until: None,
+                        save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
+                            include_text: Some(true),
+                        })),
+                    },
                 )),
-                completion_provider: Some(CompletionOptions::default()),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_string(), "@".to_string(), ":".to_string()]),
+                    ..CompletionOptions::default()
+                }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Right(ReferencesOptions {
@@ -99,7 +214,7 @@ impl LanguageServer for Backend {
         self.client
             .log_message(
                 MessageType::INFO,
-                "Auwgent Rust LSP initialized with diagnostics, completion, hover, definition, references, and rename support.",
+                "Auwgent Rust LSP initialized with real-time diagnostics, completion, hover, definition, references, and rename support.",
             )
             .await;
     }
@@ -111,16 +226,62 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
-        self.documents.write().await.insert(uri.clone(), text);
-        self.analyze_and_publish(&uri).await;
+        let version = params.text_document.version;
+        self.documents.write().await.insert(
+            uri.clone(),
+            DocumentState {
+                text,
+                version,
+            },
+        );
+        self.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
-        if let Some(text) = extract_full_text(&params.content_changes) {
-            self.documents.write().await.insert(uri.clone(), text);
-            self.analyze_and_publish(&uri).await;
+        let new_text = {
+            let mut documents = self.documents.write().await;
+            let Some(document) = documents.get_mut(&uri) else {
+                return;
+            };
+
+            document.text = apply_content_changes(&document.text, &params.content_changes);
+            document.version = params.text_document.version;
+            document.text.clone()
+        };
+
+        if new_text.is_empty() && params.content_changes.is_empty() {
+            return;
         }
+
+        let version = {
+            let mut versions = self.change_versions.write().await;
+            let v = versions.entry(uri.clone()).or_insert(0);
+            *v += 1;
+            *v
+        };
+
+        tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
+
+        let current = {
+            let versions = self.change_versions.read().await;
+            versions.get(&uri).copied().unwrap_or(0)
+        };
+        if version == current {
+            self.analyze_and_publish(&uri, Some(version)).await;
+        }
+    }
+
+    async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        let uri = params.text_document.uri;
+        // If the save notification includes text, update the in-memory copy.
+        if let Some(text) = params.text {
+            if let Some(document) = self.documents.write().await.get_mut(&uri) {
+                document.text = text;
+            }
+        }
+        // Re-analyze on save as a reliability fallback.
+        self.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
@@ -138,7 +299,7 @@ impl LanguageServer for Backend {
 
         let text = {
             let documents = self.documents.read().await;
-            documents.get(&uri).cloned()
+            documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
             return Ok(None);
@@ -162,7 +323,7 @@ impl LanguageServer for Backend {
 
         let text = {
             let documents = self.documents.read().await;
-            documents.get(&uri).cloned()
+            documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
             return Ok(None);
@@ -187,7 +348,7 @@ impl LanguageServer for Backend {
 
         let text = {
             let documents = self.documents.read().await;
-            documents.get(&uri).cloned()
+            documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
             return Ok(None);
@@ -210,7 +371,7 @@ impl LanguageServer for Backend {
 
         let text = {
             let documents = self.documents.read().await;
-            documents.get(&uri).cloned()
+            documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
             return Ok(None);
@@ -234,7 +395,7 @@ impl LanguageServer for Backend {
 
         let text = {
             let documents = self.documents.read().await;
-            documents.get(&uri).cloned()
+            documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
             return Ok(None);

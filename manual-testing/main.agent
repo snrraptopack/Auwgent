@@ -3,6 +3,18 @@ import {Gemini} from "./models"
 import {Hey} from "./types"
 
 
+prompt Hell{
+    """
+     {{@schema(input)}}
+
+     {{#if 10 > }}
+
+     {{/if}}
+    """
+}
+
+
+
 type A{
     wow:string
 }
@@ -15,11 +27,25 @@ agent Test{
         prompt:"Hello" 
     }
 
+
+    tool one(id:string)
+
     input{
         text:string
     }
 
-    output:Hey | A 
+    context{
+        username:string
+    }
+
+    output:Hey | A
+
+    workflow hello(id:A):string{
+        description: "hello"
+
+        let a = id.wows
+        return "hello"
+    }
 
 }
 

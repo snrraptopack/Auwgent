@@ -1,7 +1,7 @@
 use auwgent_analysis::AnalysisError;
 use auwgent_errors::{Diagnostic as CompilerDiagnostic, Severity, Span};
 use std::path::Path;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Url};
 use crate::util::span_to_range;
 
 pub fn diagnostics_from_error(
@@ -59,7 +59,30 @@ pub fn diagnostics_from_error(
     }
 }
 
-pub fn compiler_diagnostic_to_lsp(diagnostic: &CompilerDiagnostic, source: &str) -> Diagnostic {
+pub fn compiler_diagnostic_to_lsp(
+    diagnostic: &CompilerDiagnostic,
+    uri: &Url,
+    source: &str,
+) -> Diagnostic {
+    let related_information = diagnostic.labels.is_empty().then(Vec::new).unwrap_or_else(|| {
+        diagnostic
+            .labels
+            .iter()
+            .map(|label| DiagnosticRelatedInformation {
+                location: Location {
+                    uri: uri.clone(),
+                    range: span_to_range(label.span, source),
+                },
+                message: label.message.clone(),
+            })
+            .collect()
+    });
+
+    let message = match &diagnostic.help {
+        Some(help) if !help.is_empty() => format!("{}\n\nHelp: {help}", diagnostic.message),
+        _ => diagnostic.message.clone(),
+    };
+
     Diagnostic {
         range: span_to_range(diagnostic.span, source),
         severity: Some(match diagnostic.severity {
@@ -67,7 +90,8 @@ pub fn compiler_diagnostic_to_lsp(diagnostic: &CompilerDiagnostic, source: &str)
             Severity::Warning => DiagnosticSeverity::WARNING,
             Severity::Info => DiagnosticSeverity::INFORMATION,
         }),
-        message: diagnostic.message.clone(),
+        message,
+        related_information: (!related_information.is_empty()).then_some(related_information),
         source: Some("auwgent-rust".to_string()),
         ..Diagnostic::default()
     }

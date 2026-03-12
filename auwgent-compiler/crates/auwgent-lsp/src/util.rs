@@ -2,8 +2,20 @@ use std::path::PathBuf;
 use auwgent_errors::Span;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 
-pub fn extract_full_text(changes: &[TextDocumentContentChangeEvent]) -> Option<String> {
-    changes.last().map(|change| change.text.clone())
+pub fn apply_content_changes(current: &str, changes: &[TextDocumentContentChangeEvent]) -> String {
+    let mut text = current.to_string();
+
+    for change in changes {
+        if let Some(range) = change.range {
+            let start = position_to_offset(&text, range.start);
+            let end = position_to_offset(&text, range.end);
+            text.replace_range(start..end, &change.text);
+        } else {
+            text = change.text.clone();
+        }
+    }
+
+    text
 }
 
 pub fn position_to_offset(source: &str, position: Position) -> usize {

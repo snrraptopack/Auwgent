@@ -12,6 +12,6 @@ pub use hover::{HoverInfo, hover_for_source};
 pub use reference::{ReferenceTarget, references_for_source};
 pub use rename::{RenameEdit, rename_for_source};
 pub use source::{
-    AnalysisError, load_model_from_source_with_imports, load_model_with_imports,
+    AnalysisError, best_effort_model_from_source_with_imports, load_model_from_source_with_imports, load_model_with_imports,
     resolve_import_path, resolve_import_path_with_span,
 };

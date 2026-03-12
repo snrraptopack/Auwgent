@@ -2,6 +2,7 @@
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/tasks.json
+extension-vscode/.vscode-test/
 node_modules/
 dist/
 out/
