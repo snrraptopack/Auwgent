@@ -518,9 +518,7 @@ fn workflow_body_parser() -> impl Parser<
 > + Clone {
     let desc = tok(TokenKind::Description)
         .ignore_then(tok(TokenKind::Colon))
-        .ignore_then(string_lit())
-        .or_not()
-        .map(|opt| opt.unwrap_or(Spanned::new(String::new(), Span::new(0, 0))));
+        .ignore_then(string_lit());
 
     let tools = choice((
         tok(TokenKind::Tool)

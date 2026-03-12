@@ -26,7 +26,7 @@ use tower_lsp::{Client, LanguageServer};
 
 /// Debounce delay for `did_change` analysis — prevents flickering from
 /// transient parse errors while the user is actively typing.
-const DEBOUNCE_MS: u64 = 120;
+const DEBOUNCE_MS: u64 = 400;
 
 #[derive(Clone)]
 struct DocumentState {

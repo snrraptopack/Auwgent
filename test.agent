@@ -16,6 +16,7 @@ agent Test{
     }
 
     workflow run() {
+        description: "run workflow"
         let a: A = { wow: "test" }
         let oops = a.wows
         one("123")

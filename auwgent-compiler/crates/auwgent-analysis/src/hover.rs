@@ -309,4 +309,21 @@ agent Demo {
 
         let _ = std::fs::remove_dir_all(&base);
     }
+    
+    #[test]
+    fn test_hover_test_agent() {
+        let path = std::path::Path::new("c:/Users/babyface/Desktop/auwgent/Auwgent/test.agent");
+        let source = std::fs::read_to_string(path).unwrap();
+        
+        let a_offset = source.find("a: A").unwrap();
+        println!("HOVER A: {:?}", hover_for_source(&path, &source, a_offset));
+        
+        let oops_offset = source.find("oops =").unwrap();
+        println!("HOVER OOPS: {:?}", hover_for_source(&path, &source, oops_offset));
+        
+        let one_offset = source.find(r#"one("123")"#).unwrap();
+        println!("HOVER ONE: {:?}", hover_for_source(&path, &source, one_offset));
+        
+        panic!("Show output");
+    }
 }
