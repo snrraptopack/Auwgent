@@ -26,9 +26,17 @@ pub fn diagnostics_from_error(
             // prefer `root_uri` for the root file so VSCode matches the
             // diagnostics to the open document.
             let is_root = if cfg!(windows) {
-                path.to_string_lossy().eq_ignore_ascii_case(&root_path.to_string_lossy())
+                let normalize = |p: &Path| {
+                    let s = p.to_string_lossy();
+                    if s.starts_with(r"\\?\") {
+                        s[4..].to_ascii_lowercase()
+                    } else {
+                        s.to_ascii_lowercase()
+                    }
+                };
+                normalize(&path) == normalize(root_path)
             } else {
-                path == root_path
+                path == *root_path
             };
 
             if is_root {

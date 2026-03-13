@@ -6,7 +6,7 @@ import {Hey} from "./types"
 prompt Hell{
     """
      {{#if 10 > 10}}
-        {{@schema(input)}}
+        {{@schema(output)}}
      {{/if}}
     """
 }
@@ -20,7 +20,7 @@ agent Test{
 
     default config{
         model:custom("anymodel","")
-        prompt:ctx.context
+        prompt:""
     }
 
     tool one(id:string):string @desc "simple"
@@ -36,13 +36,9 @@ agent Test{
 
     output:Hey | A
 
-    workflow hello(id:A):string{
+    workflow one(id:A):string{
         description: "hello"
         let a = id.wow
-
-        if (a > 20) {
-            
-        }
         return ""
     }
 

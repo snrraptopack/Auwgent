@@ -205,8 +205,17 @@ impl Backend {
 /// uppercases the drive letter (e.g. `C:\`) while VSCode URIs use lowercase
 /// (`c:\`), causing direct `==` to fail.
 fn paths_match(a: &Path, b: &Path) -> bool {
+    fn normalize(p: &Path) -> String {
+        let s = p.to_string_lossy();
+        if s.starts_with(r"\\?\") {
+            s[4..].to_ascii_lowercase()
+        } else {
+            s.to_ascii_lowercase()
+        }
+    }
+
     if cfg!(windows) {
-        a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+        normalize(a) == normalize(b)
     } else {
         a == b
     }
