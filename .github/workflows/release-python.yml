@@ -3,7 +3,7 @@ name: Release Python SDK
 on:
   push:
     tags:
-      - 'v*'
+      - 'py-v*'
 
 permissions:
   contents: write

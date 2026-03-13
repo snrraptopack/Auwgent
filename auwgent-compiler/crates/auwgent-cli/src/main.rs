@@ -280,6 +280,13 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
         }
     };
 
+    let filename = file.display().to_string();
+    let source = std::fs::read_to_string(file).unwrap_or_default();
+    let diagnostics = auwgent_checker::check(&model);
+    if auwgent_errors::render_diagnostics(&diagnostics, &filename, &source) {
+        return false;
+    }
+
     let ir = match auwgent_ir::lower(&model) {
         Ok(ir) => ir,
         Err(errs) => {

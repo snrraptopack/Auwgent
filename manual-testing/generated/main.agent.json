@@ -97,11 +97,11 @@
           "type": "return",
           "value": {
             "type": "literal",
-            "value": "hello"
+            "value": ""
           }
         }
       ],
-      "description": "",
+      "description": "hello",
       "tools": []
     }
   ],

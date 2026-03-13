@@ -15,7 +15,8 @@
   },
   "scripts": {
     "postinstall": "node install.js",
-    "verify:release-assets": "node verify-release-assets.js"
+    "verify:release-assets": "node verify-release-assets.js",
+    "verify:local-package": "node verify-local-package.js"
   },
   "repository": {
     "type": "git",

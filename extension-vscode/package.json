@@ -1,8 +1,14 @@
 {
   "name": "extension-vscode",
+  "publisher": "snrraptopack",
   "displayName": "Auwgent",
   "description": "VS Code client for the Auwgent Rust language server.",
-  "version": "0.0.1",
+  "version": "0.1.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snrraptopack/Auwgent.git",
+    "directory": "extension-vscode"
+  },
   "engines": {
     "vscode": "^1.110.0"
   },
@@ -54,6 +60,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "vsix": "npx @vscode/vsce package --pre-release && powershell -Command \"Start-Process code -ArgumentList ('--install-extension', (Resolve-Path (Get-ChildItem *.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName), '--force')\"",
     "compile": "npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",

@@ -3,7 +3,7 @@ name: Release TypeScript SDK
 on:
   push:
     tags:
-      - 'v*'
+      - 'ts-v*'
 
 permissions:
   contents: write

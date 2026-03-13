@@ -1,8 +1,8 @@
 // Auto-generated types for Test
 // Do not edit manually
 // Core Runtime Imports
-import { createAuwgent } from "auwgent-sdk";
-import type { ToolRegistry } from "auwgent-sdk";
+import { createAuwgent } from "@snrraptopack/auwgent-sdk";
+import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type TestIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Test";
@@ -52,7 +52,7 @@ export type TestApiKeys = {
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type TestAgent = import("auwgent-sdk").TypedAuwgent<
+export type TestAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     TestCustomIntents,
     TestOutput,
@@ -60,7 +60,7 @@ export type TestAgent = import("auwgent-sdk").TypedAuwgent<
 >;
 
 /** Middleware object type — consistent with `TestAgent.onIntent` intent narrowing */
-export type TestMiddleware<T extends import("auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("auwgent-sdk").Middleware<
+export type TestMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
     TestCustomIntents,
     TestOutput,

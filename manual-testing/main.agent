@@ -42,8 +42,9 @@ agent Test{
     output:Hey | A
 
     workflow hello(id:A):string{
+        description: "hello"
         let a = id.wow
-        return "hello"
+        return ""
     }
 
 }

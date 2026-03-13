@@ -17,7 +17,7 @@ Build the Rust language server first:
 cargo build -p auwgent-lsp
 ```
 
-from [auwgent-compiler/Cargo.toml](auwgent-compiler/Cargo.toml).
+from [auwgent-compiler/Cargo.toml](https://github.com/snrraptopack/Auwgent/blob/main/auwgent-compiler/Cargo.toml).
 
 Then build the extension:
 
