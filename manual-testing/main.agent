@@ -5,15 +5,11 @@ import {Hey} from "./types"
 
 prompt Hell{
     """
-     {{@schema()}}
-
      {{#if 10 > 10}}
-
+        {{@schema(input)}}
      {{/if}}
     """
 }
-
-
 
 type A{
     wow:string
@@ -42,9 +38,9 @@ agent Test{
 
     workflow hello(id:A):string{
         description: "hello"
-        let a = id.wows
+        let a = id.wow
 
-        if aa > 20 {
+        if (a > 20) {
             
         }
         return ""

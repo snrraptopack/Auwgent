@@ -21,12 +21,29 @@ pub fn diagnostics_from_error(
             source,
             diagnostics,
         } => {
-            let uri = uri_from_path(&path).unwrap_or_else(|| root_uri.clone());
-            let mut published = vec![(uri, source, diagnostics)];
-            if path != root_path {
-                published.push((root_uri.clone(), root_source.to_string(), Vec::new()));
+            // On Windows, `fs::canonicalize` uppercases the drive letter
+            // (`C:\`) while VSCode URIs use lowercase (`c:\`).  Always
+            // prefer `root_uri` for the root file so VSCode matches the
+            // diagnostics to the open document.
+            let is_root = if cfg!(windows) {
+                path.to_string_lossy().eq_ignore_ascii_case(&root_path.to_string_lossy())
+            } else {
+                path == root_path
+            };
+
+            if is_root {
+                // Error is in the file the user is editing — publish
+                // using the original URI that VSCode gave us.
+                vec![(root_uri.clone(), source, diagnostics)]
+            } else {
+                // Error is in an imported file — publish under its own
+                // URI and clear diagnostics for the root file.
+                let uri = uri_from_path(&path).unwrap_or_else(|| root_uri.clone());
+                vec![
+                    (uri, source, diagnostics),
+                    (root_uri.clone(), root_source.to_string(), Vec::new()),
+                ]
             }
-            published
         }
         AnalysisError::ResolveImport {
             import_path,

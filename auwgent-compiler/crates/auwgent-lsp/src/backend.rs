@@ -10,7 +10,8 @@ use auwgent_compile::validate_source_for_compile;
 use auwgent_errors::Diagnostic as CompilerDiagnostic;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
@@ -35,30 +36,28 @@ struct DocumentState {
     version: i32,
 }
 
-pub struct Backend {
+/// All shared mutable state, extracted so it can live behind an `Arc` and be
+/// cheaply cloned into spawned background tasks.
+struct BackendInner {
     client: Client,
     documents: RwLock<HashMap<Url, DocumentState>>,
     /// Monotonic version counter per URI, used to debounce `did_change`.
     change_versions: RwLock<HashMap<Url, u64>>,
 }
 
+pub struct Backend {
+    inner: Arc<BackendInner>,
+}
+
 /// Result produced by the blocking analysis thread.
 type AnalysisResult = Vec<(Url, String, Vec<CompilerDiagnostic>)>;
 
-impl Backend {
-    pub fn new(client: Client) -> Self {
-        Self {
-            client,
-            documents: RwLock::new(HashMap::new()),
-            change_versions: RwLock::new(HashMap::new()),
-        }
-    }
-
+impl BackendInner {
     /// Run analysis off the async runtime (via `spawn_blocking`) and publish
     /// the resulting diagnostics. Panics inside the analysis pipeline are
     /// caught so they never silently kill the handler.
     async fn analyze_and_publish(
-        &self,
+        self: &Arc<Self>,
         uri: &Url,
         expected_change_version: Option<u64>,
     ) {
@@ -69,20 +68,23 @@ impl Backend {
             return;
         };
 
-        let state = {
+        let (text, document_version) = {
             let documents = self.documents.read().await;
-            documents.get(uri).cloned()
+            let Some(state) = documents.get(uri) else {
+                self.client
+                    .log_message(MessageType::WARNING, format!("No document content for: {uri}"))
+                    .await;
+                return;
+            };
+            (state.text.clone(), state.version)
         };
 
-        let Some(state) = state else {
-            self.client
-                .log_message(MessageType::WARNING, format!("No document content for: {uri}"))
-                .await;
-            return;
-        };
-
-        let text = state.text.clone();
-        let document_version = state.version;
+        self.client
+            .log_message(
+                MessageType::LOG,
+                format!("[auwgent-lsp] Analyzing doc v{document_version} for {uri}"),
+            )
+            .await;
 
         // Clone values for the blocking closure.
         let uri_clone = uri.clone();
@@ -102,7 +104,7 @@ impl Backend {
                 self.client
                     .log_message(
                         MessageType::ERROR,
-                        format!("Analysis panicked for {uri}. Diagnostics may be stale."),
+                        format!("[auwgent-lsp] Analysis panicked for {uri}. Diagnostics may be stale."),
                     )
                     .await;
                 return;
@@ -111,53 +113,111 @@ impl Backend {
                 self.client
                     .log_message(
                         MessageType::ERROR,
-                        format!("Analysis task failed for {uri}: {join_err}"),
+                        format!("[auwgent-lsp] Analysis task failed for {uri}: {join_err}"),
                     )
                     .await;
                 return;
             }
         };
 
+        // For did_change-triggered analysis: discard results if a newer
+        // keystroke arrived while we were analysing (debounce guard).
+        // For did_open/did_save (expected_change_version == None) we always
+        // publish — do NOT add a document-version double-check here because
+        // VSCode routinely sends did_change immediately after did_open, which
+        // would cause every did_open result to be silently dropped.
         if let Some(expected) = expected_change_version {
             let current = {
                 let versions = self.change_versions.read().await;
                 versions.get(uri).copied().unwrap_or(0)
             };
             if current != expected {
+                self.client
+                    .log_message(
+                        MessageType::LOG,
+                        format!("[auwgent-lsp] Dropping stale analysis for {uri} (change {expected} superseded by {current})"),
+                    )
+                    .await;
                 return;
             }
         }
 
-        let current_document_version = {
-            let documents = self.documents.read().await;
-            documents.get(uri).map(|document| document.version)
-        };
-        if current_document_version != Some(document_version) {
-            return;
-        }
+        let diag_count: usize = publish.iter().map(|(_, _, d)| d.len()).sum();
+        self.client
+            .log_message(
+                MessageType::LOG,
+                format!("[auwgent-lsp] Publishing {diag_count} diagnostic(s) for {uri}"),
+            )
+            .await;
 
         for (diagnostic_uri, source, diagnostics) in publish {
             let publish_uri = diagnostic_uri.clone();
-            let publish_version = if publish_uri == *uri {
-                Some(document_version)
-            } else {
-                None
-            };
+            let lsp_diagnostics: Vec<_> = diagnostics
+                .iter()
+                .map(|d| compiler_diagnostic_to_lsp(d, &diagnostic_uri, &source))
+                .collect();
+
+            for d in &lsp_diagnostics {
+                self.client
+                    .log_message(
+                        MessageType::LOG,
+                        format!(
+                            "[auwgent-lsp]   diag → uri={} range={}:{}-{}:{} sev={:?} msg=\"{}\"",
+                            publish_uri,
+                            d.range.start.line,
+                            d.range.start.character,
+                            d.range.end.line,
+                            d.range.end.character,
+                            d.severity,
+                            d.message.chars().take(120).collect::<String>(),
+                        ),
+                    )
+                    .await;
+            }
+
+            // Do not attach a document version to the publish call so VSCode
+            // never silently discards diagnostics due to a version mismatch.
             self.client
                 .publish_diagnostics(
                     publish_uri,
-                    diagnostics
-                        .iter()
-                        .map(|d| compiler_diagnostic_to_lsp(d, &diagnostic_uri, &source))
-                        .collect(),
-                    publish_version,
+                    lsp_diagnostics,
+                    None,
                 )
                 .await;
         }
     }
 }
 
+impl Backend {
+    pub fn new(client: Client) -> Self {
+        Self {
+            inner: Arc::new(BackendInner {
+                client,
+                documents: RwLock::new(HashMap::new()),
+                change_versions: RwLock::new(HashMap::new()),
+            }),
+        }
+    }
+}
+
+/// Case-aware path comparison: case-insensitive on Windows, exact on other
+/// platforms. This is needed because `std::fs::canonicalize` on Windows
+/// uppercases the drive letter (e.g. `C:\`) while VSCode URIs use lowercase
+/// (`c:\`), causing direct `==` to fail.
+fn paths_match(a: &Path, b: &Path) -> bool {
+    if cfg!(windows) {
+        a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy())
+    } else {
+        a == b
+    }
+}
+
 /// Pure, blocking analysis that can safely run on a worker thread.
+///
+/// **Important**: all diagnostics targeting the root file MUST be published
+/// under the original `uri` that VSCode sent us, NOT a URI reconstructed from
+/// the canonicalized path — those differ on Windows and VSCode will silently
+/// ignore diagnostics for unknown URIs.
 fn run_analysis(uri: &Url, path: &PathBuf, text: &str) -> AnalysisResult {
     match validate_source_for_compile(path, text) {
         Ok(validation) => vec![(uri.clone(), text.to_string(), validation.diagnostics)],
@@ -166,7 +226,7 @@ fn run_analysis(uri: &Url, path: &PathBuf, text: &str) -> AnalysisResult {
         })
         | Err(AnalysisError::Parse {
             path: error_path, ..
-        }) if error_path == *path => match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
+        }) if paths_match(&error_path, path) => match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
             Ok((model, mut diagnostics)) => {
                 diagnostics.extend(auwgent_checker::check(&model));
                 vec![(uri.clone(), text.to_string(), diagnostics)]
@@ -213,7 +273,8 @@ impl LanguageServer for Backend {
     }
 
     async fn initialized(&self, _: InitializedParams) {
-        self.client
+        self.inner
+            .client
             .log_message(
                 MessageType::INFO,
                 "Auwgent Rust LSP initialized with real-time diagnostics, completion, hover, definition, references, and rename support.",
@@ -229,20 +290,17 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
         let version = params.text_document.version;
-        self.documents.write().await.insert(
+        self.inner.documents.write().await.insert(
             uri.clone(),
-            DocumentState {
-                text,
-                version,
-            },
+            DocumentState { text, version },
         );
-        self.analyze_and_publish(&uri, None).await;
+        self.inner.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
         let uri = params.text_document.uri;
         let new_text = {
-            let mut documents = self.documents.write().await;
+            let mut documents = self.inner.documents.write().await;
             let Some(document) = documents.get_mut(&uri) else {
                 return;
             };
@@ -257,40 +315,45 @@ impl LanguageServer for Backend {
         }
 
         let version = {
-            let mut versions = self.change_versions.write().await;
+            let mut versions = self.inner.change_versions.write().await;
             let v = versions.entry(uri.clone()).or_insert(0);
             *v += 1;
             *v
         };
 
-        tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
+        // Spawn a background task so this handler returns immediately and the
+        // LSP can process other requests (hover, completion, etc.) while the
+        // debounce timer and analysis are running.
+        let inner = Arc::clone(&self.inner);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(DEBOUNCE_MS)).await;
 
-        let current = {
-            let versions = self.change_versions.read().await;
-            versions.get(&uri).copied().unwrap_or(0)
-        };
-        if version == current {
-            self.analyze_and_publish(&uri, Some(version))
-                .await;
-        }
+            let current = {
+                let versions = inner.change_versions.read().await;
+                versions.get(&uri).copied().unwrap_or(0)
+            };
+            if version == current {
+                inner.analyze_and_publish(&uri, Some(version)).await;
+            }
+        });
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
         let uri = params.text_document.uri;
         // If the save notification includes text, update the in-memory copy.
         if let Some(text) = params.text {
-            if let Some(document) = self.documents.write().await.get_mut(&uri) {
+            if let Some(document) = self.inner.documents.write().await.get_mut(&uri) {
                 document.text = text;
             }
         }
         // Re-analyze on save as a reliability fallback.
-        self.analyze_and_publish(&uri, None).await;
+        self.inner.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.documents.write().await.remove(&uri);
-        self.client.publish_diagnostics(uri, Vec::new(), None).await;
+        self.inner.documents.write().await.remove(&uri);
+        self.inner.client.publish_diagnostics(uri, Vec::new(), None).await;
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
@@ -301,7 +364,7 @@ impl LanguageServer for Backend {
         };
 
         let text = {
-            let documents = self.documents.read().await;
+            let documents = self.inner.documents.read().await;
             documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
@@ -325,7 +388,7 @@ impl LanguageServer for Backend {
         };
 
         let text = {
-            let documents = self.documents.read().await;
+            let documents = self.inner.documents.read().await;
             documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
@@ -350,7 +413,7 @@ impl LanguageServer for Backend {
         };
 
         let text = {
-            let documents = self.documents.read().await;
+            let documents = self.inner.documents.read().await;
             documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
@@ -373,7 +436,7 @@ impl LanguageServer for Backend {
         };
 
         let text = {
-            let documents = self.documents.read().await;
+            let documents = self.inner.documents.read().await;
             documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
@@ -397,7 +460,7 @@ impl LanguageServer for Backend {
         };
 
         let text = {
-            let documents = self.documents.read().await;
+            let documents = self.inner.documents.read().await;
             documents.get(&uri).map(|document| document.text.clone())
         };
         let Some(text) = text else {
