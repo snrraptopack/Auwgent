@@ -71,17 +71,18 @@ async function main() {
         fs.mkdirSync(BIN_DIR, { recursive: true });
     }
     
-    for (const bin of ['auwgent', 'auwgent-lsp']) {
-        const filename = `${bin}-${target}${ext}`;
-        const url = `https://github.com/${REPO}/releases/download/${TAG}/${filename}`;
-        const dest = path.join(BIN_DIR, filename);
+    const filename = `auwgent-${target}${ext}`;
+    const url = `https://github.com/${REPO}/releases/download/${TAG}/${filename}`;
+    const dest = path.join(BIN_DIR, filename);
 
-        console.log(`Downloading ${bin} CLI from ${url}...`);
-        await downloadFile(url, dest);
-        extractFile(dest, ext);
-        
-        // On unix, ensure executable permissions
-        if (platform !== 'win32') {
+    console.log(`Downloading Auwgent CLI from ${url}...`);
+    await downloadFile(url, dest);
+    extractFile(dest, ext);
+    
+    // On unix, ensure executable permissions for all binaries
+    if (platform !== 'win32') {
+        const bins = ['auwgent', 'auwgent-lsp'];
+        for (const bin of bins) {
             const extractedBin = path.join(BIN_DIR, bin);
             if (fs.existsSync(extractedBin)) {
                 fs.chmodSync(extractedBin, 0o755);
