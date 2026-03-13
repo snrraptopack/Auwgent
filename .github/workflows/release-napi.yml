@@ -68,7 +68,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://npm.pkg.github.com'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Dependencies
         working-directory: targets/typescript
@@ -77,16 +77,12 @@ jobs:
       - name: Download Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: targets/typescript/artifacts
-
-      - name: Move downloaded artifacts
-        working-directory: targets/typescript
-        run: |
-          mkdir -p artifacts
-          cp -r artifacts/*/*.node ./ || true
+          path: targets/typescript
+          pattern: bindings-*
+          merge-multiple: true
 
       - name: Publish
         working-directory: targets/typescript
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

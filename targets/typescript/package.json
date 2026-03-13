@@ -4,7 +4,7 @@
     "description": "Auwgent IR Runtime — Rust-powered agent engine with type-safe TypeScript bindings",
     "repository": "https://github.com/snrraptopack/Auwgent",
     "publishConfig": {
-        "registry": "https://npm.pkg.github.com"
+        "access": "public"
     },
     "main": "auwgent.ts",
     "types": "auwgent.ts",
