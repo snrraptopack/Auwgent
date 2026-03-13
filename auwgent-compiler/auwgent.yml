@@ -1,0 +1,13 @@
+# auwgent.yml
+# Project-level config for the Auwgent CLI.
+# Run `auwgent generate` or `auwgent compile` with no arguments to use this file.
+
+source: "./manual-testing/**/*.agent"
+
+# Shared output folder for generated code and compiled IR.
+# Keeping these together avoids broken imports between generated files and IR.
+output: "./manual-testing/generated"
+
+# Target languages for `auwgent generate` when --target is not passed.
+targets:
+  - ts

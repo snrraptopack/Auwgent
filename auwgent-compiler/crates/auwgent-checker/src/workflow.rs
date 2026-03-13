@@ -12,6 +12,16 @@ impl Checker {
         parent_configs: &[AgentConfig],
         diags: &mut Vec<Diagnostic>,
     ) {
+        if wf.description.is_none() {
+            diags.push(
+                Diagnostic::error(
+                    format!("Workflow '{}' is missing a description", wf.name.value),
+                    wf.name.span,
+                )
+                .with_help("A workflow must have a description to explain its purpose. Add `description: \"...\"` inside the workflow block."),
+            );
+        }
+
         let mut env = TypeEnv::new();
         let mut bindings: HashMap<String, (&'static str, Span)> = HashMap::new();
         for config in parent_configs {

@@ -927,7 +927,11 @@ fn lower_workflow(wf: &WorkflowConfig) -> Value {
     let body: Vec<Value> = wf.body.iter().map(|s| lower_statement(s)).collect();
     obj.insert("body".into(), Value::Array(body));
 
-    obj.insert("description".into(), json!(wf.description.value));
+    if let Some(desc) = &wf.description {
+        obj.insert("description".into(), json!(desc.value));
+    } else {
+        obj.insert("description".into(), json!(""));
+    }
 
     let tools: Vec<Value> = wf.tool_configs.iter().map(|t| lower_tool(t)).collect();
     obj.insert("tools".into(), Value::Array(tools));

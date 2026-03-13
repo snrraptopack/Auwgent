@@ -17,4 +17,8 @@ auwgent-checker = { path = "../auwgent-checker" }
 auwgent-ir = { path = "../auwgent-ir" }
 auwgent-codegen = { path = "../auwgent-codegen" }
 clap = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = "0.9"
+notify = "6"
+glob = "0.3"

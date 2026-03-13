@@ -513,12 +513,13 @@ pub(crate) fn agent_config_parser(
 
 fn workflow_body_parser() -> impl Parser<
     TokenKind,
-    (Spanned<String>, Vec<ToolFunction>, Vec<Statement>),
+    (Option<Spanned<String>>, Vec<ToolFunction>, Vec<Statement>),
     Error = Simple<TokenKind>,
 > + Clone {
     let desc = tok(TokenKind::Description)
         .ignore_then(tok(TokenKind::Colon))
-        .ignore_then(string_lit());
+        .ignore_then(string_lit())
+        .or_not();
 
     let tools = choice((
         tok(TokenKind::Tool)

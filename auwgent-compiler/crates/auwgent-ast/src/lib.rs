@@ -157,7 +157,7 @@ pub struct WorkflowConfig {
     pub name: Spanned<String>,
     pub params: Vec<TypeConfigDecl>,
     pub return_type: TypeExpr,
-    pub description: Spanned<String>,
+    pub description: Option<Spanned<String>>,
     pub tool_configs: Vec<ToolFunction>,
     pub body: Vec<Statement>,
     pub span: Span,
