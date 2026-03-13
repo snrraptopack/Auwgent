@@ -20,9 +20,9 @@ except ImportError:
     from typing_extensions import NotRequired
 
 try:
-    from . import auwgent_native
+    from . import auwgent_sdk
 except ImportError:
-    import auwgent_native
+    import auwgent_sdk
 
 # ── Type Variables ────────────────────────────────────────────────────────
 AgentIR = TypeVar("AgentIR")
@@ -85,7 +85,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     """
 
     def __init__(self, ir_json: str):
-        self._native = auwgent_native.AuwgentNative(ir_json)
+        self._native = auwgent_sdk.AuwgentNative(ir_json)
         self.ir: Dict[str, Any] = json.loads(ir_json)
         self.middleware: List[Any] = []
         self._shared_context: Dict[str, Any] = {}

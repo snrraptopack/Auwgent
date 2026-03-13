@@ -1,5 +1,5 @@
 {
-    "name": "@auwgent/runtime",
+    "name": "auwgent-sdk",
     "version": "0.1.0",
     "description": "Auwgent IR Runtime — Rust-powered agent engine with type-safe TypeScript bindings",
     "main": "auwgent.ts",

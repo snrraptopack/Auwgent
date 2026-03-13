@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "typescript", "python"]
+members = [".", "../targets/typescript", "../targets/python"]
 resolver = "2"
 
 [package]

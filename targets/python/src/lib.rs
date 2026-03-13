@@ -429,7 +429,7 @@ fn parse_intent_control(val: &Value) -> Option<IntentControl> {
 }
 
 #[pymodule]
-fn auwgent_native(_py: Python, m: &PyModule) -> PyResult<()> {
+fn auwgent_sdk(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<AuwgentNative>()?;
     Ok(())
 }

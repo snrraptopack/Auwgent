@@ -8,7 +8,7 @@ name = "auwgent_native"
 crate-type = ["cdylib"]
 
 [dependencies]
-ir-runtime = { path = ".." }
+ir-runtime = { path = "../../ir-runtime" }
 pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
 pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 tokio = { version = "1.43", features = ["full", "rt", "macros"] }

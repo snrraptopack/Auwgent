@@ -199,7 +199,7 @@ fn input_watch_roots(input: &str) -> Vec<PathBuf> {
 
     // For glob inputs like ./manual-testing/**/*.agent, watch from the prefix before wildcard.
     let wildcard_index = input.find(['*', '?', '[']).unwrap_or(input.len());
-        let prefix = input[..wildcard_index].trim_end_matches(['/', '\\']);
+    let prefix = input[..wildcard_index].trim_end_matches(['/', '\\']);
     if prefix.is_empty() {
         vec![PathBuf::from(".")]
     } else {

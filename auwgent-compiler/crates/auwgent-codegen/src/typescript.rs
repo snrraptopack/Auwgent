@@ -73,8 +73,8 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         "// Do not edit manually".to_string(),
         String::new(),
         "// Core Runtime Imports".to_string(),
-        "import { createAuwgent } from \"@auwgent/runtime\";".to_string(),
-        "import type { ToolRegistry } from \"@auwgent/runtime\";".to_string(),
+        "import { createAuwgent } from \"auwgent-sdk\";".to_string(),
+        "import type { ToolRegistry } from \"auwgent-sdk\";".to_string(),
         String::new(),
         ir_import,
         String::new(),
@@ -320,7 +320,7 @@ fn generate_agent_factory(
 
     let mut lines = vec![
         "// Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity".to_string(),
-        format!("export type {agent_name}Agent = import(\"@auwgent/runtime\").TypedAuwgent<"),
+        format!("export type {agent_name}Agent = import(\"auwgent-sdk\").TypedAuwgent<"),
         "    typeof agentIR,".to_string(),
         format!("    {agent_name}CustomIntents,"),
         format!("    {output_type},"),
@@ -331,7 +331,7 @@ fn generate_agent_factory(
             "/** Middleware object type — consistent with `{agent_name}Agent.onIntent` intent narrowing */"
         ),
         format!(
-            "export type {agent_name}Middleware<T extends import(\"@auwgent/runtime\").MiddlewareContext<typeof agentIR>['activeAgent'] = import(\"@auwgent/runtime\").MiddlewareContext<typeof agentIR>['activeAgent']> = import(\"@auwgent/runtime\").Middleware<"
+            "export type {agent_name}Middleware<T extends import(\"auwgent-sdk\").MiddlewareContext<typeof agentIR>['activeAgent'] = import(\"auwgent-sdk\").MiddlewareContext<typeof agentIR>['activeAgent']> = import(\"auwgent-sdk\").Middleware<"
         ),
         "    typeof agentIR,".to_string(),
         format!("    {agent_name}CustomIntents,"),
