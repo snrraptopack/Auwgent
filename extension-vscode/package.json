@@ -53,19 +53,20 @@
         "auwgent.serverPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `auwgent-lsp` binary. When empty, the extension looks in `../auwgent-compiler/target/debug` and `../auwgent-compiler/target/release`."
+          "markdownDescription": "Absolute path to the `auwgent-lsp` binary. When empty, the extension first looks for the bundled binary in `./bin`, then falls back to `../auwgent-compiler/target/release` and `../auwgent-compiler/target/debug`."
         }
       }
     }
   },
   "scripts": {
+    "build:lsp": "node scripts/build-lsp.js",
     "vscode:prepublish": "npm run package",
     "vsix": "npx @vscode/vsce package --pre-release && powershell -Command \"Start-Process code -ArgumentList ('--install-extension', (Resolve-Path (Get-ChildItem *.vsix | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName), '--force')\"",
-    "compile": "npm run check-types && npm run lint && node esbuild.js",
+    "compile": "npm run build:lsp && npm run check-types && npm run lint && node esbuild.js",
     "watch": "npm-run-all -p watch:*",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
+    "package": "npm run build:lsp && npm run check-types && npm run lint && node esbuild.js --production",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",

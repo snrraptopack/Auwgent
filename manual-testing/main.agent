@@ -5,7 +5,7 @@ import {Hey} from "./types"
 
 prompt Hell{
     """
-     {{@schema(input)}}
+     {{@schema()}}
 
      {{#if 10 > 10}}
 
@@ -42,7 +42,7 @@ agent Test{
 
     workflow hello(id:A):string{
         description: "hello"
-        let a = id.wow
+        let a = id.wows
 
         if aa > 20 {
             

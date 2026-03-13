@@ -4,11 +4,18 @@
 //! The output must be **identical** to Langium's `generator.ts` output.
 
 use auwgent_ast::*;
+use auwgent_errors::{Diagnostic, Severity, Span};
 use serde_json::{json, Map, Value};
 
 /// Lower a parsed AST model into IR JSON value.
-/// Returns the JSON for the first agent found, or error if none.
-pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
+/// Returns the JSON for the first agent found, or structured diagnostics if lowering fails.
+pub fn lower(model: &Model) -> Result<Value, Vec<Diagnostic>> {
+    lower_with_diagnostics(model)
+}
+
+/// Lower a parsed AST model into IR JSON value while preserving structured diagnostics
+/// for editor and CLI consumers.
+pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     // Collect type declarations for the types map
     let mut type_decls: Vec<&TypeDeclaration> = Vec::new();
     let mut model_defs: Vec<&ModelDefinition> = Vec::new();
@@ -26,7 +33,18 @@ pub fn lower(model: &Model) -> Result<Value, Vec<String>> {
         }
     }
 
-    let agent = agent.ok_or_else(|| vec!["no agent found in file".to_string()])?;
+    let agent = agent.ok_or_else(|| {
+        vec![Diagnostic {
+            severity: Severity::Info,
+            message: "no agent found in file".to_string(),
+            span: Span::new(0, 0),
+            labels: Vec::new(),
+            help: Some(
+                "Library-only files are allowed, but they do not produce IR output until an `agent` declaration is present."
+                    .to_string(),
+            ),
+        }]
+    })?;
 
     let mut ir = Map::new();
     ir.insert("name".into(), json!(agent.name.value));

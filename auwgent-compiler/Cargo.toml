@@ -6,6 +6,7 @@ members = [
     "crates/auwgent-parser",
     "crates/auwgent-checker",
     "crates/auwgent-analysis",
+    "crates/auwgent-compile",
     "crates/auwgent-lsp",
     "crates/auwgent-ir",
     "crates/auwgent-codegen",

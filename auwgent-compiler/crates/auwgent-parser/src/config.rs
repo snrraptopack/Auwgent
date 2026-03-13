@@ -2,7 +2,7 @@
 //! workflow, prompt statements, and the overall agent_config combinator.
 
 use auwgent_ast::*;
-use auwgent_errors::Span;
+
 use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
@@ -108,17 +108,18 @@ pub(crate) fn prompt_stmt_parser(
                 .then(prompt_block.clone())
                 .then(tok(TokenKind::Else).ignore_then(prompt_block).or_not())
                 .map_with_span(|((condition, then_stmts), else_stmts), span| {
+                    let block_span = s(span.clone());
                     let then_block = then_stmts
                         .into_iter()
                         .map(|ps| match ps {
                             PromptStatement::Statement(stmt) => stmt,
                             PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
-                                span: Span::new(0, 0),
+                                span: block_span,
                                 value: e,
                             }),
                             PromptStatement::If(ifs) => Statement::If(ifs),
                             _ => Statement::Return(ReturnStatement {
-                                span: Span::new(0, 0),
+                                span: block_span,
                                 value: Expr::StringLit(sp(String::new(), span.clone())),
                             }),
                         })
@@ -129,12 +130,12 @@ pub(crate) fn prompt_stmt_parser(
                         .map(|ps| match ps {
                             PromptStatement::Statement(stmt) => stmt,
                             PromptStatement::Expr(e) => Statement::Return(ReturnStatement {
-                                span: Span::new(0, 0),
+                                span: block_span,
                                 value: e,
                             }),
                             PromptStatement::If(ifs) => Statement::If(ifs),
                             _ => Statement::Return(ReturnStatement {
-                                span: Span::new(0, 0),
+                                span: block_span,
                                 value: Expr::StringLit(sp(String::new(), span.clone())),
                             }),
                         })
@@ -502,10 +503,10 @@ pub(crate) fn agent_config_parser(
         TokenKind::LBrace,
         TokenKind::RBrace,
         [(TokenKind::LParen, TokenKind::RParen)],
-        |_| {
+        |span| {
             AgentConfig::Input(InputConfig {
                 properties: vec![],
-                span: Span::new(0, 0),
+                span: s(span),
             })
         },
     ))

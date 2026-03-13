@@ -6,17 +6,18 @@
 		{
 			"label": "Build Auwgent Rust LSP",
 			"type": "shell",
-			"command": "cargo",
+			"command": "node",
 			"args": [
-				"build",
-				"-p",
-				"auwgent-lsp"
+				"./scripts/build-lsp.js"
 			],
 			"options": {
-				"cwd": "${workspaceFolder}/../auwgent-compiler"
+				"cwd": "${workspaceFolder}"
 			},
 			"group": "build",
-			"problemMatcher": []
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always"
+			}
 		},
 		{
 			"label": "watch",

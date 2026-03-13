@@ -6,6 +6,7 @@ use crate::reference::analysis_reference_to_lsp;
 use crate::rename::analysis_rename_to_lsp;
 use crate::util::{apply_content_changes, path_from_uri, position_to_offset};
 use auwgent_analysis::AnalysisError;
+use auwgent_compile::validate_source_for_compile;
 use auwgent_errors::Diagnostic as CompilerDiagnostic;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
@@ -27,15 +28,6 @@ use tower_lsp::{Client, LanguageServer};
 /// Debounce delay for `did_change` analysis — prevents flickering from
 /// transient parse errors while the user is actively typing.
 const DEBOUNCE_MS: u64 = 650;
-
-#[derive(Copy, Clone, Eq, PartialEq)]
-enum AnalysisMode {
-    /// Full diagnostics (syntax + semantic), used for did_open/did_save.
-    Full,
-    /// Interactive diagnostics while typing; suppresses transient syntax noise
-    /// from best-effort parsing and keeps semantic checker feedback.
-    Interactive,
-}
 
 #[derive(Clone)]
 struct DocumentState {
@@ -69,7 +61,6 @@ impl Backend {
         &self,
         uri: &Url,
         expected_change_version: Option<u64>,
-        mode: AnalysisMode,
     ) {
         let Some(path) = path_from_uri(uri) else {
             self.client
@@ -100,7 +91,7 @@ impl Backend {
 
         let result = tokio::task::spawn_blocking(move || {
             std::panic::catch_unwind(AssertUnwindSafe(|| {
-                run_analysis(&uri_clone, &path_clone, &text_clone, mode)
+                run_analysis(&uri_clone, &path_clone, &text_clone)
             }))
         })
         .await;
@@ -167,12 +158,9 @@ impl Backend {
 }
 
 /// Pure, blocking analysis that can safely run on a worker thread.
-fn run_analysis(uri: &Url, path: &PathBuf, text: &str, mode: AnalysisMode) -> AnalysisResult {
-    match auwgent_analysis::load_model_from_source_with_imports(path, text) {
-        Ok(model) => {
-            let diagnostics = auwgent_checker::check(&model);
-            vec![(uri.clone(), text.to_string(), diagnostics)]
-        }
+fn run_analysis(uri: &Url, path: &PathBuf, text: &str) -> AnalysisResult {
+    match validate_source_for_compile(path, text) {
+        Ok(validation) => vec![(uri.clone(), text.to_string(), validation.diagnostics)],
         Err(AnalysisError::Lex {
             path: error_path, ..
         })
@@ -180,11 +168,6 @@ fn run_analysis(uri: &Url, path: &PathBuf, text: &str, mode: AnalysisMode) -> An
             path: error_path, ..
         }) if error_path == *path => match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
             Ok((model, mut diagnostics)) => {
-                if mode == AnalysisMode::Interactive {
-                    // While typing, parser diagnostics are often transient and noisy.
-                    // Keep semantic checker diagnostics so real issues still surface.
-                    diagnostics.clear();
-                }
                 diagnostics.extend(auwgent_checker::check(&model));
                 vec![(uri.clone(), text.to_string(), diagnostics)]
             }
@@ -202,7 +185,7 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Options(
                     TextDocumentSyncOptions {
                         open_close: Some(true),
-                        change: Some(TextDocumentSyncKind::INCREMENTAL),
+                        change: Some(TextDocumentSyncKind::FULL),
                         will_save: None,
                         will_save_wait_until: None,
                         save: Some(TextDocumentSyncSaveOptions::SaveOptions(SaveOptions {
@@ -253,7 +236,7 @@ impl LanguageServer for Backend {
                 version,
             },
         );
-        self.analyze_and_publish(&uri, None, AnalysisMode::Full).await;
+        self.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -287,7 +270,7 @@ impl LanguageServer for Backend {
             versions.get(&uri).copied().unwrap_or(0)
         };
         if version == current {
-            self.analyze_and_publish(&uri, Some(version), AnalysisMode::Interactive)
+            self.analyze_and_publish(&uri, Some(version))
                 .await;
         }
     }
@@ -301,7 +284,7 @@ impl LanguageServer for Backend {
             }
         }
         // Re-analyze on save as a reliability fallback.
-        self.analyze_and_publish(&uri, None, AnalysisMode::Full).await;
+        self.analyze_and_publish(&uri, None).await;
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {

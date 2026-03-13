@@ -1,16 +1,12 @@
 [package]
-name = "auwgent-lsp"
+name = "auwgent-compile"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "auwgent-lsp"
-path = "src/main.rs"
-
 [dependencies]
 auwgent-analysis = { path = "../auwgent-analysis" }
+auwgent-ast = { path = "../auwgent-ast" }
 auwgent-checker = { path = "../auwgent-checker" }
-auwgent-compile = { path = "../auwgent-compile" }
 auwgent-errors = { path = "../auwgent-errors" }
-tokio = { workspace = true }
-tower-lsp = { workspace = true }
+auwgent-ir = { path = "../auwgent-ir" }
+serde_json = { workspace = true }

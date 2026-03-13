@@ -190,8 +190,9 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             .clone()
             .then(mul_op.then(atom).repeated())
             .foldl(|left, (op, right)| {
+                let span = expr_span(&left).merge(expr_span(&right));
                 Expr::BinaryOp(BinaryOp {
-                    span: Span::new(0, 0),
+                    span,
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
@@ -206,8 +207,9 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             .clone()
             .then(add_op.then(product).repeated())
             .foldl(|left, (op, right)| {
+                let span = expr_span(&left).merge(expr_span(&right));
                 Expr::BinaryOp(BinaryOp {
-                    span: Span::new(0, 0),
+                    span,
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
@@ -263,9 +265,37 @@ pub(crate) fn condition_parser(
         .clone()
         .then(logical_op.then(comparison).repeated())
         .foldl(|left, (op, right)| Condition::Logical {
+            span: condition_span(&left).merge(condition_span(&right)),
             left: Box::new(left),
             op,
             right: Box::new(right),
-            span: Span::new(0, 0),
         })
+}
+
+fn expr_span(expr: &Expr) -> Span {
+    match expr {
+        Expr::StringLit(s) | Expr::MultilineStringLit(s) => s.span,
+        Expr::NumberLit(n) => n.span,
+        Expr::BooleanLit(b) => b.span,
+        Expr::Array(a) => a.span,
+        Expr::Object(o) => o.span,
+        Expr::VarRef(v) => v.span,
+        Expr::MemberAccess(ma) => ma.span,
+        Expr::IndexAccess(ia) => ia.span,
+        Expr::BinaryOp(bo) => bo.span,
+        Expr::FunctionCall(fc) => fc.span,
+        Expr::HelperCall(hc) => hc.span,
+        Expr::PromptCall(pc) => pc.span,
+        Expr::ContextRef(cr) => cr.span,
+        Expr::InlinePrompt(ip) => ip.span,
+        Expr::Grouped(_, span) => *span,
+    }
+}
+
+fn condition_span(condition: &Condition) -> Span {
+    match condition {
+        Condition::Comparison { span, .. }
+        | Condition::Logical { span, .. }
+        | Condition::Boolean { span, .. } => *span,
+    }
 }

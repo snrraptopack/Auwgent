@@ -26,15 +26,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 		}),
 		vscode.commands.registerCommand('auwgent.showLanguageServerOutput', () => {
 			outputChannel?.show(true);
-		})
+		}),
+		{
+			dispose: () => {
+				void client?.stop();
+			}
+		}
 	);
 
 	await restartLanguageClient(context, false);
-	context.subscriptions.push({
-		dispose: () => {
-			void client?.stop();
-		}
-	});
 }
 
 export async function deactivate(): Promise<void> {
@@ -61,7 +61,7 @@ async function restartLanguageClient(context: vscode.ExtensionContext, showSucce
 }
 
 async function startLanguageClient(context: vscode.ExtensionContext): Promise<LanguageClient> {
-	const { serverOptions, resolvedPath } = await resolveServerOptions(context);
+	const { serverOptions, resolvedPath } = resolveServerOptions(context);
 	outputChannel?.appendLine(`Starting language server: ${resolvedPath}`);
 
 	const clientOptions: LanguageClientOptions = {
@@ -82,19 +82,21 @@ async function startLanguageClient(context: vscode.ExtensionContext): Promise<La
 	);
 
 	await languageClient.start();
-	context.subscriptions.push(languageClient);
+	client = languageClient;
 	return languageClient;
 }
 
-async function resolveServerOptions(context: vscode.ExtensionContext): Promise<{ serverOptions: ServerOptions; resolvedPath: string }> {
-	const explicitPath = vscode.workspace.getConfiguration('auwgent').get<string>('serverPath');
-	const configuredPath = explicitPath && explicitPath.trim().length > 0 ? explicitPath : undefined;
-	const bundledCandidates = [
+function resolveServerOptions(context: vscode.ExtensionContext): { serverOptions: ServerOptions; resolvedPath: string } {
+	const explicitPath = vscode.workspace.getConfiguration('auwgent').get<string>('serverPath')?.trim();
+	const configuredPath = explicitPath ? explicitPath : undefined;
+	const bundledPath = context.asAbsolutePath(path.join('bin', executableName('auwgent-lsp')));
+	const candidatePaths = [
 		configuredPath,
-		...findBundledServerCandidates(context),
+		bundledPath,
+		...findWorkspaceServerCandidates(),
 	].filter((candidate): candidate is string => Boolean(candidate));
 
-	for (const candidate of bundledCandidates) {
+	for (const candidate of candidatePaths) {
 		if (fs.existsSync(candidate)) {
 			return {
 				serverOptions: { command: candidate },
@@ -103,7 +105,7 @@ async function resolveServerOptions(context: vscode.ExtensionContext): Promise<{
 		}
 	}
 
-	const searchedLocations = bundledCandidates.map(candidate => ` - ${candidate}`).join('\n');
+	const searchedLocations = candidatePaths.map(candidate => ` - ${candidate}`).join('\n');
 	throw new Error(
 		[
 			'Auwgent Rust LSP binary not found.',
@@ -111,13 +113,10 @@ async function resolveServerOptions(context: vscode.ExtensionContext): Promise<{
 			searchedLocations || ' - no candidate paths were produced',
 		].join('\n')
 	);
-	
 }
 
-function findBundledServerCandidates(context: vscode.ExtensionContext): string[] {
+function findWorkspaceServerCandidates(): string[] {
 	const compilerRoots = new Set<string>();
-	const extensionRoot = context.extensionUri.fsPath;
-	compilerRoots.add(path.resolve(extensionRoot, '..', 'auwgent-compiler'));
 
 	for (const folder of vscode.workspace.workspaceFolders ?? []) {
 		compilerRoots.add(path.join(folder.uri.fsPath, 'auwgent-compiler'));
@@ -132,8 +131,8 @@ function findBundledServerCandidates(context: vscode.ExtensionContext): string[]
 	}
 
 	return [...compilerRoots].flatMap(compilerRoot => [
-		path.join(compilerRoot, 'target', 'debug', executableName('auwgent-lsp')),
 		path.join(compilerRoot, 'target', 'release', executableName('auwgent-lsp')),
+		path.join(compilerRoot, 'target', 'debug', executableName('auwgent-lsp')),
 	]);
 }
 

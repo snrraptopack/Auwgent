@@ -171,13 +171,14 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
         TokenKind::LBrace,
         TokenKind::RBrace,
         [(TokenKind::LParen, TokenKind::RParen)],
-        |_| {
+        |span: std::ops::Range<usize>| {
+            let recovery_span = Span::new(span.start, span.end.max(span.start + 1));
             Element::TypeDecl(TypeDeclaration {
                 exported: false,
                 is_output: false,
-                name: Spanned::new("__error__".to_string(), Span::new(0, 0)),
+                name: Spanned::new("__error__".to_string(), recovery_span),
                 fields: vec![],
-                span: Span::new(0, 0),
+                span: recovery_span,
             })
         },
     ));

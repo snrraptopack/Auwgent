@@ -15,6 +15,7 @@ auwgent-lexer = { path = "../auwgent-lexer" }
 auwgent-parser = { path = "../auwgent-parser" }
 auwgent-checker = { path = "../auwgent-checker" }
 auwgent-ir = { path = "../auwgent-ir" }
+auwgent-compile = { path = "../auwgent-compile" }
 auwgent-codegen = { path = "../auwgent-codegen" }
 clap = { workspace = true }
 serde = { workspace = true }

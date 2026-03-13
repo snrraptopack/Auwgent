@@ -148,6 +148,7 @@ dependencies = [
  "auwgent-ast",
  "auwgent-checker",
  "auwgent-codegen",
+ "auwgent-compile",
  "auwgent-errors",
  "auwgent-ir",
  "auwgent-lexer",
@@ -164,6 +165,18 @@ dependencies = [
 name = "auwgent-codegen"
 version = "0.1.0"
 dependencies = [
+ "auwgent-ir",
+ "serde_json",
+]
+
+[[package]]
+name = "auwgent-compile"
+version = "0.1.0"
+dependencies = [
+ "auwgent-analysis",
+ "auwgent-ast",
+ "auwgent-checker",
+ "auwgent-errors",
  "auwgent-ir",
  "serde_json",
 ]
@@ -202,6 +215,7 @@ version = "0.1.0"
 dependencies = [
  "auwgent-analysis",
  "auwgent-checker",
+ "auwgent-compile",
  "auwgent-errors",
  "tokio",
  "tower-lsp",

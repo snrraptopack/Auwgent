@@ -231,32 +231,22 @@ fn collect_agent_files(dir: &Path) -> Vec<PathBuf> {
 }
 
 pub fn compile_file(file: &Path, output: Option<&Path>) -> bool {
-    let model = match auwgent_analysis::load_model_with_imports(file) {
-        Ok(m) => m,
-        Err(e) => {
-            report_analysis_error(&e);
+    let validation = match auwgent_compile::validate_file_for_compile(file) {
+        Ok(validation) => validation,
+        Err(error) => {
+            report_analysis_error(&error);
             return false;
         }
     };
 
     let filename = file.display().to_string();
     let source = std::fs::read_to_string(file).unwrap_or_default();
-    let diagnostics = auwgent_checker::check(&model);
-    if auwgent_errors::render_diagnostics(&diagnostics, &filename, &source) {
+    if auwgent_errors::render_diagnostics(&validation.diagnostics, &filename, &source) {
         return false;
     }
 
-    let ir = match auwgent_ir::lower(&model) {
-        Ok(ir) => ir,
-        Err(errs) => {
-            if errs.len() == 1 && errs[0] == "no agent found in file" {
-                return true; // silently skip library files
-            }
-            for e in &errs {
-                eprintln!("Error: {}", e);
-            }
-            return false;
-        }
+    let Some(ir) = validation.ir else {
+        return true; // silently skip library files
     };
 
     let stem = file.file_stem().unwrap().to_string_lossy();
@@ -272,32 +262,22 @@ pub fn compile_file(file: &Path, output: Option<&Path>) -> bool {
 }
 
 pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
-    let model = match auwgent_analysis::load_model_with_imports(file) {
-        Ok(m) => m,
-        Err(e) => {
-            report_analysis_error(&e);
+    let validation = match auwgent_compile::validate_file_for_compile(file) {
+        Ok(validation) => validation,
+        Err(error) => {
+            report_analysis_error(&error);
             return false;
         }
     };
 
     let filename = file.display().to_string();
     let source = std::fs::read_to_string(file).unwrap_or_default();
-    let diagnostics = auwgent_checker::check(&model);
-    if auwgent_errors::render_diagnostics(&diagnostics, &filename, &source) {
+    if auwgent_errors::render_diagnostics(&validation.diagnostics, &filename, &source) {
         return false;
     }
 
-    let ir = match auwgent_ir::lower(&model) {
-        Ok(ir) => ir,
-        Err(errs) => {
-            if errs.len() == 1 && errs[0] == "no agent found in file" {
-                return true; // silently skip library files
-            }
-            for e in &errs {
-                eprintln!("Error: {}", e);
-            }
-            return false;
-        }
+    let Some(ir) = validation.ir else {
+        return true; // silently skip library files
     };
 
     let stem = file.file_stem().unwrap().to_string_lossy();
