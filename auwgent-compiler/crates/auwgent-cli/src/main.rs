@@ -249,6 +249,9 @@ pub fn compile_file(file: &Path, output: Option<&Path>) -> bool {
     let ir = match auwgent_ir::lower(&model) {
         Ok(ir) => ir,
         Err(errs) => {
+            if errs.len() == 1 && errs[0] == "no agent found in file" {
+                return true; // silently skip library files
+            }
             for e in &errs {
                 eprintln!("Error: {}", e);
             }
@@ -280,6 +283,9 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
     let ir = match auwgent_ir::lower(&model) {
         Ok(ir) => ir,
         Err(errs) => {
+            if errs.len() == 1 && errs[0] == "no agent found in file" {
+                return true; // silently skip library files
+            }
             for e in &errs {
                 eprintln!("Error: {}", e);
             }
@@ -310,7 +316,12 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
         let _ = std::fs::create_dir_all(parent);
     }
     std::fs::write(&out_path, code).unwrap();
-    eprintln!("\x1b[32m✓\x1b[0m {} → {}", file.display(), out_path.display());
+    
+    // Also write the IR JSON file right beside it
+    let json_out_path = out_dir.join(format!("{}.agent.json", stem));
+    std::fs::write(&json_out_path, serde_json::to_string_pretty(&ir).unwrap()).unwrap();
+    
+    eprintln!("\x1b[32m✓\x1b[0m {} → {} (+ .agent.json)", file.display(), out_path.display());
     true
 }
 

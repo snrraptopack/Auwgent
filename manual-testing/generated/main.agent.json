@@ -1,0 +1,134 @@
+{
+  "name": "Test",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "custom",
+          "url": "anymodel",
+          "modelName": ""
+        },
+        "prompt": {
+          "type": "contextRef",
+          "property": "context"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": {
+    "text": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "output": {
+    "__variants": {
+      "Hey": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "A": {
+        "wow": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    }
+  },
+  "context": {
+    "username": {
+      "type": "string",
+      "optional": false
+    },
+    "context": {
+      "type": "string",
+      "optional": false
+    }
+  },
+  "tools": [
+    {
+      "description": "",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "name": "one",
+      "returns": "string"
+    }
+  ],
+  "workflows": [
+    {
+      "flowName": "hello",
+      "flowParams": {
+        "id": {
+          "type": {
+            "type": "typeRef",
+            "name": "A"
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "body": [
+        {
+          "type": "variableDeclaration",
+          "name": "a",
+          "value": {
+            "type": "memberAccess",
+            "object": {
+              "type": "varRef",
+              "value": "id"
+            },
+            "properties": [
+              "wow"
+            ]
+          }
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "literal",
+            "value": "hello"
+          }
+        }
+      ],
+      "description": "",
+      "tools": []
+    }
+  ],
+  "helpers": [],
+  "tests": [],
+  "types": {
+    "A": {
+      "isOutput": false,
+      "properties": {
+        "wow": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    },
+    "Hey": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      }
+    }
+  }
+}

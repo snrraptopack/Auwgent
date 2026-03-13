@@ -98,7 +98,7 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
         // Context ref: ctx.property
         let ctx_ref = tok(TokenKind::Ctx)
             .ignore_then(tok(TokenKind::Dot))
-            .ignore_then(ident())
+            .ignore_then(property_name())
             .map_with_span(|prop, span| {
                 Expr::ContextRef(ContextRef {
                     property: prop,
@@ -126,7 +126,7 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             .map_with_span(|e, span| Expr::Grouped(Box::new(e), s(span)));
 
         // Ident-based expressions: func_call, member_access, index_access, var_ref
-        let dot_chain = tok(TokenKind::Dot).ignore_then(ident()).repeated();
+        let dot_chain = tok(TokenKind::Dot).ignore_then(property_name()).repeated();
 
         let ident_expr = ident()
             .then(choice((
