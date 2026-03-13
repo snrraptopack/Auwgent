@@ -46,7 +46,8 @@ jobs:
       - uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --out dist --target ${{ matrix.target }}
+          args: --release --out dist
+          target: ${{ matrix.target }}
           working-directory: targets/python
       - name: Upload macos wheels
         uses: actions/upload-artifact@v4

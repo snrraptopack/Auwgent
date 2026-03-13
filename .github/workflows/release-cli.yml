@@ -33,6 +33,7 @@ jobs:
         uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: auwgent,auwgent-lsp
+          archive: auwgent-${{ matrix.target }}
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           manifest-path: auwgent-compiler/Cargo.toml
