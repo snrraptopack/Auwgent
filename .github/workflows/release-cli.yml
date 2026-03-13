@@ -6,8 +6,17 @@ on:
       - 'v*'
 
 jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   release:
     name: Build & Release Binaries
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
