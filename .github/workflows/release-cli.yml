@@ -64,6 +64,26 @@ jobs:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Verify release assets
+        working-directory: targets/cli
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUWGENT_REPO_OWNER: ${{ github.repository_owner }}
+          AUWGENT_REPO_NAME: ${{ github.event.repository.name }}
+        run: npm run verify:release-assets
+
+      - name: Bundle release assets into npm package
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p targets/cli/assets
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir targets/cli/assets \
+            --pattern "auwgent-*.zip" \
+            --pattern "auwgent-*.tar.gz"
+          ls -lah targets/cli/assets
+
       - name: Publish CLI Wrapper
         working-directory: targets/cli
         env:

@@ -1,13 +1,21 @@
 {
   "name": "@snrraptopack/auwgent-cli",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Auwgent CLI compiler and LSP for generating agents",
+  "files": [
+    "bin/**/*",
+    "assets/**/*",
+    "install.js",
+    "verify-release-assets.js",
+    "README.md"
+  ],
   "bin": {
     "auwgent": "bin/auwgent.js",
     "auwgent-lsp": "bin/auwgent-lsp.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node install.js",
+    "verify:release-assets": "node verify-release-assets.js"
   },
   "repository": {
     "type": "git",
