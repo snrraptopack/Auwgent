@@ -178,6 +178,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
         "# Instructions\n\
          Your response MUST be a valid YAML block — not JSON, not plain text.\n\
          Use YAML key: value syntax on every turn, including after receiving a tool_result.\n\
+         For multi-line strings, use the YAML pipe symbol `|` for proper formatting.\n\
          Never wrap your output in code fences or markdown.\n\
          "
         .to_string(),
@@ -345,7 +346,7 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
 
     // Instructions + Options
     sections.push(
-        "# Instructions\nRespond ONLY with a valid YAML block. Do not include any conversational text or explanation."
+        "# Instructions\nRespond ONLY with a valid YAML block. Do not include any conversational text or explanation. For multi-line strings, use the YAML pipe symbol `|` for proper formatting."
             .to_string(),
     );
 
