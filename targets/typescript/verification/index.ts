@@ -1,20 +1,19 @@
-import { createManager, type ManagerConfig } from "./main.agent.types"
-import { getStudentDetails } from "./tools";
+import { createHello, type HelloConfig } from "./main.agent.types"
 
-// agent intilization
-const agent = createManager({
-    apiKeys: {geminiApiKey: Bun.env.GEMINI_API_KEY ?? ""},
-    context: {user_name: "Amihere"},
-    tools: { getStudentDetails }
-})
+let config: HelloConfig = {
+    apiKeys: {
+        geminiApiKey: Bun.env.GEMINI_API_KEY || Bun.env.GEMINI || ""
+    }
+}
+
+const agent = createHello(config)
+
+console.log(agent.generatePrompt())
 
 agent.onIntent((name, value) => {
-    if (name === "response_text") {
-        console.log(`answer: ${value.text}`)
-
-    }else if (name === "tool_call") {
-        console.log(`[tool call] ${value.type} with args of ${value.args.id}`)
+    if (name === "response_schema") {
+        console.log(value)
     }
 })
 
-const session = await agent.run("what is the deatails for student with id 10")
+

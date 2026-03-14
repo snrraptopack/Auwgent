@@ -1,97 +1,76 @@
-// Auto-generated types for Test
+// Auto-generated types for Hello
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type TestIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "Test";
-  workflows: ({ flowName: "one"; returns: string })[];
+type HelloIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "Hello";
+  workflows: undefined;
   helpers: undefined;
 };
-const agentIR = _importedIR as unknown as TestIR;
-export type A = {
-    wow: string;
+const agentIR = _importedIR as unknown as HelloIR;
+export type HelloInput = {
+
 }
 
-export type Hey = {
-    name: string;
-    age: number;
-}
-export type TestInput = {
-    text: string;
+export type HelloOutput = {
+    score: number;
+    response: string;
 }
 
-export type TestOutput =
-    | { type: "Hey";
-    name: string;
-    age: number;
-}
-    | { type: "A";
-    wow: string;
-};
+export type HelloContext = {
 
-export type TestContext = {
-    username: string;
-    context: string;
-}
-
-export type TestTools = {
-    one: (args: { id: string }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type TestCustomIntents = never;
+export type HelloCustomIntents = never;
 
 /**
- * API keys required for Test
+ * API keys required for Hello
  */
-export type TestApiKeys = {
-    openaiApiKey: string;
-    customUrl?: string;  // Optional override for custom provider URL
+export type HelloApiKeys = {
+    geminiApiKey: string;
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type TestAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
+export type HelloAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
-    TestCustomIntents,
-    TestOutput,
-    TestTools
+    HelloCustomIntents,
+    HelloOutput,
+    Record<string, never>
 >;
 
-/** Middleware object type — consistent with `TestAgent.onIntent` intent narrowing */
-export type TestMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
+/** Middleware object type — consistent with `HelloAgent.onIntent` intent narrowing */
+export type HelloMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
-    TestCustomIntents,
-    TestOutput,
-    TestTools,
+    HelloCustomIntents,
+    HelloOutput,
+    Record<string, never>,
     T
 >;
 
-export type TestConfig = {
-    tools: TestTools;
-    middleware?: TestMiddleware[];
-    context: TestContext;
-    apiKeys: TestApiKeys;
+export type HelloConfig = {
+    middleware?: HelloMiddleware[];
+    apiKeys: HelloApiKeys;
 }
 
-export function createTest(config: TestConfig): TestAgent {
+export function createHello(config: HelloConfig): HelloAgent {
     return createAuwgent<
         typeof agentIR,
-        TestCustomIntents,
-        TestOutput,
-        TestTools
+        HelloCustomIntents,
+        HelloOutput,
+        Record<string, never>
     >(agentIR, {
-        tools: config.tools,
+        tools: {} as Record<string, never>,
         middleware: config.middleware as any,
-        context: config.context,
         apiKeys: config.apiKeys
     });
 }
 
-export const auwgent = createTest;
-export type AuwgentTools = TestTools;
-export type AuwgentConfig = TestConfig;
-export type AuwgentAgent = TestAgent;
-export type AuwgentMiddleware = TestMiddleware;
-export type AuwgentContext = TestContext;
+export const auwgent = createHello;
+export type AuwgentTools = Record<string, never>;
+export type AuwgentConfig = HelloConfig;
+export type AuwgentAgent = HelloAgent;
+export type AuwgentMiddleware = HelloMiddleware;
+export type AuwgentContext = HelloContext;

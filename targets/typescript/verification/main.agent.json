@@ -1,12 +1,11 @@
 {
-  "name": "Test",
+  "name": "Hello",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "custom",
-          "url": "anymodel",
-          "modelName": "www.the url"
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
         },
         "prompt": {
           "value": "Hello",
@@ -16,59 +15,22 @@
       "namedConfig": []
     }
   ],
-  "input": {
-    "text": {
-      "type": "string",
-      "optional": false
-    }
-  },
+  "input": null,
   "output": {
-    "__variants": {
-      "Hey": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "A": {
-        "wow": {
-          "type": "string",
-          "optional": false
-        }
-      }
+    "score": {
+      "type": "number",
+      "optional": false,
+      "description": "no description"
+    },
+    "response": {
+      "type": "string",
+      "optional": false,
+      "description": "no description"
     }
   },
   "context": null,
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "tests": [],
-  "types": {
-    "Hey": {
-      "isOutput": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      }
-    },
-    "A": {
-      "isOutput": false,
-      "properties": {
-        "wow": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    }
-  }
+  "tests": []
 }

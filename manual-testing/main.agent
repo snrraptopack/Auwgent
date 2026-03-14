@@ -1,47 +1,12 @@
-import {MainAgentPrompt} from "./prompt"
-import {Geminis} from "./models"
-import {Hey} from "./types"
 
-
-prompt Hell{
-    """
-     {{#if 10 > 10}}
-        {{@schema(output)}}
-        {{else}}
-     {{/if}}
-    """
-}
-
-type A{
-    wow:string
-}
-
-
-agent Test{
-
+agent Hello{
     default config{
-        model:custom("anymodel","")
-        prompt:""
+        model: gemini("gemini-2.5-flash")
+        prompt: "Hello"
     }
 
-    tool one(id:string):string @desc "simple"
-
-    input{
-        text:string
-    }
-
-    context{
-        username:string
-        context:string
-    }
-
-    output:Hey | A
-
-    workflow one(id:A):string{
-        description: "hello"
-        let a = id.wow
-
-        return ""
+    output {
+        score:number
+        response:string
     }
 }
-

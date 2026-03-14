@@ -68,23 +68,19 @@ impl BackendInner {
             return;
         };
 
-        let (text, document_version) = {
+        let (text, _document_version) = {
             let documents = self.documents.read().await;
             let Some(state) = documents.get(uri) else {
                 self.client
-                    .log_message(MessageType::WARNING, format!("No document content for: {uri}"))
+                    .log_message(
+                        MessageType::WARNING,
+                        format!("No document content for: {uri}"),
+                    )
                     .await;
                 return;
             };
             (state.text.clone(), state.version)
         };
-
-        self.client
-            .log_message(
-                MessageType::LOG,
-                format!("[auwgent-lsp] Analyzing doc v{document_version} for {uri}"),
-            )
-            .await;
 
         // Clone values for the blocking closure.
         let uri_clone = uri.clone();
@@ -104,7 +100,9 @@ impl BackendInner {
                 self.client
                     .log_message(
                         MessageType::ERROR,
-                        format!("[auwgent-lsp] Analysis panicked for {uri}. Diagnostics may be stale."),
+                        format!(
+                            "[auwgent-lsp] Analysis panicked for {uri}. Diagnostics may be stale."
+                        ),
                     )
                     .await;
                 return;
@@ -178,11 +176,7 @@ impl BackendInner {
             // Do not attach a document version to the publish call so VSCode
             // never silently discards diagnostics due to a version mismatch.
             self.client
-                .publish_diagnostics(
-                    publish_uri,
-                    lsp_diagnostics,
-                    None,
-                )
+                .publish_diagnostics(publish_uri, lsp_diagnostics, None)
                 .await;
         }
     }
@@ -235,13 +229,15 @@ fn run_analysis(uri: &Url, path: &PathBuf, text: &str) -> AnalysisResult {
         })
         | Err(AnalysisError::Parse {
             path: error_path, ..
-        }) if paths_match(&error_path, path) => match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
-            Ok((model, mut diagnostics)) => {
-                diagnostics.extend(auwgent_checker::check(&model));
-                vec![(uri.clone(), text.to_string(), diagnostics)]
+        }) if paths_match(&error_path, path) => {
+            match auwgent_analysis::best_effort_model_from_source_with_imports(path, text) {
+                Ok((model, mut diagnostics)) => {
+                    diagnostics.extend(auwgent_checker::check(&model));
+                    vec![(uri.clone(), text.to_string(), diagnostics)]
+                }
+                Err(error) => diagnostics_from_error(uri, path, text, error),
             }
-            Err(error) => diagnostics_from_error(uri, path, text, error),
-        },
+        }
         Err(error) => diagnostics_from_error(uri, path, text, error),
     }
 }
@@ -263,7 +259,11 @@ impl LanguageServer for Backend {
                     },
                 )),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec![".".to_string(), "@".to_string(), ":".to_string()]),
+                    trigger_characters: Some(vec![
+                        ".".to_string(),
+                        "@".to_string(),
+                        ":".to_string(),
+                    ]),
                     ..CompletionOptions::default()
                 }),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -299,10 +299,11 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri;
         let text = params.text_document.text;
         let version = params.text_document.version;
-        self.inner.documents.write().await.insert(
-            uri.clone(),
-            DocumentState { text, version },
-        );
+        self.inner
+            .documents
+            .write()
+            .await
+            .insert(uri.clone(), DocumentState { text, version });
         self.inner.analyze_and_publish(&uri, None).await;
     }
 
@@ -362,7 +363,10 @@ impl LanguageServer for Backend {
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
         let uri = params.text_document.uri;
         self.inner.documents.write().await.remove(&uri);
-        self.inner.client.publish_diagnostics(uri, Vec::new(), None).await;
+        self.inner
+            .client
+            .publish_diagnostics(uri, Vec::new(), None)
+            .await;
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
@@ -437,7 +441,10 @@ impl LanguageServer for Backend {
         Ok(definition)
     }
 
-    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<tower_lsp::lsp_types::Location>>> {
+    async fn references(
+        &self,
+        params: ReferenceParams,
+    ) -> Result<Option<Vec<tower_lsp::lsp_types::Location>>> {
         let uri = params.text_document_position.text_document.uri;
         let path = match path_from_uri(&uri) {
             Some(path) => path,

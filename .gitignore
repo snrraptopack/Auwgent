@@ -10,3 +10,9 @@ syntaxes/
 *.tsbuildinfo
 *.vsix
 .env
+
+# Rust build artifacts (scoped to specific crates, not the targets/ source folder)
+auwgent-compiler/target/
+ir-runtime/target/
+targets/typescript/target/
+targets/python/target/

@@ -1,134 +1,36 @@
 {
-  "name": "Test",
+  "name": "Hello",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "custom",
-          "url": "anymodel",
-          "modelName": ""
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
         },
         "prompt": {
-          "value": "",
+          "value": "Hello",
           "type": "literal"
         }
       },
       "namedConfig": []
     }
   ],
-  "input": {
-    "text": {
-      "type": "string",
-      "optional": false
-    }
-  },
+  "input": null,
   "output": {
-    "__variants": {
-      "Hey": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "A": {
-        "wow": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    }
-  },
-  "context": {
-    "username": {
-      "type": "string",
-      "optional": false
+    "score": {
+      "type": "number",
+      "optional": false,
+      "description": "no description"
     },
-    "context": {
+    "response": {
       "type": "string",
-      "optional": false
+      "optional": false,
+      "description": "no description"
     }
   },
-  "tools": [
-    {
-      "description": "simple",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "name": "one",
-      "returns": "string"
-    }
-  ],
-  "workflows": [
-    {
-      "flowName": "one",
-      "flowParams": {
-        "id": {
-          "type": {
-            "type": "typeRef",
-            "name": "A"
-          },
-          "optional": false
-        }
-      },
-      "returns": "string",
-      "body": [
-        {
-          "type": "variableDeclaration",
-          "name": "a",
-          "value": {
-            "type": "memberAccess",
-            "object": {
-              "type": "varRef",
-              "value": "id"
-            },
-            "properties": [
-              "wow"
-            ]
-          }
-        },
-        {
-          "type": "return",
-          "value": {
-            "type": "literal",
-            "value": ""
-          }
-        }
-      ],
-      "description": "hello",
-      "tools": []
-    }
-  ],
+  "context": null,
+  "tools": [],
+  "workflows": [],
   "helpers": [],
-  "tests": [],
-  "types": {
-    "A": {
-      "isOutput": false,
-      "properties": {
-        "wow": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    },
-    "Hey": {
-      "isOutput": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      }
-    }
-  }
+  "tests": []
 }
