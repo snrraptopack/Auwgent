@@ -117,13 +117,9 @@ impl Orchestrator {
                         // lines (e.g. "text: Hello:\n    Name: Babyface\n    Age: 22"),
                         // the YAML parser treats the indented lines as sibling keys
                         // instead of multi-line text. Merge extra keys back into `text`.
-                        if entry.key == "response_text" || entry.key == "response_schema" {
+                        if entry.key == "response_text" {
                             if let Value::Object(ref mut map) = json_val {
-                                let main_key = if entry.key == "response_text" {
-                                    "text"
-                                } else {
-                                    "data"
-                                };
+                                let main_key = "text";
                                 // Collect extra keys (anything that isn't the main key)
                                 let extra_keys: Vec<(String, Value)> = map
                                     .iter()

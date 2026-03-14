@@ -16,4 +16,8 @@ agent.onIntent((name, value) => {
     }
 })
 
+const session = await agent.run("when did Ghana gain independence")
+
+console.log(session)
+
 
