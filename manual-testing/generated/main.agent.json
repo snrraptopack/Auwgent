@@ -9,8 +9,8 @@
           "modelName": ""
         },
         "prompt": {
-          "type": "contextRef",
-          "property": "context"
+          "value": "",
+          "type": "literal"
         }
       },
       "namedConfig": []
@@ -54,7 +54,7 @@
   },
   "tools": [
     {
-      "description": "",
+      "description": "simple",
       "params": {
         "id": {
           "type": "string",
@@ -67,7 +67,7 @@
   ],
   "workflows": [
     {
-      "flowName": "hello",
+      "flowName": "one",
       "flowParams": {
         "id": {
           "type": {

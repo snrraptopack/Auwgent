@@ -1,5 +1,5 @@
 import {MainAgentPrompt} from "./prompt"
-import {Gemini} from "./models"
+import {Geminis} from "./models"
 import {Hey} from "./types"
 
 
@@ -7,6 +7,7 @@ prompt Hell{
     """
      {{#if 10 > 10}}
         {{@schema(output)}}
+        {{else}}
      {{/if}}
     """
 }
@@ -39,8 +40,8 @@ agent Test{
     workflow one(id:A):string{
         description: "hello"
         let a = id.wow
+
         return ""
     }
-
 }
 
