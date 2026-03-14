@@ -47,13 +47,46 @@ pub fn generate_intents(ir: &AgentIR) -> String {
         }
     }
 
-    know_items.push("A `response_text` intent sends a plain text reply to the user.".to_string());
+    // Only mention response_text if the agent has no structured output schema
+    let has_output_schema = ir.output.as_ref()
+        .map(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
+        .unwrap_or(false);
+    if !has_output_schema {
+        know_items.push("A `response_text` intent sends a plain text reply to the user.".to_string());
+    }
 
-    know_items.push(
-        "When you receive a `tool_result`, you MUST respond with another intent \
-         (e.g. `response_schema`, `response_text`, or another `tool_call`)."
-            .to_string(),
-    );
+    // Only mention tool_result follow-up if the agent can actually call tools/workflows/helpers
+    let has_callables = !ir.tools.is_empty() || !ir.workflows.is_empty() || !ir.helpers.is_empty();
+    if has_callables {
+        let callable_options: Vec<&str> = [
+            ir.output.as_ref()
+                .filter(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
+                .map(|_| "response_schema"),
+            if !has_output_schema { Some("response_text") } else { None },
+            if !ir.tools.is_empty() { Some("tool_call") } else { None },
+            if !ir.workflows.is_empty() { Some("workflow_call") } else { None },
+            if !ir.helpers.is_empty() { Some("helper_call") } else { None },
+        ]
+        .iter()
+        .filter_map(|o| *o)
+        .collect();
+
+        let options_str = if callable_options.len() == 1 {
+            format!("`{}`", callable_options[0])
+        } else {
+            let last = callable_options.last().unwrap();
+            let rest: Vec<_> = callable_options[..callable_options.len() - 1]
+                .iter()
+                .map(|s| format!("`{}`", s))
+                .collect();
+            format!("{} or `{}`", rest.join(", "), last)
+        };
+
+        know_items.push(format!(
+            "When you receive a `tool_result`, you MUST respond with another intent ({}).",
+            options_str
+        ));
+    }
 
     let know_lines: Vec<String> = know_items
         .iter()
