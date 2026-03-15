@@ -1,7 +1,7 @@
 
 agent Hello{
     default config{
-       model: custom("my-groq-provider", "https://api.groq.com/openai/v1", "llama-3.1-70b-versatile")
+       model: custom("my-groq-provider", "https://api.groq.com/openai/v1", "openai/gpt-oss-120b")
         prompt: "Hello"
     }
 

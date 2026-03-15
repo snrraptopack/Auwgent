@@ -324,31 +324,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._native.on_llm_end(wrap_llm_end)
 
     def _deactivate_listeners(self) -> None:
-        """Replace native listeners with no-ops so the engine can exit cleanly."""
-        async def noop_intent(a: str, b: str) -> Optional[str]:
-            return None
-
-        def noop_partial(a: str, b: str) -> None:
-            pass
-
-        async def noop_sub_start(a: str, b: str) -> Optional[str]:
-            return None
-
-        async def noop_sub_complete(a: str, b: str) -> None:
-            pass
-
-        async def noop_llm_start(a: str, b: str) -> Optional[str]:
-            return None
-
-        async def noop_llm_end(a: str, b: str) -> None:
-            pass
-
-        self._native.on_intent(noop_intent)
-        self._native.on_intent_partial(noop_partial)
-        self._native.on_sub_engine_start(noop_sub_start)
-        self._native.on_sub_engine_complete(noop_sub_complete)
-        self._native.on_llm_start(noop_llm_start)
-        self._native.on_llm_end(noop_llm_end)
+        """Clear native listeners to release references so the engine can exit cleanly."""
+        self._native.clear_listeners()
 
     # ── Execution ─────────────────────────────────────────────────────────
 

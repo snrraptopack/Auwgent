@@ -332,14 +332,8 @@ export class TypedAuwgent<
      * This allows the Node.js event loop to drain and the process to exit.
      */
     private deactivateListeners(): void {
-        // Replace with no-op callbacks — this causes the Rust engine to drop
-        // the old Arc<ThreadsafeFunction>, which releases the libuv ref.
-        this.native.onIntent(() => undefined);
-        this.native.onIntentPartial(() => { });
-        this.native.onSubEngineStart(async () => undefined);
-        this.native.onSubEngineComplete(async () => { });
-        this.native.onLlmStart(async () => undefined);
-        this.native.onLlmEnd(async () => { });
+        // Clear all native listeners to release TSFN references
+        this.native.clearListeners();
     }
 
     /** Run the agentic loop. Returns the exported session state. */

@@ -207,6 +207,22 @@ impl AuwgentEngine {
         self.partial_intent_handler = Some(handler);
     }
 
+    pub fn clear_intent_handlers(&mut self) {
+        self.intent_handler = None;
+        self.partial_intent_handler = None;
+        self.orchestrator.on_intent_partial(Arc::new(|_, _| {})); // Clear orchestrator partials
+    }
+
+    pub fn clear_sub_engine_handlers(&mut self) {
+        self.session_preload_handler = None;
+        self.session_save_handler = None;
+    }
+
+    pub fn clear_llm_handlers(&mut self) {
+        self.llm_start_handler = None;
+        self.llm_end_handler = None;
+    }
+
     // ── Session export/import for host runtime hooks ──────────────────────
 
     /// Export the session state as JSON for the host to persist.
@@ -256,10 +272,12 @@ impl AuwgentEngine {
         }
 
         let model_info = evaluator.evaluate_model(default_config, &mut scope)?;
-        let provider_type = model_info["type"].as_str().unwrap_or("gemini");
-        let provider_id = if provider_type == "custom"{
+        let provider_type = model_info["type"].as_str()
+            .or_else(|| model_info["provider"].as_str())
+            .unwrap_or("gemini");
+        let provider_id = if provider_type == "custom" {
             model_info["id"].as_str().unwrap_or("custom")
-        }else{
+        } else {
             provider_type
         };
         let model_name = model_info["modelName"]

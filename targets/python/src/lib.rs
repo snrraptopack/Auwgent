@@ -181,6 +181,17 @@ impl AuwgentNative {
         })
     }
 
+    pub fn clear_listeners(&self) -> PyResult<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.clear_intent_handlers();
+            eng.clear_sub_engine_handlers();
+            eng.clear_llm_handlers();
+        });
+        Ok(())
+    }
+
     // ==========================================
     // ASYNC AND CALLBACK METHODS
     // ==========================================

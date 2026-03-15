@@ -7,7 +7,7 @@
           "type": "custom",
           "id": "my-groq-provider",
           "url": "https://api.groq.com/openai/v1",
-          "modelName": "llama-3.1-70b-versatile"
+          "modelName": "openai/gpt-oss-120b"
         },
         "prompt": {
           "value": "Hello",

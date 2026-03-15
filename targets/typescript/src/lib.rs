@@ -387,6 +387,18 @@ impl Auwgent {
         Ok(())
     }
 
+    #[napi]
+    pub fn clear_listeners(&self) -> Result<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.clear_intent_handlers();
+            eng.clear_sub_engine_handlers();
+            eng.clear_llm_handlers();
+        });
+        Ok(())
+    }
+
     /// Run the agentic loop with the given input.
     /// Returns the exported session state as JSON.
     ///

@@ -101,6 +101,14 @@ impl Orchestrator {
 
                 let identity = (entry.line, entry.column);
                 if !self.emitted_identities.contains(&identity) {
+                    // Only emit "ready" if the value is NOT an EmptyNode, 
+                    // or if this is the final final pass (meaning it really is empty).
+                    if let super::types::ASTNode::Empty(_) = entry.value {
+                        if !_final_pass {
+                            continue;
+                        }
+                    }
+
                     self.emitted_identities.insert(identity);
                     let build_result = self.ir_builder.build(Some(&entry.value));
 
