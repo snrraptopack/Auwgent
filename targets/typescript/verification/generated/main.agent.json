@@ -12,7 +12,20 @@
           "type": "literal"
         }
       },
-      "namedConfig": []
+      "namedConfig": [
+        {
+          "model": {
+            "type": "custom",
+            "url": "gemini-2.5-flash",
+            "modelName": ""
+          },
+          "prompt": {
+            "value": "Hello",
+            "type": "literal"
+          },
+          "configName": "one"
+        }
+      ]
     }
   ],
   "input": null,

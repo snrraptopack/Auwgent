@@ -6,7 +6,14 @@ source: "../manual-testing/**/*.agent"
 
 # Shared output folder for generated code and compiled IR.
 # Keeping these together avoids broken imports between generated files and IR.
-output: "../manual-testing/generated"
+output: "../targets/typescript/verification/generated"
+
+# default path or point back to manual testing
+# "../manual-testing/generated"
+
+# change the output path to point the location when wanting a real test
+# for ts "../targets/typescript/verification/generated"
+# for py "../targets/python/verification/generated"
 
 # Target languages for `auwgent generate` when --target is not passed.
 targets:

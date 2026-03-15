@@ -1,12 +1,12 @@
-import { createHello, type HelloConfig } from "./main.agent.types"
+import { auwgent, type AuwgentConfig } from "./generated/main.agent.types"
 
-let config: HelloConfig = {
+let config: AuwgentConfig = {
     apiKeys: {
         geminiApiKey: Bun.env.GEMINI_API_KEY || Bun.env.GEMINI || ""
     }
 }
 
-const agent = createHello(config)
+const agent = auwgent(config)
 
 console.log(agent.generatePrompt())
 

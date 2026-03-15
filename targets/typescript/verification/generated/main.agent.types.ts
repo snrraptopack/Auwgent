@@ -5,9 +5,9 @@ import { createAuwgent } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type HelloIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-    name: "Hello";
-    workflows: undefined;
-    helpers: undefined;
+  name: "Hello";
+  workflows: undefined;
+  helpers: undefined;
 };
 const agentIR = _importedIR as unknown as HelloIR;
 export type HelloInput = {
@@ -31,6 +31,8 @@ export type HelloCustomIntents = never;
  */
 export type HelloApiKeys = {
     geminiApiKey: string;
+    openaiApiKey: string;
+    customUrl?: string;  // Optional override for custom provider URL
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
