@@ -422,6 +422,7 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
             Value::Object(obj)
         }
         ModelProvider::Custom {
+            id,
             url,
             model_name,
             config,
@@ -429,6 +430,7 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
         } => {
             let mut obj = Map::new();
             obj.insert("type".into(), json!("custom"));
+            obj.insert("id".into(),json!(id.value));
             obj.insert("url".into(), json!(url.value));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {

@@ -14,8 +14,10 @@ export declare class Auwgent {
   constructor(irJson: string)
   /** Set the Gemini driver with the given API key. */
   setGeminiDriver(apiKey: string): void
-  /** Set the OpenAI driver with the given API key and optional Custom URL. */
-  setOpenaiDriver(apiKey: string, baseUrl?: string | undefined | null): void
+  /** Set the OpenAI driver with the given API key. */
+  setOpenaiDriver(apiKey: string): void
+  /** Set a custom OpenAI-compatible driver with a unique ID. */
+  setCustomDriver(id: string, apiKey: string, baseUrl: string): void
   setContext(context: any): void
   /**
    * Register a tool by name. The callback receives a JSON args object

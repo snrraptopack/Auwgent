@@ -1,4 +1,5 @@
 #![deny(clippy::all)]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -76,6 +77,19 @@ impl AuwgentNative {
                         as std::sync::Arc<dyn ModelDriver>,
                 );
             }
+        });
+        Ok(())
+    }
+
+    pub fn set_custom_driver(&self, id: String, api_key: String, base_url: String) -> PyResult<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.register_driver(
+                &id,
+                std::sync::Arc::new(OpenAIDriver::new(api_key, Some(base_url)))
+                    as std::sync::Arc<dyn ModelDriver>,
+            );
         });
         Ok(())
     }
@@ -178,7 +192,7 @@ impl AuwgentNative {
 
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut eng = engine.lock().await;
-            let res = eng
+            let _res = eng
                 .run(input_val)
                 .await
                 .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;

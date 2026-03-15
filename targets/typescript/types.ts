@@ -96,6 +96,26 @@ type ExtractHelperProviders<T> = T extends readonly (infer H)[]
 type CollectProviders<IR extends AgentIRShape> =
     ExtractAllProviders<IR['modelConfig']> | ExtractHelperProviders<IR['helpers']>;
 
+/** Extract custom ID from a single model config */
+type ExtractCustomId<T> = T extends { model?: { type: 'custom'; id: infer I } }
+    ? I extends string ? `${I}ApiKey` : never
+    : never;
+
+/** Extract all custom IDs from an array of model config entries */
+type ExtractAllCustomIds<T> = T extends readonly (infer E)[]
+    ? (E extends { defaultConfig?: infer D } ? ExtractCustomId<D> : never)
+    | (E extends { namedConfig?: readonly (infer NC)[] } ? ExtractCustomId<NC> : never)
+    : never;
+
+/** Extract custom IDs from helpers */
+type ExtractHelperCustomIds<T> = T extends readonly (infer H)[]
+    ? H extends { modelConfig?: infer MC } ? ExtractAllCustomIds<MC> : never
+    : never;
+
+/** All custom provider IDs used across the entire IR */
+type CollectCustomIds<IR extends AgentIRShape> =
+    ExtractAllCustomIds<IR['modelConfig']> | ExtractHelperCustomIds<IR['helpers']>;
+
 /** Pick only the key fields needed for the providers the IR actually uses */
 type RequiredKeyFields<IR extends AgentIRShape> =
     CollectProviders<IR> extends infer P
@@ -107,10 +127,8 @@ type RequiredKeyFields<IR extends AgentIRShape> =
 /** Dynamic ApiKeys – only demands the keys the IR needs */
 export type ApiKeys<IR extends AgentIRShape = AgentIRShape> =
     string extends CollectProviders<IR>
-    ? { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }  // fallback when IR is not const
-    : [RequiredKeyFields<IR>] extends [never]
-    ? { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }  // no providers found
-    : { [K in RequiredKeyFields<IR>]: string } & (Extract<CollectProviders<IR>, 'custom'> extends never ? {} : { customUrl?: string });
+    ? { [key: string]: string | undefined } & { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }
+    : { [K in RequiredKeyFields<IR>]: string } & { [K in CollectCustomIds<IR>]: string };
 
 // ── Intent Types ─────────────────────────────────────────────────────────
 

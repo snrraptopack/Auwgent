@@ -84,12 +84,57 @@ export class TypedAuwgent<
         }
 
         if (apiKeys?.openaiApiKey) {
-            this.native.setOpenaiDriver(apiKeys.openaiApiKey, apiKeys.customUrl);
+            this.native.setOpenaiDriver(apiKeys.openaiApiKey);
         }
+
+        // Register custom drivers from IR
+        this.registerCustomDrivers(apiKeys);
 
         // Register all tools — guaranteed complete by the type system
         for (const [name, handler] of Object.entries(config.tools)) {
             this.native.registerTool(name, handler as (args: any) => Promise<any>);
+        }
+    }
+
+    private registerCustomDrivers(apiKeys: Record<string, string | undefined>) {
+        const collectFromEntry = (entry: any) => {
+            if (entry.defaultConfig?.model?.type === 'custom') {
+                const { id, url } = entry.defaultConfig.model;
+                if (id && url) {
+                    const key = apiKeys[`${id.replace(/-/g, '_')}ApiKey`];
+                    if (key) {
+                        this.native.setCustomDriver(id, key, url);
+                    }
+                }
+            }
+            if (entry.namedConfig) {
+                for (const named of entry.namedConfig) {
+                    if (named.model?.type === 'custom') {
+                        const { id, url } = named.model;
+                        if (id && url) {
+                            const key = apiKeys[`${id.replace(/-/g, '_')}ApiKey`];
+                            if (key) {
+                                this.native.setCustomDriver(id, key, url);
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        if (this.ir.modelConfig) {
+            for (const entry of this.ir.modelConfig) {
+                collectFromEntry(entry);
+            }
+        }
+        if (this.ir.helpers) {
+            for (const helper of this.ir.helpers) {
+                if (helper.modelConfig) {
+                    for (const entry of helper.modelConfig) {
+                        collectFromEntry(entry);
+                    }
+                }
+            }
         }
     }
 

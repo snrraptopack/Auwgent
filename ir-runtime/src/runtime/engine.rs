@@ -257,6 +257,11 @@ impl AuwgentEngine {
 
         let model_info = evaluator.evaluate_model(default_config, &mut scope)?;
         let provider_type = model_info["type"].as_str().unwrap_or("gemini");
+        let provider_id = if provider_type == "custom"{
+            model_info["id"].as_str().unwrap_or("custom")
+        }else{
+            provider_type
+        };
         let model_name = model_info["modelName"]
             .as_str()
             .unwrap_or("gemini-2.0-flash");
@@ -326,7 +331,7 @@ impl AuwgentEngine {
             let mut stream = {
                 let driver = self
                     .drivers
-                    .get(provider_type)
+                    .get(provider_id)
                     .ok_or_else(|| AuwgentError::NoDriver)?;
                 driver
                     .stream_generate(model_name, &messages, config_params.clone())

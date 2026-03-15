@@ -224,6 +224,7 @@ pub enum ModelProvider {
         span: Span,
     },
     Custom {
+        id: Spanned<String>,
         url: Spanned<String>,
         model_name: Spanned<String>,
         config: Option<ObjectLiteral>,

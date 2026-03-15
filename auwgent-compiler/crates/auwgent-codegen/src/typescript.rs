@@ -1,6 +1,7 @@
 use crate::common::{
-    array_at, collect_handoff_helpers, collect_required_providers, collect_transferred_helpers,
-    collect_workflow_tools, join_sections, merge_helpers, merge_tool_defs, object_at, string_at,
+    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_required_providers,
+    collect_transferred_helpers, collect_workflow_tools, join_sections, merge_helpers,
+    merge_tool_defs, object_at, string_at,
 };
 use serde_json::{Map, Value};
 
@@ -15,6 +16,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         .map(|context| !context.is_empty())
         .unwrap_or(false);
     let required_providers = collect_required_providers(ir);
+    let custom_provider_ids = collect_custom_provider_ids(ir);
     let output_helpers = merge_helpers(collect_transferred_helpers(ir), collect_handoff_helpers(ir));
 
     let workflow_types = match ir.get("workflows").and_then(Value::as_array) {
@@ -100,7 +102,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     ));
 
     if !required_providers.is_empty() {
-        sections.push(generate_api_keys(agent_name, &required_providers));
+        sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
     }
 
     sections.push(generate_agent_factory(
@@ -254,16 +256,25 @@ fn generate_tools_interface(agent_name: &str, tools: &[Value]) -> String {
     format!("export type {agent_name}Tools = {{\n{methods}\n}}\n")
 }
 
-fn generate_api_keys(agent_name: &str, providers: &std::collections::BTreeSet<String>) -> String {
+fn generate_api_keys(
+    agent_name: &str,
+    providers: &std::collections::BTreeSet<String>,
+    custom_ids: &std::collections::BTreeSet<String>,
+) -> String {
     let mut keys = Vec::new();
+    
     if providers.contains("gemini") {
         keys.push("    geminiApiKey: string;".to_string());
     }
-    if providers.contains("openai") || providers.contains("custom") {
+    
+    if providers.contains("openai") {
         keys.push("    openaiApiKey: string;".to_string());
     }
-    if providers.contains("custom") {
-        keys.push("    customUrl?: string;  // Optional override for custom provider URL".to_string());
+    
+    // Generate individual API key fields for each custom provider (URL is in the IR, not needed here)
+    for custom_id in custom_ids {
+        let field_name = format!("{}ApiKey", custom_id.replace("-", "_"));
+        keys.push(format!("    {}: string;  // API key for custom provider '{}'", field_name, custom_id));
     }
 
     format!(
@@ -476,7 +487,7 @@ mod tests {
         let ir = json!({
             "name": "Test",
             "modelConfig": [{
-                "defaultConfig": { "model": { "type": "custom" }, "prompt": { "type": "literal", "value": "Hello" } },
+                "defaultConfig": { "model": { "type": "custom", "id": "my-groq" }, "prompt": { "type": "literal", "value": "Hello" } },
                 "namedConfig": []
             }],
             "input": { "text": { "type": "string", "optional": false } },
@@ -489,7 +500,7 @@ mod tests {
 
         let output = generate(&ir, "main");
         assert!(output.contains("./main.agent.json"));
-        assert!(output.contains("openaiApiKey: string;"));
-        assert!(output.contains("customUrl?: string;"));
+        assert!(output.contains("my_groqApiKey: string;"));
+        assert!(!output.contains("customUrl?: string;"));
     }
 }

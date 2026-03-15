@@ -8,21 +8,22 @@ object-style intent handlers, and proper session lifecycle management.
 
 import json
 import sys
+import typing
 from typing import (
     Any, Callable, Awaitable, Dict, List, Optional,
     TypeVar, Generic, Protocol, Union, TypedDict,
+    cast
 )
 
 # NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10
 try:
-    from typing import NotRequired
-except ImportError:
-    from typing_extensions import NotRequired
-
-try:
     from . import auwgent_sdk
-except ImportError:
-    import auwgent_sdk
+except (ImportError, ValueError):
+    try:
+        import auwgent_sdk
+    except ImportError:
+        # Fallback for static analysis in some environments
+        auwgent_sdk = Any 
 
 # ── Type Variables ────────────────────────────────────────────────────────
 AgentIR = TypeVar("AgentIR")
@@ -62,7 +63,7 @@ class MiddlewareContext(TypedDict, total=False):
 
 class Middleware(Protocol):
     name: str
-    target: NotRequired[Union[str, List[str]]]
+    target: Optional[Union[str, List[str]]] = None
 
     async def onRunStart(self, session: Dict[str, Any], ctx: MiddlewareContext) -> Dict[str, Any]: ...
     async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]: ...
@@ -104,6 +105,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     def set_openai_driver(self, api_key: str, base_url: Optional[str] = None) -> None:
         self._native.set_openai_driver(api_key, base_url)
+
+    def set_custom_driver(self, id: str, api_key: str, base_url: str) -> None:
+        self._native.set_custom_driver(id, api_key, base_url)
 
     def set_context(self, context: Dict[str, Any]) -> None:
         self._native.set_context(json.dumps(context))
@@ -257,9 +261,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._native.on_intent(wrap_intent)
 
         # ── 2. Partial Intent Interceptor ──
+        partial_handler = self._stored_partial_handler
         def wrap_partial(name: str, value_json_str: str) -> None:
-            if self._stored_partial_handler:
-                self._stored_partial_handler(name, json.loads(value_json_str))
+            if partial_handler is not None:
+                partial_handler(name, json.loads(value_json_str))
         self._native.on_intent_partial(wrap_partial)
 
         # ── 3. SubEngine Hooks ──
@@ -380,7 +385,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 if hasattr(m, "onRunComplete"):
                     await m.onRunComplete(current_session, ctx)
 
-            return current_session
+            return cast(SessionState, current_session)
 
         except Exception as e:
             handled = False
@@ -392,7 +397,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                         break
             if not handled:
                 raise
-            return current_session
+            return cast(SessionState, current_session)
         finally:
             self._deactivate_listeners()
 
@@ -400,7 +405,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     def export_session(self) -> SessionState:
         """Export session state for persistence."""
-        return json.loads(self._native.export_session())
+        return cast(SessionState, json.loads(self._native.export_session()))
 
     def import_session(self, session: Any) -> None:
         """Import a previously exported session state."""
@@ -466,14 +471,14 @@ def create_auwgent(ir_dict: Dict[str, Any], config: Any) -> TypedAuwgent:
         if isinstance(tools, dict):
             for tool_name, tool_func in tools.items():
                 if callable(tool_func):
-                    agent.register_tool(tool_name, tool_func)
+                    agent.register_tool(tool_name, cast(Callable[..., Awaitable[Any]], tool_func))
         else:
             # Class-style: iterate tool names from IR and bind methods
             for tool_name in agent.get_tool_names():
                 if hasattr(tools, tool_name):
                     tool_func = getattr(tools, tool_name)
                     if callable(tool_func):
-                        agent.register_tool(tool_name, tool_func)
+                        agent.register_tool(tool_name, cast(Callable[..., Awaitable[Any]], tool_func))
 
     # Context
     context = config.get("context") if isinstance(config, dict) else getattr(config, "context", None)
@@ -486,9 +491,52 @@ def create_auwgent(ir_dict: Dict[str, Any], config: Any) -> TypedAuwgent:
         if "geminiApiKey" in api_keys:
             agent.set_gemini_driver(api_keys["geminiApiKey"])
         if "openaiApiKey" in api_keys:
-            agent.set_openai_driver(
-                api_keys["openaiApiKey"],
-                api_keys.get("customUrl"),
-            )
+            agent.set_openai_driver(api_keys["openaiApiKey"])
+        
+        # Register custom drivers from IR
+        _register_custom_drivers(agent, api_keys)
 
     return agent
+
+def _register_custom_drivers(agent: TypedAuwgent, api_keys: Dict[str, str]):
+    ir = agent.ir
+    if not isinstance(api_keys, dict) or not isinstance(ir, dict):
+        return
+
+    def collect_from_entry(entry: Dict[str, Any]):
+        default_config = entry.get("defaultConfig")
+        if default_config and isinstance(default_config, dict):
+            model = default_config.get("model")
+            if model and isinstance(model, dict) and model.get("type") == "custom":
+                id = model.get("id")
+                url = model.get("url")
+                if id and isinstance(id, str) and url:
+                    key = api_keys.get(f"{id.replace('-', '_')}ApiKey")
+                    if key:
+                        agent.set_custom_driver(id, key, url)
+        
+        named_configs = entry.get("namedConfig")
+        if named_configs and isinstance(named_configs, list):
+            for named in named_configs:
+                if isinstance(named, dict):
+                    model = named.get("model")
+                    if model and isinstance(model, dict) and model.get("type") == "custom":
+                        id = model.get("id")
+                        url = model.get("url")
+                        if id and isinstance(id, str) and url:
+                            key = api_keys.get(f"{id.replace('-', '_')}ApiKey")
+                            if key:
+                                agent.set_custom_driver(id, key, url)
+
+    model_config = ir.get("modelConfig")
+    if model_config:
+        for entry in model_config:
+            collect_from_entry(entry)
+    
+    helpers = ir.get("helpers")
+    if helpers:
+        for helper in helpers:
+            helper_config = helper.get("modelConfig")
+            if helper_config:
+                for entry in helper_config:
+                    collect_from_entry(entry)

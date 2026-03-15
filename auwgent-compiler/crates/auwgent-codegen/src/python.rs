@@ -1,6 +1,6 @@
 use crate::common::{
-    array_at, collect_required_providers, collect_transferred_helpers, collect_workflow_tools,
-    join_sections, merge_tool_defs, object_at, string_at,
+    array_at, collect_custom_provider_ids, collect_required_providers, collect_transferred_helpers,
+    collect_workflow_tools, join_sections, merge_tool_defs, object_at, string_at,
 };
 use serde_json::{Map, Value};
 
@@ -10,6 +10,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     let all_tools = merge_tool_defs(array_at(ir, &["tools"]), workflow_tools);
     let transferred_helpers = collect_transferred_helpers(ir);
     let required_providers = collect_required_providers(ir);
+    let custom_provider_ids = collect_custom_provider_ids(ir);
 
     let imports = [
         "import os",
@@ -53,7 +54,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     sections.push(generate_tools_protocol(agent_name, &all_tools));
 
     if !required_providers.is_empty() {
-        sections.push(generate_api_keys(agent_name, &required_providers));
+        sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
     }
 
     sections.push(generate_factory_function(
@@ -179,16 +180,23 @@ fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
     lines.join("\n") + "\n"
 }
 
-fn generate_api_keys(agent_name: &str, providers: &std::collections::BTreeSet<String>) -> String {
+fn generate_api_keys(
+    agent_name: &str,
+    providers: &std::collections::BTreeSet<String>,
+    custom_ids: &std::collections::BTreeSet<String>,
+) -> String {
     let mut keys = Vec::new();
     if providers.contains("gemini") {
         keys.push("    geminiApiKey: str".to_string());
     }
-    if providers.contains("openai") || providers.contains("custom") {
+    if providers.contains("openai") {
         keys.push("    openaiApiKey: str".to_string());
     }
-    if providers.contains("custom") {
-        keys.push("    customUrl: NotRequired[str]  # type: ignore".to_string());
+    
+    // Generate individual API key fields for each custom provider
+    for custom_id in custom_ids {
+        let field_name = format!("{}ApiKey", custom_id.replace("-", "_"));
+        keys.push(format!("    {}: str  # API key for custom provider '{}'", field_name, custom_id));
     }
 
     format!("class {agent_name}ApiKeys(TypedDict, total=False):\n{}\n", keys.join("\n"))
@@ -319,7 +327,7 @@ mod tests {
         let ir = json!({
             "name": "Test",
             "modelConfig": [{
-                "defaultConfig": { "model": { "type": "custom" }, "prompt": { "type": "literal", "value": "Hello" } },
+                "defaultConfig": { "model": { "type": "custom", "id": "my-groq" }, "prompt": { "type": "literal", "value": "Hello" } },
                 "namedConfig": []
             }],
             "input": null,
@@ -331,8 +339,8 @@ mod tests {
         });
 
         let output = generate(&ir, "main");
-        assert!(output.contains("openaiApiKey: str"));
-        assert!(output.contains("customUrl: NotRequired[str]"));
+        assert!(output.contains("my_groqApiKey: str"));
+        assert!(!output.contains("customUrl: NotRequired[str]"));
         assert!(output.contains("main.agent.json"));
     }
 }

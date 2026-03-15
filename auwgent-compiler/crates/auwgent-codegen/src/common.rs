@@ -67,6 +67,14 @@ pub fn collect_required_providers(ir: &Value) -> BTreeSet<String> {
     providers
 }
 
+pub fn collect_custom_provider_ids(ir: &Value) -> BTreeSet<String> {
+    let mut custom_ids = collect_custom_ids_from_model_config(ir.get("modelConfig"));
+    for helper in array_at(ir, &["helpers"]) {
+        custom_ids.extend(collect_custom_ids_from_model_config(helper.get("modelConfig")));
+    }
+    custom_ids
+}
+
 fn collect_providers_from_model_config(model_config: Option<&Value>) -> BTreeSet<String> {
     let mut providers = BTreeSet::new();
     let Some(configs) = model_config.and_then(Value::as_array) else {
@@ -88,6 +96,35 @@ fn collect_providers_from_model_config(model_config: Option<&Value>) -> BTreeSet
     }
 
     providers
+}
+
+fn collect_custom_ids_from_model_config(model_config: Option<&Value>) -> BTreeSet<String> {
+    let mut custom_ids = BTreeSet::new();
+    let Some(configs) = model_config.and_then(Value::as_array) else {
+        return custom_ids;
+    };
+
+    for config in configs {
+        // Check default config
+        if string_at(config, &["defaultConfig", "model", "type"]) == Some("custom") {
+            if let Some(id) = string_at(config, &["defaultConfig", "model", "id"]) {
+                custom_ids.insert(id.to_string());
+            }
+        }
+
+        // Check named configs
+        if let Some(named_configs) = config.get("namedConfig").and_then(Value::as_array) {
+            for named in named_configs {
+                if string_at(named, &["model", "type"]) == Some("custom") {
+                    if let Some(id) = string_at(named, &["model", "id"]) {
+                        custom_ids.insert(id.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    custom_ids
 }
 
 pub fn collect_transferred_helpers(ir: &Value) -> Vec<Value> {

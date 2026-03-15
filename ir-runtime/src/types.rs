@@ -117,6 +117,7 @@ pub enum ModelProvider {
         config: Option<Box<Expression>>,
     },
     Custom {
+        id:String,
         url: String,
         #[serde(rename = "modelName")]
         model_name: String,

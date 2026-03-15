@@ -69,24 +69,32 @@ impl Auwgent {
         Ok(())
     }
 
-    /// Set the OpenAI driver with the given API key and optional Custom URL.
+    /// Set the OpenAI driver with the given API key.
     #[napi]
-    pub fn set_openai_driver(&self, api_key: String, base_url: Option<String>) -> Result<()> {
+    pub fn set_openai_driver(&self, api_key: String) -> Result<()> {
         let engine = self.engine.clone();
         self.rt.block_on(async {
             let mut eng = engine.lock().await;
             eng.register_driver(
                 "openai",
-                std::sync::Arc::new(OpenAIDriver::new(api_key.clone(), None))
+                std::sync::Arc::new(OpenAIDriver::new(api_key, None))
                     as std::sync::Arc<dyn ModelDriver>,
             );
-            if let Some(url) = base_url {
-                eng.register_driver(
-                    "custom",
-                    std::sync::Arc::new(OpenAIDriver::new(api_key, Some(url)))
-                        as std::sync::Arc<dyn ModelDriver>,
-                );
-            }
+        });
+        Ok(())
+    }
+
+    /// Set a custom OpenAI-compatible driver with a unique ID.
+    #[napi]
+    pub fn set_custom_driver(&self, id: String, api_key: String, base_url: String) -> Result<()> {
+        let engine = self.engine.clone();
+        self.rt.block_on(async {
+            let mut eng = engine.lock().await;
+            eng.register_driver(
+                &id,
+                std::sync::Arc::new(OpenAIDriver::new(api_key, Some(base_url)))
+                    as std::sync::Arc<dyn ModelDriver>,
+            );
         });
         Ok(())
     }

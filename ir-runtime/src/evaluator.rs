@@ -429,12 +429,14 @@ impl<'a> Evaluator<'a> {
                 Ok(Value::Object(res))
             }
             crate::types::ModelProvider::Custom {
+                id,
                 url,
                 model_name,
                 config,
             } => {
                 let mut res = serde_json::Map::new();
                 res.insert("provider".to_string(), Value::String("custom".to_string()));
+                res.insert("id".to_string(), Value::String(id.clone()));
                 res.insert("url".to_string(), Value::String(url.clone()));
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 

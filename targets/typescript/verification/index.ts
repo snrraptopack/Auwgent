@@ -1,23 +1,34 @@
-import { auwgent, type AuwgentConfig } from "./generated/main.agent.types"
+import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated/main.agent.types"
+
+
+const logger: AuwgentMiddleware = {
+    name: "logger",
+    onRunStart(session, ctx) {
+        console.log("start here")
+        return session
+    },
+
+    onRunComplete(finalSession, ctx) {
+        console.log(JSON.stringify(finalSession.turns.at(-1), null, 2))
+    },
+}
+
 
 let config: AuwgentConfig = {
     apiKeys: {
-        geminiApiKey: Bun.env.GEMINI_API_KEY || Bun.env.GEMINI || ""
-    }
+        my_groq_providerApiKey: Bun.env.GEMINI_API_KEY || Bun.env.GEMINI || ""
+    },
+    middleware: [logger]
 }
 
 const agent = auwgent(config)
 
-console.log(agent.generatePrompt())
-
-agent.onIntent((name, value) => {
+agent.onIntentPartial((name, value) => {
     if (name === "response_schema") {
-        console.log(value)
+        process.stdout.write(value.response)
     }
 })
 
-const session = await agent.run("when did Ghana gain independence")
-
-console.log(session)
+const session = await agent.run("when did Ghana gain independence and tell me a story about it")
 
 

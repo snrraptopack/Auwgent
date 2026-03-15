@@ -42,19 +42,22 @@ pub(crate) fn model_provider_parser(
         });
 
     let custom = tok(TokenKind::Custom)
-        .ignore_then(
-            string_lit()
-                .then_ignore(tok(TokenKind::Comma))
-                .then(string_lit())
-                .then(tok(TokenKind::Comma).ignore_then(obj_arg).or_not())
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
-        )
-        .map_with_span(|((url, model_name), config), span| ModelProvider::Custom {
-            url,
-            model_name,
-            config,
-            span: s(span),
-        });
+    .ignore_then(
+        string_lit()  // id
+            .then_ignore(tok(TokenKind::Comma))
+            .then(string_lit())  // url
+            .then_ignore(tok(TokenKind::Comma))
+            .then(string_lit())  // model_name
+            .then(tok(TokenKind::Comma).ignore_then(obj_arg).or_not())
+            .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    )
+    .map_with_span(|(((id, url), model_name), config), span| ModelProvider::Custom {
+        id,
+        url,
+        model_name,
+        config,
+        span: s(span),
+    });
 
     choice((gemini, openai, custom))
 }
