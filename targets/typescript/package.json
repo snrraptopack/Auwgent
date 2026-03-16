@@ -2,7 +2,10 @@
   "name": "@snrraptopack/auwgent-sdk",
   "version": "0.1.0-alpha.6",
   "description": "Auwgent IR Runtime — Rust-powered agent engine with type-safe TypeScript bindings",
-  "repository": "https://github.com/snrraptopack/Auwgent",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snrraptopack/Auwgent.git"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -34,7 +37,6 @@
     "@types/bun": "latest"
   },
   "license": "MIT",
-  "private": true,
   "peerDependencies": {
     "typescript": "^5"
   }
