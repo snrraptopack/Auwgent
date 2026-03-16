@@ -74,15 +74,66 @@ jobs:
         working-directory: targets/typescript
         run: bun install
 
-      - name: Download Artifacts
+      - name: Download all bindings
         uses: actions/download-artifact@v4
         with:
-          path: targets/typescript
+          path: artifacts
           pattern: bindings-*
           merge-multiple: true
 
-      - name: Publish
+      - name: Publish Architecture Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#ts-v}"
+          
+          # Define architectures for SDK
+          # [target]="npm-suffix:os:cpu:binary-name"
+          declare -A ARCHS
+          ARCHS["x86_64-pc-windows-msvc"]="win32-x64-msvc:win32:x64:auwgent-runtime.win32-x64-msvc.node"
+          ARCHS["x86_64-unknown-linux-gnu"]="linux-x64-gnu:linux:x64:auwgent-runtime.linux-x64-gnu.node"
+          ARCHS["x86_64-apple-darwin"]="darwin-x64:darwin:x64:auwgent-runtime.darwin-x64.node"
+          ARCHS["aarch64-apple-darwin"]="darwin-arm64:darwin:arm64:auwgent-runtime.darwin-arm64.node"
+
+          for TARGET in "${!ARCHS[@]}"; do
+            IFS=':' read -r NPM_ARCH OS CPU BIN_NAME <<< "${ARCHS[$TARGET]}"
+            PKG_NAME="@snrraptopack/auwgent-sdk-$NPM_ARCH"
+            DIR="publish-sdk-$NPM_ARCH"
+            
+            echo "Preparing $PKG_NAME..."
+            mkdir -p "$DIR"
+            
+            cp "artifacts/$BIN_NAME" "$DIR/$BIN_NAME"
+            
+            # Create package.json for the native sub-package
+            cat > "$DIR/package.json" <<EOF
+          {
+            "name": "$PKG_NAME",
+            "version": "$VERSION",
+            "os": ["$OS"],
+            "cpu": ["$CPU"],
+            "main": "$BIN_NAME",
+            "files": ["$BIN_NAME"]
+          }
+          EOF
+
+            echo "Publishing $PKG_NAME..."
+            cd "$DIR"
+            npm publish --access public || echo "Already published?"
+            cd ..
+          done
+
+      - name: Publish Main SDK
         working-directory: targets/typescript
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+        run: |
+          # Update version to match tag
+          VERSION="${GITHUB_REF_NAME#ts-v}"
+          npm version "$VERSION" --no-git-tag-version
+          
+          # Publish without local binaries (they are downloaded in the build step,
+          # so we should make sure we're not publishing them here if they exist)
+          rm -f *.node
+          
+          npm publish --access public

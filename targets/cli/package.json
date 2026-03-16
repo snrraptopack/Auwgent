@@ -1,12 +1,10 @@
 {
   "name": "@snrraptopack/auwgent-cli",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0-alpha.6",
   "description": "Auwgent CLI compiler and LSP for generating agents",
   "files": [
     "bin/**/*",
     "assets/**/*",
-    "install.js",
-    "verify-release-assets.js",
     "README.md"
   ],
   "bin": {
@@ -14,9 +12,14 @@
     "auwgent-lsp": "bin/auwgent-lsp.js"
   },
   "scripts": {
-    "postinstall": "node install.js",
     "verify:release-assets": "node verify-release-assets.js",
     "verify:local-package": "node verify-local-package.js"
+  },
+  "optionalDependencies": {
+    "@snrraptopack/auwgent-cli-win32-x64-msvc": "0.1.0-alpha.6",
+    "@snrraptopack/auwgent-cli-darwin-x64": "0.1.0-alpha.6",
+    "@snrraptopack/auwgent-cli-darwin-arm64": "0.1.0-alpha.6",
+    "@snrraptopack/auwgent-cli-linux-x64-gnu": "0.1.0-alpha.6"
   },
   "repository": {
     "type": "git",
