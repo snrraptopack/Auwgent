@@ -140,11 +140,5 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Update version to match tag
-          VERSION="${GITHUB_REF_NAME#v}"
-          npm version "$VERSION" --no-git-tag-version
-          
-          # Optional: Update optionalDependencies versions to match
-          # (Simplified for now, assuming they follow the same version)
-          
+          # Version is already set in package.json before the tag is pushed.
           npm publish --access public

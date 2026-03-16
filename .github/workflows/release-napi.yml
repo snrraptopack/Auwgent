@@ -128,12 +128,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Update version to match tag
-          VERSION="${GITHUB_REF_NAME#ts-v}"
-          npm version "$VERSION" --no-git-tag-version
-          
-          # Publish without local binaries (they are downloaded in the build step,
-          # so we should make sure we're not publishing them here if they exist)
+          # Version is already set in package.json before the tag is pushed.
+          # Just remove any stale local .node files to keep the package slim,
+          # then publish.
           rm -f *.node
-          
           npm publish --access public
