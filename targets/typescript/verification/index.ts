@@ -10,10 +10,17 @@ const logger: AuwgentMiddleware = {
 
     onRunComplete(finalSession, ctx) {
 
-        console.log("final session",finalSession)
+        console.log("final session", finalSession)
     },
 
-    onLLMEnd(session,ctx){
+    onIntent(...args) {
+
+        if (args[0] === "response_schema") {
+            console.log(args[1].response)
+        }
+    },
+
+    onLLMEnd(session, ctx) {
         console.log(ctx.rawBlock)
     },
 
@@ -26,19 +33,13 @@ const logger: AuwgentMiddleware = {
 
 let config: AuwgentConfig = {
     apiKeys: {
-        my_groq_apiApiKey: Bun.env.GROQ_API_KEY || ""
+        my_kimi_apiApiKey: Bun.env.KIMI_API_KEY || ""
     },
     middleware: [logger]
 }
 
 const agent = auwgent(config)
 
-let lastLength = 0
-agent.onIntent((name, value) => {
-    if (name === "response_schema") {
-        console.log("final value",value)
-    }
-})
 
 const session = await agent.run("when did Ghana gain independence and tell me a story about it")
 

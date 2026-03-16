@@ -5,9 +5,9 @@
       "defaultConfig": {
         "model": {
           "type": "custom",
-          "id": "my-groq-api",
-          "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "openai/gpt-oss-120b"
+          "id": "my-kimi-api",
+          "url": "https://api.moonshot.ai/v1/chat/completions",
+          "modelName": "kimi-k2-0905-preview"
         },
         "prompt": {
           "value": "Hello",

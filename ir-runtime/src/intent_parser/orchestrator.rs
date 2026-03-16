@@ -223,6 +223,19 @@ impl Orchestrator {
         // Shows live typing progress to the UI while the intent is still being built.
         let stack = self.parser.stack();
         let partial_token = self.parser.get_partial_token();
+
+        // ── BUG FIX: Emit partial for the top frame if it's an intent ──
+        // The original logic only checked parents (i-1), missing the very field being typed.
+        if let Some(top_frame) = stack.last() {
+            if let Some(key) = &top_frame.pending_key {
+                if self.intent_keys.contains(key) && !partial_token.is_empty() {
+                    if let Some(handler) = &self.partial_handler {
+                        handler(key.clone(), Value::String(partial_token.clone()));
+                    }
+                }
+            }
+        }
+
         for i in 1..stack.len() {
             let parent = &stack[i - 1];
             if let Some(key) = &parent.pending_key {

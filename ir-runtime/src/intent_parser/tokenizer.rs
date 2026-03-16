@@ -756,6 +756,7 @@ impl Tokenizer {
     }
 
     if incomplete {
+        self.state.partial_token = lines.join("\n");
         self.state.pos = start_pos;
         self.state.line = start_line;
         self.state.column = start_col;

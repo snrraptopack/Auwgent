@@ -1,7 +1,7 @@
 
 agent Hello{
     default config{
-       model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
+       model: custom("my-kimi-api", "https://api.moonshot.ai/v1/chat/completions", "kimi-k2-0905-preview")
         prompt: "Hello"
     }
 
