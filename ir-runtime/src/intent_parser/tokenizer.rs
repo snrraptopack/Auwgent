@@ -161,22 +161,48 @@ impl Tokenizer {
     // ─────────────────────────────────────────────────────────────────────────
 
     fn tokenize_line_start(&mut self) -> Option<Token> {
-        let indent = self.consume_indent();
-        let indent_size = self.options.indent_size.unwrap_or(2);
-        let indent_level = indent / indent_size;
-        let current_level = *self.state.indent_stack.last().unwrap_or(&0);
+        let start_pos = self.state.pos;
+        let start_line = self.state.line;
+        let start_col = self.state.column;
+        let start_at_line_start = self.state.at_line_start;
 
-        self.state.at_line_start = false;
+        let indent = match self.consume_indent() {
+            Some(i) => i,
+            None => {
+                // Incomplete indentation — rewind and wait for more data
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                return None;
+            }
+        };
 
         // Check for blank line or comment-only line
         let peek = self.peek_char(0);
         if peek == '\n' || peek == '\r' {
+            self.state.at_line_start = false;
             return Some(self.tokenize_newline());
         }
 
         if peek == '#' {
             return Some(self.tokenize_comment());
         }
+
+        if peek == '\0' && !self.finishing {
+            // Reached end of chunk exactly after spaces — wait for more to see if it's a blank line or content
+            self.state.pos = start_pos;
+            self.state.line = start_line;
+            self.state.column = start_col;
+            self.state.at_line_start = start_at_line_start;
+            return None;
+        }
+
+        let indent_size = self.options.indent_size.unwrap_or(2);
+        let indent_level = indent / indent_size;
+        let current_level = *self.state.indent_stack.last().unwrap_or(&0);
+
+        self.state.at_line_start = false;
 
         // Handle indent level changes
         if indent_level > current_level {
@@ -217,6 +243,26 @@ impl Tokenizer {
         let char = self.peek_char(0);
         if char == '\0' {
             return None;
+        }
+
+        // ── 1. Skip Markdown Fences ──
+        // If we see ``` at the start of content (after indent), skip it.
+        // This makes the streaming parser robust to noisy LLM outputs.
+        if char == '`' && self.peek_char(1) == '`' && self.peek_char(2) == '`' {
+            // Skip the fence and anything until the newline
+            self.advance(); // `
+            self.advance(); // `
+            self.advance(); // `
+            while self.state.pos < self.input.len() {
+                let c = self.peek_char(0);
+                self.advance();
+                if c == '\n' || c == '\r' {
+                    break;
+                }
+            }
+            // After skipping, we are likely at a newline or start of next line.
+            // Just return the next token by recursing or returning a newline.
+            return Some(self.tokenize_newline());
         }
 
         // Newline
@@ -467,13 +513,13 @@ impl Tokenizer {
         self.state.column = 1;
         self.state.at_line_start = true;
 
+        // Reset partial indentation state since we're starting a new line
         token
     }
 
-    fn consume_indent(&mut self) -> usize {
+    fn consume_indent(&mut self) -> Option<usize> {
         let mut spaces = 0;
         let indent_size = self.options.indent_size.unwrap_or(2);
-        // let allow_tabs = self.options.allow_tabs.unwrap_or(false); // Unused for now
 
         while self.state.pos < self.input.len() {
             let c = self.peek_char(0);
@@ -483,11 +529,24 @@ impl Tokenizer {
             } else if c == '\t' {
                 spaces += indent_size;
                 self.advance();
+            } else if c == '\r' || c == '\n' {
+                // For a blank line, we don't consume the spaces if we want them for the next content line,
+                // BUT actually YAML doesn't care about spaces on blank lines.
+                // However, we MUST NOT consume the newline here.
+                return Some(spaces);
             } else {
-                break;
+                // Found a non-space char (comment or content)
+                return Some(spaces);
             }
         }
-        spaces
+
+        // We reached the end of the input without seeing a non-space character
+        if self.finishing {
+            Some(spaces)
+        } else {
+            // Incomplete indent — more data could arrive with more spaces
+            None
+        }
     }
 
     fn measure_indent(&self) -> usize {
@@ -516,14 +575,11 @@ impl Tokenizer {
         let start_line = self.state.line;
         let start_col = self.state.column;
         let start_at_line_start = self.state.at_line_start;
-
-        // Save state to rewind if needed
-        // Since state is complex, maybe just cloning it is easier if we need full restore?
-        // But here we can manually restore fields.
+        let start_after_colon = self.state.after_colon; // ← save this too
 
         self.advance(); // consume |
 
-        // Skip to end of line
+        // Skip optional trailing spaces/modifiers after |
         while self.state.pos < self.input.len() {
             let c = self.peek_char(0);
             if c == '\n' || c == '\r' {
@@ -531,22 +587,21 @@ impl Tokenizer {
             }
             if c != ' ' {
                 break;
-            } // Ignore trailing spaces/modifiers after | (simplified)
+            }
             self.advance();
         }
 
+        // Need at least the newline after |
         if self.state.pos >= self.input.len() && !self.finishing {
-            // Restore? The original code says "rewind()"
-            // For multiline, partial token is complicated, but we can store raw progress
-            self.state.partial_token = String::new(); // Hard to track perfectly, but better than nothing
             self.state.pos = start_pos;
             self.state.line = start_line;
             self.state.column = start_col;
             self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
             return None;
         }
 
-        // Consume newline
+        // Consume the newline after |
         if self.peek_char(0) == '\r' {
             self.advance();
         }
@@ -556,54 +611,61 @@ impl Tokenizer {
             self.state.column = 1;
         }
 
+        // Need at least the first content line to measure base indent
         if self.state.pos >= self.input.len() && !self.finishing {
+            // ← BUG 1 FIX: rewind instead of returning empty token
             self.state.pos = start_pos;
             self.state.line = start_line;
             self.state.column = start_col;
             self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
             return None;
         }
 
-        // Determine the indent level of the multiline content
+        // Determine the base indent from the first content line
         let base_indent = self.measure_indent();
         if base_indent == 0 {
-            // No indented content, return empty string
+            if !self.finishing {
+                // ← BUG 1 FIX: end-of-chunk, not a truly empty pipe block — rewind
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                self.state.after_colon = start_after_colon;
+                return None;
+            }
+            // Finishing and genuinely empty pipe block
+            self.state.after_colon = false;
             return Some(Token {
                 kind: TokenType::Scalar,
                 value: String::new(),
-                line: self.state.line,
+                line: start_line,
                 column: start_col,
                 indent: self.state.current_indent,
             });
         }
 
-        let mut lines = Vec::new();
+        let mut lines: Vec<String> = Vec::new();
         let mut incomplete = false;
 
-        while self.state.pos < self.input.len() {
+        loop {
+            // ── BUG 2 FIX: treat \0 (end of input) as an empty line, not a dedent ──
+            // The old code did: if peek_char(offset) != ' ' && != '\t' → is_empty_line = false
+            // which meant \0 → is_empty_line = false → line_indent (0) < base_indent → break
+            // That caused the pipe block to terminate prematurely at chunk boundaries.
             let line_indent = self.measure_indent();
 
-            // If line is less indented (and not empty), we're done
-            let _peek = self.peek_char(line_indent); // Check char after indent without consuming
-            // Actually measure_indent returns count, we need to know if line is empty.
-            // But we can't easily peek past indent with measure_indent.
-            // Let's rely on standard logic:
-
-            // Check if line is empty (just newline)
-            let c = self.peek_char(0);
-            let _is_eol = c == '\n' || c == '\r';
-            // Wait, measure_indent peeks from current pos. So if line is empty, indent is 0 (or until newline).
-            // But we need to handle empty lines in block.
-
-            // Re-implementing logic carefully:
-            // "If line is less indented (and not empty), we're done"
-
-            // Check if line is effectively empty (whitespace only until newline)
             let mut is_empty_line = true;
             let mut offset = 0;
             loop {
                 let c = self.peek_char(offset);
                 if c == '\n' || c == '\r' {
+                    break;
+                }
+                if c == '\0' {
+                    if !self.finishing {
+                        incomplete = true;
+                    }
                     break;
                 }
                 if c != ' ' && c != '\t' {
@@ -613,38 +675,55 @@ impl Tokenizer {
                 offset += 1;
             }
 
+            if incomplete {
+                break;
+            }
+
+            // A non-empty line less-indented than base_indent ends the block
             if !is_empty_line && line_indent < base_indent {
                 break;
             }
 
-            // Skip the base indent
+            // Skip the base indent (only consume actual spaces)
             for _ in 0..base_indent {
                 if self.peek_char(0) == ' ' {
                     self.advance();
                 } else {
                     break;
-                } // Should match unless mixed tabs/spaces
-            }
-
-            // Read the line content
-            let mut line_content = String::new();
-            while self.state.pos < self.input.len() {
-                let c = self.peek_char(0);
-                if c == '\n' || c == '\r' {
-                    break;
                 }
-                line_content.push(c);
-                self.advance();
             }
 
-            if self.state.pos >= self.input.len() && !self.finishing {
-                incomplete = true;
+        // Read line content up to newline
+        let mut line_content = String::new();
+        let mut line_incomplete = false;
+        while self.state.pos < self.input.len() {
+            let c = self.peek_char(0);
+            if c == '\n' || c == '\r' {
                 break;
             }
+            line_content.push(c);
+            self.advance();
+        }
 
-            lines.push(line_content);
+        // If we hit EOF but haven't seen a newline, and we're not finishing,
+        // it means we might have more content for this line in the next chunk.
+        if self.state.pos >= self.input.len() && !self.finishing {
+            line_incomplete = true;
+        }
 
-            // Consume newline
+        if line_incomplete {
+            self.state.pos = start_pos;
+            self.state.line = start_line;
+            self.state.column = start_col;
+            self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
+            return None;
+        }
+
+        lines.push(line_content);
+
+        // Consume the newline
+        if self.state.pos < self.input.len() {
             if self.peek_char(0) == '\r' {
                 self.advance();
             }
@@ -653,30 +732,52 @@ impl Tokenizer {
                 self.state.line += 1;
                 self.state.column = 1;
                 self.state.at_line_start = true;
-            } else {
-                break;
+            } else if !self.finishing {
+                // Rewind if we didn't see a newline after possibly a carriage return
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                self.state.after_colon = start_after_colon;
+                return None;
             }
+        } else if !self.finishing {
+             // Ended exactly at input boundary, no newline yet — wait for more
+             self.state.pos = start_pos;
+             self.state.line = start_line;
+             self.state.column = start_col;
+             self.state.at_line_start = start_at_line_start;
+             self.state.after_colon = start_after_colon;
+             return None;
+        } else {
+            // Finishing and no newline, just exit the loop
+            break;
         }
-
-        if (incomplete || self.state.pos >= self.input.len()) && !self.finishing {
-            self.state.partial_token = lines.join("\n");
-            self.state.pos = start_pos;
-            self.state.line = start_line;
-            self.state.column = start_col;
-            self.state.at_line_start = start_at_line_start;
-            return None;
-        }
-
-        self.state.partial_token.clear();
-        self.state.after_colon = false;
-        Some(Token {
-            kind: TokenType::Scalar,
-            value: lines.join("\n"),
-            line: self.state.line,
-            column: start_col,
-            indent: self.state.current_indent,
-        })
     }
+
+    if incomplete {
+        self.state.pos = start_pos;
+        self.state.line = start_line;
+        self.state.column = start_col;
+        self.state.at_line_start = start_at_line_start;
+        self.state.after_colon = start_after_colon;
+        return None;
+    }
+
+    // Strip trailing empty lines (YAML | block semantics: keep one trailing \n)
+    while lines.last().map(|l| l.is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+
+    self.state.after_colon = false;
+    Some(Token {
+        kind: TokenType::Scalar,
+        value: lines.join("\n"),
+        line: start_line,
+        column: start_col,
+        indent: self.state.current_indent,
+    })
+}
 
     fn skip_spaces(&mut self) {
         while self.peek_char(0) == ' ' {

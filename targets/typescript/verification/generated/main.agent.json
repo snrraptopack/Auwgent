@@ -5,8 +5,8 @@
       "defaultConfig": {
         "model": {
           "type": "custom",
-          "id": "my-groq-provider",
-          "url": "https://api.groq.com/openai/v1",
+          "id": "my-groq-api",
+          "url": "https://api.groq.com/openai/v1/chat/completions",
           "modelName": "openai/gpt-oss-120b"
         },
         "prompt": {

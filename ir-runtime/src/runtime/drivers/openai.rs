@@ -32,7 +32,12 @@ impl ModelDriver for OpenAIDriver {
         messages: &[Message],
         config: Option<Value>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String, String>> + Send>>, String> {
-        let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
+        let base = self.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/chat/completions") {
+            base.to_string()
+        } else {
+            format!("{}/chat/completions", base)
+        };
 
         // ── Build messages array ──────────────────────────────────────────
         let openai_messages: Vec<Value> = messages
@@ -129,5 +134,40 @@ impl ModelDriver for OpenAIDriver {
         });
 
         Ok(Box::pin(stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_construction() {
+        let driver1 = OpenAIDriver::new("key".to_string(), Some("https://api.groq.com/openai/v1/chat/completions".to_string()));
+        let base1 = driver1.base_url.trim_end_matches('/');
+        let url1 = if base1.ends_with("/chat/completions") {
+            base1.to_string()
+        } else {
+            format!("{}/chat/completions", base1)
+        };
+        assert_eq!(url1, "https://api.groq.com/openai/v1/chat/completions");
+
+        let driver2 = OpenAIDriver::new("key".to_string(), Some("https://api.openai.com/v1".to_string()));
+        let base2 = driver2.base_url.trim_end_matches('/');
+        let url2 = if base2.ends_with("/chat/completions") {
+            base2.to_string()
+        } else {
+            format!("{}/chat/completions", base2)
+        };
+        assert_eq!(url2, "https://api.openai.com/v1/chat/completions");
+
+        let driver3 = OpenAIDriver::new("key".to_string(), None);
+        let base3 = driver3.base_url.trim_end_matches('/');
+        let url3 = if base3.ends_with("/chat/completions") {
+            base3.to_string()
+        } else {
+            format!("{}/chat/completions", base3)
+        };
+        assert_eq!(url3, "https://api.openai.com/v1/chat/completions");
     }
 }

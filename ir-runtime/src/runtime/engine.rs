@@ -394,9 +394,26 @@ impl AuwgentEngine {
             // (e.g. the final `response_text`) into the engine's pending_intents list.
             let _final_val = self.orchestrator.end();
 
-            let (_terminal, actions, hard_stop) = self.process_intents().await?;
+            let (_terminal, actions, mut hard_stop) = self.process_intents().await?;
             if actions {
                 actions_performed = true;
+            }
+
+            // Fallback: If no intents were detected in the whole turn, try a deep extraction.
+            // This handles cases where streaming parsing got confused by noise but
+            // extract_yaml can find a clean signal at the end.
+            if !actions_performed {
+                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
+                if !cleaned.is_empty() && cleaned != self.current_raw_response {
+                    self.orchestrator.reset();
+                    self.orchestrator.write(&cleaned);
+                    self.orchestrator.end();
+                    let (_t2, a2, h2) = self.process_intents().await?;
+                    if a2 {
+                        actions_performed = true;
+                        hard_stop = h2;
+                    }
+                }
             }
 
             if let Some(handler) = &self.llm_end_handler {
@@ -404,9 +421,16 @@ impl AuwgentEngine {
                 handler(self.current_raw_response.clone(), sys_prompt).await;
             }
 
+            // If the model output was wrapped in fences, or contained noise,
+            // the orchestrator might have parsed it, but 'current_raw_response'
+            // still contains the noisy version.
+            // We should ideally store the CLEANED version in the session
+            // if we want to avoid showing fences in the final stored state.
+            let cleaned_response = crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
+
             // Save the raw LLM output in the session history so the exact
             // YAML text is visible in logs and follow-up turns.
-            self.session.set_model_response(&self.current_raw_response);
+            self.session.set_model_response(&cleaned_response);
 
             // Decide if we loop or stop
             if hard_stop {

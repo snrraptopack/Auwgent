@@ -9,7 +9,12 @@ const logger: AuwgentMiddleware = {
     },
 
     onRunComplete(finalSession, ctx) {
-        // console.log(JSON.stringify(finalSession.turns.at(-1), null, 2))
+
+        console.log("final session",finalSession)
+    },
+
+    onLLMEnd(session,ctx){
+        console.log(ctx.rawBlock)
     },
 
     onError(error, session, ctx) {
@@ -21,22 +26,20 @@ const logger: AuwgentMiddleware = {
 
 let config: AuwgentConfig = {
     apiKeys: {
-        my_groq_providerApiKey: Bun.env.GROQ_API_KEY || ""
+        my_groq_apiApiKey: Bun.env.GROQ_API_KEY || ""
     },
     middleware: [logger]
 }
 
 const agent = auwgent(config)
 
-
+let lastLength = 0
 agent.onIntent((name, value) => {
     if (name === "response_schema") {
-        console.log(value)
+        console.log("final value",value)
     }
 })
 
 const session = await agent.run("when did Ghana gain independence and tell me a story about it")
 
 
-console.log("*****************session**************")
-console.log(JSON.stringify(session, null, 2))

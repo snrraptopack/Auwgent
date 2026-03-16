@@ -56,6 +56,25 @@ Hope that helps!"#;
     }
 
     println!("\nFinal End:");
+    println!("\n--- Part 3: Streaming with Fences ---");
+    orchestrator.reset();
+    let fenced_chunks = vec![
+        "```yaml\n",
+        "response_text:\n",
+        "  text: \"Fenced",
+        " response\"\n",
+        "```\n",
+        "More noise here\n",
+        "```yaml\n",
+        "tool_call:\n",
+        "  type: search\n",
+        "```",
+    ];
+
+    for chunk in fenced_chunks {
+        println!("Writing chunk: {:?}", chunk);
+        orchestrator.write(chunk);
+    }
     let final_res = orchestrator.end();
     println!("Final Document: {}", final_res);
 }

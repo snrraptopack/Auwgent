@@ -30,7 +30,7 @@ export type HelloCustomIntents = never;
  * API keys required for Hello
  */
 export type HelloApiKeys = {
-    my_groq_providerApiKey: string;  // API key for custom provider 'my-groq-provider'
+    my_groq_apiApiKey: string;  // API key for custom provider 'my-groq-api'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity

@@ -361,10 +361,10 @@ impl Parser {
         if self.current_frame().frame_type == FrameType::Mapping
             && self.current_frame().pending_key.is_some()
         {
-            let next_token = self.tokens.get(self.pos + 1);
-            if matches!(next_token, Some(t) if t.kind != TokenType::Dash) {
-                self.push_frame(FrameType::Mapping, token.indent, token.line, token.column);
-            }
+            // Indent always signals a new nested block (Mapping or Sequence).
+            // The previous logic was checking for the next token to decide, but
+            // that is unreliable in streaming mode if the next chunk hasn't arrived.
+            self.push_frame(FrameType::Mapping, token.indent, token.line, token.column);
         }
     }
 

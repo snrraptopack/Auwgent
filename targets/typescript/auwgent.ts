@@ -66,6 +66,7 @@ export class TypedAuwgent<
     private storedPartialHandler: PartialIntentHandler<IR, CustomIntents, Output, Tools> | null = null;
     private lastTurnIntentValue: any = null;
     private lastTurnIntentName: string | null = null;
+    private lastTurnRawBlock: string | undefined = undefined;
     private agentStack: string[] = [];
 
     constructor(ir: IR, config: AuwgentConfig<IR>) {
@@ -182,6 +183,7 @@ export class TypedAuwgent<
             activeAgent: activeAgent as any,
             stack: [...this.agentStack],
             rootAgent: this.ir.name,
+            rawBlock: this.lastTurnRawBlock,
             ...this.sharedContext
         } as MiddlewareContext<IR>;
     }
@@ -205,6 +207,7 @@ export class TypedAuwgent<
             // while making raw YAML available to middleware for logging/audit
             if (value && typeof value === 'object' && '_raw' in value) {
                 intentCtx.rawBlock = value._raw;
+                this.lastTurnRawBlock = value._raw;
                 delete value._raw;
             }
 
@@ -340,6 +343,7 @@ export class TypedAuwgent<
     async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
         this.agentStack = [this.ir.name]; // Initialize stack with root agent
+        this.lastTurnRawBlock = undefined; // Reset raw block for new run
         let currentSession = this.exportSession();
 
         // Activation / ThreadSafeFunction binding
