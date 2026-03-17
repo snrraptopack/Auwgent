@@ -18,6 +18,7 @@ pub fn lower(model: &Model) -> Result<Value, Vec<Diagnostic>> {
 pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     // Collect type declarations for the types map
     let mut type_decls: Vec<&TypeDeclaration> = Vec::new();
+    let mut intent_decls: Vec<&IntentDeclaration> = Vec::new();
     let mut model_defs: Vec<&ModelDefinition> = Vec::new();
     let mut prompts: Vec<&NamedPrompt> = Vec::new();
     let mut helpers_vec: Vec<&Helper> = Vec::new();
@@ -30,6 +31,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
             Element::TypeDecl(td) => type_decls.push(td),
             Element::ModelDef(md) => model_defs.push(md),
             Element::NamedPrompt(p) => prompts.push(p),
+            Element::IntentDecl(id) => intent_decls.push(id),
         }
     }
 
@@ -61,6 +63,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     let mut helper_tool_grants: Map<String, Value> = Map::new();
     let mut helper_handoff: Map<String, Value> = Map::new();
     let mut helpers_config: Option<&HelpersConfig> = None;
+    let mut custom_intents_val: Vec<Value> = Vec::new();
 
     for config in &agent.configs {
         match config {
@@ -96,6 +99,12 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
             AgentConfig::Test(_tc) => {
                 // TODO: tests
             }
+            AgentConfig::Intent(ic) => {
+                let resolved = resolve_intent_expr(&ic.expr, &intent_decls);
+                for decl in resolved {
+                    custom_intents_val.push(lower_intent_decl(&decl));
+                }
+            }
         }
     }
 
@@ -124,7 +133,12 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
 
     // Process helper definitions
     for helper in &helpers_vec {
-        helpers_ir.push(lower_helper(helper, &prompts, &model_defs));
+        helpers_ir.push(lower_helper(
+            helper,
+            &prompts,
+            &model_defs,
+            &intent_decls,
+        ));
     }
 
     ir.insert("modelConfig".into(), Value::Array(model_config));
@@ -151,6 +165,11 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     }
     if !helper_handoff.is_empty() {
         ir.insert("helperHandoff".into(), Value::Object(helper_handoff));
+    }
+
+    // Custom intents
+    if !custom_intents_val.is_empty() {
+        ir.insert("customIntents".into(), Value::Array(custom_intents_val));
     }
 
     Ok(Value::Object(ir))
@@ -202,7 +221,8 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
             let mut all_variants_resolved = true;
 
             for variant in types {
-                if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == variant.value) {
+                if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == variant.value)
+                {
                     variants.insert(
                         variant.value.clone(),
                         lower_output_type_decl_fields(type_decl),
@@ -367,7 +387,10 @@ fn lower_model_config(
     let mut obj = Map::new();
 
     // Model provider
-    obj.insert("model".into(), lower_model_provider_ref(&mc.model, model_defs));
+    obj.insert(
+        "model".into(),
+        lower_model_provider_ref(&mc.model, model_defs),
+    );
 
     // Prompt
     if let Some(expr) = &mc.prompt_expr {
@@ -430,7 +453,7 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
         } => {
             let mut obj = Map::new();
             obj.insert("type".into(), json!("custom"));
-            obj.insert("id".into(),json!(id.value));
+            obj.insert("id".into(), json!(id.value));
             obj.insert("url".into(), json!(url.value));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {
@@ -657,7 +680,10 @@ fn parse_template_tag(content: &str, tag_start: usize) -> Option<(Value, usize)>
             .trim_start_matches('(')
             .trim_end_matches(')')
             .trim();
-        return Some((json!({ "type": "schemaDirective", "path": path }), tag_end + 2));
+        return Some((
+            json!({ "type": "schemaDirective", "path": path }),
+            tag_end + 2,
+        ));
     }
 
     if let Some(condition) = inner.strip_prefix("#if") {
@@ -1015,6 +1041,7 @@ fn lower_helper(
     helper: &Helper,
     prompts: &[&NamedPrompt],
     model_defs: &[&ModelDefinition],
+    intent_decls: &[&IntentDeclaration],
 ) -> Value {
     let mut obj = Map::new();
     obj.insert("name".into(), json!(helper.name.value));
@@ -1042,6 +1069,14 @@ fn lower_helper(
                 model_config.push(lower_agent_model_config(mc, prompts, model_defs));
             }
             AgentConfig::Workflow(wf) => workflows_val.push(lower_workflow(wf)),
+            AgentConfig::Intent(ic) => {
+                let mut custom_intents_val = Vec::new(); // Local to helper
+                let resolved = resolve_intent_expr(&ic.expr, intent_decls);
+                for decl in resolved {
+                    custom_intents_val.push(lower_intent_decl(&decl));
+                }
+                obj.insert("customIntents".into(), Value::Array(custom_intents_val));
+            }
             _ => {}
         }
     }
@@ -1077,6 +1112,39 @@ fn lower_type_declaration(td: &TypeDeclaration) -> Value {
     Value::Object(obj)
 }
 
+// ── Intent Resolution Helpers ─────────────────────────────────────────────
+
+fn resolve_intent_expr<'a>(
+    expr: &'a IntentExpr,
+    intent_decls: &[&'a IntentDeclaration],
+) -> Vec<IntentDeclaration> {
+    match expr {
+        IntentExpr::Ref(name) => {
+            if let Some(decl) = intent_decls.iter().find(|d| d.name.value == name.value) {
+                vec![(**decl).clone()]
+            } else {
+                vec![]
+            }
+        }
+        IntentExpr::Inline(decls) => decls.clone(),
+        IntentExpr::Compose(left, right) => {
+            let mut all = resolve_intent_expr(left, intent_decls);
+            all.extend(resolve_intent_expr(right, intent_decls));
+            all
+        }
+    }
+}
+
+fn lower_intent_decl(decl: &IntentDeclaration) -> Value {
+    let mut obj = Map::new();
+    obj.insert("name".into(), json!(decl.name.value));
+    if let Some(desc) = &decl.description {
+        obj.insert("description".into(), json!(desc.value));
+    }
+    obj.insert("fields".into(), lower_properties(&decl.fields));
+    Value::Object(obj)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1092,7 +1160,10 @@ mod tests {
         assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
 
         let diagnostics = check(&model);
-        assert!(diagnostics.is_empty(), "checker diagnostics: {diagnostics:?}");
+        assert!(
+            diagnostics.is_empty(),
+            "checker diagnostics: {diagnostics:?}"
+        );
 
         lower(&model).expect("IR lowering should succeed")
     }
@@ -1122,9 +1193,18 @@ mod tests {
             "#,
         );
 
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["thinking"]["type"], json!("literal"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["type"], json!("literal"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"], json!(2000.0));
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["thinking"]["type"],
+            json!("literal")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["type"],
+            json!("literal")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"],
+            json!(2000.0)
+        );
         assert_eq!(ir["output"]["name"]["description"], json!("no description"));
         assert_eq!(ir["output"]["age"]["description"], json!("no description"));
     }
@@ -1170,12 +1250,31 @@ mod tests {
             "#,
         );
 
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["type"], json!("binaryOp"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["type"], json!("promptRef"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][0]["type"], json!("template"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["type"], json!("if"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["then"][0]["type"], json!("return"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["else"][0]["value"]["value"], json!("wow"));
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["type"],
+            json!("binaryOp")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["type"],
+            json!("promptRef")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][0]["type"],
+            json!("template")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["type"],
+            json!("if")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["then"][0]["type"],
+            json!("return")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["prompt"]["right"]["value"][1]["else"][0]
+                ["value"]["value"],
+            json!("wow")
+        );
     }
 
     #[test]
@@ -1205,7 +1304,10 @@ mod tests {
         assert_eq!(ir["output"]["name"]["type"], json!("string"));
         assert_eq!(ir["output"]["age"]["type"], json!("number"));
         assert_eq!(ir["output"]["name"]["description"], Value::Null);
-        assert_eq!(ir["types"]["Hey"]["properties"]["name"]["type"], json!("string"));
+        assert_eq!(
+            ir["types"]["Hey"]["properties"]["name"]["type"],
+            json!("string")
+        );
     }
 
     #[test]
@@ -1236,11 +1338,26 @@ mod tests {
             "#,
         );
 
-        assert_eq!(ir["output"]["__variants"]["Hey"]["name"]["type"], json!("string"));
-        assert_eq!(ir["output"]["__variants"]["Hey"]["age"]["type"], json!("number"));
-        assert_eq!(ir["output"]["__variants"]["A"]["wow"]["type"], json!("string"));
-        assert_eq!(ir["types"]["Hey"]["properties"]["name"]["type"], json!("string"));
-        assert_eq!(ir["types"]["A"]["properties"]["wow"]["type"], json!("string"));
+        assert_eq!(
+            ir["output"]["__variants"]["Hey"]["name"]["type"],
+            json!("string")
+        );
+        assert_eq!(
+            ir["output"]["__variants"]["Hey"]["age"]["type"],
+            json!("number")
+        );
+        assert_eq!(
+            ir["output"]["__variants"]["A"]["wow"]["type"],
+            json!("string")
+        );
+        assert_eq!(
+            ir["types"]["Hey"]["properties"]["name"]["type"],
+            json!("string")
+        );
+        assert_eq!(
+            ir["types"]["A"]["properties"]["wow"]["type"],
+            json!("string")
+        );
     }
 
     #[test]
@@ -1276,7 +1393,13 @@ mod tests {
             "#,
         );
 
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["type"], json!("gemini"));
-        assert_eq!(ir["modelConfig"][0]["defaultConfig"]["model"]["modelName"], json!("gemini-2.5-flash"));
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["model"]["type"],
+            json!("gemini")
+        );
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["model"]["modelName"],
+            json!("gemini-2.5-flash")
+        );
     }
 }

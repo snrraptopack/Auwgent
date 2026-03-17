@@ -105,6 +105,7 @@ pub fn build_sub_agent_context(
         helper_handoff: None,
         tests: Vec::new(),
         lifecycle: parent_ir.lifecycle.clone(),
+        custom_intents: helper.custom_intents.clone(),
     };
 
     Ok(SubAgentContext {

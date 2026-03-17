@@ -5,7 +5,7 @@ use auwgent_errors::Span;
 use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
-use crate::config::{agent_config_parser, model_provider_parser, prompt_stmt_parser};
+use crate::config::{agent_config_parser, intent_body_parser, model_provider_parser, prompt_stmt_parser};
 use crate::primitives::*;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
 
@@ -108,6 +108,17 @@ pub(crate) fn model_def_parser(
         })
 }
 
+pub(crate) fn intent_decl_parser(
+) -> impl Parser<TokenKind, IntentDeclaration, Error = Simple<TokenKind>> + Clone {
+    tok(TokenKind::Intent)
+        .ignore_then(intent_body_parser())
+        .map(|mut decl| {
+            // exported flag will be set by the outer export wrapper
+            decl.exported = false;
+            decl
+        })
+}
+
 pub(crate) fn import_parser(
 ) -> impl Parser<TokenKind, FileImport, Error = Simple<TokenKind>> + Clone {
     let import_spec = ident().map_with_span(|name, span| ImportSpecifier {
@@ -160,12 +171,17 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
                 m.exported = true;
                 Element::ModelDef(m)
             }),
+            intent_decl_parser().map(|mut id| {
+                id.exported = true;
+                Element::IntentDecl(id)
+            }),
         ))),
         agent_parser().map(Element::Agent),
         helper_parser().map(Element::Helper),
         type_decl_parser().map(Element::TypeDecl),
         named_prompt_parser().map(Element::NamedPrompt),
         model_def_parser().map(Element::ModelDef),
+        intent_decl_parser().map(Element::IntentDecl),
     ))
     .recover_with(nested_delimiters(
         TokenKind::LBrace,

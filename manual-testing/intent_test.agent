@@ -1,0 +1,41 @@
+intent bail {
+    description: "Exit the joke early if the user is bored"
+    fields {
+        reason: string
+    }
+}
+
+intent question {
+    description: "Ask the user a clarifying question"
+    fields {
+        text: string
+        options: string[]
+    }
+}
+
+agent JokeBot {
+    intent: bail + question + {
+        feedback {
+            description: "Request user feedback on the quality"
+            fields { rating: number }
+        }
+    }
+
+    helpers {
+        Teller
+    }
+
+    default config {
+        model: custom("my-bot", "https://api.example.com", "gpt-4")
+        prompt: "I am a joke bot."
+    }
+}
+
+helper Teller {
+    description: "Tells jokes"
+    intent: bail
+    default config {
+        model: custom("my-bot", "https://api.example.com", "gpt-4")
+        prompt: "Why did the chicken cross the road?"
+    }
+}

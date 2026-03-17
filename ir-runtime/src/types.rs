@@ -5,6 +5,13 @@ use std::collections::HashMap;
 // --- Top Level ---
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CustomIntentDef {
+    pub name: String,
+    pub description: Option<String>,
+    pub fields: Value, // Object of field definitions
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentIR {
     pub name: String,
@@ -26,6 +33,8 @@ pub struct AgentIR {
     /// Lifecycle configuration (maxTokens, maxMessages)
     #[serde(default)]
     pub lifecycle: Option<Value>,
+    #[serde(default)]
+    pub custom_intents: Option<Vec<CustomIntentDef>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -39,6 +48,8 @@ pub struct Helper {
     pub context: Option<Value>,
     pub tools: Vec<Tool>,
     pub workflows: Vec<Workflow>,
+    #[serde(default)]
+    pub custom_intents: Option<Vec<CustomIntentDef>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

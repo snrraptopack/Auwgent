@@ -117,6 +117,10 @@ pub enum TokenKind {
     MaxMessages,
     #[token("description")]
     Description,
+    #[token("intent")]
+    Intent,
+    #[token("fields")]
+    Fields,
 
     ErrorToken,
 
@@ -253,6 +257,8 @@ impl fmt::Display for TokenKind {
             Self::Context => write!(f, "'context'"),
             Self::Helpers => write!(f, "'helpers'"),
             Self::Description => write!(f, "'description'"),
+            Self::Intent => write!(f, "'intent'"),
+            Self::Fields => write!(f, "'fields'"),
             Self::Let => write!(f, "'let'"),
             Self::Return => write!(f, "'return'"),
             Self::If => write!(f, "'if'"),

@@ -54,6 +54,13 @@ pub fn generate_intents(ir: &AgentIR) -> String {
     if !has_output_schema {
         know_items.push("A `response_text` intent sends a plain text reply to the user.".to_string());
     }
+    
+    if let Some(custom) = &ir.custom_intents {
+        for ci in custom {
+            let desc = ci.description.as_deref().unwrap_or("User-defined intent.");
+            know_items.push(format!("A `{}` intent {}.", ci.name, desc));
+        }
+    }
 
     // Only mention tool_result follow-up if the agent can actually call tools/workflows/helpers
     let has_callables = !ir.tools.is_empty() || !ir.workflows.is_empty() || !ir.helpers.is_empty();
@@ -172,6 +179,32 @@ pub fn generate_intents(ir: &AgentIR) -> String {
         ));
     }
 
+    // Custom Intents
+    if let Some(custom) = &ir.custom_intents {
+        if !custom.is_empty() {
+            let mut ci_lines = Vec::new();
+            for ci in custom {
+                let mut params = Vec::new();
+                if let Some(obj) = ci.fields.as_object() {
+                    for (name, def) in obj {
+                        let field_type = def["type"].as_str().unwrap_or("any");
+                        params.push(format!("{}: {}", name, field_type));
+                    }
+                }
+                let mut sig = format!("{}({})", ci.name, params.join(", "));
+                if let Some(desc) = &ci.description {
+                    sig.push_str(" // ");
+                    sig.push_str(desc);
+                }
+                ci_lines.push(sig);
+            }
+            sections.push(format!(
+                "# Custom Intents Available\nSpecialized actions defined for this agent.\n\n{}",
+                ci_lines.join("\n")
+            ));
+        }
+    }
+
     // ── Options (the YAML structures the model can select) ────────────────
 
     sections.push(
@@ -265,6 +298,14 @@ pub fn generate_intents(ir: &AgentIR) -> String {
         ));
     }
 
+    // custom intents
+    if let Some(custom) = &ir.custom_intents {
+        for ci in custom {
+            let schema_str = schema::format_schema_yaml(&ci.fields, 2, ir.types.as_ref());
+            options.push(format!("{}:\n{}", ci.name, schema_str));
+        }
+    }
+
     sections.push(format!("# Options\n{}", options.join("\n\n")));
 
     sections.join("\n\n")
@@ -313,6 +354,13 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
     }
     know_items.push("A `response_text` intent sends a plain text reply.".to_string());
 
+    if let Some(custom) = &ir.custom_intents {
+        for ci in custom {
+            let desc = ci.description.as_deref().unwrap_or("User-defined intent.");
+            know_items.push(format!("A `{}` intent {}.", ci.name, desc));
+        }
+    }
+
     let know_lines: Vec<String> = know_items
         .iter()
         .enumerate()
@@ -344,6 +392,32 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
         ));
     }
 
+    // Custom Intents (Helper)
+    if let Some(custom) = &ir.custom_intents {
+        if !custom.is_empty() {
+            let mut ci_lines = Vec::new();
+            for ci in custom {
+                let mut params = Vec::new();
+                if let Some(obj) = ci.fields.as_object() {
+                    for (name, def) in obj {
+                        let field_type = def["type"].as_str().unwrap_or("any");
+                        params.push(format!("{}: {}", name, field_type));
+                    }
+                }
+                let mut sig = format!("{}({})", ci.name, params.join(", "));
+                if let Some(desc) = &ci.description {
+                    sig.push_str(" // ");
+                    sig.push_str(desc);
+                }
+                ci_lines.push(sig);
+            }
+            sections.push(format!(
+                "# Custom Intents Available\nSpecialized actions defined for this helper.\n\n{}",
+                ci_lines.join("\n")
+            ));
+        }
+    }
+
     // Instructions + Options
     sections.push(
         "# Instructions\nRespond ONLY with a valid YAML block. Do not include any conversational text or explanation. For multi-line strings, use the YAML pipe symbol `|` for proper formatting."
@@ -364,6 +438,14 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
             "tool_call:\n  type: {}\n  args: {{ key: value }}",
             tool_union
         ));
+    }
+
+
+    if let Some(custom) = &ir.custom_intents {
+        for ci in custom {
+            let schema_str = schema::format_schema_yaml(&ci.fields, 2, ir.types.as_ref());
+            options.push(format!("{}:\n{}", ci.name, schema_str));
+        }
     }
 
     sections.push(format!("# Options\n{}", options.join("\n\n")));

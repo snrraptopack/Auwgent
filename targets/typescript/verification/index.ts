@@ -1,5 +1,17 @@
 import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated/main.agent.types"
 
+import { auwgent as one } from "./generated/intent_test.agent.types"
+
+let a = one({
+    apiKeys: {
+        my_botApiKey: ""
+    }
+})
+
+
+a.onIntent((name, value) => {
+
+})
 
 const logger: AuwgentMiddleware = {
     name: "logger",
@@ -39,6 +51,10 @@ let config: AuwgentConfig = {
 }
 
 const agent = auwgent(config)
+
+agent.onIntent((name, value) => {
+
+})
 
 
 const session = await agent.run("when did Ghana gain independence and tell me a story about it")

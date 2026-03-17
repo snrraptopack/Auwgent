@@ -1,0 +1,105 @@
+{
+  "name": "JokeBot",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "custom",
+          "id": "my-bot",
+          "url": "https://api.example.com",
+          "modelName": "gpt-4"
+        },
+        "prompt": {
+          "value": "I am a joke bot.",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [
+    {
+      "name": "Teller",
+      "description": "Tells jokes",
+      "customIntents": [
+        {
+          "name": "bail",
+          "description": "Exit the joke early if the user is bored",
+          "fields": {
+            "reason": {
+              "type": "string",
+              "optional": false
+            }
+          }
+        }
+      ],
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "custom",
+              "id": "my-bot",
+              "url": "https://api.example.com",
+              "modelName": "gpt-4"
+            },
+            "prompt": {
+              "value": "Why did the chicken cross the road?",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ],
+  "tests": [],
+  "customIntents": [
+    {
+      "name": "bail",
+      "description": "Exit the joke early if the user is bored",
+      "fields": {
+        "reason": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    },
+    {
+      "name": "question",
+      "description": "Ask the user a clarifying question",
+      "fields": {
+        "text": {
+          "type": "string",
+          "optional": false
+        },
+        "options": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
+        }
+      }
+    },
+    {
+      "name": "feedback",
+      "description": "Request user feedback on the quality",
+      "fields": {
+        "rating": {
+          "type": "number",
+          "optional": false
+        }
+      }
+    }
+  ]
+}

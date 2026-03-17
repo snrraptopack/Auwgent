@@ -206,6 +206,20 @@ fn symbol_in_element(element: &Element, offset: usize) -> Option<SymbolTarget> {
                 None
             }
         }
+        Element::IntentDecl(intent) => {
+            if contains_offset(intent.name.span.start, intent.name.span.end, offset) {
+                return Some(SymbolTarget {
+                    kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                    span: intent.name.span,
+                });
+            }
+            for field in &intent.fields {
+                if let Some(symbol) = symbol_in_type_expr(&field.ty, offset) {
+                    return Some(symbol);
+                }
+            }
+            None
+        }
     }
 }
 
@@ -252,6 +266,8 @@ fn symbol_in_agent_config(config: &AgentConfig, offset: usize) -> Option<SymbolT
             })
         }),
         AgentConfig::Model(model) => {
+            // ... (existing model logic)
+            // (Note: keeping current implementation as is)
             if let auwgent_ast::ModelProviderRef::Ref(name) = &model.default_config.model {
                 if contains_offset(name.span.start, name.span.end, offset) {
                     return Some(SymbolTarget {
@@ -273,7 +289,45 @@ fn symbol_in_agent_config(config: &AgentConfig, offset: usize) -> Option<SymbolT
             }
             None
         }
+        AgentConfig::Intent(intent) => {
+            // Handle IntentExpr symbols
+            symbol_in_intent_expr(&intent.expr, offset)
+        }
         _ => None,
+    }
+}
+
+fn symbol_in_intent_expr(expr: &auwgent_ast::IntentExpr, offset: usize) -> Option<SymbolTarget> {
+    match expr {
+        auwgent_ast::IntentExpr::Ref(name) => {
+            if contains_offset(name.span.start, name.span.end, offset) {
+                Some(SymbolTarget {
+                    kind: SymbolTargetKind::Identifier(name.value.clone()),
+                    span: name.span,
+                })
+            } else {
+                None
+            }
+        }
+        auwgent_ast::IntentExpr::Inline(intents) => {
+            for intent in intents {
+                if contains_offset(intent.name.span.start, intent.name.span.end, offset) {
+                    return Some(SymbolTarget {
+                        kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                        span: intent.name.span,
+                    });
+                }
+                for field in &intent.fields {
+                    if let Some(symbol) = symbol_in_type_expr(&field.ty, offset) {
+                        return Some(symbol);
+                    }
+                }
+            }
+            None
+        }
+        auwgent_ast::IntentExpr::Compose(left, right) => {
+            symbol_in_intent_expr(left, offset).or_else(|| symbol_in_intent_expr(right, offset))
+        }
     }
 }
 
@@ -685,6 +739,15 @@ fn collect_element_symbols(element: &Element, symbols: &mut Vec<SymbolTarget>) {
             kind: SymbolTargetKind::Model(model.name.value.clone()),
             span: model.name.span,
         }),
+        Element::IntentDecl(intent) => {
+            symbols.push(SymbolTarget {
+                kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                span: intent.name.span,
+            });
+            for field in &intent.fields {
+                collect_type_expr_symbols(&field.ty, symbols);
+            }
+        }
     }
 }
 
@@ -741,7 +804,36 @@ fn collect_agent_config_symbols(config: &AgentConfig, symbols: &mut Vec<SymbolTa
                 }
             }
         }
+        AgentConfig::Intent(intent) => {
+            collect_intent_expr_symbols(&intent.expr, symbols);
+        }
         _ => {}
+    }
+}
+
+fn collect_intent_expr_symbols(expr: &auwgent_ast::IntentExpr, symbols: &mut Vec<SymbolTarget>) {
+    match expr {
+        auwgent_ast::IntentExpr::Ref(name) => {
+            symbols.push(SymbolTarget {
+                kind: SymbolTargetKind::Identifier(name.value.clone()),
+                span: name.span,
+            });
+        }
+        auwgent_ast::IntentExpr::Inline(intents) => {
+            for intent in intents {
+                symbols.push(SymbolTarget {
+                    kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                    span: intent.name.span,
+                });
+                for field in &intent.fields {
+                    collect_type_expr_symbols(&field.ty, symbols);
+                }
+            }
+        }
+        auwgent_ast::IntentExpr::Compose(left, right) => {
+            collect_intent_expr_symbols(left, symbols);
+            collect_intent_expr_symbols(right, symbols);
+        }
     }
 }
 

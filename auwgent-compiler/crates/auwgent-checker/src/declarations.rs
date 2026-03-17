@@ -28,6 +28,9 @@ impl Checker {
                 Element::ModelDef(model) => {
                     self.register_top_level_name(&model.name, "model", diags);
                 }
+                Element::IntentDecl(intent) => {
+                    self.register_top_level_name(&intent.name, "intent", diags);
+                }
             }
         }
     }

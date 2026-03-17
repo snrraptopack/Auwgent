@@ -115,6 +115,13 @@ impl AuwgentEngine {
         orchestrator.register_intent("response_text");
         orchestrator.register_intent("helper_call");
 
+        // Register custom intents from IR
+        if let Some(custom) = &ir.custom_intents {
+            for ci in custom {
+                orchestrator.register_intent(&ci.name);
+            }
+        }
+
         let pending_intents = Arc::new(Mutex::new(Vec::new()));
         let intents_for_handler = Arc::clone(&pending_intents);
 

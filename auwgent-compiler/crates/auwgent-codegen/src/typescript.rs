@@ -97,9 +97,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         sections.push(generate_tools_interface(agent_name, &all_tools));
     }
 
-    sections.push(format!(
-        "/** Custom intents defined in the DSL (if any) */\nexport type {agent_name}CustomIntents = never;\n"
-    ));
+    sections.push(generate_custom_intents_union(ir, agent_name));
 
     if !required_providers.is_empty() {
         sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
@@ -159,6 +157,70 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
     }
 
     blocks.join("\n\n")
+}
+
+fn generate_custom_intents_union(ir: &Value, agent_name: &str) -> String {
+    let mut intents = Vec::new();
+
+    // 1. Collect from main agent
+    if let Some(custom) = ir.get("customIntents").and_then(Value::as_array) {
+        for ci in custom {
+            let name = string_at(ci, &["name"]).unwrap_or_default();
+            let fields = ci.get("fields").unwrap_or(&Value::Null);
+            intents.push(format!(
+                "{{ name: \"{}\"; value: {} }}",
+                name,
+                generate_raw_object_type(fields)
+            ));
+        }
+    }
+
+    // 2. Collect from all helpers (since they can trigger intents too)
+    if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
+        for helper in helpers {
+            if let Some(custom) = helper.get("customIntents").and_then(Value::as_array) {
+                for ci in custom {
+                    let name = string_at(ci, &["name"]).unwrap_or_default();
+                    let fields = ci.get("fields").unwrap_or(&Value::Null);
+                    let intent_type =
+                        format!("{{ name: \"{}\"; value: {} }}", name, generate_raw_object_type(fields));
+                    if !intents.contains(&intent_type) {
+                        intents.push(intent_type);
+                    }
+                }
+            }
+        }
+    }
+
+    let union_type = if intents.is_empty() {
+        "never".to_string()
+    } else {
+        intents.join("\n    | ")
+    };
+
+    format!(
+        "/** Custom intents defined in the DSL (if any) */\nexport type {}CustomIntents =\n    | {};\n",
+        agent_name, union_type
+    )
+}
+
+fn generate_raw_object_type(value: &Value) -> String {
+    let mut props = Vec::new();
+    if let Some(obj) = value.as_object() {
+        for (name, val) in obj {
+            let optional = if val
+                .get("optional")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                "?"
+            } else {
+                ""
+            };
+            props.push(format!("{name}{optional}: {}", type_to_ts_string(val)));
+        }
+    }
+    format!("{{ {} }}", props.join("; "))
 }
 
 fn generate_helper_output_interface(helper: &Value) -> String {

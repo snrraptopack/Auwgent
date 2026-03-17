@@ -226,6 +226,7 @@ fn is_exported(element: &Element) -> bool {
         Element::TypeDecl(declaration) => declaration.exported,
         Element::NamedPrompt(prompt) => prompt.exported,
         Element::ModelDef(model) => model.exported,
+        Element::IntentDecl(intent) => intent.exported,
         Element::Agent(_) => false,
     }
 }

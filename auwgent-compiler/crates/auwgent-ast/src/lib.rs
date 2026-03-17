@@ -51,6 +51,7 @@ pub enum Element {
     TypeDecl(TypeDeclaration),
     NamedPrompt(NamedPrompt),
     ModelDef(ModelDefinition),
+    IntentDecl(IntentDeclaration),
 }
 
 // ── Spanned Helper ───────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ pub enum AgentConfig {
     Helpers(HelpersConfig),
     Lifecycle(LifecycleConfig),
     Test(TestConfig),
+    Intent(IntentConfig),
 }
 
 // ── Input / Output / Context ────────────────────────────────────────────
@@ -179,6 +181,36 @@ pub struct HelperRef {
     pub handoff_user: bool,
     pub handoff_then_continue: bool,
     pub span: Span,
+}
+
+// ── Intent Declarations ───────────────────────────────────────────────────
+
+/// Top-level `intent question { description: "..." fields { ... } }`
+#[derive(Debug, Clone)]
+pub struct IntentDeclaration {
+    pub exported: bool,
+    pub name: Spanned<String>,
+    pub description: Option<Spanned<String>>,
+    pub fields: Vec<TypeConfigDecl>,
+    pub span: Span,
+}
+
+/// Agent/helper config `intent: ref + ref + { inline { ... } }`
+#[derive(Debug, Clone)]
+pub struct IntentConfig {
+    pub expr: IntentExpr,
+    pub span: Span,
+}
+
+/// Composition expression: ref + inline + compose
+#[derive(Debug, Clone)]
+pub enum IntentExpr {
+    /// A reference to a top-level `intent` declaration by name
+    Ref(Spanned<String>),
+    /// An inline block `{ bail { description: "..." fields { ... } } }`
+    Inline(Vec<IntentDeclaration>),
+    /// Two expressions joined with `+`
+    Compose(Box<IntentExpr>, Box<IntentExpr>),
 }
 
 // ── Model Config ─────────────────────────────────────────────────────────

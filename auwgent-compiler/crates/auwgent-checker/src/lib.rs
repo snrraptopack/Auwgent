@@ -34,6 +34,7 @@ pub fn check(model: &Model) -> Vec<Diagnostic> {
             Element::TypeDecl(td) => checker.check_type_decl(td, &mut diags),
             Element::NamedPrompt(p) => checker.check_named_prompt(p, &mut diags),
             Element::ModelDef(_) => {}
+            Element::IntentDecl(_) => {}
         }
     }
 
@@ -158,6 +159,7 @@ impl Checker {
                 AgentConfig::Output(oc) => self.check_output(oc, diags),
                 AgentConfig::Context(cc) => self.check_properties(&cc.properties, diags),
                 AgentConfig::Helpers(hc) => self.check_helpers_config(hc, diags),
+                AgentConfig::Intent(_) => {}
                 _ => {}
             }
         }
@@ -209,6 +211,7 @@ impl Checker {
                     }
                 }
                 AgentConfig::Workflow(wf) => self.check_workflow(wf, &helper.configs, diags),
+                AgentConfig::Intent(_) => {}
                 _ => {}
             }
         }

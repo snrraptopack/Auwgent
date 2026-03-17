@@ -49,8 +49,8 @@ export interface AuwgentConfig<IR extends AgentIRShape> {
 
 export class TypedAuwgent<
     IR extends AgentIRShape,
-    CustomIntents = never,
-    Output = IR['output'] extends null ? any : IR['output'],
+    CustomIntents extends { name: string; value: any } = never,
+    Output = IR['output'] extends Record<string, any> ? IR['output'] : never,
     Tools = ToolRegistry<IR>
 > {
     private native: InstanceType<typeof AuwgentNative>;
@@ -462,24 +462,24 @@ export class TypedAuwgent<
  */
 export function createAuwgent<
     const IR extends AgentIRShape,
-    CustomIntents = never,
-    Output = any,
+    CustomIntents extends { name: string; value: any } = never,
+    Output = IR['output'] extends Record<string, any> ? IR['output'] : never,
     Tools extends Record<string, any> = ToolRegistry<IR>
 >(
     ir: IR,
-    config: Omit<AuwgentConfig<IR>, 'tools'> & { tools: Tools; middleware?: Middleware<IR>[] }
+    config: Omit<AuwgentConfig<IR>, 'tools'> & { tools: Tools; middleware?: Middleware<IR, CustomIntents, Output, Tools>[] }
 ): TypedAuwgent<IR, CustomIntents, Output, Tools> {
     return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config as any);
 }
 
 export function createAuwgentFromIRJson<
     const IR extends AgentIRShape,
-    CustomIntents = never,
-    Output = IR['output'] extends null ? any : IR['output'],
+    CustomIntents extends { name: string; value: any } = never,
+    Output = IR['output'] extends Record<string, any> ? IR['output'] : never,
     Tools = ToolRegistry<IR>
 >(
     irJson: string,
-    config: Omit<AuwgentConfig<IR>, 'tools'> & { tools: Tools; middleware?: Middleware<IR>[] }
+    config: Omit<AuwgentConfig<IR>, 'tools'> & { tools: Tools; middleware?: Middleware<IR, CustomIntents, Output, Tools>[] }
 ): TypedAuwgent<IR, CustomIntents, Output, Tools> {
     const ir = JSON.parse(irJson) as IR;
     return new TypedAuwgent<IR, CustomIntents, Output, Tools>(ir, config as any);

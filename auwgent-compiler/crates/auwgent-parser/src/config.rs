@@ -363,6 +363,66 @@ pub(crate) fn test_config_parser(
         })
 }
 
+// ── Intent Config ─────────────────────────────────────────────────────────
+
+/// Parse a single named intent body (for inline and top-level):
+/// `name { description: "..." fields { ... } }`
+pub(crate) fn intent_body_parser(
+) -> impl Parser<TokenKind, IntentDeclaration, Error = Simple<TokenKind>> + Clone {
+    let desc = tok(TokenKind::Description)
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(string_lit())
+        .or_not();
+
+    let fields = tok(TokenKind::Fields)
+        .ignore_then(
+            type_config_decl_block_parser()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .or_not()
+        .map(|opt| opt.unwrap_or_default());
+
+    ident()
+        .then(desc.then(fields).delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
+        .map_with_span(|(name, (description, fields)), span| IntentDeclaration {
+            exported: false,
+            name,
+            description,
+            fields,
+            span: s(span),
+        })
+}
+
+/// Parse the `+`-composed intent expression:
+/// atom = Ident | `{` intent_body+ `}`
+/// expr = atom (`+` atom)*
+fn intent_expr_parser(
+) -> impl Parser<TokenKind, IntentExpr, Error = Simple<TokenKind>> + Clone {
+    let inline_block = intent_body_parser()
+        .repeated()
+        .at_least(1)
+        .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+        .map(IntentExpr::Inline);
+
+    let atom = inline_block.or(ident().map(IntentExpr::Ref));
+
+    atom.clone()
+        .then(tok(TokenKind::Plus).ignore_then(atom).repeated())
+        .map(|(first, rest)| {
+            rest.into_iter().fold(first, |acc, next| {
+                IntentExpr::Compose(Box::new(acc), Box::new(next))
+            })
+        })
+}
+
+pub(crate) fn intent_config_parser(
+) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone {
+    tok(TokenKind::Intent)
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(intent_expr_parser())
+        .map_with_span(|expr, span| AgentConfig::Intent(IntentConfig { expr, span: s(span) }))
+}
+
 // ── Agent Config (combined) ──────────────────────────────────────────────
 
 pub(crate) fn agent_config_parser(
@@ -489,6 +549,7 @@ pub(crate) fn agent_config_parser(
     let model_config = agent_model_config_parser().map(AgentConfig::Model);
     let lifecycle = lifecycle_parser().map(AgentConfig::Lifecycle);
     let test = test_config_parser().map(AgentConfig::Test);
+    let intent = intent_config_parser();
 
     choice((
         input_config,
@@ -502,6 +563,7 @@ pub(crate) fn agent_config_parser(
         lifecycle,
         test,
     ))
+    .or(intent)
     .recover_with(nested_delimiters(
         TokenKind::LBrace,
         TokenKind::RBrace,
