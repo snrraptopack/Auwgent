@@ -265,7 +265,11 @@ impl AuwgentEngine {
     /// `initial_stack`: Optional stack for Stack-Aware Resumption. When provided,
     /// the engine fast-forwards through intermediate agents without calling the LLM,
     /// resuming directly at the deepest (last) agent in the stack.
-    pub async fn run(&mut self, input: Option<Value>, initial_stack: Option<Vec<String>>) -> AuwgentResult<()> {
+    pub async fn run(
+        &mut self,
+        input: Option<Value>,
+        initial_stack: Option<Vec<String>>,
+    ) -> AuwgentResult<()> {
         // ── Stack-Aware Resumption ─────────────────────────────────────────
         // Store the initial stack. The first agent in the stack is always the
         // root agent (self), so we skip it and keep the rest for child agents.
@@ -301,7 +305,8 @@ impl AuwgentEngine {
         }
 
         let model_info = evaluator.evaluate_model(default_config, &mut scope)?;
-        let provider_type = model_info["type"].as_str()
+        let provider_type = model_info["type"]
+            .as_str()
             .or_else(|| model_info["provider"].as_str())
             .unwrap_or("gemini");
         let provider_id = if provider_type == "custom" {
@@ -467,7 +472,8 @@ impl AuwgentEngine {
             // This handles cases where streaming parsing got confused by noise but
             // extract_yaml can find a clean signal at the end.
             if !actions_performed {
-                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
+                let cleaned =
+                    crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
                 if !cleaned.is_empty() && cleaned != self.current_raw_response {
                     self.orchestrator.reset();
                     self.orchestrator.write(&cleaned);
@@ -490,7 +496,8 @@ impl AuwgentEngine {
             // still contains the noisy version.
             // We should ideally store the CLEANED version in the session
             // if we want to avoid showing fences in the final stored state.
-            let cleaned_response = crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
+            let cleaned_response =
+                crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
 
             // Save the raw LLM output in the session history so the exact
             // YAML text is visible in logs and follow-up turns.

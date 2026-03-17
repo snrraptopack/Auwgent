@@ -4,17 +4,10 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
 use napi_derive::napi;
 
-use ir_runtime::runtime::AuwgentEngine;
-use ir_runtime::runtime::drivers::ModelDriver;
-use ir_runtime::runtime::drivers::gemini::GeminiDriver;
-use ir_runtime::runtime::drivers::openai::OpenAIDriver;
-use ir_runtime::runtime::engine::{IntentControl, ToolImplementation};
-
-use ir_runtime::types::AgentIR;
+use ir_runtime::runtime::bridge::EngineBridge;
+use ir_runtime::runtime::engine::IntentControl;
 
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT — napi-rs FFI class
@@ -22,11 +15,7 @@ use tokio::sync::Mutex;
 
 #[napi]
 pub struct Auwgent {
-    engine: Arc<Mutex<AuwgentEngine>>,
-    /// The parsed IR — kept for introspection (tool listing, etc.)
-    ir: Arc<AgentIR>,
-    /// Tokio runtime for async ops
-    rt: Arc<tokio::runtime::Runtime>,
+    bridge: EngineBridge,
 }
 
 #[napi]
@@ -38,74 +27,34 @@ impl Auwgent {
     /// ```
     #[napi(constructor)]
     pub fn new(ir_json: String) -> Result<Self> {
-        let ir: AgentIR = serde_json::from_str(&ir_json)
-            .map_err(|e| Error::from_reason(format!("Failed to parse IR JSON: {}", e)))?;
-
-        let engine = AuwgentEngine::new(ir.clone());
-
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| Error::from_reason(format!("Failed to create tokio runtime: {}", e)))?;
-
-        Ok(Self {
-            engine: Arc::new(Mutex::new(engine)),
-            ir: Arc::new(ir),
-            rt: Arc::new(rt),
-        })
+        let bridge = EngineBridge::new(ir_json).map_err(Error::from_reason)?;
+        Ok(Self { bridge })
     }
 
     /// Set the Gemini driver with the given API key.
     #[napi]
     pub fn set_gemini_driver(&self, api_key: String) -> Result<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "gemini",
-                std::sync::Arc::new(GeminiDriver::new(api_key)) as std::sync::Arc<dyn ModelDriver>,
-            );
-        });
+        self.bridge.set_gemini_driver(api_key);
         Ok(())
     }
 
     /// Set the OpenAI driver with the given API key.
     #[napi]
     pub fn set_openai_driver(&self, api_key: String) -> Result<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "openai",
-                std::sync::Arc::new(OpenAIDriver::new(api_key, None))
-                    as std::sync::Arc<dyn ModelDriver>,
-            );
-        });
+        self.bridge.set_openai_driver(api_key, None);
         Ok(())
     }
 
     /// Set a custom OpenAI-compatible driver with a unique ID.
     #[napi]
     pub fn set_custom_driver(&self, id: String, api_key: String, base_url: String) -> Result<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                &id,
-                std::sync::Arc::new(OpenAIDriver::new(api_key, Some(base_url)))
-                    as std::sync::Arc<dyn ModelDriver>,
-            );
-        });
+        self.bridge.set_custom_driver(id, api_key, base_url);
         Ok(())
     }
 
     #[napi]
     pub fn set_context(&self, context: Value) -> Result<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.set_context(context);
-        });
+        self.bridge.set_context(context);
         Ok(())
     }
 
@@ -129,7 +78,7 @@ impl Auwgent {
             })?;
 
         // Wrap the TSFN into a ToolImplementation closure
-        let tool_impl: ToolImplementation = Arc::new(move |args: Value| {
+        let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
             let tsfn = tsfn.clone();
             Box::pin(async move {
                 // Call the JS function from the Rust async context
@@ -141,11 +90,10 @@ impl Auwgent {
             })
         });
 
-        let engine = self.engine.clone();
-        let tool_name = name.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_tool(&tool_name, tool_impl);
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
+            eng.register_tool(&name, tool_impl);
         });
 
         Ok(())
@@ -183,7 +131,7 @@ impl Auwgent {
 
         // Wrap into an AsyncIntentCallback
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
-            Arc::new(move |name: String, value: Value| {
+            std::sync::Arc::new(move |name: String, value: Value| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     // Call the JS callback and check return value
@@ -198,9 +146,9 @@ impl Auwgent {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_intent(handler);
         });
 
@@ -232,15 +180,15 @@ impl Auwgent {
             })?;
 
         // Wrap into a sync callback (partials are fire-and-forget, no await)
-        let handler: Arc<dyn Fn(String, Value) + Send + Sync> =
-            Arc::new(move |name: String, value: Value| {
+        let handler: std::sync::Arc<dyn Fn(String, Value) + Send + Sync> =
+            std::sync::Arc::new(move |name: String, value: Value| {
                 // Non-blocking call — don't await, just fire
                 tsfn.call((name, value), ThreadsafeFunctionCallMode::NonBlocking);
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_intent_partial(handler);
         });
 
@@ -260,7 +208,7 @@ impl Auwgent {
             })?;
 
         let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
-            Arc::new(move |name: String, empty_session: String| {
+            std::sync::Arc::new(move |name: String, empty_session: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     let result = tsfn
@@ -273,9 +221,9 @@ impl Auwgent {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_sub_engine_start(handler);
         });
 
@@ -295,7 +243,7 @@ impl Auwgent {
             })?;
 
         let handler: ir_runtime::runtime::engine::SessionSaveCallback =
-            Arc::new(move |name: String, completed_session: String| {
+            std::sync::Arc::new(move |name: String, completed_session: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     let result = tsfn
@@ -307,9 +255,9 @@ impl Auwgent {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_sub_engine_complete(handler);
         });
 
@@ -329,7 +277,7 @@ impl Auwgent {
             })?;
 
         let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            Arc::new(move |prompt_str: String, sys_str: String| {
+            std::sync::Arc::new(move |prompt_str: String, sys_str: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     let result = tsfn
@@ -344,9 +292,9 @@ impl Auwgent {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_llm_start(handler);
         });
 
@@ -366,7 +314,7 @@ impl Auwgent {
             })?;
 
         let handler: ir_runtime::runtime::engine::AsyncLlmEndCallback =
-            Arc::new(move |response_string: String, sys_string: String| {
+            std::sync::Arc::new(move |response_string: String, sys_string: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     let result = tsfn
@@ -378,9 +326,9 @@ impl Auwgent {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_llm_end(handler);
         });
 
@@ -389,13 +337,7 @@ impl Auwgent {
 
     #[napi]
     pub fn clear_listeners(&self) -> Result<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_intent_handlers();
-            eng.clear_sub_engine_handlers();
-            eng.clear_llm_handlers();
-        });
+        self.bridge.clear_listeners();
         Ok(())
     }
 
@@ -412,8 +354,6 @@ impl Auwgent {
     /// ```
     #[napi]
     pub async fn run(&self, input: Option<String>, initial_stack_json: Option<String>) -> Result<String> {
-        let engine = self.engine.clone();
-
         let input_val =
             input.map(|s| serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s)));
 
@@ -421,141 +361,65 @@ impl Auwgent {
         let initial_stack: Option<Vec<String>> = initial_stack_json
             .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok());
 
-        let rt = self.rt.clone();
-        let result: std::result::Result<String, String> = tokio::task::spawn_blocking(move || {
-            rt.block_on(async {
-                let mut eng = engine.lock().await;
-                eng.run(input_val, initial_stack).await.map_err(|e| format!("{}", e))?;
-                eng.export_session().map_err(|e| format!("{}", e))
-            })
-        })
-        .await
-        .map_err(|e| Error::from_reason(format!("Task join error: {}", e)))?;
-
-        result.map_err(|e| Error::from_reason(e))
+        self.bridge.run_async(input_val, initial_stack).await.map_err(Error::from_reason)
     }
 
     /// Export the current session state as a JSON string.
     /// The host can persist this and restore it later with `importSession()`.
     #[napi]
     pub fn export_session(&self) -> Result<String> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.export_session()
-                .map_err(|e| Error::from_reason(format!("{}", e)))
-        })
+        self.bridge.export_session().map_err(Error::from_reason)
     }
 
     /// Import a previously exported session state.
     #[napi]
     pub fn import_session(&self, json: String) -> Result<()> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.import_session(&json)
-                .map_err(|e| Error::from_reason(format!("{}", e)))
-        })
+        self.bridge.import_session(json).map_err(Error::from_reason)
     }
 
     /// Clear the session (start a fresh conversation).
     #[napi]
     pub fn clear_session(&self) -> Result<()> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_session();
-        });
+        self.bridge.clear_session();
         Ok(())
     }
 
     /// Generate the system prompt (useful for debugging).
     #[napi]
     pub fn generate_prompt(&self) -> Result<String> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.generate_prompt()
-                .map_err(|e| Error::from_reason(format!("{}", e)))
-        })
+        self.bridge.generate_prompt().map_err(Error::from_reason)
     }
 
     /// Get all tool names defined in the IR.
     /// Used by the TypeScript wrapper for type-safe tool registration.
     #[napi]
     pub fn get_tool_names(&self) -> Vec<String> {
-        self.ir.tools.iter().map(|t| t.name.clone()).collect()
+        self.bridge.get_tool_names()
     }
 
     /// Get tool schemas as JSON (for TypeScript type generation).
     #[napi]
     pub fn get_tool_schemas(&self) -> Result<String> {
-        let schemas: Vec<Value> = self
-            .ir
-            .tools
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "params": t.params,
-                    "returns": t.returns,
-                })
-            })
-            .collect();
-        serde_json::to_string(&schemas).map_err(|e| Error::from_reason(format!("{}", e)))
+        self.bridge.get_tool_schemas().map_err(Error::from_reason)
     }
 
     /// Write a chunk directly to the orchestrator (for simulation/testing).
     #[napi]
     pub fn write_chunk(&self, chunk: String) -> Result<()> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.write_llm_chunk(&chunk);
-        });
+        self.bridge.write_chunk(chunk);
         Ok(())
     }
 
     /// Finalize the LLM stream (for simulation/testing).
     #[napi]
     pub fn end_stream(&self) -> Result<String> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        rt.block_on(async {
-            let mut eng = engine.lock().await;
-            let val = eng.end_llm_stream();
-            serde_json::to_string(&val).map_err(|e| Error::from_reason(format!("{}", e)))
-        })
+        self.bridge.end_stream().map_err(Error::from_reason)
     }
 
     /// Process any pending intents (for simulation/testing).
     #[napi]
     pub async fn process_intents(&self) -> Result<String> {
-        let engine = self.engine.clone();
-        let rt = self.rt.clone();
-        let result: std::result::Result<String, String> = tokio::task::spawn_blocking(move || {
-            rt.block_on(async {
-                let mut eng = engine.lock().await;
-                let (terminal, actions, hard_stop) =
-                    eng.process_intents().await.map_err(|e| format!("{}", e))?;
-                Ok(serde_json::json!({
-                    "terminal": terminal,
-                    "actions": actions,
-                    "hard_stop": hard_stop,
-                })
-                .to_string())
-            })
-        })
-        .await
-        .map_err(|e| Error::from_reason(format!("Task join error: {}", e)))?;
-
-        result.map_err(|e| Error::from_reason(e))
+        self.bridge.process_intents_async().await.map_err(Error::from_reason)
     }
 }
 

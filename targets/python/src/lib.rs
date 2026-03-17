@@ -4,16 +4,10 @@
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use ir_runtime::runtime::AuwgentEngine;
-use ir_runtime::runtime::drivers::ModelDriver;
-use ir_runtime::runtime::drivers::gemini::GeminiDriver;
-use ir_runtime::runtime::drivers::openai::OpenAIDriver;
-use ir_runtime::runtime::engine::{IntentControl, ToolImplementation};
-use ir_runtime::types::AgentIR;
+use ir_runtime::runtime::bridge::EngineBridge;
+use ir_runtime::runtime::engine::IntentControl;
 
 use serde_json::Value;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT — PyO3 FFI class
@@ -21,174 +15,76 @@ use tokio::sync::Mutex;
 
 #[pyclass]
 pub struct AuwgentNative {
-    engine: Arc<Mutex<AuwgentEngine>>,
-    ir: Arc<AgentIR>,
-    rt: Arc<tokio::runtime::Runtime>,
+    bridge: EngineBridge,
 }
 
 #[pymethods]
 impl AuwgentNative {
     #[new]
     pub fn new(ir_json: String) -> PyResult<Self> {
-        let ir: AgentIR = serde_json::from_str(&ir_json)
-            .map_err(|e| PyValueError::new_err(format!("Failed to parse IR JSON: {}", e)))?;
-
-        let engine = AuwgentEngine::new(ir.clone());
-
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| {
-                PyRuntimeError::new_err(format!("Failed to create tokio runtime: {}", e))
-            })?;
-
-        Ok(Self {
-            engine: Arc::new(Mutex::new(engine)),
-            ir: Arc::new(ir),
-            rt: Arc::new(rt),
-        })
+        let bridge = EngineBridge::new(ir_json)
+            .map_err(|e| PyValueError::new_err(e))?;
+        Ok(Self { bridge })
     }
 
     pub fn set_gemini_driver(&self, api_key: String) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "gemini",
-                std::sync::Arc::new(GeminiDriver::new(api_key)) as std::sync::Arc<dyn ModelDriver>,
-            );
-        });
+        self.bridge.set_gemini_driver(api_key);
         Ok(())
     }
 
     pub fn set_openai_driver(&self, api_key: String, base_url: Option<String>) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "openai",
-                std::sync::Arc::new(OpenAIDriver::new(api_key.clone(), None))
-                    as std::sync::Arc<dyn ModelDriver>,
-            );
-            if let Some(url) = base_url {
-                eng.register_driver(
-                    "custom",
-                    std::sync::Arc::new(OpenAIDriver::new(api_key, Some(url)))
-                        as std::sync::Arc<dyn ModelDriver>,
-                );
-            }
-        });
+        self.bridge.set_openai_driver(api_key, base_url);
         Ok(())
     }
 
     pub fn set_custom_driver(&self, id: String, api_key: String, base_url: String) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                &id,
-                std::sync::Arc::new(OpenAIDriver::new(api_key, Some(base_url)))
-                    as std::sync::Arc<dyn ModelDriver>,
-            );
-        });
+        self.bridge.set_custom_driver(id, api_key, base_url);
         Ok(())
     }
 
     pub fn set_context(&self, context_json: String) -> PyResult<()> {
         let context: Value = serde_json::from_str(&context_json)
             .map_err(|e| PyValueError::new_err(format!("Invalid context json: {}", e)))?;
-
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.set_context(context);
-        });
+        self.bridge.set_context(context);
         Ok(())
     }
 
     pub fn get_tool_names(&self) -> Vec<String> {
-        self.ir.tools.iter().map(|t| t.name.clone()).collect()
+        self.bridge.get_tool_names()
     }
 
     pub fn get_tool_schemas(&self) -> PyResult<String> {
-        let schemas: Vec<Value> = self
-            .ir
-            .tools
-            .iter()
-            .map(|t| {
-                serde_json::json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "params": t.params,
-                    "returns": t.returns,
-                })
-            })
-            .collect();
-        serde_json::to_string(&schemas).map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+        self.bridge.get_tool_schemas().map_err(PyRuntimeError::new_err)
     }
 
     pub fn export_session(&self) -> PyResult<String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.export_session()
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
-        })
+        self.bridge.export_session().map_err(PyRuntimeError::new_err)
     }
 
     pub fn import_session(&self, json: String) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.import_session(&json)
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
-        })
+        self.bridge.import_session(json).map_err(PyRuntimeError::new_err)
     }
 
     pub fn clear_session(&self) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_session();
-        });
+        self.bridge.clear_session();
         Ok(())
     }
 
     pub fn generate_prompt(&self) -> PyResult<String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.generate_prompt()
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
-        })
+        self.bridge.generate_prompt().map_err(PyRuntimeError::new_err)
     }
 
     pub fn write_chunk(&self, chunk: String) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.write_llm_chunk(&chunk);
-        });
+        self.bridge.write_chunk(chunk);
         Ok(())
     }
 
     pub fn end_stream(&self) -> PyResult<String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            let val = eng.end_llm_stream();
-            serde_json::to_string(&val).map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
-        })
+        self.bridge.end_stream().map_err(PyRuntimeError::new_err)
     }
 
     pub fn clear_listeners(&self) -> PyResult<()> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_intent_handlers();
-            eng.clear_sub_engine_handlers();
-            eng.clear_llm_handlers();
-        });
+        self.bridge.clear_listeners();
         Ok(())
     }
 
@@ -196,45 +92,32 @@ impl AuwgentNative {
     // ASYNC AND CALLBACK METHODS
     // ==========================================
 
-    pub fn run<'p>(&self, py: Python<'p>, input: Option<String>) -> PyResult<&'p PyAny> {
-        let engine = self.engine.clone();
+    pub fn run<'p>(&self, py: Python<'p>, input: Option<String>, initial_stack_json: Option<String>) -> PyResult<&'p PyAny> {
         let input_val =
             input.map(|s| serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s)));
 
+        let initial_stack: Option<Vec<String>> = initial_stack_json
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok());
+
+        let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut eng = engine.lock().await;
-            let _res = eng
-                .run(input_val)
+            bridge.run_async(input_val, initial_stack)
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;
-            let export = eng
-                .export_session()
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;
-            Ok(export)
+                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
     pub fn process_intents<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
-        let engine = self.engine.clone();
-
+        let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut eng = engine.lock().await;
-            let (terminal, actions, hard_stop) = eng
-                .process_intents()
+            bridge.process_intents_async()
                 .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))?;
-            let json_res = serde_json::json!({
-                "terminal": terminal,
-                "actions": actions,
-                "hard_stop": hard_stop,
-            })
-            .to_string();
-            Ok(json_res)
+                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
     pub fn register_tool(&self, name: String, callback: PyObject) -> PyResult<()> {
-        let tool_impl: ToolImplementation = Arc::new(move |args: Value| {
+        let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
             let callback = callback.clone();
             let args_json = serde_json::to_string(&args).unwrap_or_default();
 
@@ -257,9 +140,9 @@ impl AuwgentNative {
             })
         });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.register_tool(&name, tool_impl);
         });
 
@@ -268,7 +151,7 @@ impl AuwgentNative {
 
     pub fn on_intent(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
-            Arc::new(move |name: String, value: Value| {
+            std::sync::Arc::new(move |name: String, value: Value| {
                 let callback = callback.clone();
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
 
@@ -296,9 +179,9 @@ impl AuwgentNative {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_intent(handler);
         });
 
@@ -307,7 +190,7 @@ impl AuwgentNative {
 
     pub fn on_sub_engine_start(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
-            Arc::new(move |name: String, session: String| {
+            std::sync::Arc::new(move |name: String, session: String| {
                 let callback = callback.clone();
                 Box::pin(async move {
                     let py_result = Python::with_gil(|py| {
@@ -327,9 +210,9 @@ impl AuwgentNative {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_sub_engine_start(handler);
         });
         Ok(())
@@ -337,7 +220,7 @@ impl AuwgentNative {
 
     pub fn on_sub_engine_complete(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::SessionSaveCallback =
-            Arc::new(move |name: String, session: String| {
+            std::sync::Arc::new(move |name: String, session: String| {
                 let callback = callback.clone();
                 Box::pin(async move {
                     let py_result = Python::with_gil(|py| {
@@ -352,9 +235,9 @@ impl AuwgentNative {
                 })
             });
 
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_sub_engine_complete(handler);
         });
         Ok(())
@@ -362,7 +245,7 @@ impl AuwgentNative {
 
     pub fn on_llm_start(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            Arc::new(move |prompt: String, sys: String| {
+            std::sync::Arc::new(move |prompt: String, sys: String| {
                 let callback = callback.clone();
                 Box::pin(async move {
                     let py_result = Python::with_gil(|py| {
@@ -381,9 +264,9 @@ impl AuwgentNative {
                     None
                 })
             });
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_llm_start(handler);
         });
         Ok(())
@@ -391,7 +274,7 @@ impl AuwgentNative {
 
     pub fn on_llm_end(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncLlmEndCallback =
-            Arc::new(move |res_str: String, sys: String| {
+            std::sync::Arc::new(move |res_str: String, sys: String| {
                 let callback = callback.clone();
                 Box::pin(async move {
                     let py_result = Python::with_gil(|py| {
@@ -405,26 +288,26 @@ impl AuwgentNative {
                     }
                 })
             });
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_llm_end(handler);
         });
         Ok(())
     }
 
     pub fn on_intent_partial(&self, callback: PyObject) -> PyResult<()> {
-        let handler: Arc<dyn Fn(String, Value) + Send + Sync> =
-            Arc::new(move |name: String, value: Value| {
+        let handler: std::sync::Arc<dyn Fn(String, Value) + Send + Sync> =
+            std::sync::Arc::new(move |name: String, value: Value| {
                 let callback = callback.clone();
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
                 Python::with_gil(|py| {
                     let _ = callback.call1(py, (name, value_json));
                 });
             });
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
+        let bridge = &self.bridge;
+        bridge.rt.block_on(async {
+            let mut eng = bridge.engine.lock().await;
             eng.on_intent_partial(handler);
         });
         Ok(())

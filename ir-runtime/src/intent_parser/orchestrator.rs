@@ -136,12 +136,7 @@ impl Orchestrator {
         }
     }
 
-    fn process_final_intent_value(
-        &self,
-        key: &str,
-        json_val: &mut Value,
-        entry: &MappingEntry,
-    ) {
+    fn process_final_intent_value(&self, key: &str, json_val: &mut Value, entry: &MappingEntry) {
         // ── Fix multi-line text merging ──
         if key == "response_text" {
             if let Value::Object(map) = json_val {
@@ -303,7 +298,7 @@ pub fn extract_yaml(input: &str) -> String {
     while let Some(start_idx) = lower_input[current_pos..].find("```") {
         let abs_start = current_pos + start_idx;
         let rest = &input[abs_start + 3..];
-        
+
         // Skip language tag if any
         let line_end = rest.find('\n').unwrap_or(rest.len());
         let tag = rest[..line_end].trim().to_lowercase();
@@ -339,7 +334,11 @@ pub fn extract_yaml(input: &str) -> String {
             if !trimmed.is_empty() && trimmed.contains(':') && !trimmed.starts_with('#') {
                 // Heuristic: line starts with a word-like thing followed by a colon
                 let part = trimmed.split(':').next().unwrap_or("");
-                if !part.is_empty() && part.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                if !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                {
                     first_key_line = Some(i);
                     break;
                 }
@@ -375,7 +374,7 @@ mod tests {
     fn test_orchestrator_sequence_root() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -395,7 +394,7 @@ mod tests {
     fn test_orchestrator_user_intermittent_failing_case() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -403,18 +402,18 @@ mod tests {
         }));
 
         let input = "response_schema:\n  response: |\n    Ghana gained its independence from British colonial rule on March 6, 1957. \n    The story of that historic day is one of hope, determination, and the collective dream of a people yearning for freedom.\n\n    In the early 1950s, a charismatic leader named Dr. Kwame Nkrumah rose to prominence. He founded the Convention People's Party (CPP) and championed the slogan “Self‑government now!” Nkrumah traveled across the Gold Coast (the name of Ghana then) rallying crowds, singing songs of liberation, and demanding an end to colonial domination.\n\n    The British administration, feeling the pressure of a growing nationalist movement, tried to negotiate a gradual transition. However, Nkrumah and his supporters were steadfast: they wanted full sovereignty without delay. Massive peaceful protests, strikes, and a wave of civil disobedience swept the towns and villages. The most famous was the “Positive Action” campaign of 1950, where students, workers, and farmers united in a non‑violent push for independence.\n\n    By 1956, the British government recognized that the tide could not be turned back. A constitutional conference in London led to an agreement that the Gold Coast would become an independent nation. The night before the declaration, the streets of Accra glowed with lanterns, drums, and the rhythmic chants of “Ghana! Ghana!” Families gathered, children waved small flags, and elders recited prayers for the new nation’s future.\n\n    On the morning of March 6, 1957, a jubilant crowd assembled at the Black Star Square (now Independence Square). Dr. Nkrumah, dressed in a ceremonial red robe, raised the newly designed Ghanaian flag—a red, gold, and green banner with a solitary black star at its center. As the anthem “God Bless Our Homeland Ghana” resonated, the crowd sang in unison, tears of joy streaming down faces. The moment marked not just political independence but the birth of a hopeful vision: a united, prosperous Africa led by a free Ghana.\n\n    That day, Ghana’s independence inspired many other African nations to pursue their own liberation, earning Ghana the nickname “the beacon of Africa.” Today, every March 6th, Ghanaians celebrate with parades, cultural performances, and reflections on the journey from colonial rule to self‑determination—reminding the world that the spirit of freedom, once ignited, can illuminate an entire continent.\n  score: 1.0\n";
-        
+
         // Use small chunks to stress test streaming boundary robustness
         for chunk in input.as_bytes().chunks(5) {
             orchestrator.write(&String::from_utf8_lossy(chunk));
         }
-        
+
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
         assert_eq!(final_intents.len(), 1, "Intent should have been emitted");
         assert_eq!(final_intents[0].0, "response_schema");
-        
+
         let val = &final_intents[0].1;
         println!("Value: {}", serde_json::to_string_pretty(val).unwrap());
         assert!(val.get("response").is_some());
@@ -425,7 +424,7 @@ mod tests {
     fn test_orchestrator_noise_before_yaml() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -437,7 +436,11 @@ mod tests {
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
-        assert_eq!(final_intents.len(), 1, "Intent should have been emitted even with noise before it");
+        assert_eq!(
+            final_intents.len(),
+            1,
+            "Intent should have been emitted even with noise before it"
+        );
         assert_eq!(final_intents[0].0, "response_schema");
     }
 
@@ -445,7 +448,7 @@ mod tests {
     fn test_orchestrator_noise_with_hyphen() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -457,7 +460,11 @@ mod tests {
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
-        assert_eq!(final_intents.len(), 1, "Intent should have been emitted even with noisy hyphens before it");
+        assert_eq!(
+            final_intents.len(),
+            1,
+            "Intent should have been emitted even with noisy hyphens before it"
+        );
         assert_eq!(final_intents[0].0, "response_schema");
     }
 
@@ -465,7 +472,7 @@ mod tests {
     fn test_orchestrator_noise_with_hyphen_space() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -477,7 +484,11 @@ mod tests {
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
-        assert_eq!(final_intents.len(), 1, "Intent should have been emitted even with noisy root sequence before it");
+        assert_eq!(
+            final_intents.len(),
+            1,
+            "Intent should have been emitted even with noisy root sequence before it"
+        );
         assert_eq!(final_intents[0].0, "response_schema");
     }
 
@@ -485,7 +496,7 @@ mod tests {
     fn test_orchestrator_noise_with_hyphen_space_at_same_indent() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -497,7 +508,11 @@ mod tests {
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
-        assert_eq!(final_intents.len(), 1, "Intent should have been emitted even with noisy items in same root sequence");
+        assert_eq!(
+            final_intents.len(),
+            1,
+            "Intent should have been emitted even with noisy items in same root sequence"
+        );
         assert_eq!(final_intents[0].0, "response_schema");
     }
 
@@ -505,7 +520,7 @@ mod tests {
     fn test_orchestrator_noise_with_key_value() {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("response_schema");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
@@ -517,7 +532,11 @@ mod tests {
         orchestrator.end();
 
         let final_intents = intents.lock().unwrap();
-        assert_eq!(final_intents.len(), 1, "Intent should have been emitted even with noisy keys at root");
+        assert_eq!(
+            final_intents.len(),
+            1,
+            "Intent should have been emitted even with noisy keys at root"
+        );
         assert_eq!(final_intents[0].0, "response_schema");
     }
 
@@ -530,7 +549,7 @@ mod tests {
         assert!(cleaned.contains("intent3: value3"));
         // Since intent2 is between fences, it might be skipped if we only take fences.
         // But extract_yaml takes ALL fences and joins them.
-        assert!(!cleaned.contains("intent2: value2")); 
+        assert!(!cleaned.contains("intent2: value2"));
     }
 
     #[test]
@@ -545,7 +564,7 @@ mod tests {
         let mut orchestrator = Orchestrator::new(None);
         orchestrator.register_intent("intent1");
         orchestrator.register_intent("intent2");
-        
+
         let intents = Arc::new(std::sync::Mutex::new(Vec::new()));
         let intents_clone = intents.clone();
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
