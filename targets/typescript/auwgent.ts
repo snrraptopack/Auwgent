@@ -352,16 +352,29 @@ export class TypedAuwgent<
         const runtimeCtx = this.getBuildContext();
 
         try {
-            // onRunStart Interception
+            // onRunStart Interception — middleware can mutate ctx.stack here
+            // for Stack-Aware Resumption (Execution-Tunneling)
             for (const m of this.getMiddleware(runtimeCtx)) {
                 if (m.onRunStart) {
                     currentSession = await (m as any).onRunStart(currentSession, runtimeCtx);
                 }
             }
 
-            // Execute Native
+            // ── Stack-Aware Resumption ──────────────────────────────────
+            // After middleware runs, check if ctx.stack was mutated.
+            // Default is [rootAgent] (length 1). If middleware set it to
+            // e.g. ["Main", "Broker", "RiskValidator"], pass it to the
+            // native engine for fast-forward teleportation.
+            const injectedStack = runtimeCtx.stack.length > 1
+                ? runtimeCtx.stack
+                : null;
+
+            // Execute Native — pass injected stack if middleware set one
             this.importSession(currentSession);
-            const json = await this.native.run(input ?? null);
+            const json = await (this.native.run as any)(
+                input ?? null,
+                injectedStack ? JSON.stringify(injectedStack) : null
+            );
             currentSession = JSON.parse(json) as SessionState;
 
             // onRunComplete Interception

@@ -36,7 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Register onIntent callback for real-time visibility
     engine.on_intent(Arc::new(|name, value| {
         Box::pin(async move {
-            println!("\n  🔔 [onIntent] {} → {}", name, value);
+            println!("\n  [onIntent] {} → {}", name, value);
             None // proceed normally — auto-execute
         })
     }));
@@ -50,9 +50,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nStarting Live Agentic Run...");
         // Ask a question that should trigger the "hello" tool
         match engine
-            .run(Some(json!(
-                "Please call the hello tool with id 'live_test_001'"
-            )))
+            .run(
+                Some(json!("Please call the hello tool with id 'live_test_001'")),
+                None,
+            )
             .await
         {
             Ok(_) => println!("\nLive run completed successfully."),

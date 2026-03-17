@@ -402,21 +402,30 @@ impl Auwgent {
     /// Run the agentic loop with the given input.
     /// Returns the exported session state as JSON.
     ///
+    /// `initial_stack_json`: Optional JSON array of agent names for Stack-Aware Resumption.
+    /// Example: `'["Main", "Broker", "RiskValidator"]'`
+    ///
     /// ```js
     /// const session = await agent.run('Hello, agent!');
+    /// // or with stack resumption:
+    /// const session = await agent.run('Hello', JSON.stringify(savedStack));
     /// ```
     #[napi]
-    pub async fn run(&self, input: Option<String>) -> Result<String> {
+    pub async fn run(&self, input: Option<String>, initial_stack_json: Option<String>) -> Result<String> {
         let engine = self.engine.clone();
 
         let input_val =
             input.map(|s| serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s)));
 
+        // Parse the optional initial stack JSON array
+        let initial_stack: Option<Vec<String>> = initial_stack_json
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok());
+
         let rt = self.rt.clone();
         let result: std::result::Result<String, String> = tokio::task::spawn_blocking(move || {
             rt.block_on(async {
                 let mut eng = engine.lock().await;
-                eng.run(input_val).await.map_err(|e| format!("{}", e))?;
+                eng.run(input_val, initial_stack).await.map_err(|e| format!("{}", e))?;
                 eng.export_session().map_err(|e| format!("{}", e))
             })
         })

@@ -98,6 +98,10 @@ pub struct AuwgentEngine {
     llm_start_handler: Option<AsyncLlmStartCallback>,
     /// Hook that fires after LLM generation
     llm_end_handler: Option<AsyncLlmEndCallback>,
+    /// Active fast-forward stack for Stack-Aware Resumption.
+    /// When set, the engine bypasses LLM calls and jumps straight to the
+    /// deepest agent in the stack, then resumes normal execution from there.
+    fast_forward_stack: Option<Vec<String>>,
 }
 
 impl AuwgentEngine {
@@ -136,6 +140,7 @@ impl AuwgentEngine {
             session_save_handler: None,
             llm_start_handler: None,
             llm_end_handler: None,
+            fast_forward_stack: None,
         }
     }
 
@@ -249,7 +254,24 @@ impl AuwgentEngine {
     // ── Agentic Loop ──────────────────────────────────────────────────────
 
     /// Execute the agentic loop.
-    pub async fn run(&mut self, input: Option<Value>) -> AuwgentResult<()> {
+    ///
+    /// `initial_stack`: Optional stack for Stack-Aware Resumption. When provided,
+    /// the engine fast-forwards through intermediate agents without calling the LLM,
+    /// resuming directly at the deepest (last) agent in the stack.
+    pub async fn run(&mut self, input: Option<Value>, initial_stack: Option<Vec<String>>) -> AuwgentResult<()> {
+        // ── Stack-Aware Resumption ─────────────────────────────────────────
+        // Store the initial stack. The first agent in the stack is always the
+        // root agent (self), so we skip it and keep the rest for child agents.
+        if let Some(stack) = initial_stack {
+            // Skip the root agent (index 0) — it IS us, so we just keep the tail
+            if stack.len() > 1 {
+                self.fast_forward_stack = Some(stack[1..].to_vec());
+            } else {
+                // Stack only had the root — no fast-forward needed, we ARE the focus
+                self.fast_forward_stack = None;
+            }
+        }
+
         let evaluator = Evaluator::new(&self.ir);
 
         // 1. Evaluate Model Info
@@ -326,6 +348,41 @@ impl AuwgentEngine {
             self.current_raw_response.clear();
             self.pending_tool_results.clear();
             self.orchestrator.reset();
+
+            // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
+            // If we have a fast-forward stack, skip the LLM entirely and
+            // inject a synthetic helper_call intent to jump straight to
+            // the target agent. This is the core of Execution-Tunneling.
+            if let Some(ref ffs) = self.fast_forward_stack {
+                if let Some(next_helper) = ffs.first() {
+                    // Inject synthetic helper_call — no LLM needed
+                    let synthetic_intent = serde_json::json!({
+                        "type": next_helper,
+                        "args": {}
+                    });
+
+                    if let Ok(mut pending) = self.pending_intents.lock() {
+                        pending.push(("helper_call".to_string(), synthetic_intent));
+                    }
+
+                    // Process the synthetic intent (this will call execute_helper,
+                    // which will propagate the remaining stack slice)
+                    let (_terminal, actions, hard_stop) = self.process_intents().await?;
+
+                    // After teleportation, the sub-engine has completed.
+                    // Store results and decide whether to loop or stop.
+                    if hard_stop {
+                        break;
+                    }
+                    if actions {
+                        let results_payload = self.build_results_payload();
+                        self.session.start_turn(&results_payload);
+                    }
+                    // Continue the loop — the next iteration will run
+                    // normally since fast_forward_stack was consumed
+                    continue;
+                }
+            }
 
             // If this is the first turn (the actual user prompt, not a tool feedback cycle),
             // fire the onLlmStart interceptor. It can return a modified string.
@@ -899,7 +956,30 @@ impl AuwgentEngine {
             }
 
             // 7. Run the full nested agentic loop
-            sub_engine.run(Some(args)).await?;
+            // ── Stack-Aware Resumption: propagate the fast-forward path ─────
+            // If the parent engine has a fast-forward stack and the next target
+            // is this helper, give the sub-engine the remaining slice.
+            let sub_initial_stack = self.fast_forward_stack.as_ref().and_then(|ffs| {
+                if ffs.first().map(|s| s.as_str()) == Some(helper_name.as_str()) {
+                    // This helper IS next in the stack — give it the remaining slice
+                    // (which it will use to continue fast-forwarding into its children).
+                    Some({
+                        // Include the helper's own name as the "root" of its sub-stack
+                        let mut sub_stack = vec![helper_name.clone()];
+                        sub_stack.extend_from_slice(&ffs[1..]);
+                        sub_stack
+                    })
+                } else {
+                    None
+                }
+            });
+
+            // Consume the fast-forward stack entry now that we've dispatched it
+            if sub_initial_stack.is_some() {
+                self.fast_forward_stack = None;
+            }
+
+            sub_engine.run(Some(args), sub_initial_stack).await?;
 
             // 7.5 Save session to host if handler exists
             if let Some(save_fn) = &session_save_handler {

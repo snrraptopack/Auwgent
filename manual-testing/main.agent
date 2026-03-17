@@ -10,3 +10,8 @@ agent Hello{
         response:string
     }
 }
+
+
+helper Joker{
+    description: "very good at cracking jokes"
+}

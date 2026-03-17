@@ -83,11 +83,16 @@ export declare class Auwgent {
    * Run the agentic loop with the given input.
    * Returns the exported session state as JSON.
    *
+   * `initial_stack_json`: Optional JSON array of agent names for Stack-Aware Resumption.
+   * Example: `'["Main", "Broker", "RiskValidator"]'`
+   *
    * ```js
    * const session = await agent.run('Hello, agent!');
+   * // or with stack resumption:
+   * const session = await agent.run('Hello', JSON.stringify(savedStack));
    * ```
    */
-  run(input?: string | undefined | null): Promise<string>
+  run(input?: string | undefined | null, initialStackJson?: string | undefined | null): Promise<string>
   /**
    * Export the current session state as a JSON string.
    * The host can persist this and restore it later with `importSession()`.
