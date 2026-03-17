@@ -198,18 +198,17 @@ fn symbol_in_element(element: &Element, offset: usize) -> Option<SymbolTarget> {
         }
         Element::ModelDef(model) => {
             if contains_offset(model.name.span.start, model.name.span.end, offset) {
-                Some(SymbolTarget {
+                return Some(SymbolTarget {
                     kind: SymbolTargetKind::Model(model.name.value.clone()),
                     span: model.name.span,
-                })
-            } else {
-                None
+                });
             }
+            None
         }
         Element::IntentDecl(intent) => {
             if contains_offset(intent.name.span.start, intent.name.span.end, offset) {
                 return Some(SymbolTarget {
-                    kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                    kind: SymbolTargetKind::Type(intent.name.value.clone()),
                     span: intent.name.span,
                 });
             }
@@ -741,7 +740,7 @@ fn collect_element_symbols(element: &Element, symbols: &mut Vec<SymbolTarget>) {
         }),
         Element::IntentDecl(intent) => {
             symbols.push(SymbolTarget {
-                kind: SymbolTargetKind::Identifier(intent.name.value.clone()),
+                kind: SymbolTargetKind::Type(intent.name.value.clone()),
                 span: intent.name.span,
             });
             for field in &intent.fields {

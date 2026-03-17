@@ -18,21 +18,30 @@
     }
   ],
   "input": null,
-  "output": {
-    "score": {
-      "type": "number",
-      "optional": false,
-      "description": "no description"
-    },
-    "response": {
-      "type": "string",
-      "optional": false,
-      "description": "no description"
-    }
-  },
+  "output": null,
   "context": null,
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "tests": [],
+  "customIntents": [
+    {
+      "name": "question",
+      "description": "Ask the user a clarifying question",
+      "fields": {
+        "text": {
+          "type": "string",
+          "optional": false,
+          "description": "optional description"
+        },
+        "options": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
+        }
+      }
+    }
+  ]
 }

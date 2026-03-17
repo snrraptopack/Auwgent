@@ -8,7 +8,7 @@ intent bail {
 intent question {
     description: "Ask the user a clarifying question"
     fields {
-        text: string
+        text: string @desc "optional description"
         options: string[]
     }
 }

@@ -15,8 +15,7 @@ export type HelloInput = {
 }
 
 export type HelloOutput = {
-    score: number;
-    response: string;
+
 }
 
 export type HelloContext = {
@@ -24,7 +23,8 @@ export type HelloContext = {
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type HelloCustomIntents = never;
+export type HelloCustomIntents =
+    | { name: "question"; value: { text: string; options: string[] } };
 
 /**
  * API keys required for Hello
@@ -37,7 +37,7 @@ export type HelloApiKeys = {
 export type HelloAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     HelloCustomIntents,
-    HelloOutput,
+    never,
     Record<string, never>
 >;
 
@@ -45,7 +45,7 @@ export type HelloAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
 export type HelloMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
     HelloCustomIntents,
-    HelloOutput,
+    never,
     Record<string, never>,
     T
 >;
@@ -59,7 +59,7 @@ export function createHello(config: HelloConfig): HelloAgent {
     return createAuwgent<
         typeof agentIR,
         HelloCustomIntents,
-        HelloOutput,
+        never,
         Record<string, never>
     >(agentIR, {
         tools: {} as Record<string, never>,

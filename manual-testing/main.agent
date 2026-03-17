@@ -1,17 +1,17 @@
 
+intent question {
+    description: "Ask the user a clarifying question"
+    fields {
+        text: string @desc "optional description"
+        options: string[]
+    }
+}
+
 agent Hello{
     default config{
        model: custom("my-kimi-api", "https://api.moonshot.ai/v1/chat/completions", "kimi-k2-0905-preview")
         prompt: "Hello"
     }
 
-    output {
-        score:number
-        response:string
-    }
-}
-
-
-helper Joker{
-    description: "very good at cracking jokes"
+    intent : question
 }

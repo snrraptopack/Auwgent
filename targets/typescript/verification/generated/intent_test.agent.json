@@ -80,7 +80,8 @@
       "fields": {
         "text": {
           "type": "string",
-          "optional": false
+          "optional": false,
+          "description": "optional description"
         },
         "options": {
           "type": {

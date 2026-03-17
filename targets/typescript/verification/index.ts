@@ -1,17 +1,5 @@
 import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated/main.agent.types"
 
-import { auwgent as one } from "./generated/intent_test.agent.types"
-
-let a = one({
-    apiKeys: {
-        my_botApiKey: ""
-    }
-})
-
-
-a.onIntent((name, value) => {
-
-})
 
 const logger: AuwgentMiddleware = {
     name: "logger",
@@ -25,12 +13,6 @@ const logger: AuwgentMiddleware = {
         console.log("final session", finalSession)
     },
 
-    onIntent(...args) {
-
-        if (args[0] === "response_schema") {
-            console.log(args[1].response)
-        }
-    },
 
     onLLMEnd(session, ctx) {
         console.log(ctx.rawBlock)
@@ -52,11 +34,19 @@ let config: AuwgentConfig = {
 
 const agent = auwgent(config)
 
+console.log(agent.generatePrompt())
+
 agent.onIntent((name, value) => {
+
+    if (name === "question") {
+        console.log("question:", value)
+    } else {
+        console.log("others", value)
+    }
 
 })
 
 
-const session = await agent.run("when did Ghana gain independence and tell me a story about it")
+const session = await agent.run("do you have the cup")
 
 
