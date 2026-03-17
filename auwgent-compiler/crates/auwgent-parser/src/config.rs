@@ -42,22 +42,24 @@ pub(crate) fn model_provider_parser(
         });
 
     let custom = tok(TokenKind::Custom)
-    .ignore_then(
-        string_lit()  // id
-            .then_ignore(tok(TokenKind::Comma))
-            .then(string_lit())  // url
-            .then_ignore(tok(TokenKind::Comma))
-            .then(string_lit())  // model_name
-            .then(tok(TokenKind::Comma).ignore_then(obj_arg).or_not())
-            .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
-    )
-    .map_with_span(|(((id, url), model_name), config), span| ModelProvider::Custom {
-        id,
-        url,
-        model_name,
-        config,
-        span: s(span),
-    });
+        .ignore_then(
+            string_lit() // id
+                .then_ignore(tok(TokenKind::Comma))
+                .then(string_lit()) // url
+                .then_ignore(tok(TokenKind::Comma))
+                .then(string_lit()) // model_name
+                .then(tok(TokenKind::Comma).ignore_then(obj_arg).or_not())
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .map_with_span(
+            |(((id, url), model_name), config), span| ModelProvider::Custom {
+                id,
+                url,
+                model_name,
+                config,
+                span: s(span),
+            },
+        );
 
     choice((gemini, openai, custom))
 }
@@ -151,7 +153,12 @@ pub(crate) fn prompt_stmt_parser(
                     })
                 });
 
-            choice((example, prompt_if, statement, expr.map(PromptStatement::Expr)))
+            choice((
+                example,
+                prompt_if,
+                statement,
+                expr.map(PromptStatement::Expr),
+            ))
         },
     )
 }
@@ -196,7 +203,9 @@ pub(crate) fn agent_model_config_parser(
 ) -> impl Parser<TokenKind, AgentModelConfig, Error = Simple<TokenKind>> + Clone {
     let default_config = tok(TokenKind::Default)
         .ignore_then(tok(TokenKind::Config))
-        .ignore_then(model_config_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)));
+        .ignore_then(
+            model_config_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        );
 
     let named_config = tok(TokenKind::Config)
         .ignore_then(ident())
@@ -207,13 +216,13 @@ pub(crate) fn agent_model_config_parser(
             span: s(span),
         });
 
-    default_config
-        .then(named_config.repeated())
-        .map_with_span(|(default_config, named_configs), span| AgentModelConfig {
+    default_config.then(named_config.repeated()).map_with_span(
+        |(default_config, named_configs), span| AgentModelConfig {
             default_config,
             named_configs,
             span: s(span),
-        })
+        },
+    )
 }
 
 // ── Tool Function ────────────────────────────────────────────────────────
@@ -383,7 +392,10 @@ pub(crate) fn intent_body_parser(
         .map(|opt| opt.unwrap_or_default());
 
     ident()
-        .then(desc.then(fields).delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
+        .then(
+            desc.then(fields)
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
         .map_with_span(|(name, (description, fields)), span| IntentDeclaration {
             exported: false,
             name,
@@ -396,8 +408,7 @@ pub(crate) fn intent_body_parser(
 /// Parse the `+`-composed intent expression:
 /// atom = Ident | `{` intent_body+ `}`
 /// expr = atom (`+` atom)*
-fn intent_expr_parser(
-) -> impl Parser<TokenKind, IntentExpr, Error = Simple<TokenKind>> + Clone {
+fn intent_expr_parser() -> impl Parser<TokenKind, IntentExpr, Error = Simple<TokenKind>> + Clone {
     let inline_block = intent_body_parser()
         .repeated()
         .at_least(1)
@@ -420,7 +431,12 @@ pub(crate) fn intent_config_parser(
     tok(TokenKind::Intent)
         .ignore_then(tok(TokenKind::Colon))
         .ignore_then(intent_expr_parser())
-        .map_with_span(|expr, span| AgentConfig::Intent(IntentConfig { expr, span: s(span) }))
+        .map_with_span(|expr, span| {
+            AgentConfig::Intent(IntentConfig {
+                expr,
+                span: s(span),
+            })
+        })
 }
 
 // ── Agent Config (combined) ──────────────────────────────────────────────

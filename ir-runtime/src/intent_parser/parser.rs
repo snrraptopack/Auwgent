@@ -330,6 +330,27 @@ impl Parser {
             self.pop_frame(pos.clone());
         }
 
+        // If we incorrectly pushed a Mapping frame due to an indent, 
+        // but now we see a Dash at the same indent, it's actually a Sequence.
+        if self.current_frame().frame_type == FrameType::Mapping
+            && self.current_frame().indent == token.indent
+            && match &self.current_frame().node {
+                FrameNode::Mapping(m) => m.entries.is_empty(),
+                _ => false,
+            }
+            && self.current_frame().pending_key.is_none()
+        {
+            // Convert current frame to Sequence
+            let frame = self.current_frame_mut();
+            frame.frame_type = FrameType::Sequence;
+            frame.node = FrameNode::Sequence(SequenceNode {
+                kind: "sequence".to_string(),
+                items: Vec::new(),
+                line: token.line,
+                column: token.column,
+            });
+        }
+
         let next_token = self.tokens.get(self.pos + 1);
         let is_key_item = matches!(next_token, Some(t) if t.kind == TokenType::Key);
 
@@ -547,4 +568,31 @@ pub fn parse(input: &str, options: Option<ParserOptions>) -> ParseResult {
     let mut parser = Parser::new(options);
     parser.write(input);
     parser.end()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nested_sequence_in_mapping() {
+        let input = "question:\n  options:\n    - \"Yes\"\n    - \"No\"\n  text: \"Hello\"";
+        let result = parse(input, None);
+        assert!(result.ast.is_some());
+        
+        if let Some(ASTNode::Mapping(root)) = result.ast {
+            let question_entry = root.entries.iter().find(|e| e.key == "question").unwrap();
+            if let ASTNode::Mapping(question_map) = &question_entry.value {
+                let options_entry = question_map.entries.iter().find(|e| e.key == "options").unwrap();
+                match &options_entry.value {
+                    ASTNode::Sequence(seq) => {
+                        assert_eq!(seq.items.len(), 2);
+                    }
+                    other => panic!("Expected Sequence, got {:?}", other),
+                }
+            } else {
+                panic!("Expected Mapping for question");
+            }
+        }
+    }
 }

@@ -354,10 +354,10 @@ pub fn tokenize(source: &str) -> (Vec<Token>, Vec<auwgent_errors::Diagnostic>) {
                         span,
                     });
                 } else {
-                    errors.push(auwgent_errors::Diagnostic::error(
-                        "Unclosed multiline string",
-                        span,
-                    ).with_help("Make sure the string ends with \"\"\""));
+                    errors.push(
+                        auwgent_errors::Diagnostic::error("Unclosed multiline string", span)
+                            .with_help("Make sure the string ends with \"\"\""),
+                    );
                     // Push anyway so parser can try to recover
                     tokens.push(Token {
                         kind: TokenKind::ErrorToken,
