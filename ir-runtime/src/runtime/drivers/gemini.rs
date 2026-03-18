@@ -142,16 +142,25 @@ impl ModelDriver for GeminiDriver {
         Ok(Box::pin(stream))
     }
 
-    async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>, String> {
+    async fn embed(&self, model: &str, text: &str, config: Option<Value>) -> Result<Vec<f32>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent?key={}",
             model, self.api_key
         );
 
-        let body = json!({
+        let mut body = json!({
             "model": format!("models/{}", model),
             "content": { "parts": [{ "text": text }] }
         });
+
+        // Merge optional config directly into the body
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
+            if let Some(body_obj) = body.as_object_mut() {
+                for (k, v) in cfg {
+                    body_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
 
         let response = self
             .client
@@ -189,7 +198,7 @@ impl ModelDriver for GeminiDriver {
             .collect())
     }
 
-    async fn embed_batch(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    async fn embed_batch(&self, model: &str, texts: &[String], config: Option<Value>) -> Result<Vec<Vec<f32>>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:batchEmbedContents?key={}",
             model, self.api_key
@@ -198,10 +207,20 @@ impl ModelDriver for GeminiDriver {
         let requests: Vec<Value> = texts
             .iter()
             .map(|t| {
-                json!({
+                let mut req = json!({
                     "model": format!("models/{}", model),
                     "content": { "parts": [{ "text": t }] }
-                })
+                });
+                
+                // Merge optional config into each request in the batch
+                if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
+                    if let Some(req_obj) = req.as_object_mut() {
+                        for (k, v) in cfg {
+                            req_obj.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+                req
             })
             .collect();
 

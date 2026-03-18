@@ -247,22 +247,22 @@ impl AuwgentEngine {
 
     // ── Embedding ─────────────────────────────────────────────────────────
     pub async fn embed(&self, text: &str) -> AuwgentResult<Vec<f32>> {
-        let (driver, model_name) = self.get_embedding_config()?;
+        let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed(&model_name, text)
+            .embed(&model_name, text, config)
             .await
             .map_err(AuwgentError::Driver)
     }
 
     pub async fn embed_batch(&self, texts: &[String]) -> AuwgentResult<Vec<Vec<f32>>> {
-        let (driver, model_name) = self.get_embedding_config()?;
+        let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed_batch(&model_name, texts)
+            .embed_batch(&model_name, texts, config)
             .await
             .map_err(AuwgentError::Driver)
     }
 
-    fn get_embedding_config(&self) -> AuwgentResult<(Arc<dyn ModelDriver>, String)> {
+    fn get_embedding_config(&self) -> AuwgentResult<(Arc<dyn ModelDriver>, String, Option<Value>)> {
         let model_entry = self
             .ir
             .model_config
@@ -300,6 +300,8 @@ impl AuwgentEngine {
             .as_str()
             .ok_or_else(|| AuwgentError::MissingConfig("modelName is required for embedding".into()))?;
 
+        let config_params = provider_info.get("config").cloned();
+
         let driver = self
             .drivers
             .lock()
@@ -308,7 +310,7 @@ impl AuwgentEngine {
             .ok_or_else(|| AuwgentError::NoDriver)?
             .clone();
 
-        Ok((driver, model_name.to_string()))
+        Ok((driver, model_name.to_string(), config_params))
     }
 
     // ── Agentic Loop ──────────────────────────────────────────────────────

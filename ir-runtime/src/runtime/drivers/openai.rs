@@ -136,15 +136,7 @@ impl ModelDriver for OpenAIDriver {
         Ok(Box::pin(stream))
     }
 
-    async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>, String> {
-        let results = self.embed_batch(model, &[text.to_string()]).await?;
-        results
-            .into_iter()
-            .next()
-            .ok_or_else(|| "No embedding returned".to_string())
-    }
-
-    async fn embed_batch(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+    async fn embed(&self, model: &str, text: &str, config: Option<Value>) -> Result<Vec<f32>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
             base.to_string()
@@ -152,10 +144,75 @@ impl ModelDriver for OpenAIDriver {
             format!("{}/embeddings", base)
         };
 
-        let body = json!({
+        let mut body = json!({
+            "model": model,
+            "input": text,
+        });
+
+        // Merge optional config directly into the body
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
+            if let Some(body_obj) = body.as_object_mut() {
+                for (k, v) in cfg {
+                    body_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send embedding request to OpenAI: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("OpenAI Embedding API error ({}): {}", status, error_text));
+        }
+
+        let json_val: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
+
+        let embedding_val = &json_val["data"][0]["embedding"];
+        let values = embedding_val.as_array().ok_or_else(|| {
+            format!(
+                "Missing 'data[0].embedding' field in response: {}",
+                json_val.to_string()
+            )
+        })?;
+
+        Ok(values
+            .iter()
+            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+            .collect())
+    }
+
+    async fn embed_batch(&self, model: &str, texts: &[String], config: Option<Value>) -> Result<Vec<Vec<f32>>, String> {
+        let base = self.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/embeddings") {
+            base.to_string()
+        } else {
+            format!("{}/embeddings", base)
+        };
+
+        let mut body = json!({
             "model": model,
             "input": texts,
         });
+
+        // Merge optional config directly into the body
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
+            if let Some(body_obj) = body.as_object_mut() {
+                for (k, v) in cfg {
+                    body_obj.insert(k.clone(), v.clone());
+                }
+            }
+        }
 
         let response = self
             .client
