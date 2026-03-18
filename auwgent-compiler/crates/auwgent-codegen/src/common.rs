@@ -82,13 +82,21 @@ fn collect_providers_from_model_config(model_config: Option<&Value>) -> BTreeSet
     };
 
     for config in configs {
+        // Default config
         if let Some(provider) = string_at(config, &["defaultConfig", "model", "type"]) {
             providers.insert(provider.to_string());
         }
+        if let Some(provider) = string_at(config, &["defaultConfig", "embedding", "type"]) {
+            providers.insert(provider.to_string());
+        }
 
+        // Named configs
         if let Some(named_configs) = config.get("namedConfig").and_then(Value::as_array) {
             for named in named_configs {
                 if let Some(provider) = string_at(named, &["model", "type"]) {
+                    providers.insert(provider.to_string());
+                }
+                if let Some(provider) = string_at(named, &["embedding", "type"]) {
                     providers.insert(provider.to_string());
                 }
             }
@@ -105,9 +113,15 @@ fn collect_custom_ids_from_model_config(model_config: Option<&Value>) -> BTreeSe
     };
 
     for config in configs {
-        // Check default config
+        // Check default config model
         if string_at(config, &["defaultConfig", "model", "type"]) == Some("custom") {
             if let Some(id) = string_at(config, &["defaultConfig", "model", "id"]) {
+                custom_ids.insert(id.to_string());
+            }
+        }
+        // Check default config embedding
+        if string_at(config, &["defaultConfig", "embedding", "type"]) == Some("custom") {
+            if let Some(id) = string_at(config, &["defaultConfig", "embedding", "id"]) {
                 custom_ids.insert(id.to_string());
             }
         }
@@ -115,8 +129,15 @@ fn collect_custom_ids_from_model_config(model_config: Option<&Value>) -> BTreeSe
         // Check named configs
         if let Some(named_configs) = config.get("namedConfig").and_then(Value::as_array) {
             for named in named_configs {
+                // model
                 if string_at(named, &["model", "type"]) == Some("custom") {
                     if let Some(id) = string_at(named, &["model", "id"]) {
+                        custom_ids.insert(id.to_string());
+                    }
+                }
+                // embedding
+                if string_at(named, &["embedding", "type"]) == Some("custom") {
+                    if let Some(id) = string_at(named, &["embedding", "id"]) {
                         custom_ids.insert(id.to_string());
                     }
                 }

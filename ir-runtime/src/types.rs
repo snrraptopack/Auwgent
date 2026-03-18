@@ -110,6 +110,7 @@ pub struct NamedModelConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelConfig {
     pub model: ModelProvider,
+    pub embedding: Option<ModelProvider>,
     pub prompt: Expression,
 }
 

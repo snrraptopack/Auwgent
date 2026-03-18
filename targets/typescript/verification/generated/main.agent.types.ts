@@ -30,6 +30,7 @@ export type HelloCustomIntents =
  * API keys required for Hello
  */
 export type HelloApiKeys = {
+    geminiApiKey: string;
     my_kimi_apiApiKey: string;  // API key for custom provider 'my-kimi-api'
 }
 

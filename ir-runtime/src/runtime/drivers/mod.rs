@@ -20,4 +20,10 @@ pub trait ModelDriver: Send + Sync {
         messages: &[Message],
         config: Option<Value>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String, String>> + Send>>, String>;
+
+    /// Generate an embedding for the given text.
+    async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>, String>;
+
+    /// Generate embeddings for a batch of texts.
+    async fn embed_batch(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, String>;
 }

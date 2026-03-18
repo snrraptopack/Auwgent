@@ -9,6 +9,10 @@
           "url": "https://api.moonshot.ai/v1/chat/completions",
           "modelName": "kimi-k2-0905-preview"
         },
+        "embedding": {
+          "type": "gemini",
+          "modelName": "gemini-embedding-001"
+        },
         "prompt": {
           "value": "Hello",
           "type": "literal"

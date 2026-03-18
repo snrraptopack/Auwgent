@@ -117,4 +117,7 @@ export declare class Auwgent {
   endStream(): string
   /** Process any pending intents (for simulation/testing). */
   processIntents(): Promise<string>
+  embed(text: string): Promise<Array<number>>
+  /** Generate embeddings for a batch of texts. */
+  embedBatch(texts: Array<string>): Promise<Array<Array<number>>>
 }

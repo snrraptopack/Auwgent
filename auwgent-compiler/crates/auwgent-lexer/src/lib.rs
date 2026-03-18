@@ -45,6 +45,8 @@ pub enum TokenKind {
     Prompt,
     #[token("model")]
     Model,
+    #[token("embedding")]
+    Embedding,
     #[token("config")]
     Config,
     #[token("default")]
@@ -250,6 +252,7 @@ impl fmt::Display for TokenKind {
             Self::As => write!(f, "'as'"),
             Self::Prompt => write!(f, "'prompt'"),
             Self::Model => write!(f, "'model'"),
+            Self::Embedding => write!(f, "'embedding'"),
             Self::Config => write!(f, "'config'"),
             Self::Default => write!(f, "'default'"),
             Self::Input => write!(f, "'input'"),

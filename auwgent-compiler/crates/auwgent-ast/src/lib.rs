@@ -232,6 +232,7 @@ pub struct NamedModelConfig {
 #[derive(Debug, Clone)]
 pub struct ModelConfig {
     pub model: ModelProviderRef,
+    pub embedding: Option<ModelProviderRef>,
     pub prompt_block: Vec<PromptStatement>,
     pub prompt_expr: Option<Expr>,
     pub span: Span,

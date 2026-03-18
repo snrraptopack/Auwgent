@@ -19,6 +19,11 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
     rawBlock?: string;
     /** The system prompt for the currently executing agent */
     systemPrompt?: string;
+    /** Generate an embedding for the given text using the configured model */
+    embed: (text: string) => Promise<number[]>;
+    /** Generate embeddings for a batch of texts */
+    embedBatch: (texts: string[]) => Promise<number[][]>;
+  setContext: (data: any) => void;
 } & Record<string, any>;
 
 /**

@@ -60,6 +60,9 @@ class MiddlewareContext(TypedDict, total=False):
     rootAgent: str
     rawBlock: Optional[str]
     systemPrompt: Optional[str]
+    embed: Callable[[str], Awaitable[List[float]]]
+    embedBatch: Callable[[List[str]], Awaitable[List[List[float]]]]
+    set_context: Callable[[Dict[str, Any]], None]
 
 class Middleware(Protocol):
     name: str
@@ -188,6 +191,14 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def set_context(self, context: Dict[str, Any]) -> None:
         self._native.set_context(json.dumps(context))
 
+    async def embed(self, text: str) -> List[float]:
+        """Generate an embedding for the given text using the configured model."""
+        return await self._native.embed(text)
+
+    async def embed_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for a batch of texts."""
+        return await self._native.embed_batch(texts)
+
     # ── Tool Registration ─────────────────────────────────────────────────
 
     def register_tool(self, name: str, callback: Callable[..., Awaitable[Any]]) -> None:
@@ -242,7 +253,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             activeAgent=active,
             stack=list(self._agent_stack),
             rootAgent=self.ir.get("name", "agent"),
-            rawBlock=self._last_raw_block
+            rawBlock=self._last_raw_block,
+            embed=self.embed,
+            embedBatch=self.embed_batch,
+            set_context=self.set_context
         )
         for k, v in self._shared_context.items():
             ctx[k] = v  # type: ignore

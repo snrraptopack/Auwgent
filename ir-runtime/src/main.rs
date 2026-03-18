@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Setup AuwgentEngine
     // ======================================================================================
     println!("\nInitializing AuwgentEngine...");
-    let mut engine = AuwgentEngine::new(agent);
+    let engine = AuwgentEngine::new(agent);
 
     // Register tools
     engine.register_tool(

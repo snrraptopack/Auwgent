@@ -5,13 +5,12 @@ use crate::runtime::drivers::ModelDriver;
 use crate::types::AgentIR;
 use serde_json::Value;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// EngineBridge provides a language-agnostic facade for the Auwgent engine.
 /// It encapsulates the Tokio runtime and engine state, reducing duplication
 /// across FFI layers (Node.js, Python, etc.).
 pub struct EngineBridge {
-    pub engine: Arc<Mutex<AuwgentEngine>>,
+    pub engine: Arc<AuwgentEngine>,
     pub ir: Arc<AgentIR>,
     pub rt: Arc<tokio::runtime::Runtime>,
 }
@@ -29,83 +28,51 @@ impl EngineBridge {
             .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
 
         Ok(Self {
-            engine: Arc::new(Mutex::new(engine)),
+            engine: Arc::new(engine),
             ir: Arc::new(ir),
             rt: Arc::new(rt),
         })
     }
 
     pub fn set_gemini_driver(&self, api_key: String) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "gemini",
-                Arc::new(GeminiDriver::new(api_key)) as Arc<dyn ModelDriver>,
-            );
-        });
+        self.engine.register_driver(
+            "gemini",
+            Arc::new(GeminiDriver::new(api_key)) as Arc<dyn ModelDriver>,
+        );
     }
 
     pub fn set_openai_driver(&self, api_key: String, base_url: Option<String>) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                "openai",
-                Arc::new(OpenAIDriver::new(api_key, base_url)) as Arc<dyn ModelDriver>,
-            );
-        });
+        self.engine.register_driver(
+            "openai",
+            Arc::new(OpenAIDriver::new(api_key, base_url)) as Arc<dyn ModelDriver>,
+        );
     }
 
     pub fn set_custom_driver(&self, id: String, api_key: String, base_url: String) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.register_driver(
-                &id,
-                Arc::new(OpenAIDriver::new(api_key, Some(base_url))) as Arc<dyn ModelDriver>,
-            );
-        });
+        self.engine.register_driver(
+            &id,
+            Arc::new(OpenAIDriver::new(api_key, Some(base_url))) as Arc<dyn ModelDriver>,
+        );
     }
 
     pub fn set_context(&self, context: Value) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.set_context(context);
-        });
+        self.engine.set_context(context);
     }
 
     pub fn export_session(&self) -> Result<String, String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.export_session().map_err(|e| format!("{}", e))
-        })
+        self.engine.export_session().map_err(|e| format!("{}", e))
     }
 
     pub fn import_session(&self, json: String) -> Result<(), String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.import_session(&json).map_err(|e| format!("{}", e))
-        })
+        self.engine.import_session(&json).map_err(|e| format!("{}", e))
     }
 
     pub fn clear_session(&self) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_session();
-        });
+        self.engine.clear_session();
     }
 
     pub fn generate_prompt(&self) -> Result<String, String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let eng = engine.lock().await;
-            eng.generate_prompt().map_err(|e| format!("{}", e))
-        })
+        self.engine.generate_prompt().map_err(|e| format!("{}", e))
     }
 
     pub fn get_tool_names(&self) -> Vec<String> {
@@ -130,49 +97,41 @@ impl EngineBridge {
     }
 
     pub fn write_chunk(&self, chunk: String) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.write_llm_chunk(&chunk);
-        });
+        self.engine.write_llm_chunk(&chunk);
     }
 
     pub fn end_stream(&self) -> Result<String, String> {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            let val = eng.end_llm_stream();
-            serde_json::to_string(&val).map_err(|e| format!("{}", e))
-        })
+        let val = self.engine.end_llm_stream();
+        serde_json::to_string(&val).map_err(|e| format!("{}", e))
     }
 
     pub fn clear_listeners(&self) {
-        let engine = self.engine.clone();
-        self.rt.block_on(async {
-            let mut eng = engine.lock().await;
-            eng.clear_intent_handlers();
-            eng.clear_sub_engine_handlers();
-            eng.clear_llm_handlers();
-        });
+        self.engine.clear_intent_handlers();
+        self.engine.clear_sub_engine_handlers();
+        self.engine.clear_llm_handlers();
     }
 
     pub async fn run_async(&self, input: Option<Value>, initial_stack: Option<Vec<String>>) -> Result<String, String> {
-        let engine = self.engine.clone();
-        let mut eng = engine.lock().await;
-        eng.run(input, initial_stack).await.map_err(|e| format!("{}", e))?;
-        eng.export_session().map_err(|e| format!("{}", e))
+        self.engine.run(input, initial_stack).await.map_err(|e| format!("{}", e))?;
+        self.engine.export_session().map_err(|e| format!("{}", e))
     }
 
     pub async fn process_intents_async(&self) -> Result<String, String> {
-        let engine = self.engine.clone();
-        let mut eng = engine.lock().await;
         let (terminal, actions, hard_stop) =
-            eng.process_intents().await.map_err(|e| format!("{}", e))?;
+            self.engine.process_intents().await.map_err(|e| format!("{}", e))?;
         Ok(serde_json::json!({
             "terminal": terminal,
             "actions": actions,
             "hard_stop": hard_stop,
         })
         .to_string())
+    }
+
+    pub async fn embed(&self, text: String) -> Result<Vec<f32>, String> {
+        self.engine.embed(&text).await.map_err(|e| format!("{}", e))
+    }
+
+    pub async fn embed_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        self.engine.embed_batch(&texts).await.map_err(|e| format!("{}", e))
     }
 }

@@ -407,6 +407,10 @@ impl<'a> Evaluator<'a> {
             crate::types::ModelProvider::Gemini { model_name, config } => {
                 let mut res = serde_json::Map::new();
                 res.insert("provider".to_string(), Value::String("gemini".to_string()));
+                res.insert(
+                    "url".to_string(),
+                    Value::String("https://generativelanguage.googleapis.com/v1beta".to_string()),
+                );
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 
                 if let Some(expr) = config {
@@ -419,6 +423,10 @@ impl<'a> Evaluator<'a> {
             crate::types::ModelProvider::OpenAI { model_name, config } => {
                 let mut res = serde_json::Map::new();
                 res.insert("provider".to_string(), Value::String("openai".to_string()));
+                res.insert(
+                    "url".to_string(),
+                    Value::String("https://api.openai.com/v1".to_string()),
+                );
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 
                 if let Some(expr) = config {

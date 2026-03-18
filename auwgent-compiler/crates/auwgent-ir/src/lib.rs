@@ -392,6 +392,14 @@ fn lower_model_config(
         lower_model_provider_ref(&mc.model, model_defs),
     );
 
+    // Embedding provider
+    if let Some(embedding) = &mc.embedding {
+        obj.insert(
+            "embedding".into(),
+            lower_model_provider_ref(embedding, model_defs),
+        );
+    }
+
     // Prompt
     if let Some(expr) = &mc.prompt_expr {
         obj.insert("prompt".into(), lower_prompt_expr(expr, prompts));

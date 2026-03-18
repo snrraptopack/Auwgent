@@ -11,6 +11,7 @@ agent Hello{
     default config{
        model: custom("my-kimi-api", "https://api.moonshot.ai/v1/chat/completions", "kimi-k2-0905-preview")
         prompt: "Hello"
+        embedding: gemini("gemini-embedding-001")
     }
 
     intent : question

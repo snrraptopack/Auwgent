@@ -184,8 +184,54 @@ export class TypedAuwgent<
             stack: [...this.agentStack],
             rootAgent: this.ir.name,
             rawBlock: this.lastTurnRawBlock,
+            setContext: (data: any) => this.native.setContext(JSON.stringify(data)),
+            embed: async (text: string) => {
+                try {
+                    return await this.native.embed(text);
+                } catch (e) {
+                    await this.triggerError(e as Error);
+                    throw e;
+                }
+            },
+            embedBatch: async (texts: string[]) => {
+                try {
+                    return await this.native.embedBatch(texts);
+                } catch (e) {
+                    await this.triggerError(e as Error);
+                    throw e;
+                }
+            },
             ...this.sharedContext
         } as MiddlewareContext<IR>;
+    }
+
+    private async triggerError(error: Error) {
+        const ctx = this.getBuildContext();
+        for (const m of this.getMiddleware(ctx)) {
+            if (m.onError) {
+                await (m as any).onError(error, undefined, ctx);
+            }
+        }
+    }
+
+    /** Generate an embedding for the given text using the configured model */
+    async embed(text: string): Promise<number[]> {
+        try {
+            return await this.native.embed(text);
+        } catch (e) {
+            await this.triggerError(e as Error);
+            throw e;
+        }
+    }
+
+    /** Generate embeddings for a batch of texts */
+    async embedBatch(texts: string[]): Promise<number[][]> {
+        try {
+            return await this.native.embedBatch(texts);
+        } catch (e) {
+            await this.triggerError(e as Error);
+            throw e;
+        }
     }
 
     /**

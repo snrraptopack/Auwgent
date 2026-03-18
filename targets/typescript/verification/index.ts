@@ -8,15 +8,12 @@ const logger: AuwgentMiddleware = {
         return session
     },
 
-    onRunComplete(finalSession, ctx) {
-
-        console.log("final session", finalSession)
+    async onLLMStart(prompt, ctx) {
+        const result = await ctx.embed(prompt)
+        console.log("model start")
+        console.log("result", result)
     },
 
-
-    onLLMEnd(session, ctx) {
-        console.log(ctx.rawBlock)
-    },
 
     onError(error, session, ctx) {
         console.log("error", error.message)
@@ -27,7 +24,8 @@ const logger: AuwgentMiddleware = {
 
 let config: AuwgentConfig = {
     apiKeys: {
-        my_kimi_apiApiKey: Bun.env.KIMI_API_KEY || ""
+        my_kimi_apiApiKey: Bun.env.KIMI_API_KEY || "",
+        geminiApiKey: Bun.env.GEMINI_API_KEY || ""
     },
     middleware: [logger]
 }

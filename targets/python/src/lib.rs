@@ -116,6 +116,24 @@ impl AuwgentNative {
         })
     }
 
+    pub fn embed<'p>(&self, py: Python<'p>, text: String) -> PyResult<&'p PyAny> {
+        let bridge = self.bridge.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            bridge.embed(text)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+        })
+    }
+
+    pub fn embed_batch<'p>(&self, py: Python<'p>, texts: Vec<String>) -> PyResult<&'p PyAny> {
+        let bridge = self.bridge.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            bridge.embed_batch(texts)
+                .await
+                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+        })
+    }
+
     pub fn register_tool(&self, name: String, callback: PyObject) -> PyResult<()> {
         let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
             let callback = callback.clone();
@@ -140,11 +158,7 @@ impl AuwgentNative {
             })
         });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.register_tool(&name, tool_impl);
-        });
+        self.bridge.engine.register_tool(&name, tool_impl);
 
         Ok(())
     }
@@ -179,11 +193,7 @@ impl AuwgentNative {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_intent(handler);
-        });
+        self.bridge.engine.on_intent(handler);
 
         Ok(())
     }
@@ -210,11 +220,7 @@ impl AuwgentNative {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_sub_engine_start(handler);
-        });
+        self.bridge.engine.on_sub_engine_start(handler);
         Ok(())
     }
 
@@ -235,11 +241,7 @@ impl AuwgentNative {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_sub_engine_complete(handler);
-        });
+        self.bridge.engine.on_sub_engine_complete(handler);
         Ok(())
     }
 
@@ -264,11 +266,7 @@ impl AuwgentNative {
                     None
                 })
             });
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_llm_start(handler);
-        });
+        self.bridge.engine.on_llm_start(handler);
         Ok(())
     }
 
@@ -288,11 +286,7 @@ impl AuwgentNative {
                     }
                 })
             });
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_llm_end(handler);
-        });
+        self.bridge.engine.on_llm_end(handler);
         Ok(())
     }
 
@@ -305,11 +299,7 @@ impl AuwgentNative {
                     let _ = callback.call1(py, (name, value_json));
                 });
             });
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_intent_partial(handler);
-        });
+        self.bridge.engine.on_intent_partial(handler);
         Ok(())
     }
 }

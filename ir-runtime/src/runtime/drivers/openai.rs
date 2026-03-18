@@ -135,6 +135,69 @@ impl ModelDriver for OpenAIDriver {
 
         Ok(Box::pin(stream))
     }
+
+    async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>, String> {
+        let results = self.embed_batch(model, &[text.to_string()]).await?;
+        results
+            .into_iter()
+            .next()
+            .ok_or_else(|| "No embedding returned".to_string())
+    }
+
+    async fn embed_batch(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        let base = self.base_url.trim_end_matches('/');
+        let url = if base.ends_with("/embeddings") {
+            base.to_string()
+        } else {
+            format!("{}/embeddings", base)
+        };
+
+        let body = json!({
+            "model": model,
+            "input": texts,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send embedding request to OpenAI: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("OpenAI Embedding API error ({}): {}", status, error_text));
+        }
+
+        let json_val: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
+
+        let data = json_val["data"].as_array().ok_or_else(|| {
+            format!(
+                "Missing 'data' field in response: {}",
+                json_val.to_string()
+            )
+        })?;
+
+        let mut results = Vec::new();
+        for item in data {
+            let embedding = item["embedding"]
+                .as_array()
+                .ok_or_else(|| "Missing 'embedding' in data item".to_string())?;
+            let vec: Vec<f32> = embedding
+                .iter()
+                .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+                .collect();
+            results.push(vec);
+        }
+
+        Ok(results)
+    }
 }
 
 #[cfg(test)]

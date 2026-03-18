@@ -165,6 +165,12 @@ pub(crate) fn prompt_stmt_parser(
 
 // ── Model Config Block ───────────────────────────────────────────────────
 
+enum ModelConfigField {
+    Model(ModelProviderRef),
+    Embedding(ModelProviderRef),
+    Prompt((Vec<PromptStatement>, Option<Expr>)),
+}
+
 pub(crate) fn model_config_parser(
 ) -> impl Parser<TokenKind, ModelConfig, Error = Simple<TokenKind>> + Clone {
     let model_ref = choice((
@@ -184,19 +190,47 @@ pub(crate) fn model_config_parser(
             .map(|e| (vec![], Some(e))),
     )));
 
-    tok(TokenKind::Model)
-        .ignore_then(tok(TokenKind::Colon))
-        .ignore_then(model_ref)
-        .then(prompt_block.or_not())
-        .map_with_span(|(model, prompt_opt), span| {
-            let (prompt_block, prompt_expr) = prompt_opt.unwrap_or((vec![], None));
-            ModelConfig {
-                model,
-                prompt_block,
-                prompt_expr,
-                span: s(span),
+    let field = choice((
+        tok(TokenKind::Model)
+            .ignore_then(tok(TokenKind::Colon))
+            .ignore_then(model_ref.clone())
+            .map(ModelConfigField::Model),
+        tok(TokenKind::Embedding)
+            .ignore_then(tok(TokenKind::Colon))
+            .ignore_then(model_ref)
+            .map(ModelConfigField::Embedding),
+        prompt_block.map(ModelConfigField::Prompt),
+    ));
+
+    field.repeated().map_with_span(|fields, span| {
+        let mut model = None;
+        let mut embedding = None;
+        let mut prompt_block = vec![];
+        let mut prompt_expr = None;
+
+        for f in fields {
+            match f {
+                ModelConfigField::Model(m) => model = Some(m),
+                ModelConfigField::Embedding(e) => embedding = Some(e),
+                ModelConfigField::Prompt((block, expr)) => {
+                    prompt_block = block;
+                    prompt_expr = expr;
+                }
             }
-        })
+        }
+
+        ModelConfig {
+            model: model.unwrap_or(ModelProviderRef::Inline(ModelProvider::Gemini {
+                model_name: sp("gemini-2.0-flash".to_string(), span.clone()),
+                config: None,
+                span: s(span.clone()),
+            })),
+            embedding,
+            prompt_block,
+            prompt_expr,
+            span: s(span),
+        }
+    })
 }
 
 pub(crate) fn agent_model_config_parser(

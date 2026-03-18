@@ -141,4 +141,113 @@ impl ModelDriver for GeminiDriver {
 
         Ok(Box::pin(stream))
     }
+
+    async fn embed(&self, model: &str, text: &str) -> Result<Vec<f32>, String> {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent?key={}",
+            model, self.api_key
+        );
+
+        let body = json!({
+            "model": format!("models/{}", model),
+            "content": { "parts": [{ "text": text }] }
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send embedding request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!(
+                "Gemini Embedding API error ({}): {}",
+                status, error_text
+            ));
+        }
+
+        let json_val: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
+
+        let embedding = &json_val["embedding"]["values"];
+        let values = embedding.as_array().ok_or_else(|| {
+            format!(
+                "Missing 'embedding.values' field in response: {}",
+                json_val.to_string()
+            )
+        })?;
+
+        Ok(values
+            .iter()
+            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+            .collect())
+    }
+
+    async fn embed_batch(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:batchEmbedContents?key={}",
+            model, self.api_key
+        );
+
+        let requests: Vec<Value> = texts
+            .iter()
+            .map(|t| {
+                json!({
+                    "model": format!("models/{}", model),
+                    "content": { "parts": [{ "text": t }] }
+                })
+            })
+            .collect();
+
+        let body = json!({ "requests": requests });
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send embedding request: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!(
+                "Gemini Embedding API error ({}): {}",
+                status, error_text
+            ));
+        }
+
+        let json_val: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
+
+        let embeddings = json_val["embeddings"].as_array().ok_or_else(|| {
+            format!(
+                "Missing 'embeddings' field in response: {}",
+                json_val.to_string()
+            )
+        })?;
+
+        let mut results = Vec::new();
+        for emb in embeddings {
+            let values = emb["values"]
+                .as_array()
+                .ok_or_else(|| "Missing 'values' in embedding".to_string())?;
+            let vec: Vec<f32> = values
+                .iter()
+                .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+                .collect();
+            results.push(vec);
+        }
+
+        Ok(results)
+    }
 }

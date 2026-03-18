@@ -74,34 +74,25 @@ pub type AsyncLlmEndCallback =
 
 pub struct AuwgentEngine {
     ir: AgentIR,
-    session: SessionState,
-    tools: HashMap<String, ToolImplementation>,
-    orchestrator: Orchestrator,
-    drivers: HashMap<String, Arc<dyn ModelDriver>>,
-    context: Option<Value>,
+    session: Arc<Mutex<SessionState>>,
+    tools: Arc<Mutex<HashMap<String, ToolImplementation>>>,
+    orchestrator: Arc<Mutex<Orchestrator>>,
+    drivers: Arc<Mutex<HashMap<String, Arc<dyn ModelDriver>>>>,
+    context: Arc<Mutex<Option<Value>>>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
     /// Tool/workflow results accumulated during the current turn
-    /// Used by build_results_payload() to feed results back to the LLM
-    pending_tool_results: Vec<(String, Value)>,
+    pending_tool_results: Arc<Mutex<Vec<(String, Value)>>>,
     /// Accumulated raw response for the current turn
-    current_raw_response: String,
-    /// User-facing intent callback (fires on every completed intent)
-    intent_handler: Option<AsyncIntentCallback>,
-    /// User-facing partial intent callback (fires as data streams in)
-    partial_intent_handler: Option<Arc<dyn Fn(String, Value) + Send + Sync>>,
-    /// Hook for TypeScript to preload a helper session before sub_engine.run()
-    session_preload_handler: Option<AsyncSessionPreloadCallback>,
-    /// Hook for TypeScript to save a helper session after sub_engine.run()
-    session_save_handler: Option<SessionSaveCallback>,
-    /// Hook that fires before LLM generation
-    llm_start_handler: Option<AsyncLlmStartCallback>,
-    /// Hook that fires after LLM generation
-    llm_end_handler: Option<AsyncLlmEndCallback>,
-    /// Active fast-forward stack for Stack-Aware Resumption.
-    /// When set, the engine bypasses LLM calls and jumps straight to the
-    /// deepest agent in the stack, then resumes normal execution from there.
-    fast_forward_stack: Option<Vec<String>>,
+    current_raw_response: Arc<Mutex<String>>,
+    /// User-facing intent callback
+    intent_handler: Arc<Mutex<Option<AsyncIntentCallback>>>,
+    partial_intent_handler: Arc<Mutex<Option<Arc<dyn Fn(String, Value) + Send + Sync>>>>,
+    session_preload_handler: Arc<Mutex<Option<AsyncSessionPreloadCallback>>>,
+    session_save_handler: Arc<Mutex<Option<SessionSaveCallback>>>,
+    llm_start_handler: Arc<Mutex<Option<AsyncLlmStartCallback>>>,
+    llm_end_handler: Arc<Mutex<Option<AsyncLlmEndCallback>>>,
+    fast_forward_stack: Arc<Mutex<Option<Vec<String>>>>,
 }
 
 impl AuwgentEngine {
@@ -133,68 +124,60 @@ impl AuwgentEngine {
 
         Self {
             ir,
-            session: SessionState::new(),
-            tools: HashMap::new(),
-            orchestrator,
-            drivers: HashMap::new(),
-            context: None,
+            session: Arc::new(Mutex::new(SessionState::new())),
+            tools: Arc::new(Mutex::new(HashMap::new())),
+            orchestrator: Arc::new(Mutex::new(orchestrator)),
+            drivers: Arc::new(Mutex::new(HashMap::new())),
+            context: Arc::new(Mutex::new(None)),
             pending_intents,
-            pending_tool_results: Vec::new(),
-            current_raw_response: String::new(),
-            intent_handler: None,
-            partial_intent_handler: None,
-            session_preload_handler: None,
-            session_save_handler: None,
-            llm_start_handler: None,
-            llm_end_handler: None,
-            fast_forward_stack: None,
+            pending_tool_results: Arc::new(Mutex::new(Vec::new())),
+            current_raw_response: Arc::new(Mutex::new(String::new())),
+            intent_handler: Arc::new(Mutex::new(None)),
+            partial_intent_handler: Arc::new(Mutex::new(None)),
+            session_preload_handler: Arc::new(Mutex::new(None)),
+            session_save_handler: Arc::new(Mutex::new(None)),
+            llm_start_handler: Arc::new(Mutex::new(None)),
+            llm_end_handler: Arc::new(Mutex::new(None)),
+            fast_forward_stack: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn on_sub_engine_start(&mut self, handler: AsyncSessionPreloadCallback) {
-        self.session_preload_handler = Some(handler);
+    pub fn on_sub_engine_start(&self, handler: AsyncSessionPreloadCallback) {
+        *self.session_preload_handler.lock().unwrap() = Some(handler);
     }
 
-    pub fn on_sub_engine_complete(&mut self, handler: SessionSaveCallback) {
-        self.session_save_handler = Some(handler);
+    pub fn on_sub_engine_complete(&self, handler: SessionSaveCallback) {
+        *self.session_save_handler.lock().unwrap() = Some(handler);
     }
 
-    pub fn on_llm_start(&mut self, handler: AsyncLlmStartCallback) {
-        self.llm_start_handler = Some(handler);
+    pub fn on_llm_start(&self, handler: AsyncLlmStartCallback) {
+        *self.llm_start_handler.lock().unwrap() = Some(handler);
     }
 
-    pub fn on_llm_end(&mut self, handler: AsyncLlmEndCallback) {
-        self.llm_end_handler = Some(handler);
+    pub fn on_llm_end(&self, handler: AsyncLlmEndCallback) {
+        *self.llm_end_handler.lock().unwrap() = Some(handler);
     }
 
-    pub fn register_driver(&mut self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
-        self.drivers.insert(provider_type.to_string(), driver);
+    pub fn register_driver(&self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
+        self.drivers.lock().unwrap().insert(provider_type.to_string(), driver);
     }
 
-    pub fn set_context(&mut self, context: Value) {
-        self.context = Some(context);
+    pub fn set_context(&self, context: Value) {
+        *self.context.lock().unwrap() = Some(context);
     }
 
-    pub fn register_tool(&mut self, name: &str, implementation: ToolImplementation) {
-        self.tools.insert(name.to_string(), implementation);
+    pub fn register_tool(&self, name: &str, implementation: ToolImplementation) {
+        self.tools.lock().unwrap().insert(name.to_string(), implementation);
     }
 
-    /// Register an async intent callback.
-    ///
-    /// This fires for every detected intent (tool_call, response_text, etc.)
-    /// during the agentic loop. The engine auto-executes by default.
-    ///
-    /// To control behavior, return `Some(IntentControl::Skip)` to skip
-    /// a tool call, or `Some(IntentControl::Override { result })` to
-    /// provide a custom result without executing the tool.
-    pub fn on_intent(&mut self, handler: AsyncIntentCallback) {
-        self.intent_handler = Some(handler);
+    pub fn on_intent(&self, handler: AsyncIntentCallback) {
+        *self.intent_handler.lock().unwrap() = Some(handler);
     }
 
     /// Register a sync intent callback (convenience wrapper).
-    pub fn on_intent_sync(&mut self, handler: IntentCallback) {
+    pub fn on_intent_sync(&self, handler: IntentCallback) {
         let handler = handler.clone();
-        self.intent_handler = Some(Arc::new(move |name, value| {
+        *self.intent_handler.lock().unwrap() = Some(Arc::new(move |name, value| {
             let result = handler(name, value);
             Box::pin(async move { result })
         }));
@@ -209,53 +192,123 @@ impl AuwgentEngine {
     /// - Progress indicators for long structured outputs
     ///
     /// Partial intents are observational only (no control/skip/override).
-    pub fn on_intent_partial(&mut self, handler: Arc<dyn Fn(String, Value) + Send + Sync>) {
+    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value) + Send + Sync>) {
         // Wire into the orchestrator's partial handler
         let user_handler = handler.clone();
         self.orchestrator
+            .lock()
+            .unwrap()
             .on_intent_partial(Arc::new(move |name, value| {
                 user_handler(name, value);
             }));
-        self.partial_intent_handler = Some(handler);
+        *self.partial_intent_handler.lock().unwrap() = Some(handler);
     }
 
-    pub fn clear_intent_handlers(&mut self) {
-        self.intent_handler = None;
-        self.partial_intent_handler = None;
-        self.orchestrator.on_intent_partial(Arc::new(|_, _| {})); // Clear orchestrator partials
+    pub fn clear_intent_handlers(&self) {
+        *self.intent_handler.lock().unwrap() = None;
+        *self.partial_intent_handler.lock().unwrap() = None;
     }
 
-    pub fn clear_sub_engine_handlers(&mut self) {
-        self.session_preload_handler = None;
-        self.session_save_handler = None;
+    pub fn clear_sub_engine_handlers(&self) {
+        *self.session_preload_handler.lock().unwrap() = None;
+        *self.session_save_handler.lock().unwrap() = None;
     }
 
-    pub fn clear_llm_handlers(&mut self) {
-        self.llm_start_handler = None;
-        self.llm_end_handler = None;
+    pub fn clear_llm_handlers(&self) {
+        *self.llm_start_handler.lock().unwrap() = None;
+        *self.llm_end_handler.lock().unwrap() = None;
     }
 
     // ── Session export/import for host runtime hooks ──────────────────────
 
     /// Export the session state as JSON for the host to persist.
     pub fn export_session(&self) -> AuwgentResult<String> {
-        self.session.export().map_err(AuwgentError::Serialization)
+        self.session.lock().unwrap().export().map_err(AuwgentError::Serialization)
     }
 
     /// Import a session state from JSON, restoring conversation history.
-    pub fn import_session(&mut self, json: &str) -> AuwgentResult<()> {
-        self.session = SessionState::import(json).map_err(AuwgentError::Serialization)?;
+    pub fn import_session(&self, json: &str) -> AuwgentResult<()> {
+        *self.session.lock().unwrap() = SessionState::import(json).map_err(AuwgentError::Serialization)?;
         Ok(())
     }
 
-    /// Clear the session (start a fresh conversation).
-    pub fn clear_session(&mut self) {
-        self.session.clear();
+    /// Access the session state directly (for testing/CLI).
+    pub fn session(&self) -> std::sync::MutexGuard<'_, SessionState> {
+        self.session.lock().unwrap()
     }
 
-    /// Get a reference to the session state.
-    pub fn session(&self) -> &SessionState {
-        &self.session
+    /// Clear the session (start a fresh conversation).
+    pub fn clear_session(&self) {
+        self.session.lock().unwrap().clear();
+    }
+
+    /// Get a reference to the session state. (Removed: Cannot return ref to Mutex guard easily)
+    // pub fn session(&self) -> &SessionState { ... }
+
+    // ── Embedding ─────────────────────────────────────────────────────────
+    pub async fn embed(&self, text: &str) -> AuwgentResult<Vec<f32>> {
+        let (driver, model_name) = self.get_embedding_config()?;
+        driver
+            .embed(&model_name, text)
+            .await
+            .map_err(AuwgentError::Driver)
+    }
+
+    pub async fn embed_batch(&self, texts: &[String]) -> AuwgentResult<Vec<Vec<f32>>> {
+        let (driver, model_name) = self.get_embedding_config()?;
+        driver
+            .embed_batch(&model_name, texts)
+            .await
+            .map_err(AuwgentError::Driver)
+    }
+
+    fn get_embedding_config(&self) -> AuwgentResult<(Arc<dyn ModelDriver>, String)> {
+        let model_entry = self
+            .ir
+            .model_config
+            .first()
+            .ok_or(AuwgentError::MissingConfig("No model config".into()))?;
+        let default_config = model_entry
+            .default_config
+            .as_ref()
+            .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
+
+        let embedding_provider = default_config
+            .embedding
+            .as_ref()
+            .ok_or(AuwgentError::MissingConfig(
+                "No embedding model configured".into(),
+            ))?;
+
+        let evaluator = Evaluator::new(&self.ir);
+        let mut scope = HashMap::new();
+        // Use a block to minimize lock duration
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
+        }
+        
+        let provider_info = evaluator.evaluate_provider(embedding_provider, &mut scope)?;
+
+        let provider_type = provider_info["provider"].as_str().unwrap_or("gemini");
+        let provider_id = if provider_type == "custom" {
+            provider_info["id"].as_str().unwrap_or("custom")
+        } else {
+            provider_type
+        };
+
+        let model_name = provider_info["modelName"]
+            .as_str()
+            .ok_or_else(|| AuwgentError::MissingConfig("modelName is required for embedding".into()))?;
+
+        let driver = self
+            .drivers
+            .lock()
+            .unwrap()
+            .get(provider_id)
+            .ok_or_else(|| AuwgentError::NoDriver)?
+            .clone();
+
+        Ok((driver, model_name.to_string()))
     }
 
     // ── Agentic Loop ──────────────────────────────────────────────────────
@@ -266,7 +319,7 @@ impl AuwgentEngine {
     /// the engine fast-forwards through intermediate agents without calling the LLM,
     /// resuming directly at the deepest (last) agent in the stack.
     pub async fn run(
-        &mut self,
+        &self,
         input: Option<Value>,
         initial_stack: Option<Vec<String>>,
     ) -> AuwgentResult<()> {
@@ -276,10 +329,10 @@ impl AuwgentEngine {
         if let Some(stack) = initial_stack {
             // Skip the root agent (index 0) — it IS us, so we just keep the tail
             if stack.len() > 1 {
-                self.fast_forward_stack = Some(stack[1..].to_vec());
+                *self.fast_forward_stack.lock().unwrap() = Some(stack[1..].to_vec());
             } else {
                 // Stack only had the root — no fast-forward needed, we ARE the focus
-                self.fast_forward_stack = None;
+                *self.fast_forward_stack.lock().unwrap() = None;
             }
         }
 
@@ -300,7 +353,7 @@ impl AuwgentEngine {
         if let Some(val) = input.as_ref() {
             scope.insert("input".to_string(), val.clone());
         }
-        if let Some(ctx) = self.context.as_ref() {
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
         }
 
@@ -321,7 +374,7 @@ impl AuwgentEngine {
 
         // 2. Generate system prompt and set it on the session
         let system_prompt = self.generate_prompt()?;
-        self.session.set_system_prompt(&system_prompt);
+        self.session.lock().unwrap().set_system_prompt(&system_prompt);
 
         // 3. Build the initial user input
         let initial_user_input = match input {
@@ -331,13 +384,11 @@ impl AuwgentEngine {
         };
 
         // Start the first turn if an explicit input is provided.
-        // If not (e.g. None), we assume the host wrapper (like TS) already pushed the turn
-        // onto the session history, or we are continuing from where we left off.
         if let Some(user_input) = initial_user_input {
-            self.session.start_turn(&user_input);
-        } else if self.session.turns.is_empty() {
+            self.session.lock().unwrap().start_turn(&user_input);
+        } else if self.session.lock().unwrap().turns.is_empty() {
             // Safety fallback: if no input and session is empty, start one
-            self.session.start_turn("");
+            self.session.lock().unwrap().start_turn("");
         }
 
         // Read max loops from lifecycle config, fallback to 12
@@ -357,69 +408,68 @@ impl AuwgentEngine {
                 return Err(AuwgentError::MaxLoopsExceeded(max_loops));
             }
 
-            self.current_raw_response.clear();
-            self.pending_tool_results.clear();
-            self.orchestrator.reset();
+            self.current_raw_response.lock().unwrap().clear();
+            self.pending_tool_results.lock().unwrap().clear();
+            self.orchestrator.lock().unwrap().reset();
 
             // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
             // If we have a fast-forward stack, skip the LLM entirely and
             // inject a synthetic helper_call intent to jump straight to
             // the target agent. This is the core of Execution-Tunneling.
-            if let Some(ref ffs) = self.fast_forward_stack {
-                if let Some(next_helper) = ffs.first() {
-                    // Inject synthetic helper_call — no LLM needed
-                    let synthetic_intent = serde_json::json!({
-                        "type": next_helper,
-                        "args": {}
-                    });
+            let next_helper = {
+                let ffs_lock = self.fast_forward_stack.lock().unwrap();
+                ffs_lock.as_ref().and_then(|ffs| ffs.first().cloned())
+            };
 
-                    if let Ok(mut pending) = self.pending_intents.lock() {
-                        pending.push(("helper_call".to_string(), synthetic_intent));
-                    }
+            if let Some(next_helper) = next_helper {
+                // Inject synthetic helper_call — no LLM needed
+                let synthetic_intent = serde_json::json!({
+                    "type": next_helper,
+                    "args": {}
+                });
 
-                    // Process the synthetic intent (this will call execute_helper,
-                    // which will propagate the remaining stack slice)
-                    let (_terminal, actions, hard_stop) = self.process_intents().await?;
+                self.pending_intents.lock().unwrap().push(("helper_call".to_string(), synthetic_intent));
 
-                    // After teleportation, the sub-engine has completed.
-                    // Store results and decide whether to loop or stop.
-                    if hard_stop {
-                        break;
-                    }
-                    if actions {
-                        let results_payload = self.build_results_payload();
-                        self.session.start_turn(&results_payload);
-                    }
-                    // Continue the loop — the next iteration will run
-                    // normally since fast_forward_stack was consumed
-                    continue;
+                // Process the synthetic intent
+                let (_terminal, actions, hard_stop) = self.process_intents().await?;
+
+                if hard_stop {
+                    break;
                 }
+                if actions {
+                    let results_payload = self.build_results_payload();
+                    self.session.lock().unwrap().start_turn(&results_payload);
+                }
+                continue;
             }
 
             // If this is the first turn (the actual user prompt, not a tool feedback cycle),
             // fire the onLlmStart interceptor. It can return a modified string.
             if loop_count == 1 {
-                if let Some(handler) = &self.llm_start_handler {
-                    let sys_prompt = self.session.system_prompt.clone().unwrap_or_default();
-                    if let Some(last_turn) = self.session.current_turn_mut() {
-                        if let Some(modified_prompt) =
-                            handler(last_turn.input.clone(), sys_prompt).await
-                        {
-                            last_turn.input = modified_prompt;
+                let start_handler = self.llm_start_handler.lock().unwrap().clone();
+                if let Some(h) = start_handler {
+                    let sys_prompt = self.session.lock().unwrap().system_prompt.clone().unwrap_or_default();
+                    let input_text = self.session.lock().unwrap().turns.last().map(|t| t.input.clone());
+                    if let Some(text) = input_text {
+                        if let Some(modified) = h(text, sys_prompt).await {
+                            self.session.lock().unwrap().set_input(modified);
                         }
                     }
                 }
             }
 
             // Build message history from session state (AFTER potential interception)
-            let messages = self.session.to_messages();
+            let messages = self.session.lock().unwrap().to_messages();
 
             // Stream from the driver using full message history
             let mut stream = {
                 let driver = self
                     .drivers
+                    .lock()
+                    .unwrap()
                     .get(provider_id)
-                    .ok_or_else(|| AuwgentError::NoDriver)?;
+                    .ok_or_else(|| AuwgentError::NoDriver)?
+                    .clone();
                 driver
                     .stream_generate(model_name, &messages, config_params.clone())
                     .await
@@ -432,9 +482,9 @@ impl AuwgentEngine {
                 match chunk_res {
                     Ok(text) => {
                         if !text.is_empty() {
-                            self.current_raw_response.push_str(&text);
+                            self.current_raw_response.lock().unwrap().push_str(&text);
                         }
-                        self.orchestrator.write(&text);
+                        self.orchestrator.lock().unwrap().write(&text);
                         let (_terminal, actions, hard_stop) = self.process_intents().await?;
                         if actions {
                             actions_performed = true;
@@ -458,10 +508,8 @@ impl AuwgentEngine {
             //     loop_count, self.current_raw_response
             // );
 
-            // Finalize parsing and get the full parsed JSON from the intent parser
-            // This forces the orchestrator to flush the final pending YAML object
-            // (e.g. the final `response_text`) into the engine's pending_intents list.
-            let _final_val = self.orchestrator.end();
+            // Finalize parsing
+            let _final_val = self.orchestrator.lock().unwrap().end();
 
             let (_terminal, actions, mut hard_stop) = self.process_intents().await?;
             if actions {
@@ -469,15 +517,20 @@ impl AuwgentEngine {
             }
 
             // Fallback: If no intents were detected in the whole turn, try a deep extraction.
-            // This handles cases where streaming parsing got confused by noise but
-            // extract_yaml can find a clean signal at the end.
             if !actions_performed {
-                let cleaned =
-                    crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
-                if !cleaned.is_empty() && cleaned != self.current_raw_response {
-                    self.orchestrator.reset();
-                    self.orchestrator.write(&cleaned);
-                    self.orchestrator.end();
+                let (needs_fallback, cleaned) = {
+                    let raw = self.current_raw_response.lock().unwrap();
+                    let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw);
+                    (!cleaned.is_empty() && cleaned != *raw, cleaned)
+                };
+
+                if needs_fallback {
+                    {
+                        let mut orch = self.orchestrator.lock().unwrap();
+                        orch.reset();
+                        orch.write(&cleaned);
+                        orch.end();
+                    }
                     let (_t2, a2, h2) = self.process_intents().await?;
                     if a2 {
                         actions_performed = true;
@@ -486,9 +539,12 @@ impl AuwgentEngine {
                 }
             }
 
-            if let Some(handler) = &self.llm_end_handler {
-                let sys_prompt = self.session.system_prompt.clone().unwrap_or_default();
-                handler(self.current_raw_response.clone(), sys_prompt).await;
+            // Fire LLM end hook
+            let end_handler = self.llm_end_handler.lock().unwrap().clone();
+            if let Some(h) = end_handler {
+                let sys_prompt = self.session.lock().unwrap().system_prompt.clone().unwrap_or_default();
+                let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                h(raw_resp, sys_prompt).await;
             }
 
             // If the model output was wrapped in fences, or contained noise,
@@ -496,12 +552,14 @@ impl AuwgentEngine {
             // still contains the noisy version.
             // We should ideally store the CLEANED version in the session
             // if we want to avoid showing fences in the final stored state.
-            let cleaned_response =
-                crate::intent_parser::orchestrator::extract_yaml(&self.current_raw_response);
+            let cleaned_response = {
+                let raw = self.current_raw_response.lock().unwrap();
+                crate::intent_parser::orchestrator::extract_yaml(&raw)
+            };
 
             // Save the raw LLM output in the session history so the exact
             // YAML text is visible in logs and follow-up turns.
-            self.session.set_model_response(&cleaned_response);
+            self.session.lock().unwrap().set_model_response(&cleaned_response);
 
             // Decide if we loop or stop
             if hard_stop {
@@ -516,7 +574,7 @@ impl AuwgentEngine {
 
             // Feed tool/workflow results back to the LLM as the next turn's input
             let results_payload = self.build_results_payload();
-            self.session.start_turn(&results_payload);
+            self.session.lock().unwrap().start_turn(&results_payload);
         }
 
         Ok(())
@@ -526,12 +584,13 @@ impl AuwgentEngine {
     /// the LLM on the next turn. This is critical — without it, the LLM
     /// has no idea what the tools returned.
     fn build_results_payload(&self) -> String {
-        if self.pending_tool_results.is_empty() {
+        let results = self.pending_tool_results.lock().unwrap();
+        if results.is_empty() {
             return String::new();
         }
 
         let mut parts = Vec::new();
-        for (name, result) in &self.pending_tool_results {
+        for (name, result) in &*results {
             let indented_result = match serde_yaml::to_string(result) {
                 Ok(yaml_str) => {
                     let trimmed = yaml_str.trim();
@@ -557,14 +616,15 @@ impl AuwgentEngine {
     /// Fire the user's intent callback (if registered).
     /// Returns the control signal, or None if no handler / handler returns None.
     async fn fire_intent(&self, name: String, value: Value) -> Option<IntentControl> {
-        if let Some(ref handler) = self.intent_handler {
-            handler(name, value).await
+        let handler = self.intent_handler.lock().unwrap().clone();
+        if let Some(h) = handler {
+            h(name, value).await
         } else {
             None
         }
     }
 
-    pub async fn process_intents(&mut self) -> AuwgentResult<(bool, bool, bool)> {
+    pub async fn process_intents(&self) -> AuwgentResult<(bool, bool, bool)> {
         let intents = {
             let mut pending = self
                 .pending_intents
@@ -700,8 +760,8 @@ impl AuwgentEngine {
             }
         }
 
-        // Store tool results so build_results_payload() can feed them back
-        self.pending_tool_results.extend(tool_results);
+        // Store tool results
+        self.pending_tool_results.lock().unwrap().extend(tool_results);
 
         Ok((has_terminal, has_actions, hard_stop))
     }
@@ -710,7 +770,8 @@ impl AuwgentEngine {
         let tool_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
-        if let Some(imp) = self.tools.get(&tool_name) {
+        let imp = self.tools.lock().unwrap().get(&tool_name).cloned();
+        if let Some(imp) = imp {
             match imp(args).await {
                 Ok(val) => Ok((tool_name, val)),
                 Err(e) => {
@@ -744,7 +805,7 @@ impl AuwgentEngine {
         }
     }
 
-    async fn execute_workflow(&mut self, call: &Value) -> AuwgentResult<(String, Value)> {
+    async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value)> {
         let wf_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
@@ -761,33 +822,31 @@ impl AuwgentEngine {
             wf.body.clone()
         };
 
-        // Create evaluator WITH tools so workflow body can call functions (#4)
+        // Create evaluator WITH tools
         let mut tool_fns: HashMap<String, crate::evaluator::SyncToolFn> = HashMap::new();
-        for (name, imp) in &self.tools {
-            let imp = imp.clone();
-            let name_clone = name.clone();
-            tool_fns.insert(
-                name.clone(),
-                std::sync::Arc::new(move |fn_args: Vec<Value>| {
-                    // Convert Vec<Value> to a single JSON object for the tool
-                    let arg_val = if fn_args.len() == 1 {
-                        fn_args.into_iter().next().unwrap_or(Value::Null)
-                    } else {
-                        Value::Array(fn_args)
-                    };
-                    // Block on the async tool — workflows are evaluated synchronously
-                    // This is a known limitation; async workflows would need a redesign
-                    let rt = tokio::runtime::Handle::current();
-                    let imp = imp.clone();
-                    std::thread::spawn(move || rt.block_on(imp(arg_val)))
-                        .join()
-                        .map_err(|_| format!("Tool '{}' panicked", name_clone))?
-                }),
-            );
+        {
+            let tools = self.tools.lock().unwrap();
+            for (name, imp) in &*tools {
+                let imp = imp.clone();
+                let name_clone = name.clone();
+                tool_fns.insert(
+                    name.clone(),
+                    std::sync::Arc::new(move |fn_args: Vec<Value>| {
+                        let arg_val = if fn_args.len() == 1 {
+                            fn_args.into_iter().next().unwrap_or(Value::Null)
+                        } else {
+                            Value::Array(fn_args)
+                        };
+                        let rt = tokio::runtime::Handle::current();
+                        let imp = imp.clone();
+                        std::thread::spawn(move || rt.block_on(imp(arg_val)))
+                            .join()
+                            .map_err(|_| format!("Tool '{}' panicked", name_clone))?
+                    }),
+                );
+            }
         }
 
-        // Clone IR so Evaluator doesn't hold an immutable borrow on self,
-        // which allows us to mutably borrow self inside the loop.
         let ir_clone = self.ir.clone();
 
         let mut scope = HashMap::new();
@@ -797,24 +856,18 @@ impl AuwgentEngine {
             }
         }
         // Inject context into workflow scope
-        if let Some(ctx) = self.context.as_ref() {
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
         }
 
         let mut last_result = Value::Null;
         for stmt in &body_clone {
             let eval_result = {
-                // Reconstruct evaluator for each statement using the cloned IR
-                // to completely avoid lifetime/borrow issues across await point
                 let evaluator = Evaluator::with_tools(&ir_clone, tool_fns.clone());
                 evaluator.evaluate(stmt, &mut scope)?
             };
 
-            // Since workflows evaluate synchronously, but helper transfers require spinning up
-            // an async Engine, the evaluator returns a special control payload. We intercept it
-            // here and perform the async execution.
             if let Some(obj) = eval_result.as_object() {
-                // Check for programmatic helper call
                 if obj
                     .get("__requires_async_helper_call")
                     .and_then(|v| v.as_bool())
@@ -826,7 +879,6 @@ impl AuwgentEngine {
                         .unwrap_or("");
                     let helper_args = obj.get("args").unwrap_or(&Value::Null).clone();
 
-                    // Build a helper_call value and delegate to execute_helper
                     let helper_call = serde_json::json!({
                         "type": target_helper,
                         "args": helper_args
@@ -836,7 +888,6 @@ impl AuwgentEngine {
                     continue;
                 }
 
-                // Check for programmatic transfer
                 if obj
                     .get("__requires_async_transfer")
                     .and_then(|v| v.as_bool())
@@ -849,7 +900,6 @@ impl AuwgentEngine {
                     });
                     let (_, sub_result) = self.execute_helper(&helper_call).await?;
 
-                    // If the transfer returned a hard stop signal (handoff user), bubble up
                     if let Some(res_obj) = sub_result.as_object() {
                         if res_obj
                             .get("__handoff_stop")
@@ -885,7 +935,7 @@ impl AuwgentEngine {
     /// Returns a `BoxFuture` (heap-allocated future) to break the async recursion
     /// cycle: `run → process_intents → execute_workflow → execute_helper → sub_engine.run()`
     fn execute_helper<'a>(
-        &'a mut self,
+        &'a self,
         call: &'a Value,
     ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value)>> {
         let session_preload_handler = self.session_preload_handler.clone();
@@ -897,114 +947,112 @@ impl AuwgentEngine {
             let helper_name = call["type"].as_str().unwrap_or("").to_string();
             let args = call["args"].clone();
 
-            // 1. Build the sub-agent IR + determine which parent tools are authorized
+            // 1. Build the sub-agent IR
             let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
 
-            // 2. Construct a fresh sub-engine with the helper's IR
-            let mut sub_engine = AuwgentEngine::new(sub_ctx.ir);
+            // 2. Construct a fresh sub-engine
+            let sub_engine = AuwgentEngine::new(sub_ctx.ir);
 
-            // 3. Share all parent drivers (Arc clone, zero-cost)
-            for (provider_type, driver) in &self.drivers {
-                sub_engine
-                    .drivers
-                    .insert(provider_type.clone(), Arc::clone(driver));
+            // 3. Share all parent drivers
+            {
+                let drivers = self.drivers.lock().unwrap();
+                let mut sub_drivers = sub_engine.drivers.lock().unwrap();
+                for (provider_type, driver) in &*drivers {
+                    sub_drivers.insert(provider_type.clone(), Arc::clone(driver));
+                }
             }
 
-            // 4. Inject authorized parent tools into the sub-engine
-            for tool_name in &sub_ctx.authorized_parent_tool_names {
-                if let Some(imp) = self.tools.get(tool_name) {
-                    sub_engine.tools.insert(tool_name.clone(), Arc::clone(imp));
+            // 4. Inject authorized parent tools
+            {
+                let tools = self.tools.lock().unwrap();
+                let mut sub_tools = sub_engine.tools.lock().unwrap();
+                for tool_name in &sub_ctx.authorized_parent_tool_names {
+                    if let Some(imp) = tools.get(tool_name) {
+                        sub_tools.insert(tool_name.clone(), Arc::clone(imp));
+                    }
                 }
             }
 
             // 5. Propagate context
-            if let Some(ctx) = &self.context {
+            if let Some(ctx) = self.context.lock().unwrap().as_ref() {
                 sub_engine.set_context(ctx.clone());
             }
 
-            // 6. Wire intent handlers based on handoff mode
+            // 6. Wire intent handlers
             match sub_ctx.handoff_mode {
                 HandoffMode::User | HandoffMode::ThenContinue => {
-                    // The helper speaks directly to the user —
-                    // give it the parent's exact intent + partial handlers
-                    if let Some(handler) = &self.intent_handler {
+                    if let Some(handler) = self.intent_handler.lock().unwrap().as_ref() {
                         sub_engine.on_intent(Arc::clone(handler));
                     }
-                    if let Some(handler) = &self.partial_intent_handler {
-                        let h = Arc::clone(handler);
-                        sub_engine.on_intent_partial(Arc::new(move |name, value| {
-                            h(name, value);
-                        }));
+                    if let Some(handler) = self.partial_intent_handler.lock().unwrap().as_ref() {
+                        sub_engine.on_intent_partial(Arc::clone(handler));
                     }
                 }
-                HandoffMode::Return => {
-                    // The helper is an internal reasoning step — silent to the user.
-                    // We attach no handlers; sub_engine runs silently.
+                HandoffMode::Return => {}
+            }
+
+            // Inherit hooks (middleware listeners)
+            {
+                let h = self.llm_start_handler.lock().unwrap().clone();
+                if let Some(handler) = h {
+                    sub_engine.on_llm_start(handler);
+                }
+            }
+            {
+                let h = self.llm_end_handler.lock().unwrap().clone();
+                if let Some(handler) = h {
+                    sub_engine.on_llm_end(handler);
                 }
             }
 
-            // 6.1 ALWAYS inherit LLM execution hooks so middleware can trace helper generations
-            if let Some(handler) = &self.llm_start_handler {
-                sub_engine.on_llm_start(Arc::clone(handler));
-            }
-            if let Some(handler) = &self.llm_end_handler {
-                sub_engine.on_llm_end(Arc::clone(handler));
-            }
-
-            // 6.2 Pre-generate the helper's system prompt so it is available
-            // to the TypeScript middleware during the "onSubEngineStart" hook.
+            // Pre-generate system prompt
             if let Ok(system_prompt) = sub_engine.generate_prompt() {
-                sub_engine.session.set_system_prompt(&system_prompt);
+                sub_engine.session.lock().unwrap().set_system_prompt(&system_prompt);
             }
 
-            // 6.5 Preload session from host if handler exists
-            if let Some(preload_fn) = &session_preload_handler {
+            // Preload session
+            let preload_fn = session_preload_handler.lock().unwrap().clone();
+            if let Some(f) = preload_fn {
                 let empty_session = sub_engine
                     .export_session()
                     .unwrap_or_else(|_| "{}".to_string());
-                if let Some(loaded_json) = preload_fn(helper_name.clone(), empty_session).await {
-                    if let Err(e) = sub_engine.import_session(&loaded_json) {
-                        eprintln!("Failed to import loaded helper session: {}", e);
-                    }
+                if let Some(loaded_json) = f(helper_name.clone(), empty_session).await {
+                    let _ = sub_engine.import_session(&loaded_json);
                 }
             }
 
-            // 7. Run the full nested agentic loop
-            // ── Stack-Aware Resumption: propagate the fast-forward path ─────
-            // If the parent engine has a fast-forward stack and the next target
-            // is this helper, give the sub-engine the remaining slice.
-            let sub_initial_stack = self.fast_forward_stack.as_ref().and_then(|ffs| {
-                if ffs.first().map(|s| s.as_str()) == Some(helper_name.as_str()) {
-                    // This helper IS next in the stack — give it the remaining slice
-                    // (which it will use to continue fast-forwarding into its children).
-                    Some({
-                        // Include the helper's own name as the "root" of its sub-stack
+            // Propagate fast-forward stack
+            let sub_initial_stack = {
+                let mut ffs_lock = self.fast_forward_stack.lock().unwrap();
+                let stack = ffs_lock.as_ref().and_then(|ffs| {
+                    if ffs.first().map(|s| s.as_str()) == Some(helper_name.as_str()) {
                         let mut sub_stack = vec![helper_name.clone()];
                         sub_stack.extend_from_slice(&ffs[1..]);
-                        sub_stack
-                    })
-                } else {
-                    None
+                        Some(sub_stack)
+                    } else {
+                        None
+                    }
+                });
+                if stack.is_some() {
+                    *ffs_lock = None;
                 }
-            });
+                stack
+            };
 
-            // Consume the fast-forward stack entry now that we've dispatched it
-            if sub_initial_stack.is_some() {
-                self.fast_forward_stack = None;
-            }
+            let _ = sub_engine.run(Some(args), sub_initial_stack).await;
 
-            sub_engine.run(Some(args), sub_initial_stack).await?;
-
-            // 7.5 Save session to host if handler exists
-            if let Some(save_fn) = &session_save_handler {
+            // Save session
+            let save_fn = session_save_handler.lock().unwrap().clone();
+            if let Some(f) = save_fn {
                 if let Ok(completed_json) = sub_engine.export_session() {
-                    save_fn(helper_name.clone(), completed_json).await;
+                    f(helper_name.clone(), completed_json).await;
                 }
             }
 
-            // 8. Extract the result & route based on handoff mode
             let final_resp = sub_engine
                 .session
+                .lock()
+                .unwrap()
                 .turns
                 .last()
                 .map(|t| t.model_response.clone())
@@ -1012,31 +1060,25 @@ impl AuwgentEngine {
 
             match sub_ctx.handoff_mode {
                 HandoffMode::User => {
-                    // Helper spoke to user, parent engine stops this turn
                     Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
                 }
                 HandoffMode::ThenContinue => {
-                    // Helper spoke to user, parent engine continues
-                    let msg = format!(
-                        "Helper {} delivered a response to the user. Continue your task.",
-                        &helper_name
-                    );
+                    let msg = format!("Helper {} delivered response to user. Continue.", &helper_name);
                     Ok((helper_name, serde_json::json!({ "status": msg })))
                 }
                 HandoffMode::Return => {
-                    // Return the helper's final output to the parent as a tool result
                     Ok((helper_name, serde_json::json!({ "result": final_resp })))
                 }
             }
-        }) // end Box::pin
+        })
     }
 
-    pub fn write_llm_chunk(&mut self, chunk: &str) {
-        self.orchestrator.write(chunk);
+    pub fn write_llm_chunk(&self, chunk: &str) {
+        self.orchestrator.lock().unwrap().write(chunk);
     }
 
-    pub fn end_llm_stream(&mut self) -> Value {
-        self.orchestrator.end()
+    pub fn end_llm_stream(&self) -> Value {
+        self.orchestrator.lock().unwrap().end()
     }
 
     pub fn generate_prompt(&self) -> AuwgentResult<String> {
@@ -1044,7 +1086,7 @@ impl AuwgentEngine {
         let mut scope = HashMap::new();
 
         // Inject context into scope so prompt templates can use {{context.field}} (#7)
-        if let Some(ctx) = self.context.as_ref() {
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
         }
 
@@ -1060,6 +1102,32 @@ impl AuwgentEngine {
 
         let prompt_val = evaluator.evaluate(&default.prompt, &mut scope)?;
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
+
+        // ── Magic Context DX: Automatic context injection ─────────────────
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
+            if let Some(obj) = ctx.as_object() {
+                let mut filtered_ctx = serde_json::Map::new();
+                for (k, v) in obj {
+                    let is_empty = match v {
+                        Value::Null => true,
+                        Value::Array(a) => a.is_empty(),
+                        Value::Object(o) => o.is_empty(),
+                        Value::String(s) => s.is_empty(),
+                        _ => false,
+                    };
+                    if !is_empty {
+                        filtered_ctx.insert(k.clone(), v.clone());
+                    }
+                }
+
+                if !filtered_ctx.is_empty() {
+                    if let Ok(yaml) = serde_yaml::to_string(&Value::Object(filtered_ctx)) {
+                        prompt.push_str("\n\n# ADDITIONAL CONTEXT\n");
+                        prompt.push_str(yaml.trim());
+                    }
+                }
+            }
+        }
 
         let intents = crate::intents::generate_intents(&self.ir);
         if !intents.is_empty() {

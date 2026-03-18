@@ -90,11 +90,7 @@ impl Auwgent {
             })
         });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.register_tool(&name, tool_impl);
-        });
+        self.bridge.engine.register_tool(&name, tool_impl);
 
         Ok(())
     }
@@ -146,11 +142,7 @@ impl Auwgent {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_intent(handler);
-        });
+        self.bridge.engine.on_intent(handler);
 
         Ok(())
     }
@@ -186,11 +178,7 @@ impl Auwgent {
                 tsfn.call((name, value), ThreadsafeFunctionCallMode::NonBlocking);
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_intent_partial(handler);
-        });
+        self.bridge.engine.on_intent_partial(handler);
 
         Ok(())
     }
@@ -221,11 +209,7 @@ impl Auwgent {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_sub_engine_start(handler);
-        });
+        self.bridge.engine.on_sub_engine_start(handler);
 
         Ok(())
     }
@@ -255,11 +239,7 @@ impl Auwgent {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_sub_engine_complete(handler);
-        });
+        self.bridge.engine.on_sub_engine_complete(handler);
 
         Ok(())
     }
@@ -292,11 +272,7 @@ impl Auwgent {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_llm_start(handler);
-        });
+        self.bridge.engine.on_llm_start(handler);
 
         Ok(())
     }
@@ -326,11 +302,7 @@ impl Auwgent {
                 })
             });
 
-        let bridge = &self.bridge;
-        bridge.rt.block_on(async {
-            let mut eng = bridge.engine.lock().await;
-            eng.on_llm_end(handler);
-        });
+        self.bridge.engine.on_llm_end(handler);
 
         Ok(())
     }
@@ -419,7 +391,24 @@ impl Auwgent {
     /// Process any pending intents (for simulation/testing).
     #[napi]
     pub async fn process_intents(&self) -> Result<String> {
-        self.bridge.process_intents_async().await.map_err(Error::from_reason)
+        self.bridge
+            .process_intents_async()
+            .await
+            .map_err(Error::from_reason)
+    }
+
+    #[napi]
+    pub async fn embed(&self, text: String) -> Result<Vec<f32>> {
+        self.bridge.embed(text).await.map_err(Error::from_reason)
+    }
+
+    /// Generate embeddings for a batch of texts.
+    #[napi]
+    pub async fn embed_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>> {
+        self.bridge
+            .embed_batch(texts)
+            .await
+            .map_err(Error::from_reason)
     }
 }
 
