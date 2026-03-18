@@ -316,8 +316,10 @@ export class TypedAuwgent<
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
             let session = JSON.parse(emptySessionJson) as SessionState;
 
-            // Maintain execution stack
-            this.agentStack.push(helperName);
+            // Sync active stack from sub-engine's session
+            if (session.stack) {
+                this.agentStack = [...session.stack];
+            }
 
             const ctx = this.getBuildContext();
             ctx.systemPrompt = session.systemPrompt;
@@ -341,8 +343,10 @@ export class TypedAuwgent<
                 }
             }
 
-            // Pop active helper
-            this.agentStack.pop();
+            // Sync active stack from sub-engine's session
+            if (session.stack) {
+                this.agentStack = [...session.stack];
+            }
         });
 
         // Register LLM Lifecycle Hooks
@@ -366,7 +370,12 @@ export class TypedAuwgent<
         this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
             const ctx = this.getBuildContext();
             ctx.systemPrompt = systemPrompt;
-            if (this.lastTurnIntentName === 'response_text' || this.lastTurnIntentName === 'response_schema') {
+            // Trigger onLLMEnd for terminal intents
+            const isTerminal = this.lastTurnIntentName === 'response_text' || 
+                               this.lastTurnIntentName === 'response_schema' ||
+                               (this.lastTurnIntentName && !['tool_call', 'workflow_call', 'helper_call'].includes(this.lastTurnIntentName));
+
+            if (isTerminal) {
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMEnd) {
                         await (m.onLLMEnd as any)(this.lastTurnIntentValue || {}, ctx);
@@ -407,21 +416,32 @@ export class TypedAuwgent<
             }
 
             // ── Stack-Aware Resumption ──────────────────────────────────
+            // Use the stack from the session if available, otherwise default to root.
+            if (currentSession.stack && currentSession.stack.length > 0) {
+                this.agentStack = [...currentSession.stack];
+            } else {
+                this.agentStack = [this.ir.name];
+                currentSession.stack = [...this.agentStack];
+            }
+
             // After middleware runs, check if ctx.stack was mutated.
-            // Default is [rootAgent] (length 1). If middleware set it to
-            // e.g. ["Main", "Broker", "RiskValidator"], pass it to the
-            // native engine for fast-forward teleportation.
+            // If middleware set it (e.g. for teleportation), use that.
             const injectedStack = runtimeCtx.stack.length > 1
                 ? runtimeCtx.stack
-                : null;
+                : (this.agentStack.length > 1 ? this.agentStack : null);
 
-            // Execute Native — pass injected stack if middleware set one
+            // Execute Native
             this.importSession(currentSession);
             const json = await (this.native.run as any)(
                 input ?? null,
                 injectedStack ? JSON.stringify(injectedStack) : null
             );
             currentSession = JSON.parse(json) as SessionState;
+
+            // Sync the local stack back from the modified session
+            if (currentSession.stack) {
+                this.agentStack = [...currentSession.stack];
+            }
 
             // onRunComplete Interception
             for (const m of this.getMiddleware(runtimeCtx)) {

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ESNext",
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@snrraptopack/auwgent-sdk": [
+        "../../targets/typescript/auwgent.ts"
+      ],
+      "@snrraptopack/auwgent-sdk/*": [
+        "../../targets/typescript/*"
+      ]
+    }
+  }
+}

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// Configuration loaded from `auwgent.yml` in the project root.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     /// Source selector for .agent files. Can be a file, directory, or glob.
     pub source: Option<String>,
@@ -11,6 +11,9 @@ pub struct Config {
     /// Target languages: ts, python, or both (e.g. ["ts", "python"])
     #[serde(default)]
     pub targets: Vec<String>,
+    /// When true, enables dev-mode scaffolding (local SDK links).
+    #[serde(default)]
+    pub development: bool,
 }
 
 impl Config {

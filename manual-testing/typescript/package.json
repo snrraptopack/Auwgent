@@ -1,0 +1,18 @@
+{
+  "name": "auwgent-test-project",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun index.ts || bun index.js || node index.js"
+  },
+  "dependencies": {
+    "@snrraptopack/auwgent-sdk": "link:C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\targets\\typescript"
+  },
+  "module": "index.ts",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}

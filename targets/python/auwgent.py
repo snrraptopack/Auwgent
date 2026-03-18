@@ -345,7 +345,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         # ── 3. SubEngine Hooks ──
         async def wrap_sub_start(helper_name: str, session_json: str) -> Optional[str]:
             session = json.loads(session_json)
-            self._agent_stack.append(helper_name)
+            # Sync stack from session
+            if "stack" in session:
+                self._agent_stack = list(session["stack"])
+
             ctx = self._build_context()
             ctx["systemPrompt"] = session.get("systemPrompt")
 
@@ -357,14 +360,15 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
         async def wrap_sub_complete(helper_name: str, session_json: str) -> None:
             session = json.loads(session_json)
+            # Sync stack back from sub-engine
+            if "stack" in session:
+                self._agent_stack = list(session["stack"])
+
             ctx = self._build_context()
             ctx["systemPrompt"] = session.get("systemPrompt")
-
             for m in self._get_middleware(ctx):
                 if hasattr(m, "onRunComplete"):
                     await m.onRunComplete(session, ctx)
-            if self._agent_stack:
-                self._agent_stack.pop()
         self._native.on_sub_engine_complete(wrap_sub_complete)
 
         # ── 4. LLM Hooks ──
@@ -390,7 +394,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             ctx = self._build_context()
             ctx["systemPrompt"] = system_prompt
 
-            if self._last_intent_name in ("response_text", "response_schema"):
+            # Trigger onLLMEnd for terminal intents
+            is_terminal = self._last_intent_name in ("response_text", "response_schema") or \
+                          (self._last_intent_name and self._last_intent_name not in ("tool_call", "workflow_call", "helper_call"))
+
+            if is_terminal:
                 for m in self._get_middleware(ctx):
                     if hasattr(m, "onLLMEnd"):
                         await m.onLLMEnd(self._last_intent_val or {}, ctx)
@@ -412,7 +420,16 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         ctx = self._build_context()
 
         try:
-            # onRunStart Interception — supports Stack-Aware Resumption (Execution Tunneling)
+            # ── Stack Persistence ──
+            # Load stack from session if available
+            session_stack = current_session.get("stack", [])
+            if session_stack:
+                self._agent_stack = list(session_stack)
+            else:
+                self._agent_stack = [self.ir.get("name", "agent")]
+                current_session["stack"] = list(self._agent_stack)
+
+            # onRunStart Interception
             for m in self._get_middleware(ctx):
                 if hasattr(m, "onRunStart"):
                     current_session = await m.onRunStart(current_session, ctx)
@@ -420,8 +437,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             self.import_session(current_session)
 
             # ── Execution Tunneling ──
-            # Check if middleware mutated the stack
-            injected_stack = ctx["stack"] if len(ctx["stack"]) > 1 else None
+            # If middleware set ctx["stack"], use it; otherwise use our sync'd stack
+            injected_stack = ctx["stack"] if len(ctx["stack"]) > 1 else (self._agent_stack if len(self._agent_stack) > 1 else None)
 
             # Pass raw strings directly; only JSON-encode non-string types
             if input_val is None:
@@ -436,6 +453,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 json.dumps(injected_stack) if injected_stack else None
             )
             current_session = json.loads(res_json)
+
+            # Sync stack back after run
+            if "stack" in current_session:
+                self._agent_stack = list(current_session["stack"])
 
             # onRunComplete interception
             for m in self._get_middleware(ctx):

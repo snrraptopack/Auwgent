@@ -336,4 +336,5 @@ export interface Turn {
 export interface SessionState {
     systemPrompt?: string;
     turns: Turn[];
+    stack: string[];
 }

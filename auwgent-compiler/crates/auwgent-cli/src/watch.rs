@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crate::generate_file;
+use crate::commands::generate_file;
 
 /// Run an initial generation pass then watch for `.agent` file changes,
 /// regenerating any file that is modified or created.

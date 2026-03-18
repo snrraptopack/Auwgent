@@ -1,4 +1,0 @@
-export type Hey{
-    name:string
-    age:number
-}

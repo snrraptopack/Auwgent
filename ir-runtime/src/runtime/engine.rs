@@ -326,14 +326,24 @@ impl AuwgentEngine {
         initial_stack: Option<Vec<String>>,
     ) -> AuwgentResult<()> {
         // ── Stack-Aware Resumption ─────────────────────────────────────────
-        // Store the initial stack. The first agent in the stack is always the
-        // root agent (self), so we skip it and keep the rest for child agents.
-        if let Some(stack) = initial_stack {
-            // Skip the root agent (index 0) — it IS us, so we just keep the tail
-            if stack.len() > 1 {
-                *self.fast_forward_stack.lock().unwrap() = Some(stack[1..].to_vec());
+        {
+            let mut session = self.session.lock().unwrap();
+            
+            // 1. Initialize session stack if empty
+            if session.stack.is_empty() {
+                session.stack = vec![self.ir.name.clone()];
+            }
+
+            // 2. If an explicit stack was passed (e.g. from SDK), sync it to session
+            if let Some(stack) = initial_stack {
+                session.stack = stack;
+            }
+
+            // 3. Set fast-forward focus based on session stack
+            // Root agent (index 0) is US, so we skip it for teleportation logic
+            if session.stack.len() > 1 {
+                *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
             } else {
-                // Stack only had the root — no fast-forward needed, we ARE the focus
                 *self.fast_forward_stack.lock().unwrap() = None;
             }
         }
@@ -757,7 +767,9 @@ impl AuwgentEngine {
                     has_terminal = true;
                 }
                 _ => {
-                    // Custom / unknown intents — already fired to user
+                    // Custom / unknown intents — already fired to user.
+                    // We treat these as terminal (waiting for user input).
+                    has_terminal = true;
                 }
             }
         }
@@ -949,7 +961,13 @@ impl AuwgentEngine {
             let helper_name = call["type"].as_str().unwrap_or("").to_string();
             let args = call["args"].clone();
 
-            // 1. Build the sub-agent IR
+            // 1. Push helper to session stack
+            {
+                let mut session = self.session.lock().unwrap();
+                session.stack.push(helper_name.clone());
+            }
+
+            // 2. Build the sub-agent IR
             let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
 
             // 2. Construct a fresh sub-engine
@@ -1062,13 +1080,18 @@ impl AuwgentEngine {
 
             match sub_ctx.handoff_mode {
                 HandoffMode::User => {
+                    // DO NOT pop stack — we want the next run() to teleport back here
                     Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
                 }
                 HandoffMode::ThenContinue => {
+                    // Pop stack — focus returns to parent
+                    self.session.lock().unwrap().stack.pop();
                     let msg = format!("Helper {} delivered response to user. Continue.", &helper_name);
                     Ok((helper_name, serde_json::json!({ "status": msg })))
                 }
                 HandoffMode::Return => {
+                    // Pop stack — focus returns to parent
+                    self.session.lock().unwrap().stack.pop();
                     Ok((helper_name, serde_json::json!({ "result": final_resp })))
                 }
             }

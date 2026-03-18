@@ -19,6 +19,10 @@
     "./native": {
       "import": "./index.js",
       "types": "./index.d.ts"
+    },
+    "./*": {
+      "import": "./*.ts",
+      "types": "./*.ts"
     }
   },
   "napi": {

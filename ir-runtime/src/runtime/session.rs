@@ -94,6 +94,8 @@ pub struct SessionState {
     pub system_prompt: Option<String>,
     /// Ordered list of turns in this session
     pub turns: Vec<Turn>,
+    /// The current execution stack (agent names)
+    pub stack: Vec<String>,
 }
 
 impl SessionState {
@@ -166,5 +168,6 @@ impl SessionState {
     /// Clear all turns
     pub fn clear(&mut self) {
         self.turns.clear();
+        self.stack.clear();
     }
 }

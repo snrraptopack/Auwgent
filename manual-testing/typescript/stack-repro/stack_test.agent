@@ -1,0 +1,26 @@
+
+intent questions {
+    fields {
+        text: string
+    }
+}
+
+helper StoryTeller {
+    description: "good at telling stories"
+    default config {
+        model: gemini("gemini-2.0-flash")
+        prompt: "You are a story teller. Ask the user what kind of story they want using the 'questions' intent."
+    }
+    intent : questions
+}
+
+agent Router {
+    default config {
+        model: gemini("gemini-2.0-flash")
+        prompt: "You are a router. If the user wants a story, call the StoryTeller helper."
+    }
+
+    helpers {
+        StoryTeller handoff user
+    }
+}

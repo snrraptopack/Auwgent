@@ -1,0 +1,64 @@
+{
+  "name": "Router",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.0-flash"
+        },
+        "prompt": {
+          "value": "You are a router. If the user wants a story, call the StoryTeller helper.",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [
+    {
+      "name": "StoryTeller",
+      "description": "good at telling stories",
+      "customIntents": [
+        {
+          "name": "questions",
+          "fields": {
+            "text": {
+              "type": "string",
+              "optional": false
+            }
+          }
+        }
+      ],
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "gemini-2.0-flash"
+            },
+            "prompt": {
+              "value": "You are a story teller. Ask the user what kind of story they want using the 'questions' intent.",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    }
+  ],
+  "tests": [],
+  "helperHandoff": {
+    "StoryTeller": "user"
+  }
+}
