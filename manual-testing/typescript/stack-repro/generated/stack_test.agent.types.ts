@@ -26,12 +26,13 @@ export type RouterBaseOutput = {
 export type RouterOutput = RouterBaseOutput | StoryTellerOutput;
 
 export type RouterContext = {
-
+    user_name: string;
 }
 
 /** Custom intents defined in the DSL (if any) */
 export type RouterCustomIntents =
-    | { name: "questions"; value: { text: string } };
+    | { name: "thought"; value: { explain: string } }
+    | { name: "questions"; value: { questions: string } };
 
 /**
  * API keys required for Router
@@ -44,7 +45,7 @@ export type RouterApiKeys = {
 export type RouterAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     RouterCustomIntents,
-    never,
+    RouterOutput,
     Record<string, never>
 >;
 
@@ -52,13 +53,14 @@ export type RouterAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
 export type RouterMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
     RouterCustomIntents,
-    never,
+    RouterOutput,
     Record<string, never>,
     T
 >;
 
 export type RouterConfig = {
     middleware?: RouterMiddleware[];
+    context: RouterContext;
     apiKeys: RouterApiKeys;
 }
 
@@ -66,11 +68,12 @@ export function createRouter(config: RouterConfig): RouterAgent {
     return createAuwgent<
         typeof agentIR,
         RouterCustomIntents,
-        never,
+        RouterOutput,
         Record<string, never>
     >(agentIR, {
         tools: {} as Record<string, never>,
         middleware: config.middleware as any,
+        context: config.context,
         apiKeys: config.apiKeys
     });
 }

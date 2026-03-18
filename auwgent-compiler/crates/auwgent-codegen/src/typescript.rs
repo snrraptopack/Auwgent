@@ -358,10 +358,7 @@ fn generate_agent_factory(
         "Record<string, never>".to_string()
     };
 
-    let output_type = match ir.get("output") {
-        Some(output) if !output.is_null() => format!("{agent_name}Output"),
-        _ => "never".to_string(),
-    };
+    let output_type = format!("{agent_name}Output");
 
     let mut config_props = Vec::new();
     if has_tools {

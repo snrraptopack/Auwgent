@@ -1,26 +1,54 @@
 
-intent questions {
+intent thought {
+    description: "use this to explain your though and actions whilst you are peforming tasks this will make the user know
+        the logical steps you took at each layer"
     fields {
-        text: string
+        explain: string
     }
 }
 
-helper StoryTeller {
-    description: "good at telling stories"
-    default config {
-        model: gemini("gemini-2.0-flash")
-        prompt: "You are a story teller. Ask the user what kind of story they want using the 'questions' intent."
+agent Router{
+
+    // custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
+    default config{
+        model: gemini("gemini-2.5-flash")
+        prompt: {
+            """
+                You are a helpful assistant be polite
+                name of the user : {{ctx.user_name}}
+            """
+        }
+        embedding: gemini("gemini-embedding-001")
     }
-    intent : questions
+
+    intent : thought
+
+    context{
+        user_name:string
+    }
+
+    helpers {StoryTeller handoff user}
+
 }
 
-agent Router {
-    default config {
-        model: gemini("gemini-2.0-flash")
-        prompt: "You are a router. If the user wants a story, call the StoryTeller helper."
+helper StoryTeller{
+    description: "A professional story teller"
+
+    default config{
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a professional Story teller always make sure you give out your maximum effort to crack the joke"
     }
 
-    helpers {
-        StoryTeller handoff user
+    input{
+        text:string
+    }
+
+    intent: {
+        questions{
+            description : "Use this to ask detailed question about the user's request"
+            fields{
+                questions:string 
+            }
+        }
     }
 }

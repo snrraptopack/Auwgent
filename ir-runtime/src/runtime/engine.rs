@@ -1110,9 +1110,10 @@ impl AuwgentEngine {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
 
-        // Inject context into scope so prompt templates can use {{context.field}} (#7)
+        // Inject context into scope so prompt templates can use {{context.field}} or {{ctx.field}}
         if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
+            scope.insert("ctx".to_string(), ctx.clone());
         }
 
         let entry = self

@@ -5,11 +5,39 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.0-flash"
+          "modelName": "gemini-2.5-flash"
+        },
+        "embedding": {
+          "type": "gemini",
+          "modelName": "gemini-embedding-001"
         },
         "prompt": {
-          "value": "You are a router. If the user wants a story, call the StoryTeller helper.",
-          "type": "literal"
+          "type": "inlinePrompt",
+          "parts": [
+            {
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\n                You are a helpful assistant be polite\n                name of the user : "
+                },
+                {
+                  "type": "memberAccess",
+                  "object": {
+                    "type": "varRef",
+                    "value": "ctx"
+                  },
+                  "properties": [
+                    "user_name"
+                  ]
+                },
+                {
+                  "type": "literal",
+                  "value": "\n            "
+                }
+              ]
+            }
+          ]
         }
       },
       "namedConfig": []
@@ -17,18 +45,24 @@
   ],
   "input": null,
   "output": null,
-  "context": null,
+  "context": {
+    "user_name": {
+      "type": "string",
+      "optional": false
+    }
+  },
   "tools": [],
   "workflows": [],
   "helpers": [
     {
       "name": "StoryTeller",
-      "description": "good at telling stories",
+      "description": "A professional story teller",
       "customIntents": [
         {
           "name": "questions",
+          "description": "Use this to ask detailed question about the user's request",
           "fields": {
-            "text": {
+            "questions": {
               "type": "string",
               "optional": false
             }
@@ -40,17 +74,22 @@
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "gemini-2.0-flash"
+              "modelName": "gemini-2.5-flash"
             },
             "prompt": {
-              "value": "You are a story teller. Ask the user what kind of story they want using the 'questions' intent.",
+              "value": "You are a professional Story teller always make sure you give out your maximum effort to crack the joke",
               "type": "literal"
             }
           },
           "namedConfig": []
         }
       ],
-      "input": null,
+      "input": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
       "output": null,
       "context": null,
       "tools": [],
@@ -60,5 +99,17 @@
   "tests": [],
   "helperHandoff": {
     "StoryTeller": "user"
-  }
+  },
+  "customIntents": [
+    {
+      "name": "thought",
+      "description": "use this to explain your though and actions whilst you are peforming tasks this will make the user know\n        the logical steps you took at each layer",
+      "fields": {
+        "explain": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    }
+  ]
 }
