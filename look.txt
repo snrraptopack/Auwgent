@@ -1,78 +1,30 @@
-import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated/stack_test.agent.types";
+The parsed intent....
 
-import { GEMINI_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
-import { startRepl } from "../loop"
 
-let one: AuwgentMiddleware = {
-    name: "one",
-    onLLMStart: (prompt, ctx) => {
-        //console.log(ctx.systemPrompt)
-  },
+Intent: thought I understand the user is asking for the largest number of members a band could have based on the given conditions. This is a mathematical problem that requires setting up and solving equations.
 
-  onError: (error, ctx)=> {
-        console.error(error)
-        return true
-    }
+Here's my thinking process: 1.  **Define variables:**
+***********************************
+
+***********************************
+
+Intent: response_text The largest number of members the band could have is 98.
+***********************************
+
+**********************************
+
+
+
+the raw output...
+
+
+"model_response": "thought: I understand the user is asking for the largest number of members a band could have based on the given conditions. This is a mathematical problem that requires setting up and solving equations.\n\nHere's my thinking process:\n1.  **Define variables:**\n    *   Let `N` be the total number of band members.\n    *   Let `m` be the initial number of members in each row.\n    *   Let `r` be the initial number of rows.\n\n2.  **Formulate equations from the first condition:**\n    *   \"A rectangular band formation is a formation with `m` band members in each of `r` rows, where `m` and `r` are integers.\" This means the product `m * r` represents the number of members in a perfect rectangular formation.\n    *   \"The director arranges them in a rectangular formation and finds that he has two members left over.\" This means `N = m * r + 2`.\n\n3.  **Formulate equations from the second condition:**\n    *   \"If he increases the number of members in each row by 1\": The new number of members per row is `m + 1`.\n    *   \"and reduces the number of rows by 2\": The new number of rows is `r - 2`.\n    *   \"there are exactly enough places in the new formation for each band member.\" This means `N = (m + 1) * (r - 2)`.\n\n4.  **Combine and solve the equations:**\n    *   We have `m * r + 2 = (m + 1) * (r - 2)`.\n    *   Expand the right side: `m * r + 2 = m * r - 2m + r - 2`.\n    *   Subtract `m * r` from both sides: `2 = -2m + r - 2`.\n    *   Rearrange to solve for `r`: `r = 2m + 4`.\n\n5.  **Substitute `r` back into the equation for `N`:**\n    *   `N = m * r + 2`\n    *   `N = m * (2m + 4) + 2`\n    *   `N = 2m^2 + 4m + 2`\n\n6.  **Apply the constraint:**\n    *   \"A particular band has less than 100 band members.\" So, `N < 100`.\n    *   `2m^2 + 4m + 2 < 100`.\n    *   Divide by 2: `m^2 + 2m + 1 < 50`.\n    *   Recognize `m^2 + 2m + 1` as `(m + 1)^2`.\n    *   So, `(m + 1)^2 < 50`.\n\n7.  **Find the largest integer `m` that satisfies the inequality:**\n    *   We need `m + 1 < sqrt(50)`.\n    *   `sqrt(49) = 7`, so `sqrt(50)` is slightly more than 7 (approx 7.07).\n    *   Therefore, `m + 1` must be less than 7.07.\n    *   The largest integer value for `m + 1` is 7.\n    *   If `m + 1 = 7`, then `m = 6`.\n\n8.  **Calculate `N` using the largest possible `m`:**\n    *   If `m = 6`:\n        *   `r = 2m + 4 = 2 * 6 + 4 = 12 + 4 = 16`.\n        *   Check that `r - 2` (which is `14`) is still positive, which it is.\n        *   `N = m * r + 2 = 6 * 16 + 2 = 96 + 2 = 98`.\n        *   Or `N = (m + 1) * (r - 2) = (6 + 1) * (16 - 2) = 7 * 14 = 98`.\n\n9.  **Verify the constraints:**\n    *   `N = 98`, which is less than 100.\n    *   `m = 6` and `r = 16` are integers, as required.\n\nTherefore, the largest number of members the band could have is 98.\nresponse_text:\n  text: The largest number of members the band could have is 98."
 }
-
-const config: AuwgentConfig = {
-    apiKeys: {
-        geminiApiKey: GEMINI_API_KEY,
-    },
-    context: {
-        user_name: "Theophilus"
-    },
-    middleware: [one]
-}
-
-let agent = auwgent(config)
-
-console.log(agent.generatePrompt())
+>
 
 
-agent.onIntent((name, value) => {
-  console.log("***********************************\n")
-  console.log(`Intent: ${name}`, (value as any)?.text ?? value)
-   console.log("***********************************\n")
+// new Test
 
-})
-
-startRepl(agent)
-
-
-/**
- *
- Intent: thought {
-   explain: "The user is asking if the `thought` intent helps me solve tasks freely. I need to explain that while `thought` helps me clarify my process, it doesn't give me \"free\" task-solving ability in the sense of deviating from my programmed logic or available tools. It's more about transparency. My task-solving is still based on my defined intents and helpers.",
- }
- ***********************************
-
- ***********************************
-
- Intent: response_text That's a great question! The `thought` intent primarily helps me by allowing me to articulate my internal processing steps to *you*, the user. It makes my decision-making transparent.
- ***********************************
-
- {
-   "input": "does that step also help you to solve task freely?",
-   "model_response": "thought:\n  explain: The user is asking if the `thought` intent helps me solve tasks freely. I need to explain that while `thought` helps me clarify my process, it doesn't give me \"free\" task-solving ability in the sense of deviating from my programmed logic or available tools. It's more about transparency. My task-solving is still based on my defined intents and helpers.\nresponse_text:\n  text: That's a great question! The `thought` intent primarily helps me by allowing me to articulate my internal processing steps to *you*, the user. It makes my decision-making transparent.\n\nIt doesn't, however, allow me to \"solve tasks freely\" in an unconstrained way. My problem-solving is still guided by my programming, the intents I have available (like `response_text`, `helper_call`), and the specific helpers I can use (like `StoryTeller`). The `thought` intent is more about explaining *how* I'm applying those predefined capabilities to address your request."
- }
- > so to you what other way do you think it will help you to improve yourself when solving problem?
- {
-   "input": "so to you what other way do you think it will help you to improve yourself when solving problem?",
-   "model_response": "(no response)"
- }
- > so to you what other way do you think it will help you to improve yourself when solving problem?
- {
-   "input": "so to you what other way do you think it will help you to improve yourself when solving problem?",
-   "model_response": "(no response)"
- }
- > so to you what other way do you think it will help you to improve yourself when solving problem?
- {
-   "input": "so to you what other way do you think it will help you to improve yourself when solving problem?",
-   "model_response": "(no response)"
- }
- >
- */
 
 
 

@@ -18,11 +18,23 @@ pub struct Orchestrator {
     partial_handler: Option<IntentHandler>,
     /// Set of (line, col) for intents already emitted as "ready"
     emitted_identities: HashSet<(usize, usize)>,
+    /// Parser options (stored for glue heuristic configuration)
+    options: ParserOptions,
 }
 
 impl Orchestrator {
     pub fn new(options: Option<ParserOptions>) -> Self {
-        let parser = Parser::new(options);
+        let opts = options.unwrap_or(ParserOptions {
+            indent_size: None,
+            allow_tabs: None,
+            preserve_comments: None,
+            strict: None,
+            intent_schema: None,
+            intent_key: None,
+            middleware: None,
+            enable_glue_heuristic: Some(true),
+        });
+        let parser = Parser::new(Some(opts.clone()));
 
         Self {
             parser,
@@ -31,6 +43,7 @@ impl Orchestrator {
             intent_handler: None,
             partial_handler: None,
             emitted_identities: HashSet::new(),
+            options: opts,
         }
     }
 
@@ -47,6 +60,14 @@ impl Orchestrator {
     /// Set handler for partial intent updates
     pub fn on_intent_partial(&mut self, handler: IntentHandler) {
         self.partial_handler = Some(handler);
+    }
+
+    /// Configure the glue heuristic
+    /// When enabled (default), orphaned keys that aren't registered intents will be merged into the previous intent.
+    /// This helps handle LLM output that doesn't use pipe blocks for multiline content.
+    /// When disabled, orphaned keys are ignored.
+    pub fn set_glue_heuristic(&mut self, enabled: bool) {
+        self.options.enable_glue_heuristic = Some(enabled);
     }
 
     /// Write chunk of input
@@ -128,64 +149,72 @@ impl Orchestrator {
             // If the next few entries in the mapping are NOT registered intents,
             // they are likely part of a broken multiline scalar (e.g. from an LLM that didn't use |).
             // We append them to the first string field we find in the intent.
-            let mut next_idx = idx + 1;
-            while next_idx < entries.len() {
-                let next_entry = &entries[next_idx];
-                if self.intent_keys.contains(&next_entry.key) {
-                    break;
-                }
-                
-                // This is an "orphaned" key/value. Glue it!
-                let orphaned_key = &next_entry.key;
-                let orphaned_val_res = self.ir_builder.build(Some(&next_entry.value));
-                let orphaned_val_str = match orphaned_val_res.value {
-                    IRValue::String(s) => s,
-                    IRValue::Null => String::new(),
-                    other => serde_json::to_string(&other.into_json()).unwrap_or_default(),
-                };
+            // This can be disabled via set_glue_heuristic(false).
+            let glue_enabled = self.options.enable_glue_heuristic.unwrap_or(true);
+            if glue_enabled {
+                let intent_indent = entry.column;
+                let mut next_idx = idx + 1;
+                while next_idx < entries.len() {
+                    let next_entry = &entries[next_idx];
+                    if self.intent_keys.contains(&next_entry.key) {
+                        break;
+                    }
+                    
+                    // Improved heuristic: only merge keys at same indent level that immediately follow
+                    // Don't merge if indent level is different (likely a nested structure)
+                    if next_entry.column != intent_indent {
+                        break;
+                    }
+                    
+                    // This is an "orphaned" key/value. Glue it!
+                    let orphaned_key = &next_entry.key;
+                    let orphaned_val_res = self.ir_builder.build(Some(&next_entry.value));
+                    let orphaned_val_str = match orphaned_val_res.value {
+                        IRValue::String(s) => s,
+                        IRValue::Null => String::new(),
+                        other => serde_json::to_string(&other.into_json()).unwrap_or_default(),
+                    };
 
-                let glue = if orphaned_val_str.is_empty() {
-                    format!("\n\n{}", orphaned_key)
-                } else {
-                    format!("\n\n{}: {}", orphaned_key, orphaned_val_str)
-                };
+                    let glue = if orphaned_val_str.is_empty() {
+                        format!("\n\n{}", orphaned_key)
+                    } else {
+                        format!("\n\n{}: {}", orphaned_key, orphaned_val_str)
+                    };
 
-                // Find a string field to append to
-                match build_result.value {
-                    IRValue::Object(ref mut map) => {
-                        let mut appended = false;
-                        for target_key in &["text", "questions", "response", "prompts"] {
-                            if let Some(IRValue::String(s)) = map.get_mut(*target_key) {
-                                s.push_str(&glue);
-                                appended = true;
-                                break;
-                            }
-                        }
-                        if !appended {
-                            // Fallback: first available string field
-                            for (_, val) in map.iter_mut() {
-                                if let IRValue::String(s) = val {
+                    // Find a string field to append to
+                    match build_result.value {
+                        IRValue::Object(ref mut map) => {
+                            let mut appended = false;
+                            for target_key in &["text", "questions", "response", "prompts"] {
+                                if let Some(IRValue::String(s)) = map.get_mut(*target_key) {
                                     s.push_str(&glue);
+                                    appended = true;
                                     break;
                                 }
                             }
+                            if !appended {
+                                // Fallback: first available string field
+                                for (_, val) in map.iter_mut() {
+                                    if let IRValue::String(s) = val {
+                                        s.push_str(&glue);
+                                        break;
+                                    }
+                                }
+                            }
                         }
+                        IRValue::String(ref mut s) => {
+                            s.push_str(&glue);
+                        }
+                        _ => {}
                     }
-                    IRValue::String(ref mut s) => {
-                        s.push_str(&glue);
-                    }
-                    _ => {}
+
+                    self.emitted_identities.insert((next_entry.line, next_entry.column));
+                    next_idx += 1;
                 }
-
-                self.emitted_identities.insert((next_entry.line, next_entry.column));
-                next_idx += 1;
             }
 
-            // Fire partial one last time so UI hits 100%
-            if let Some(handler) = &self.partial_handler {
-                handler(entry.key.clone(), build_result.value.clone().into_json());
-            }
-
+            // Don't fire partial for final intents - only fire the ready handler
+            // The partial handler is for streaming updates only
             if let Some(handler) = &self.intent_handler {
                 let mut json_val = build_result.value.into_json();
                 self.process_final_intent_value(&entry.key, &mut json_val, entry);

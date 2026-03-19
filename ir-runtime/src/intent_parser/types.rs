@@ -295,6 +295,11 @@ pub struct ParserOptions {
 
     /// Middleware functions
     pub middleware: Option<Vec<ParserMiddleware>>,
+
+    /// Enable glue heuristic for merging orphaned keys into intents (default: true)
+    /// When enabled, keys that aren't registered intents will be merged into the previous intent.
+    /// This helps handle LLM output that doesn't use pipe blocks for multiline content.
+    pub enable_glue_heuristic: Option<bool>,
 }
 
 impl std::fmt::Debug for ParserOptions {
@@ -306,6 +311,7 @@ impl std::fmt::Debug for ParserOptions {
             .field("strict", &self.strict)
             .field("intent_schema", &self.intent_schema)
             .field("intent_key", &self.intent_key)
+            .field("enable_glue_heuristic", &self.enable_glue_heuristic)
             .field(
                 "middleware_count",
                 &self.middleware.as_ref().map(|m| m.len()),

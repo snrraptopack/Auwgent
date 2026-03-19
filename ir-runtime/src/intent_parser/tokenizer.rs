@@ -61,6 +61,7 @@ impl Tokenizer {
             intent_schema: None,
             intent_key: None,
             middleware: None,
+            enable_glue_heuristic: Some(true),
         });
 
         Self {
@@ -295,6 +296,10 @@ impl Tokenizer {
 
         if char == '|' {
             return self.tokenize_multiline_string();
+        }
+
+        if char == '>' {
+            return self.tokenize_folded_string();
         }
 
         // Flow collections { } [ ]
@@ -580,7 +585,14 @@ impl Tokenizer {
 
         self.advance(); // consume |
 
-        // Skip optional trailing spaces/modifiers after |
+        // Check for chomping indicator
+        let chomping = match self.peek_char(0) {
+            '-' => { self.advance(); "strip" },
+            '+' => { self.advance(); "keep" },
+            _ => "clip",
+        };
+
+        // Skip optional trailing spaces/modifiers after | or |-/+
         while self.state.pos < self.input.len() {
             let c = self.peek_char(0);
             if c == '\n' || c == '\r' {
@@ -771,19 +783,274 @@ impl Tokenizer {
     }
 
     // Strip trailing empty lines (YAML | block semantics: keep one trailing \n)
-    while lines.last().map(|l| l.is_empty()).unwrap_or(false) {
-        lines.pop();
-    }
+    let trailing_empty_count = lines.iter().rev().take_while(|l| l.is_empty()).count();
+    
+    // Apply chomping
+    let final_value = match chomping {
+        "strip" => {
+            // Remove all trailing empty lines
+            while lines.last().map(|l| l.is_empty()).unwrap_or(false) {
+                lines.pop();
+            }
+            lines.join("\n")
+        },
+        "keep" => {
+            // Keep all trailing newlines
+            lines.join("\n") + &"\n".repeat(trailing_empty_count)
+        },
+        _ => {
+            // "clip" - default: strip trailing empty lines but keep one trailing newline
+            while lines.last().map(|l| l.is_empty()).unwrap_or(false) {
+                lines.pop();
+            }
+            lines.join("\n")
+        }
+    };
 
     self.state.after_colon = false;
     Some(Token {
         kind: TokenType::Scalar,
-        value: lines.join("\n"),
+        value: final_value,
         line: start_line,
         column: start_col,
         indent: self.state.current_indent,
     })
 }
+
+    fn tokenize_folded_string(&mut self) -> Option<Token> {
+        let start_pos = self.state.pos;
+        let start_line = self.state.line;
+        let start_col = self.state.column;
+        let start_at_line_start = self.state.at_line_start;
+        let start_after_colon = self.state.after_colon;
+
+        self.advance(); // consume >
+
+        // Check for chomping indicator
+        let chomping = match self.peek_char(0) {
+            '-' => { self.advance(); "strip" },
+            '+' => { self.advance(); "keep" },
+            _ => "clip",
+        };
+
+        // Skip optional trailing spaces after > or >-/+
+        while self.state.pos < self.input.len() {
+            let c = self.peek_char(0);
+            if c == '\n' || c == '\r' {
+                break;
+            }
+            if c != ' ' {
+                break;
+            }
+            self.advance();
+        }
+
+        // Need at least the newline after >
+        if self.state.pos >= self.input.len() && !self.finishing {
+            self.state.pos = start_pos;
+            self.state.line = start_line;
+            self.state.column = start_col;
+            self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
+            return None;
+        }
+
+        // Consume the newline after >
+        if self.peek_char(0) == '\r' {
+            self.advance();
+        }
+        if self.peek_char(0) == '\n' {
+            self.advance();
+            self.state.line += 1;
+            self.state.column = 1;
+        }
+
+        // Need at least the first content line to measure base indent
+        if self.state.pos >= self.input.len() && !self.finishing {
+            self.state.pos = start_pos;
+            self.state.line = start_line;
+            self.state.column = start_col;
+            self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
+            return None;
+        }
+
+        // Determine the base indent from the first content line
+        let base_indent = self.measure_indent();
+        if base_indent == 0 {
+            if !self.finishing {
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                self.state.after_colon = start_after_colon;
+                return None;
+            }
+            // Finishing and genuinely empty folded block
+            self.state.after_colon = false;
+            return Some(Token {
+                kind: TokenType::Scalar,
+                value: String::new(),
+                line: start_line,
+                column: start_col,
+                indent: self.state.current_indent,
+            });
+        }
+
+        let mut lines: Vec<String> = Vec::new();
+        let mut incomplete = false;
+
+        loop {
+            let line_indent = self.measure_indent();
+
+            let mut is_empty_line = true;
+            let mut offset = 0;
+            loop {
+                let c = self.peek_char(offset);
+                if c == '\n' || c == '\r' {
+                    break;
+                }
+                if c == '\0' {
+                    if !self.finishing {
+                        incomplete = true;
+                    }
+                    break;
+                }
+                if c != ' ' && c != '\t' {
+                    is_empty_line = false;
+                    break;
+                }
+                offset += 1;
+            }
+
+            if incomplete {
+                break;
+            }
+
+            // A non-empty line less-indented than base_indent ends the block
+            if !is_empty_line && line_indent < base_indent {
+                break;
+            }
+
+            // Skip the base indent
+            for _ in 0..base_indent {
+                if self.peek_char(0) == ' ' {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+
+            // Read line content up to newline
+            let mut line_content = String::new();
+            let mut line_incomplete = false;
+            while self.state.pos < self.input.len() {
+                let c = self.peek_char(0);
+                if c == '\n' || c == '\r' {
+                    break;
+                }
+                line_content.push(c);
+                self.advance();
+            }
+
+            if self.state.pos >= self.input.len() && !self.finishing {
+                line_incomplete = true;
+            }
+
+            if line_incomplete {
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                self.state.after_colon = start_after_colon;
+                return None;
+            }
+
+            lines.push(line_content);
+
+            // Consume the newline
+            if self.state.pos < self.input.len() {
+                if self.peek_char(0) == '\r' {
+                    self.advance();
+                }
+                if self.peek_char(0) == '\n' {
+                    self.advance();
+                    self.state.line += 1;
+                    self.state.column = 1;
+                    self.state.at_line_start = true;
+                } else if !self.finishing {
+                    self.state.pos = start_pos;
+                    self.state.line = start_line;
+                    self.state.column = start_col;
+                    self.state.at_line_start = start_at_line_start;
+                    self.state.after_colon = start_after_colon;
+                    return None;
+                }
+            } else if !self.finishing {
+                self.state.pos = start_pos;
+                self.state.line = start_line;
+                self.state.column = start_col;
+                self.state.at_line_start = start_at_line_start;
+                self.state.after_colon = start_after_colon;
+                return None;
+            } else {
+                break;
+            }
+        }
+
+        if incomplete {
+            self.state.pos = start_pos;
+            self.state.line = start_line;
+            self.state.column = start_col;
+            self.state.at_line_start = start_at_line_start;
+            self.state.after_colon = start_after_colon;
+            return None;
+        }
+
+        // Folded scalar: join lines with spaces, but preserve paragraph breaks (empty lines)
+        let mut result = String::new();
+        let mut i = 0;
+        while i < lines.len() {
+            if lines[i].is_empty() {
+                // Empty line = paragraph break
+                if !result.is_empty() {
+                    result.push_str("\n\n");
+                }
+                i += 1;
+            } else {
+                // Collect non-empty lines and join with spaces
+                let mut paragraph = Vec::new();
+                while i < lines.len() && !lines[i].is_empty() {
+                    paragraph.push(lines[i].trim());
+                    i += 1;
+                }
+                if !result.is_empty() && !result.ends_with("\n\n") {
+                    result.push(' ');
+                }
+                result.push_str(&paragraph.join(" "));
+            }
+        }
+
+        // Apply chomping
+        let final_value = match chomping {
+            "strip" => result.trim_end().to_string(),
+            "keep" => {
+                // Keep all trailing newlines
+                let trailing_newlines = lines.iter().rev().take_while(|l| l.is_empty()).count();
+                format!("{}{}", result, "\n".repeat(trailing_newlines))
+            },
+            _ => result, // "clip" - default, keep one trailing newline if present
+        };
+
+        self.state.after_colon = false;
+        Some(Token {
+            kind: TokenType::Scalar,
+            value: final_value,
+            line: start_line,
+            column: start_col,
+            indent: self.state.current_indent,
+        })
+    }
 
     fn skip_spaces(&mut self) {
         while self.peek_char(0) == ' ' {

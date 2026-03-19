@@ -32,6 +32,14 @@ pub fn coerce_value(value: &str, quoted: bool) -> IRValue {
     if trimmed.eq_ignore_ascii_case("false") {
         return IRValue::Boolean(false);
     }
+    
+    // YAML 1.1 Boolean variants
+    if trimmed.eq_ignore_ascii_case("yes") || trimmed.eq_ignore_ascii_case("y") || trimmed.eq_ignore_ascii_case("on") {
+        return IRValue::Boolean(true);
+    }
+    if trimmed.eq_ignore_ascii_case("no") || trimmed.eq_ignore_ascii_case("n") || trimmed.eq_ignore_ascii_case("off") {
+        return IRValue::Boolean(false);
+    }
 
     // Number (integer)
     if let Ok(num) = trimmed.parse::<i64>() {

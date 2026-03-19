@@ -60,6 +60,7 @@ pub struct Parser {
     errors: Vec<ParseError>,
     listeners: HashMap<ParserEventType, Vec<ParserHandler>>,
     options: ParserOptions,
+    input_lines: Vec<String>,
 }
 
 impl Parser {
@@ -72,6 +73,7 @@ impl Parser {
             intent_schema: None,
             intent_key: None,
             middleware: None,
+            enable_glue_heuristic: Some(true),
         });
 
         Self {
@@ -82,7 +84,9 @@ impl Parser {
             errors: Vec::new(),
             listeners: HashMap::new(),
             options: opts,
+            input_lines: Vec::new(),
         }
+
     }
 
     pub fn reset(&mut self) {
@@ -92,6 +96,7 @@ impl Parser {
         self.pos = 0;
         self.stack.clear();
         self.errors.clear();
+        self.input_lines.clear();
         self.listeners = listeners;
     }
 
@@ -151,7 +156,46 @@ impl Parser {
         }
     }
 
+    #[allow(dead_code)]
+    fn add_error(&mut self, message: String, severity: ErrorSeverity, line: usize, column: usize) {
+        let context = if line > 0 && line <= self.input_lines.len() {
+            self.input_lines.get(line - 1).cloned()
+        } else {
+            None
+        };
+        
+        let error = ParseError {
+            message: message.clone(),
+            severity: severity.clone(),
+            line,
+            column,
+            context,
+        };
+        
+        // Log error to stderr
+        eprintln!("Parse error at {}:{}: {}", line, column, message);
+        if let Some(ctx) = &error.context {
+            eprintln!("  | {}", ctx);
+            eprintln!("  | {}^", " ".repeat(column.saturating_sub(1)));
+        }
+        
+        self.errors.push(error);
+    }
+
     pub fn write(&mut self, chunk: &str) {
+        // Track input lines for error context
+        for line in chunk.lines() {
+            if self.input_lines.is_empty() || !chunk.starts_with('\n') {
+                if let Some(last) = self.input_lines.last_mut() {
+                    if !chunk.starts_with('\n') && !last.ends_with('\n') {
+                        last.push_str(line);
+                        continue;
+                    }
+                }
+            }
+            self.input_lines.push(line.to_string());
+        }
+        
         self.tokenizer.write(chunk);
         while let Some(token) = self.tokenizer.next_token() {
             self.tokens.push(token);
@@ -196,6 +240,12 @@ impl Parser {
             let token = self.tokens[self.pos].clone();
             self.process_token(token);
             self.pos += 1;
+        }
+
+        // Clean up token buffer to keep memory bounded
+        if self.pos > 100 {
+            self.tokens.drain(0..self.pos - 100);
+            self.pos = 100;
         }
 
         let ast = self.stack.first().map(|f| match &f.node {
