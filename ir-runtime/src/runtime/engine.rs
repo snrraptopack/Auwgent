@@ -335,7 +335,7 @@ impl AuwgentEngine {
         input: Option<Value>,
         initial_stack: Option<Vec<String>>,
     ) -> AuwgentResult<()> {
-        println!("[DEBUG] AuwgentEngine::run - Agent: {}, Input: {:?}, Initial Stack: {:?}", self.ir.name, input, initial_stack);
+        // println!("[DEBUG] AuwgentEngine::run - Agent: {}, Input: {:?}, Initial Stack: {:?}", self.ir.name, input, initial_stack);
         // ── Stack-Aware Resumption ─────────────────────────────────────────
         {
             let mut session = self.session.lock().unwrap();
@@ -353,7 +353,7 @@ impl AuwgentEngine {
             // 3. Set fast-forward focus based on session stack
             // Root agent (index 0) is US, so we skip it for teleportation logic
             if session.stack.len() > 1 {
-                println!("[DEBUG] Teleportation active. Target stack: {:?}", session.stack);
+                // println!("[DEBUG] Teleportation active. Target stack: {:?}", session.stack);
                 *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
             } else {
                 *self.fast_forward_stack.lock().unwrap() = None;
@@ -432,13 +432,10 @@ impl AuwgentEngine {
             .unwrap_or(12);
 
         let mut loop_count = 0;
-        println!("[DEBUG] Entering main loop for Agent: {}", self.ir.name);
 
         loop {
             loop_count += 1;
-            println!("[DEBUG] Starting turn {} for Agent: {}", loop_count, self.ir.name);
             if loop_count > max_loops {
-                println!("[DEBUG] Max loops reached ({}) for Agent: {}. Breaking.", max_loops, self.ir.name);
                 return Err(AuwgentError::MaxLoopsExceeded(max_loops));
             }
 
@@ -462,7 +459,6 @@ impl AuwgentEngine {
             };
 
             if let Some(mut next_helper) = next_helper {
-                println!("[DEBUG] Teleporting to next helper: {}", next_helper);
                 // If the next helper is ACTUALLY this agent, consume it and look deeper
                 if next_helper == self.ir.name {
                     let mut lock = self.fast_forward_stack.lock().unwrap();
@@ -492,7 +488,6 @@ impl AuwgentEngine {
                 let (_terminal, actions, hard_stop) = self.process_intents().await?;
 
                 if hard_stop {
-                    println!("[DEBUG] Teleportation hard stop. Breaking loop.");
                     // Record the teleportation turn in the parent session if it finished here
                     let raw_resp = self.current_raw_response.lock().unwrap().clone();
                     if !raw_resp.is_empty() {
@@ -527,8 +522,7 @@ impl AuwgentEngine {
             let messages = self.session.lock().unwrap().to_messages();
 
             // Stream from the driver using full message history
-            println!("[DEBUG] Calling LLM for Agent: {} (Messages: {})", self.ir.name, messages.len());
-            let mut stream = {
+            let stream_res = {
                 let driver = self
                     .drivers
                     .lock()
@@ -539,7 +533,20 @@ impl AuwgentEngine {
                 driver
                     .stream_generate(model_name, &messages, config_params.clone())
                     .await
-                    .map_err(AuwgentError::Driver)?
+            };
+
+            let mut stream = match stream_res {
+                Ok(s) => s,
+                Err(e) => {
+                    // Critical failure during the request phase (e.g. network error, invalid API key)
+                    self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
+                        .await;
+                    
+                    // Ensure the session is not left with a hanging turn
+                    self.session.lock().unwrap().set_model_response(format!("(request error: {})", e));
+
+                    return Err(AuwgentError::Driver(e));
+                }
             };
 
             let mut actions_performed = false;
@@ -568,6 +575,11 @@ impl AuwgentEngine {
                         // Fire error as intent if handler exists
                         self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
                             .await;
+                        
+                        // Ensure we don't leave a hanging turn with no response in the session
+                        // if we are about to return an error.
+                        self.session.lock().unwrap().set_model_response(format!("(error: {})", e));
+
                         return Err(AuwgentError::StreamError(e));
                     }
                 }
@@ -643,6 +655,15 @@ impl AuwgentEngine {
             // If the model performed actions, we MUST loop to feed the results back.
             // We only stop if there are no pending tool/helper results to provide.
             if !actions_performed {
+                // Ensure the session has SOME model response before exiting the loop.
+                // If the loop is ending and 'set_model_response' was never called,
+                // we should at least mark it.
+                let mut session = self.session.lock().unwrap();
+                if let Some(turn) = session.current_turn_mut() {
+                    if turn.model_response.is_empty() {
+                        turn.model_response = "(no response)".to_string();
+                    }
+                }
                 break;
             }
 
@@ -714,7 +735,7 @@ impl AuwgentEngine {
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, mut value) in intents {
-            println!("[DEBUG] Processing intent: {} -> {}", name, serde_json::to_string(&value).unwrap_or_default());
+            // println!("[DEBUG] Processing intent: {} -> {}", name, serde_json::to_string(&value).unwrap_or_default());
             // Fire the user callback BEFORE execution
             // Note: _raw is intentionally kept in `value` here so that the host
             // (TypeScript wrapper) can extract it for middleware logging/audit.
@@ -826,7 +847,6 @@ impl AuwgentEngine {
                     }
                 },
                 "response_schema" | "response_text" => {
-                    println!("[DEBUG] Terminal intent emitted: {}", name);
                     // Terminal intents — already fired to user above
                     has_terminal = true;
                     *self.terminal_response_emitted.lock().unwrap() = true;
@@ -835,7 +855,6 @@ impl AuwgentEngine {
                 _ => {
                     // Custom / unknown intents — already fired to user.
                     // We treat these as terminal (waiting for user input).
-                    println!("[DEBUG] Custom terminal intent emitted: {}", name);
                     has_terminal = true;
                     *self.terminal_response_emitted.lock().unwrap() = true;
                 }
@@ -1038,9 +1057,9 @@ impl AuwgentEngine {
                 };
 
                 if is_teleporting {
-                    println!("[DEBUG] Teleportation in progress for {}. Skipping stack push.", helper_name);
+                    // println!("[DEBUG] Teleportation in progress for {}. Skipping stack push.", helper_name);
                 } else {
-                    println!("[DEBUG] Pushing helper to stack: {}", helper_name);
+                    // println!("[DEBUG] Pushing helper to stack: {}", helper_name);
                     session.stack.push(helper_name.clone());
                 }
             }
@@ -1132,7 +1151,7 @@ impl AuwgentEngine {
                     }
                 });
                 if stack.is_some() {
-                    println!("[DEBUG] Propagating sub-stack to {}: {:?}", helper_name, stack);
+                    // println!("[DEBUG] Propagating sub-stack to {}: {:?}", helper_name, stack);
                     *ffs_lock = None;
                 }
                 stack
@@ -1145,7 +1164,7 @@ impl AuwgentEngine {
                 if is_resuming_at_target {
                     // This is the target of teleportation! 
                     // Feed the original user message to the sub-engine.
-                    println!("[DEBUG] {} is the teleportation target. Injecting user input: {:?}", helper_name, user_input_lock);
+                    // println!("[DEBUG] {} is the teleportation target. Injecting user input: {:?}", helper_name, user_input_lock);
                     user_input_lock.take()
                 } else if sub_initial_stack.is_some() {
                     // Still traversing the stack — no input for this intermediate agent

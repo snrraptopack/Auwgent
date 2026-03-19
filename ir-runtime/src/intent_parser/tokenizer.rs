@@ -374,12 +374,12 @@ impl Tokenizer {
             }
 
             value.push(c);
+            self.state.partial_token = value.clone();
             self.advance();
         }
 
         if self.state.pos >= self.input.len() && !self.finishing {
             // Incomplete, rewind
-            self.state.partial_token = value;
             self.state.pos = start_pos;
             self.state.column = start_col;
             self.state.line = start_line;
@@ -441,16 +441,17 @@ impl Tokenizer {
                     '\'' => value.push('\''),
                     _ => value.push(escaped),
                 }
+                self.state.partial_token = value.clone();
                 self.advance();
                 continue;
             }
 
             value.push(c);
+            self.state.partial_token = value.clone();
             self.advance();
         }
 
         if !closed && !self.finishing {
-            self.state.partial_token = value;
             self.state.pos = start_pos;
             self.state.column = start_col;
             self.state.line = start_line;
@@ -702,6 +703,11 @@ impl Tokenizer {
                 break;
             }
             line_content.push(c);
+            self.state.partial_token = if lines.is_empty() {
+                line_content.clone()
+            } else {
+                format!("{}\n{}", lines.join("\n"), line_content)
+            };
             self.advance();
         }
 
@@ -756,7 +762,6 @@ impl Tokenizer {
     }
 
     if incomplete {
-        self.state.partial_token = lines.join("\n");
         self.state.pos = start_pos;
         self.state.line = start_line;
         self.state.column = start_col;

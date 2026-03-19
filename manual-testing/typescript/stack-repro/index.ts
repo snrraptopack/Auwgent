@@ -7,6 +7,11 @@ let one: AuwgentMiddleware = {
     name: "one",
     onLLMStart: (prompt, ctx) => {
         //console.log(ctx.systemPrompt)
+  },
+
+  onError: (error, ctx)=> {
+        console.error(error)
+        return true
     }
 }
 
@@ -20,34 +25,14 @@ const config: AuwgentConfig = {
     middleware: [one]
 }
 
-
-
-
-
-let agent = await auwgent(config)
+let agent = auwgent(config)
 
 
 agent.onIntent((name, value) => {
-    if (name === "response_text") {
-        console.log("[response_text] : ", value.text ?? value)
-        console.log("\n")
-    }
-    if (name === "thought") {
-        console.log("[explain] : ", value.explain ?? value)
-        console.log("\n")
-    }
-
-    if (name === "questions") {
-        console.log("[quesion] : ", value.questions ?? value)
-        console.log("\n")
-    }
-
-    if (name === "helper_call") {
-        console.log("[calling heloer] : ", value)
-        console.log("\n")
-    }
+  console.log("***********************************\n")
+  console.log(`Intent: ${name}`, (value as any)?.text ?? value)
+   console.log("***********************************\n")
 
 })
-
 
 startRepl(agent)
