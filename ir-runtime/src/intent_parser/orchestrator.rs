@@ -106,6 +106,7 @@ impl Orchestrator {
         let entries = &mapping.entries;
         for (idx, entry) in entries.iter().enumerate() {
             if !self.intent_keys.contains(&entry.key) {
+                // ── HEURISTIC: Skip unknown root keys ──
                 continue;
             }
 
@@ -121,7 +122,64 @@ impl Orchestrator {
             }
 
             self.emitted_identities.insert(identity);
-            let build_result = self.ir_builder.build(Some(&entry.value));
+            let mut build_result = self.ir_builder.build(Some(&entry.value));
+
+            // ── HEURISTIC: "Glue" subsequent unmapped keys into this intent ──
+            // If the next few entries in the mapping are NOT registered intents,
+            // they are likely part of a broken multiline scalar (e.g. from an LLM that didn't use |).
+            // We append them to the first string field we find in the intent.
+            let mut next_idx = idx + 1;
+            while next_idx < entries.len() {
+                let next_entry = &entries[next_idx];
+                if self.intent_keys.contains(&next_entry.key) {
+                    break;
+                }
+                
+                // This is an "orphaned" key/value. Glue it!
+                let orphaned_key = &next_entry.key;
+                let orphaned_val_res = self.ir_builder.build(Some(&next_entry.value));
+                let orphaned_val_str = match orphaned_val_res.value {
+                    IRValue::String(s) => s,
+                    IRValue::Null => String::new(),
+                    other => serde_json::to_string(&other.into_json()).unwrap_or_default(),
+                };
+
+                let glue = if orphaned_val_str.is_empty() {
+                    format!("\n\n{}", orphaned_key)
+                } else {
+                    format!("\n\n{}: {}", orphaned_key, orphaned_val_str)
+                };
+
+                // Find a string field to append to
+                match build_result.value {
+                    IRValue::Object(ref mut map) => {
+                        let mut appended = false;
+                        for target_key in &["text", "questions", "response", "prompts"] {
+                            if let Some(IRValue::String(s)) = map.get_mut(*target_key) {
+                                s.push_str(&glue);
+                                appended = true;
+                                break;
+                            }
+                        }
+                        if !appended {
+                            // Fallback: first available string field
+                            for (_, val) in map.iter_mut() {
+                                if let IRValue::String(s) = val {
+                                    s.push_str(&glue);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    IRValue::String(ref mut s) => {
+                        s.push_str(&glue);
+                    }
+                    _ => {}
+                }
+
+                self.emitted_identities.insert((next_entry.line, next_entry.column));
+                next_idx += 1;
+            }
 
             // Fire partial one last time so UI hits 100%
             if let Some(handler) = &self.partial_handler {
@@ -539,6 +597,7 @@ mod tests {
         );
         assert_eq!(final_intents[0].0, "response_schema");
     }
+
 
     #[test]
     fn test_extract_yaml_mixed_noise() {

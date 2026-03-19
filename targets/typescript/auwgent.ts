@@ -68,6 +68,7 @@ export class TypedAuwgent<
     private lastTurnIntentName: string | null = null;
     private lastTurnRawBlock: string | undefined = undefined;
     private agentStack: string[] = [];
+    private helperSessions = new Map<string, SessionState>();
 
     constructor(ir: IR, config: AuwgentConfig<IR>) {
         this.ir = ir;
@@ -314,7 +315,8 @@ export class TypedAuwgent<
 
         // Register Sub-Engine Lifecycle Hooks
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
-            let session = JSON.parse(emptySessionJson) as SessionState;
+            // Restore session if it exists in memory, otherwise use the fresh one.
+            let session = this.helperSessions.get(helperName) || (JSON.parse(emptySessionJson) as SessionState);
 
             // Sync active stack from sub-engine's session
             if (session.stack) {
@@ -334,6 +336,10 @@ export class TypedAuwgent<
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
             const session = JSON.parse(completedSessionJson) as SessionState;
+            
+            // Persist the helper's session history in memory
+            this.helperSessions.set(helperName, session);
+
             const ctx = this.getBuildContext();
             ctx.systemPrompt = session.systemPrompt;
 
@@ -397,7 +403,6 @@ export class TypedAuwgent<
     /** Run the agentic loop. Returns the exported session state. */
     async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
-        this.agentStack = [this.ir.name]; // Initialize stack with root agent
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
         let currentSession = this.exportSession();
 
@@ -498,6 +503,7 @@ export class TypedAuwgent<
     /** Clear the session (fresh conversation). */
     clearSession(): void {
         this.native.clearSession();
+        this.helperSessions.clear();
     }
 
     /** Generate the system prompt (debugging). */

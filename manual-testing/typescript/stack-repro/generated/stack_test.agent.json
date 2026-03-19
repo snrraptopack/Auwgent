@@ -19,7 +19,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\n                You are a helpful assistant be polite\n                name of the user : "
+                  "value": "\n                You are a helpful assistant be polite\n\n                when a user ask's for something that can be handed to a helper hand it to the helper \n                name of the user : "
                 },
                 {
                   "type": "memberAccess",
@@ -85,9 +85,10 @@
         }
       ],
       "input": {
-        "text": {
+        "prompts": {
           "type": "string",
-          "optional": false
+          "optional": false,
+          "description": "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
         }
       },
       "output": null,

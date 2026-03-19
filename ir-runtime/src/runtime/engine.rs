@@ -93,6 +93,13 @@ pub struct AuwgentEngine {
     llm_start_handler: Arc<Mutex<Option<AsyncLlmStartCallback>>>,
     llm_end_handler: Arc<Mutex<Option<AsyncLlmEndCallback>>>,
     fast_forward_stack: Arc<Mutex<Option<Vec<String>>>>,
+    /// Tracking if a terminal response (text/schema) was emitted during the current run
+    terminal_response_emitted: Arc<Mutex<bool>>,
+    /// Tracking if a FINAL terminal response (text/schema) was emitted.
+    /// Custom intents count as terminal but NOT final (focus stays on the agent).
+    final_response_emitted: Arc<Mutex<bool>>,
+    /// Original user input for the current run cycle (used for teleportation follow-ups)
+    user_input: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 impl AuwgentEngine {
@@ -139,6 +146,9 @@ impl AuwgentEngine {
             llm_start_handler: Arc::new(Mutex::new(None)),
             llm_end_handler: Arc::new(Mutex::new(None)),
             fast_forward_stack: Arc::new(Mutex::new(None)),
+            terminal_response_emitted: Arc::new(Mutex::new(false)),
+            final_response_emitted: Arc::new(Mutex::new(false)),
+            user_input: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -325,6 +335,7 @@ impl AuwgentEngine {
         input: Option<Value>,
         initial_stack: Option<Vec<String>>,
     ) -> AuwgentResult<()> {
+        println!("[DEBUG] AuwgentEngine::run - Agent: {}, Input: {:?}, Initial Stack: {:?}", self.ir.name, input, initial_stack);
         // ── Stack-Aware Resumption ─────────────────────────────────────────
         {
             let mut session = self.session.lock().unwrap();
@@ -342,6 +353,7 @@ impl AuwgentEngine {
             // 3. Set fast-forward focus based on session stack
             // Root agent (index 0) is US, so we skip it for teleportation logic
             if session.stack.len() > 1 {
+                println!("[DEBUG] Teleportation active. Target stack: {:?}", session.stack);
                 *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
             } else {
                 *self.fast_forward_stack.lock().unwrap() = None;
@@ -389,18 +401,25 @@ impl AuwgentEngine {
         self.session.lock().unwrap().set_system_prompt(&system_prompt);
 
         // 3. Build the initial user input
-        let initial_user_input = match input {
-            Some(Value::String(s)) => Some(s),
-            Some(v) => Some(serde_json::to_string(&v).map_err(AuwgentError::Serialization)?),
+        let initial_user_input = match input.as_ref() {
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(v) => Some(serde_json::to_string(v).map_err(AuwgentError::Serialization)?),
             None => None,
         };
 
-        // Start the first turn if an explicit input is provided.
+        // Start the first turn if an explicit input is provided AND we are not teleporting.
+        // If we ARE teleporting, the turn will be started by the target agent.
+        let is_teleporting = self.fast_forward_stack.lock().unwrap().is_some();
+
         if let Some(user_input) = initial_user_input {
-            self.session.lock().unwrap().start_turn(&user_input);
+            if !is_teleporting {
+                self.session.lock().unwrap().start_turn(&user_input);
+            }
         } else if self.session.lock().unwrap().turns.is_empty() {
             // Safety fallback: if no input and session is empty, start one
-            self.session.lock().unwrap().start_turn("");
+            if !is_teleporting {
+                self.session.lock().unwrap().start_turn("");
+            }
         }
 
         // Read max loops from lifecycle config, fallback to 12
@@ -413,15 +432,24 @@ impl AuwgentEngine {
             .unwrap_or(12);
 
         let mut loop_count = 0;
+        println!("[DEBUG] Entering main loop for Agent: {}", self.ir.name);
 
         loop {
             loop_count += 1;
+            println!("[DEBUG] Starting turn {} for Agent: {}", loop_count, self.ir.name);
             if loop_count > max_loops {
+                println!("[DEBUG] Max loops reached ({}) for Agent: {}. Breaking.", max_loops, self.ir.name);
                 return Err(AuwgentError::MaxLoopsExceeded(max_loops));
+            }
+
+            if loop_count == 1 {
+                *self.user_input.lock().unwrap() = input.clone();
             }
 
             self.current_raw_response.lock().unwrap().clear();
             self.pending_tool_results.lock().unwrap().clear();
+            *self.terminal_response_emitted.lock().unwrap() = false;
+            *self.final_response_emitted.lock().unwrap() = false;
             self.orchestrator.lock().unwrap().reset();
 
             // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
@@ -433,7 +461,25 @@ impl AuwgentEngine {
                 ffs_lock.as_ref().and_then(|ffs| ffs.first().cloned())
             };
 
-            if let Some(next_helper) = next_helper {
+            if let Some(mut next_helper) = next_helper {
+                println!("[DEBUG] Teleporting to next helper: {}", next_helper);
+                // If the next helper is ACTUALLY this agent, consume it and look deeper
+                if next_helper == self.ir.name {
+                    let mut lock = self.fast_forward_stack.lock().unwrap();
+                    if let Some(ffs) = lock.as_mut() {
+                        if !ffs.is_empty() {
+                            ffs.remove(0);
+                        }
+                        if ffs.is_empty() {
+                            *lock = None;
+                            continue; // Exit teleportation, go to LLM
+                        }
+                        next_helper = ffs.first().cloned().unwrap();
+                    } else {
+                        continue;
+                    }
+                }
+
                 // Inject synthetic helper_call — no LLM needed
                 let synthetic_intent = serde_json::json!({
                     "type": next_helper,
@@ -446,6 +492,13 @@ impl AuwgentEngine {
                 let (_terminal, actions, hard_stop) = self.process_intents().await?;
 
                 if hard_stop {
+                    println!("[DEBUG] Teleportation hard stop. Breaking loop.");
+                    // Record the teleportation turn in the parent session if it finished here
+                    let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                    if !raw_resp.is_empty() {
+                        let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
+                        self.session.lock().unwrap().set_model_response(cleaned);
+                    }
                     break;
                 }
                 if actions {
@@ -474,6 +527,7 @@ impl AuwgentEngine {
             let messages = self.session.lock().unwrap().to_messages();
 
             // Stream from the driver using full message history
+            println!("[DEBUG] Calling LLM for Agent: {} (Messages: {})", self.ir.name, messages.len());
             let mut stream = {
                 let driver = self
                     .drivers
@@ -502,6 +556,11 @@ impl AuwgentEngine {
                             actions_performed = true;
                         }
                         if hard_stop {
+                            let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                            if !raw_resp.is_empty() {
+                                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
+                                self.session.lock().unwrap().set_model_response(cleaned);
+                            }
                             break;
                         }
                     }
@@ -571,7 +630,10 @@ impl AuwgentEngine {
 
             // Save the raw LLM output in the session history so the exact
             // YAML text is visible in logs and follow-up turns.
-            self.session.lock().unwrap().set_model_response(&cleaned_response);
+            let raw_resp = self.current_raw_response.lock().unwrap().clone();
+            if !raw_resp.is_empty() {
+                self.session.lock().unwrap().set_model_response(&cleaned_response);
+            }
 
             // Decide if we loop or stop
             if hard_stop {
@@ -652,6 +714,7 @@ impl AuwgentEngine {
         let mut tool_results: Vec<(String, Value)> = Vec::new();
 
         for (name, mut value) in intents {
+            println!("[DEBUG] Processing intent: {} -> {}", name, serde_json::to_string(&value).unwrap_or_default());
             // Fire the user callback BEFORE execution
             // Note: _raw is intentionally kept in `value` here so that the host
             // (TypeScript wrapper) can extract it for middleware logging/audit.
@@ -743,10 +806,10 @@ impl AuwgentEngine {
                                 .unwrap_or(false)
                             {
                                 // The helper already streamed its terminal intent directly to the user.
-                                // We tell the parent engine to stop looping immediately.
+                                // We tell the parent engine to stop looping immediately, but only AFTER processing other sibling intents.
                                 has_terminal = true;
                                 hard_stop = true;
-                                break;
+                                // DO NOT break here anymore, continue to other intents in the same turn
                             }
                         }
 
@@ -763,13 +826,18 @@ impl AuwgentEngine {
                     }
                 },
                 "response_schema" | "response_text" => {
+                    println!("[DEBUG] Terminal intent emitted: {}", name);
                     // Terminal intents — already fired to user above
                     has_terminal = true;
+                    *self.terminal_response_emitted.lock().unwrap() = true;
+                    *self.final_response_emitted.lock().unwrap() = true;
                 }
                 _ => {
                     // Custom / unknown intents — already fired to user.
                     // We treat these as terminal (waiting for user input).
+                    println!("[DEBUG] Custom terminal intent emitted: {}", name);
                     has_terminal = true;
+                    *self.terminal_response_emitted.lock().unwrap() = true;
                 }
             }
         }
@@ -961,10 +1029,20 @@ impl AuwgentEngine {
             let helper_name = call["type"].as_str().unwrap_or("").to_string();
             let args = call["args"].clone();
 
-            // 1. Push helper to session stack
+            // 1. Push helper to session stack (only if NOT teleporting)
             {
                 let mut session = self.session.lock().unwrap();
-                session.stack.push(helper_name.clone());
+                let is_teleporting = {
+                    let ffs_lock = self.fast_forward_stack.lock().unwrap();
+                    ffs_lock.is_some()
+                };
+
+                if is_teleporting {
+                    println!("[DEBUG] Teleportation in progress for {}. Skipping stack push.", helper_name);
+                } else {
+                    println!("[DEBUG] Pushing helper to stack: {}", helper_name);
+                    session.stack.push(helper_name.clone());
+                }
             }
 
             // 2. Build the sub-agent IR
@@ -1054,12 +1132,31 @@ impl AuwgentEngine {
                     }
                 });
                 if stack.is_some() {
+                    println!("[DEBUG] Propagating sub-stack to {}: {:?}", helper_name, stack);
                     *ffs_lock = None;
                 }
                 stack
             };
 
-            let _ = sub_engine.run(Some(args), sub_initial_stack).await;
+            let sub_input = {
+                let mut user_input_lock = self.user_input.lock().unwrap();
+                let is_resuming_at_target = sub_initial_stack.as_ref().map_or(false, |s| s.len() == 1);
+                
+                if is_resuming_at_target {
+                    // This is the target of teleportation! 
+                    // Feed the original user message to the sub-engine.
+                    println!("[DEBUG] {} is the teleportation target. Injecting user input: {:?}", helper_name, user_input_lock);
+                    user_input_lock.take()
+                } else if sub_initial_stack.is_some() {
+                    // Still traversing the stack — no input for this intermediate agent
+                    None
+                } else {
+                    // First time calling this helper — use the provided arguments
+                    Some(args.clone())
+                }
+            };
+
+            let _ = sub_engine.run(sub_input, sub_initial_stack).await;
 
             // Save session
             let save_fn = session_save_handler.lock().unwrap().clone();
@@ -1078,21 +1175,52 @@ impl AuwgentEngine {
                 .map(|t| t.model_response.clone())
                 .unwrap_or_default();
 
+            let emitted_terminal = *sub_engine.terminal_response_emitted.lock().unwrap();
+            let emitted_final = *sub_engine.final_response_emitted.lock().unwrap();
+
             match sub_ctx.handoff_mode {
                 HandoffMode::User => {
-                    // DO NOT pop stack — we want the next run() to teleport back here
-                    Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    if emitted_final {
+                        // Pop stack — final response delivered, return to parent
+                        self.session.lock().unwrap().stack.pop();
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    } else if emitted_terminal {
+                        // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    } else {
+                        // NO terminal response at all? Helper might be broken or just finished tools.
+                        // We still treat it as a stop if handoff is user.
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    }
                 }
                 HandoffMode::ThenContinue => {
-                    // Pop stack — focus returns to parent
-                    self.session.lock().unwrap().stack.pop();
-                    let msg = format!("Helper {} delivered response to user. Continue.", &helper_name);
-                    Ok((helper_name, serde_json::json!({ "status": msg })))
+                    if emitted_final {
+                        // Pop stack — focus returns to parent
+                        self.session.lock().unwrap().stack.pop();
+                        let msg = format!("Helper {} delivered final response to user. Continue.", &helper_name);
+                        Ok((helper_name, serde_json::json!({ "status": msg })))
+                    } else if emitted_terminal {
+                        // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    } else {
+                        // Default to stop if something went wrong but we are in thenContinue
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    }
                 }
                 HandoffMode::Return => {
-                    // Pop stack — focus returns to parent
-                    self.session.lock().unwrap().stack.pop();
-                    Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                    if emitted_final {
+                        // Pop stack — focus returns to parent
+                        self.session.lock().unwrap().stack.pop();
+                        Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                    } else if emitted_terminal {
+                        // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
+                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                    } else {
+                        // For Return mode, if no terminal response, it might be an error or unexpected finish.
+                        // We pop and return what we have (could be empty or last turn).
+                        self.session.lock().unwrap().stack.pop();
+                        Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                    }
                 }
             }
         })
