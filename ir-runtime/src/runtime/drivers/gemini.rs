@@ -126,10 +126,16 @@ impl ModelDriver for GeminiDriver {
 
                     if let Some(data) = trimmed.strip_prefix("data: ") {
                         if let Ok(json_val) = serde_json::from_str::<Value>(data) {
-                            if let Some(t) =
-                                json_val["candidates"][0]["content"]["parts"][0]["text"].as_str()
-                            {
-                                result_text.push_str(t);
+                            if let Some(candidate) = json_val["candidates"].get(0) {
+                                if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
+                                    result_text.push_str(t);
+                                } else if let Some(finish_reason) = candidate["finishReason"].as_str() {
+                                    if finish_reason != "STOP" {
+                                        return Err(format!("Gemini stopped unexpectedly: {}", finish_reason));
+                                    }
+                                }
+                            } else if let Some(error) = json_val["error"].get("message") {
+                                return Err(format!("Gemini streaming error: {}", error));
                             }
                         }
                     }

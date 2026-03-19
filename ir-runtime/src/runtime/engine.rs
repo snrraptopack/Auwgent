@@ -1156,7 +1156,7 @@ impl AuwgentEngine {
                 }
             };
 
-            let _ = sub_engine.run(sub_input, sub_initial_stack).await;
+            sub_engine.run(sub_input, sub_initial_stack).await?;
 
             // Save session
             let save_fn = session_save_handler.lock().unwrap().clone();

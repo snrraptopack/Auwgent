@@ -149,6 +149,11 @@ impl SessionState {
             // The model response
             if !turn.model_response.is_empty() {
                 messages.push(Message::model(turn.model_response.clone()));
+            } else {
+                // Models like Gemini fail on consecutive User messages.
+                // If the model response was empty, we inject a placeholder
+                // to maintain alternating roles.
+                messages.push(Message::model("(no response)"));
             }
         }
 
