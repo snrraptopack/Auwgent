@@ -1,5 +1,5 @@
 {
-  "Sure! Here's the YAML-Lite response you requested": "```yaml",
+  "Sure! Here's the YAML-Lite response you requested": {},
   "text": "I understand you need help with your order. Let me look into that for you.",
   "tool_call": {
     "name": "supportAction",

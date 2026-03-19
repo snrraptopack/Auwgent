@@ -31,8 +31,8 @@ console.log(agent.generatePrompt())
 
 
 agent.onIntent((name, value) => {
-  console.log("***********************************\n")
-  console.log(`Intent: ${name}`, (value as any)?.text ?? value)
+    console.log("***********************************\n")
+  console.log(`line 35 Intent: ${name}`, (value as any)?.text ?? value)
    console.log("***********************************\n")
 
 })

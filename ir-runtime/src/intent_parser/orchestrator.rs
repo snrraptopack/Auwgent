@@ -168,24 +168,50 @@ impl Orchestrator {
                     
                     // This is an "orphaned" key/value. Glue it!
                     let orphaned_key = &next_entry.key;
-                    let orphaned_val_res = self.ir_builder.build(Some(&next_entry.value));
-                    let orphaned_val_str = match orphaned_val_res.value {
-                        IRValue::String(s) => s,
-                        IRValue::Null => String::new(),
-                        other => serde_json::to_string(&other.into_json()).unwrap_or_default(),
+                    
+                    // Extract value, avoiding serialization of empty objects
+                    let orphaned_val_str = match &next_entry.value {
+                        ASTNode::Scalar(scalar) => scalar.value.clone(),
+                        ASTNode::Empty(_) => String::new(),
+                        ASTNode::Mapping(map) if map.entries.is_empty() => String::new(),
+                        ASTNode::Sequence(seq) if seq.items.is_empty() => String::new(),
+                        _ => {
+                            // For complex values, build and serialize
+                            let orphaned_val_res = self.ir_builder.build(Some(&next_entry.value));
+                            match orphaned_val_res.value {
+                                IRValue::String(s) => s,
+                                IRValue::Null => String::new(),
+                                IRValue::Object(map) if map.is_empty() => String::new(),
+                                IRValue::Array(arr) if arr.is_empty() => String::new(),
+                                other => serde_json::to_string(&other.into_json()).unwrap_or_default(),
+                            }
+                        }
                     };
 
-                    let glue = if orphaned_val_str.is_empty() {
-                        format!("\n\n{}", orphaned_key)
+                    // Detect if this looks like content (numbered list, bullet point) vs a real key
+                    let looks_like_content = Self::is_content_pattern(orphaned_key);
+                    
+                    let glue = if looks_like_content {
+                        // Content patterns: preserve as-is with minimal formatting
+                        if orphaned_val_str.is_empty() {
+                            format!("\n{}", orphaned_key)
+                        } else {
+                            format!("\n{}: {}", orphaned_key, orphaned_val_str)
+                        }
                     } else {
-                        format!("\n\n{}: {}", orphaned_key, orphaned_val_str)
+                        // Traditional key-value: add extra spacing
+                        if orphaned_val_str.is_empty() {
+                            format!("\n\n{}", orphaned_key)
+                        } else {
+                            format!("\n\n{}: {}", orphaned_key, orphaned_val_str)
+                        }
                     };
 
                     // Find a string field to append to
                     match build_result.value {
                         IRValue::Object(ref mut map) => {
                             let mut appended = false;
-                            for target_key in &["text", "questions", "response", "prompts"] {
+                            for target_key in &["text", "questions", "response", "prompts", "explain"] {
                                 if let Some(IRValue::String(s)) = map.get_mut(*target_key) {
                                     s.push_str(&glue);
                                     appended = true;
@@ -277,6 +303,45 @@ impl Orchestrator {
     pub fn reset(&mut self) {
         self.parser.reset();
         self.emitted_identities.clear();
+    }
+
+    /// Detect if a key looks like content (numbered list, bullet point) rather than a YAML key
+    fn is_content_pattern(key: &str) -> bool {
+        let trimmed = key.trim_start();
+        
+        // Numbered lists: "1.", "2)", "1.1", etc.
+        if let Some(first_char) = trimmed.chars().next() {
+            if first_char.is_numeric() {
+                // Check if followed by . or ) or more numbers
+                let after_num: String = trimmed.chars().skip_while(|c| c.is_numeric()).collect();
+                if after_num.starts_with('.') || after_num.starts_with(')') {
+                    return true;
+                }
+            }
+        }
+        
+        // Roman numerals: "i.", "ii)", "I.", "IV.", etc.
+        let roman_pattern = trimmed.chars().take_while(|c| {
+            matches!(c.to_ascii_uppercase(), 'I' | 'V' | 'X' | 'L' | 'C' | 'D' | 'M')
+        }).collect::<String>();
+        if !roman_pattern.is_empty() {
+            let after_roman = &trimmed[roman_pattern.len()..];
+            if after_roman.starts_with('.') || after_roman.starts_with(')') {
+                return true;
+            }
+        }
+        
+        // Bullet points: "- ", "* ", "• "
+        if trimmed.starts_with("- ") || trimmed.starts_with("* ") || trimmed.starts_with("• ") {
+            return true;
+        }
+        
+        // Markdown bold/italic at start: "**text", "*text", "__text"
+        if trimmed.starts_with("**") || trimmed.starts_with("__") {
+            return true;
+        }
+        
+        false
     }
 
     /// Check for ready and partial intents
