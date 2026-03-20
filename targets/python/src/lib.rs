@@ -291,12 +291,12 @@ impl AuwgentNative {
     }
 
     pub fn on_intent_partial(&self, callback: PyObject) -> PyResult<()> {
-        let handler: std::sync::Arc<dyn Fn(String, Value) + Send + Sync> =
-            std::sync::Arc::new(move |name: String, value: Value| {
+        let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
+            std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 let callback = callback.clone();
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
                 Python::with_gil(|py| {
-                    let _ = callback.call1(py, (name, value_json));
+                    let _ = callback.call1(py, (name, value_json, agent));
                 });
             });
         self.bridge.engine.on_intent_partial(handler);

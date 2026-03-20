@@ -216,7 +216,6 @@ impl AuwgentEngine {
     /// Register a sync intent callback (convenience wrapper).
     pub fn on_intent_sync(&self, handler: IntentCallback) {
         let handler = handler.clone();
-        let agent_name = self.ir.name.clone();
         *self.intent_handler.lock().unwrap() = Some(Arc::new(move |name, value, agent| {
             let result = handler(name, value, agent);
             Box::pin(async move { result })

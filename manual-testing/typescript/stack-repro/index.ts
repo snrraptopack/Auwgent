@@ -31,7 +31,7 @@ let agent = auwgent(config)
 
 
 
-agent.onIntent((intent, value,agent) => {
+agent.onIntent((intent, value, agent) => {
 
   if (intent === "response_text") {
     console.log("response_text",value.text ?? value)
@@ -49,9 +49,6 @@ agent.onIntent((intent, value,agent) => {
     console.log("an error occured", value.message)
   }
 
-  if (intent === "response_schema") {
-
-  }
 
 })
 

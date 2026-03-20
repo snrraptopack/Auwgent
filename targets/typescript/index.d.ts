@@ -53,7 +53,7 @@ export declare class Auwgent {
    * });
    * ```
    */
-  onIntent(callback: (name: string, value: any) => any): void
+  onIntent(callback: (name: string, value: any, agentName: string) => any): void
   /**
    * Register a partial intent callback for streaming updates.
    *
@@ -69,7 +69,7 @@ export declare class Auwgent {
    * });
    * ```
    */
-  onIntentPartial(callback: (name: string, value: any) => void): void
+  onIntentPartial(callback: (name: string, value: any, agentName: string) => void): void
   /** Hook for TypeScript to preload a helper session before sub_engine.run() */
   onSubEngineStart(callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined>): void
   /** Hook for TypeScript to save a helper session after sub_engine.run() */
