@@ -7,7 +7,7 @@
           "type": "custom",
           "id": "my-groq-api",
           "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "qwen/qwen3-32b"
+          "modelName": "openai/gpt-oss-120b"
         },
         "embedding": {
           "type": "gemini",
@@ -96,6 +96,76 @@
         }
       },
       "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": []
+    },
+    {
+      "name": "Analyzer",
+      "description": "use for sentimental analysis",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "custom",
+              "id": "my-groq-api",
+              "url": "https://api.groq.com/openai/v1/chat/completions",
+              "modelName": "openai/gpt-oss-120b"
+            },
+            "prompt": {
+              "type": "inlinePrompt",
+              "parts": [
+                {
+                  "type": "template",
+                  "value": [
+                    {
+                      "type": "literal",
+                      "value": "\n                  You are an analyzer that can analyze the sentiment of a given text.\n              "
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "text": {
+          "type": "string",
+          "optional": false,
+          "description": "the user's sentiment text"
+        }
+      },
+      "output": {
+        "type": {
+          "type": "object",
+          "properties": {
+            "sentiment_type": {
+              "type": {
+                "type": "union",
+                "options": [
+                  "Positive",
+                  "Negative",
+                  "Neutral"
+                ]
+              },
+              "optional": false
+            },
+            "confidence": {
+              "type": "number",
+              "optional": false
+            },
+            "keywords": {
+              "type": {
+                "type": "array",
+                "items": "string"
+              },
+              "optional": false
+            }
+          }
+        }
+      },
       "context": null,
       "tools": [],
       "workflows": []

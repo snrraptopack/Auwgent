@@ -98,7 +98,7 @@ pub fn format_schema_function(
             let field_type = format_type_value(def, types);
             
             // Format as a Function Composition field assignment
-            let mut line = format!("{}{} = /* type: {} */", indent, name_tag, field_type);
+            let mut line = format!("{}{} = /* {} */", indent, name_tag, field_type);
             
             if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
                 line.push_str(" // ");

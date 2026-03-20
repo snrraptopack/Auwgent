@@ -9,6 +9,7 @@ use std::sync::Arc;
 /// EngineBridge provides a language-agnostic facade for the Auwgent engine.
 /// It encapsulates the Tokio runtime and engine state, reducing duplication
 /// across FFI layers (Node.js, Python, etc.).
+#[derive(Clone)]
 pub struct EngineBridge {
     pub engine: Arc<AuwgentEngine>,
     pub ir: Arc<AgentIR>,
@@ -71,8 +72,8 @@ impl EngineBridge {
         self.engine.clear_session();
     }
 
-    pub fn generate_prompt(&self) -> Result<String, String> {
-        self.engine.generate_prompt().map_err(|e| format!("{}", e))
+    pub fn generate_prompt(&self, helper_name: Option<String>) -> Result<String, String> {
+        self.engine.generate_prompt(helper_name).map_err(|e| format!("{}", e))
     }
 
     pub fn get_tool_names(&self) -> Vec<String> {

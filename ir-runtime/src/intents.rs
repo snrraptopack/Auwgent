@@ -1,7 +1,22 @@
 use crate::schema;
 use crate::types::AgentIR;
+use serde_json::Value;
 
-pub fn generate_intents(ir: &AgentIR) -> String {
+fn unwrap_schema_properties(val: &Value) -> Option<&serde_json::Map<String, Value>> {
+    if let Some(obj) = val.as_object() {
+        if obj.contains_key("properties") {
+            return obj.get("properties").and_then(|p| p.as_object());
+        }
+        if let Some(inner_type) = obj.get("type") {
+            if inner_type.is_object() {
+                return unwrap_schema_properties(inner_type);
+            }
+        }
+    }
+    val.as_object()
+}
+
+pub fn generate_intents(ir: &crate::types::AgentIR) -> String {
     let mut sections = Vec::new();
 
     // ── Dynamic "# Things to Know" section ────────────────────────────────
@@ -183,8 +198,11 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             let mut params = Vec::new();
             if let Some(input) = &helper.input {
                 if let Some(obj) = input.as_object() {
-                    for (name, def) in obj {
-                        let field_type = def["type"].as_str().unwrap_or("any");
+                    let mut sorted_keys: Vec<_> = obj.keys().collect();
+                    sorted_keys.sort();
+                    for name in sorted_keys {
+                        let def = &obj[name];
+                        let field_type = schema::format_type_value(def, ir.types.as_ref());
                         params.push(format!("{}: {}", name, field_type));
                     }
                 }
@@ -202,6 +220,28 @@ pub fn generate_intents(ir: &AgentIR) -> String {
         );
     }
 
+    // Response Schemas (Union Variants)
+    let mut expanded_output_str = String::new();
+    if let Some(output) = &ir.output {
+        if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
+            let mut variant_lines = Vec::new();
+            for (variant_name, variant_schema) in variants {
+                let mut fields = Vec::new();
+                if let Some(obj) = unwrap_schema_properties(variant_schema) {
+                    for (name, def) in obj {
+                        let field_type = schema::format_type_value(def, ir.types.as_ref());
+                        fields.push(format!("{}: {}", name, field_type));
+                    }
+                }
+                variant_lines.push(format!("{}({})", variant_name, fields.join(", ")));
+            }
+            expanded_output_str = format!(
+                "# Response Schemas Available\nYou MUST use exactly the fields defined for your chosen type.\n\n{}",
+                variant_lines.join("\n")
+            );
+        }
+    }
+
     let mut options: Vec<String> = Vec::new();
 
     // response_schema or response_text
@@ -216,12 +256,18 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             } else {
                 variant_names[0].clone()
             };
-            options.push(format!("// Respond to the user using one of the available schema variants\nresponse_schema(\n  type = \"{}\"\n  response = {{ /* match the requested schema's shape */ }}\n)", variant_union));
-        } else if matches!(output.as_object(), Some(obj) if !obj.is_empty()) {
-            let schema_str = schema::format_schema_function(output, 2, ir.types.as_ref());
-            options.push(format!("// Respond to the user using the structured schema\nresponse_schema(\n{}\n)", schema_str));
+            options.push(format!("// Respond to the user using one of the available schema variants. See exact fields below.\nresponse_schema(\n  type = \"{}\"\n  response = {{ /* match the selected type's fields */ }}\n)\n\n{}", variant_union, expanded_output_str));
         } else {
-            options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
+            if let Some(obj) = unwrap_schema_properties(output) {
+                if !obj.is_empty() {
+                    let schema_str = schema::format_schema_function(&serde_json::Value::Object(obj.clone()), 2, ir.types.as_ref());
+                    options.push(format!("// Respond to the user using the structured schema\nresponse_schema(\n  response = {{\n{}\n  }}\n)", schema_str));
+                } else {
+                    options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
+                }
+            } else {
+                options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
+            }
         }
     } else {
         options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());

@@ -3,10 +3,12 @@ import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated
 import { GEMINI_API_KEY, GROQ_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
 import { startRepl } from "../loop"
 
+const stack = ["Router", "Analyzer"]
+
 let one: AuwgentMiddleware = {
     name: "one",
-    onLLMStart: (prompt, ctx) => {
-        console.log(ctx.systemPrompt)
+  onLLMStart: (prompt, ctx) => {
+      console.log(ctx.stack)
     },
 
 }
@@ -24,7 +26,8 @@ const config: AuwgentConfig = {
 
 let agent = auwgent(config)
 
-//console.log(agent.generatePrompt())
+//console.log(agent.generatePrompt("Analyzer"))
+
 
 
 agent.onIntent((name, value) => {

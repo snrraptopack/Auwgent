@@ -27,7 +27,8 @@ import type {
     IntentHandlers,
     PartialIntentHandler,
     PartialIntentHandlers,
-    SessionState
+    SessionState,
+    ExtractHelperNames
 } from './types.js';
 
 import type { Middleware, MiddlewareContext } from './middleware.js';
@@ -356,9 +357,20 @@ export class TypedAuwgent<
         });
 
         // Register LLM Lifecycle Hooks
-        this.native.onLlmStart(async (promptJson: string, systemPrompt: string) => {
+        this.native.onLlmStart(async (promptJson: string, systemPrompt: string, contextJson: string) => {
             const ctx = this.getBuildContext();
             ctx.systemPrompt = systemPrompt;
+
+            // Sync stack from Rust context if provided
+            try {
+                const rustCtx = JSON.parse(contextJson);
+                if (rustCtx && rustCtx.stack) {
+                    ctx.stack = rustCtx.stack;
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+
             this.lastTurnIntentValue = null;
             this.lastTurnIntentName = null;
             let currentPrompt = promptJson;
@@ -370,7 +382,10 @@ export class TypedAuwgent<
                     }
                 }
             }
-            return currentPrompt;
+            return {
+                prompt: currentPrompt,
+                stack: ctx.stack
+            };
         });
 
         this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
@@ -506,9 +521,14 @@ export class TypedAuwgent<
         this.helperSessions.clear();
     }
 
-    /** Generate the system prompt (debugging). */
-    generatePrompt(): string {
-        return this.native.generatePrompt();
+    /** 
+     * Generate a system prompt.
+     * @param helperName - Optional name of a helper to generate the prompt for. If omitted, generates the main agent prompt.
+     */
+    generatePrompt<T extends ExtractHelperNames<IR> | undefined = undefined>(
+        helperName?: T
+    ): string {
+        return this.native.generatePrompt(helperName as string);
     }
 
     /** Get tool names defined in the IR. */

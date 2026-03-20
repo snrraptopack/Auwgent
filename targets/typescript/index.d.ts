@@ -103,7 +103,7 @@ export declare class Auwgent {
   /** Clear the session (start a fresh conversation). */
   clearSession(): void
   /** Generate the system prompt (useful for debugging). */
-  generatePrompt(): string
+  generatePrompt(helperName?: string | undefined | null): string
   /**
    * Get all tool names defined in the IR.
    * Used by the TypeScript wrapper for type-safe tool registration.

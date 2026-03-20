@@ -70,8 +70,8 @@ impl AuwgentNative {
         Ok(())
     }
 
-    pub fn generate_prompt(&self) -> PyResult<String> {
-        self.bridge.generate_prompt().map_err(PyRuntimeError::new_err)
+    pub fn generate_prompt(&self, helper_name: Option<String>) -> PyResult<String> {
+        self.bridge.generate_prompt(helper_name).map_err(PyRuntimeError::new_err)
     }
 
     pub fn write_chunk(&self, chunk: String) -> PyResult<()> {
@@ -101,36 +101,32 @@ impl AuwgentNative {
 
         let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            bridge.run_async(input_val, initial_stack)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+            let res: Result<String, String> = bridge.run_async(input_val, initial_stack).await;
+            res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
     pub fn process_intents<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
         let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            bridge.process_intents_async()
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+            let res: Result<String, String> = bridge.process_intents_async().await;
+            res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
     pub fn embed<'p>(&self, py: Python<'p>, text: String) -> PyResult<&'p PyAny> {
         let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            bridge.embed(text)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+            let res: Result<Vec<f32>, String> = bridge.embed(text).await;
+            res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
     pub fn embed_batch<'p>(&self, py: Python<'p>, texts: Vec<String>) -> PyResult<&'p PyAny> {
         let bridge = self.bridge.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            bridge.embed_batch(texts)
-                .await
-                .map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
+            let res: Result<Vec<Vec<f32>>, String> = bridge.embed_batch(texts).await;
+            res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
@@ -247,25 +243,28 @@ impl AuwgentNative {
 
     pub fn on_llm_start(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            std::sync::Arc::new(move |prompt: String, sys: String| {
+            std::sync::Arc::new(move |prompt: String, sys: String, ctx: String| {
                 let callback = callback.clone();
                 Box::pin(async move {
                     let py_result = Python::with_gil(|py| {
                         let p_py = pyo3::types::PyString::new(py, &prompt);
                         let s_py = pyo3::types::PyString::new(py, &sys);
-                        let res = callback.call1(py, (p_py, s_py))?;
+                        let c_py = pyo3::types::PyString::new(py, &ctx);
+                        let res = callback.call1(py, (p_py, s_py, c_py))?;
                         pyo3_asyncio::tokio::into_future(res.as_ref(py))
                     });
                     if let Ok(future) = py_result {
                         if let Ok(obj) = future.await {
                             return Python::with_gil(|py| {
-                                obj.extract::<Option<String>>(py).unwrap_or(None)
+                                let s: String = obj.extract(py).unwrap_or_else(|_| "null".to_string());
+                                serde_json::from_str(&s).unwrap_or(Value::Null)
                             });
                         }
                     }
-                    None
+                    Value::Null
                 })
             });
+
         self.bridge.engine.on_llm_start(handler);
         Ok(())
     }

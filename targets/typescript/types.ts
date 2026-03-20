@@ -64,6 +64,11 @@ export interface AgentIRShape {
 export type ExtractToolNames<IR extends AgentIRShape> =
     IR['tools'][number]['name'];
 
+export type ExtractHelperNames<IR extends AgentIRShape> =
+    IR['helpers'] extends readonly any[]
+    ? IR['helpers'][number]['name']
+    : never;
+
 export type ToolRegistry<IR extends AgentIRShape> = {
     [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
 };

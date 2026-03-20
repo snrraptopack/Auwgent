@@ -11,7 +11,7 @@ agent Router{
 
     // custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
     default config{
-        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
         prompt: {
             """
                 You are a helpful assistant be polite
@@ -30,7 +30,10 @@ agent Router{
         user_name:string
     }
 
-    helpers {StoryTeller handoff user}
+    helpers {
+        Analyzer
+        StoryTeller handoff user
+    }
 
 }
 
@@ -54,4 +57,30 @@ helper StoryTeller{
             }
         }
     }
+}
+
+
+helper Analyzer{
+    description: "use for sentimental analysis"
+
+    default config{
+          model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
+          prompt: {
+              """
+                  You are an analyzer that can analyze the sentiment of a given text.
+              """
+          }
+
+    }
+
+    output:{
+            sentiment_type: "Positive" | "Negative" | "Neutral"
+            confidence: number
+            keywords: string[] @desc "for some key note you think it worth bulleting"
+        }
+
+    input{
+        text: string @desc "the user's sentiment text"
+    }
+
 }

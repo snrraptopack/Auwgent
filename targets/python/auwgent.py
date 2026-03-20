@@ -372,22 +372,32 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._native.on_sub_engine_complete(wrap_sub_complete)
 
         # ── 4. LLM Hooks ──
-        async def wrap_llm_start(prompt_json: str, system_prompt: str) -> Optional[str]:
+        async def wrap_llm_start(prompt_json: str, system_prompt: str, context_json: str) -> str:
             ctx = self._build_context()
             ctx["systemPrompt"] = system_prompt
+
+            # Sync stack from Rust context if provided
+            try:
+                rust_ctx = json.loads(context_json)
+                if rust_ctx and "stack" in rust_ctx:
+                    ctx["stack"] = rust_ctx["stack"]
+            except:
+                pass
+
             self._last_intent_name = None
             self._last_intent_val = None
 
             current_prompt = prompt_json
-            modified = False
             for m in self._get_middleware(ctx):
                 if hasattr(m, "onLLMStart"):
                     result = await m.onLLMStart(current_prompt, ctx)
                     if isinstance(result, str):
                         current_prompt = result
-                        modified = True
 
-            return current_prompt if modified else None
+            return json.dumps({
+                "prompt": current_prompt,
+                "stack": ctx.get("stack")
+            })
         self._native.on_llm_start(wrap_llm_start)
 
         async def wrap_llm_end(response_str: str, system_prompt: str) -> None:
@@ -498,9 +508,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     # ── Introspection ─────────────────────────────────────────────────────
 
-    def generate_prompt(self) -> str:
+    def generate_prompt(self, helper_name: Optional[str] = None) -> str:
         """Generate the system prompt (debugging)."""
-        return self._native.generate_prompt()
+        return self._native.generate_prompt(helper_name)
 
     def get_tool_names(self) -> List[str]:
         """Get tool names defined in the IR."""

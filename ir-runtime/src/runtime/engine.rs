@@ -55,10 +55,10 @@ pub type SessionSaveCallback =
     Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
 
 /// Async callback that fires right before the LLM generates a response.
-/// Receives the full resolved prompt/messages payload and the system prompt.
-/// Returns an optional String to dynamically modify the user's prompt (Interceptor Pattern).
+/// Receives (input_text, system_prompt, context_json).
+/// Returns a JSON object containing optional "prompt" (String) and "stack" (Array of Strings).
 pub type AsyncLlmStartCallback = Arc<
-    dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, Option<String>>
+    dyn Fn(String, String, String) -> futures_util::future::BoxFuture<'static, Value>
         + Send
         + Sync,
 >;
@@ -434,7 +434,7 @@ impl AuwgentEngine {
         let config_params = model_info.get("config").cloned();
 
         // 2. Generate system prompt and set it on the session
-        let system_prompt = self.generate_prompt()?;
+        let system_prompt = self.generate_prompt(None)?;
         self.session.lock().unwrap().set_system_prompt(&system_prompt);
 
         // 3. Build the initial user input
@@ -546,10 +546,31 @@ impl AuwgentEngine {
                 let start_handler = self.llm_start_handler.lock().unwrap().clone();
                 if let Some(h) = start_handler {
                     let sys_prompt = self.session.lock().unwrap().system_prompt.clone().unwrap_or_default();
-                    let input_text = self.session.lock().unwrap().turns.last().map(|t| t.input.clone());
-                    if let Some(text) = input_text {
-                        if let Some(modified) = h(text, sys_prompt).await {
-                            self.session.lock().unwrap().set_input(modified);
+                    let input_text = self.session.lock().unwrap().turns.last().map(|t| t.input.clone()).unwrap_or_default();
+                    
+                    let context_json = {
+                        let ctx_lock = self.context.lock().unwrap();
+                        serde_json::to_string(ctx_lock.as_ref().unwrap_or(&Value::Null)).unwrap_or_default()
+                    };
+
+                    let result = h(input_text, sys_prompt, context_json).await;
+
+                    if let Some(modified) = result.get("prompt").and_then(|v| v.as_str()) {
+                        self.session.lock().unwrap().set_input(modified.to_string());
+                    }
+
+                    if let Some(new_stack) = result.get("stack").and_then(|v| v.as_array()) {
+                        let stack_vec: Vec<String> = new_stack.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                        if !stack_vec.is_empty() {
+                            let mut session = self.session.lock().unwrap();
+                            session.stack = stack_vec;
+                            
+                            // Re-evaluate teleportation!
+                            if session.stack.len() > 1 {
+                                *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
+                                drop(session); // Important: release lock before continuing
+                                continue; // Restart loop to trigger teleportation check at line 489
+                            }
                         }
                     }
                 }
@@ -1187,7 +1208,7 @@ impl AuwgentEngine {
             }
 
             // Pre-generate system prompt
-            if let Ok(system_prompt) = sub_engine.generate_prompt() {
+            if let Ok(system_prompt) = sub_engine.generate_prompt(None) {
                 sub_engine.session.lock().unwrap().set_system_prompt(&system_prompt);
             }
 
@@ -1317,7 +1338,23 @@ impl AuwgentEngine {
         self.orchestrator.lock().unwrap().end()
     }
 
-    pub fn generate_prompt(&self) -> AuwgentResult<String> {
+    pub fn generate_prompt(&self, helper_name: Option<String>) -> AuwgentResult<String> {
+        if let Some(name) = helper_name {
+            let sub_ctx = crate::runtime::helper_runner::build_sub_agent_context(&self.ir, &name)?;
+            let sub_engine = AuwgentEngine::new(sub_ctx.ir);
+
+            // Propagate context so prompt evaluation works
+            if let Some(ctx) = self.context.lock().unwrap().as_ref() {
+                sub_engine.set_context(ctx.clone());
+            }
+
+            sub_engine.generate_prompt(None)
+        } else {
+            self.generate_main_prompt()
+        }
+    }
+
+    fn generate_main_prompt(&self) -> AuwgentResult<String> {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
 

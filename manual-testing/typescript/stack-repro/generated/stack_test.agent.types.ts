@@ -7,7 +7,7 @@ import _importedIR from './stack_test.agent.json' with { type: 'json' };
 type RouterIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Router";
   workflows: undefined;
-  helpers: ({ name: "StoryTeller" })[];
+  helpers: ({ name: "StoryTeller" } | { name: "Analyzer" })[];
 };
 const agentIR = _importedIR as unknown as RouterIR;
 export type RouterInput = {

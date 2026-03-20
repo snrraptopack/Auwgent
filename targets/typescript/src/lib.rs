@@ -246,29 +246,32 @@ impl Auwgent {
 
     /// Hook for TypeScript to receive the prompt before LLM generation
     #[napi(
-        ts_args_type = "callback: (prompt: string, systemPrompt: string) => Promise<string | undefined>"
+        ts_args_type = "callback: (prompt: string, systemPrompt: string, contextJson: string) => Promise<{ prompt?: string, stack?: string[] } | undefined>"
     )]
     pub fn on_llm_start(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
+        let tsfn: ThreadsafeFunction<(String, String, String), ErrorStrategy::Fatal> =
+            callback.create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String, String)>| {
                 let prompt = ctx.env.create_string(&ctx.value.0)?;
                 let sys = ctx.env.create_string(&ctx.value.1)?;
-                Ok(vec![prompt.into_unknown(), sys.into_unknown()])
+                let context = ctx.env.create_string(&ctx.value.2)?;
+                Ok(vec![
+                    prompt.into_unknown(),
+                    sys.into_unknown(),
+                    context.into_unknown(),
+                ])
             })?;
 
         let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            std::sync::Arc::new(move |prompt_str: String, sys_str: String| {
+            std::sync::Arc::new(move |prompt_str: String, sys_str: String, ctx_str: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     let result = tsfn
-                        .call_async::<Promise<Option<String>>>((prompt_str, sys_str))
+                        .call_async::<Promise<Value>>((prompt_str, sys_str, ctx_str))
                         .await;
-                    if let Ok(promise) = result {
-                        if let Ok(Some(new_prompt)) = promise.await {
-                            return Some(new_prompt);
-                        }
+                    match result {
+                        Ok(promise) => promise.await.unwrap_or(Value::Null),
+                        Err(_) => Value::Null,
                     }
-                    None
                 })
             });
 
@@ -358,8 +361,8 @@ impl Auwgent {
 
     /// Generate the system prompt (useful for debugging).
     #[napi]
-    pub fn generate_prompt(&self) -> Result<String> {
-        self.bridge.generate_prompt().map_err(Error::from_reason)
+    pub fn generate_prompt(&self, helper_name: Option<String>) -> Result<String> {
+        self.bridge.generate_prompt(helper_name).map_err(Error::from_reason)
     }
 
     /// Get all tool names defined in the IR.
