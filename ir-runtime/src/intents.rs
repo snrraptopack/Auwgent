@@ -48,13 +48,16 @@ pub fn generate_intents(ir: &AgentIR) -> String {
     }
 
     // Only mention response_text if the agent has no structured output schema
-    let has_output_schema = ir.output.as_ref()
+    let has_output_schema = ir
+        .output
+        .as_ref()
         .map(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
         .unwrap_or(false);
     if !has_output_schema {
-        know_items.push("A `response_text` intent sends a plain text reply to the user.".to_string());
+        know_items
+            .push("A `response_text` intent sends a plain text reply to the user.".to_string());
     }
-    
+
     if let Some(custom) = &ir.custom_intents {
         for ci in custom {
             let desc = ci.description.as_deref().unwrap_or("User-defined intent.");
@@ -66,13 +69,30 @@ pub fn generate_intents(ir: &AgentIR) -> String {
     let has_callables = !ir.tools.is_empty() || !ir.workflows.is_empty() || !ir.helpers.is_empty();
     if has_callables {
         let callable_options: Vec<&str> = [
-            ir.output.as_ref()
+            ir.output
+                .as_ref()
                 .filter(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
                 .map(|_| "response_schema"),
-            if !has_output_schema { Some("response_text") } else { None },
-            if !ir.tools.is_empty() { Some("tool_call") } else { None },
-            if !ir.workflows.is_empty() { Some("workflow_call") } else { None },
-            if !ir.helpers.is_empty() { Some("helper_call") } else { None },
+            if !has_output_schema {
+                Some("response_text")
+            } else {
+                None
+            },
+            if !ir.tools.is_empty() {
+                Some("tool_call")
+            } else {
+                None
+            },
+            if !ir.workflows.is_empty() {
+                Some("workflow_call")
+            } else {
+                None
+            },
+            if !ir.helpers.is_empty() {
+                Some("helper_call")
+            } else {
+                None
+            },
         ]
         .iter()
         .filter_map(|o| *o)
@@ -209,10 +229,22 @@ pub fn generate_intents(ir: &AgentIR) -> String {
 
     sections.push(
         "# Instructions\n\
-         Your response MUST be a valid YAML block — not JSON, not plain text.\n\
-         Use YAML key: value syntax on every turn, including after receiving a tool_result.\n\
-         For multi-line strings, use the YAML pipe symbol `|` for proper formatting.\n\
-         Never wrap your output in code fences or markdown.\n\
+         Your response MUST be a valid YAML block.\n\
+         What is YAML? It is a structured format using intents as root keys. For example:\n\
+         intent_name:\n\
+           field_name: value\n\
+         \n\
+         What is a Typed YAML field?\n\
+         A field can accept a generic string. If that string is short, write it normally.\n\
+         But if the string spans across multiple lines (like a long explanation), you should Type it as `(multiline)` for better understanding, and use the `|` symbol.\n\
+         For example:\n\
+         intent_name:\n\
+           fiels_name(multiline): |\n\
+             This is a long\n\
+             multi-line string.\n\
+         \n\
+         Never write pseudo-code like `intent(args)`. Never wrap your output in code fences or markdown.\n\
+         if you dont know a type to give a field just use typescript type except when it a long text that is when you use multiline.\n\
          "
         .to_string(),
     );
@@ -418,10 +450,25 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
         }
     }
 
-    // Instructions + Options
     sections.push(
-        "# Instructions\nRespond ONLY with a valid YAML block. Do not include any conversational text or explanation. For multi-line strings, use the YAML pipe symbol `|` for proper formatting."
-            .to_string(),
+        "# Instructions\n\
+         Your response MUST be a valid YAML block. Do not include any conversational text or explanation.\n\
+         What is YAML? It is a structured format using intents as root keys. For example:\n\
+         intent_name:\n\
+           field_name: value\n\
+         \n\
+         What is a Typed YAML field?\n\
+         A field can accept a generic string. If that string is short, write it normally.\n\
+         But if the string spans across multiple lines, you should Type it as `(multiline)` for better understanding, and use the `|` symbol.\n\
+         For example:\n\
+         thought:\n\
+           explain(multiline): |\n\
+             This is a long\n\
+             multi-line string.\n\
+         \n\
+         Never write pseudo-code like `intent(args)`. Never wrap your output in code fences or markdown.\n\
+         "
+        .to_string(),
     );
 
     let mut options: Vec<String> = Vec::new();
@@ -439,7 +486,6 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
             tool_union
         ));
     }
-
 
     if let Some(custom) = &ir.custom_intents {
         for ci in custom {

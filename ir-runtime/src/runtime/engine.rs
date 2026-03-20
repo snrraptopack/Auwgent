@@ -81,6 +81,8 @@ pub struct AuwgentEngine {
     context: Arc<Mutex<Option<Value>>>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Track intents that were emitted as partials to avoid duplicate complete emissions
+    emitted_partial_intents: Arc<Mutex<std::collections::HashSet<(String, String)>>>,
     /// Tool/workflow results accumulated during the current turn
     pending_tool_results: Arc<Mutex<Vec<(String, Value)>>>,
     /// Accumulated raw response for the current turn
@@ -122,10 +124,33 @@ impl AuwgentEngine {
 
         let pending_intents = Arc::new(Mutex::new(Vec::new()));
         let intents_for_handler = Arc::clone(&pending_intents);
+        let emitted_partial_intents = Arc::new(Mutex::new(std::collections::HashSet::new()));
+        let partials_for_handler = Arc::clone(&emitted_partial_intents);
 
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
             if let Ok(mut pending) = intents_for_handler.lock() {
-                pending.push((name, value));
+                // Check if this exact intent (by name and value) is already pending
+                // This prevents duplicates when the same intent is emitted during
+                // streaming and then again during finalization
+                let already_pending = pending.iter().any(|(n, v)| {
+                    n == &name && v == &value
+                });
+                
+                if !already_pending {
+                    // Also check if this intent was emitted as a partial
+                    // If so, skip it to avoid duplicate emissions
+                    let value_hash = serde_json::to_string(&value).unwrap_or_default();
+                    let partial_key = (name.clone(), value_hash.clone());
+                    
+                    let was_partial = partials_for_handler
+                        .lock()
+                        .map(|partials| partials.contains(&partial_key))
+                        .unwrap_or(false);
+                    
+                    if !was_partial {
+                        pending.push((name, value));
+                    }
+                }
             }
         }));
 
@@ -137,6 +162,7 @@ impl AuwgentEngine {
             drivers: Arc::new(Mutex::new(HashMap::new())),
             context: Arc::new(Mutex::new(None)),
             pending_intents,
+            emitted_partial_intents,
             pending_tool_results: Arc::new(Mutex::new(Vec::new())),
             current_raw_response: Arc::new(Mutex::new(String::new())),
             intent_handler: Arc::new(Mutex::new(None)),
@@ -205,10 +231,21 @@ impl AuwgentEngine {
     pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value) + Send + Sync>) {
         // Wire into the orchestrator's partial handler
         let user_handler = handler.clone();
+        let emitted_partials = Arc::clone(&self.emitted_partial_intents);
+        
         self.orchestrator
             .lock()
             .unwrap()
             .on_intent_partial(Arc::new(move |name, value| {
+                // Track this partial emission to prevent duplicate complete emission
+                let value_hash = serde_json::to_string(&value).unwrap_or_default();
+                let partial_key = (name.clone(), value_hash);
+                
+                if let Ok(mut partials) = emitted_partials.lock() {
+                    partials.insert(partial_key);
+                }
+                
+                // Call user handler
                 user_handler(name, value);
             }));
         *self.partial_intent_handler.lock().unwrap() = Some(handler);
@@ -600,7 +637,8 @@ impl AuwgentEngine {
             }
 
             // Fallback: If no intents were detected in the whole turn, try a deep extraction.
-            if !actions_performed {
+            let has_terminal = *self.terminal_response_emitted.lock().unwrap();
+            if !actions_performed && !has_terminal {
                 let (needs_fallback, cleaned) = {
                     let raw = self.current_raw_response.lock().unwrap();
                     let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw);

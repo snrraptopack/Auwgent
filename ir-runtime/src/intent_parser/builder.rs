@@ -310,13 +310,20 @@ impl IRBuilder {
         let mut node_id: Option<String> = None;
 
         for entry in &node.entries {
-            self.current_path.push(entry.key.clone());
+            let mut clean_key = entry.key.clone();
+            if let Some(idx) = clean_key.find('(') {
+                if clean_key.ends_with(')') {
+                    clean_key = clean_key[..idx].to_string();
+                }
+            }
+
+            self.current_path.push(clean_key.clone());
 
             let val = self.transform_node(&entry.value);
-            obj.insert(entry.key.clone(), val.clone());
+            obj.insert(clean_key.clone(), val.clone());
 
             // Track id for registry
-            if entry.key == "id" {
+            if clean_key == "id" {
                 if let IRValue::String(s) = val {
                     node_id = Some(s);
                 }

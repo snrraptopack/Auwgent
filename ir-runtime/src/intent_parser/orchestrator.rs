@@ -223,9 +223,14 @@ impl Orchestrator {
                                 for (_, val) in map.iter_mut() {
                                     if let IRValue::String(s) = val {
                                         s.push_str(&glue);
+                                        appended = true;
                                         break;
                                     }
                                 }
+                            }
+                            if !appended {
+                                let fallback_key = if entry.key == "thought" { "explain" } else { "text" };
+                                map.insert(fallback_key.to_string(), IRValue::String(glue.trim_start().to_string()));
                             }
                         }
                         IRValue::String(ref mut s) => {
