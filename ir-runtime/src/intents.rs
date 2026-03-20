@@ -10,7 +10,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
     let mut know_items: Vec<String> = Vec::new();
 
     know_items.push(
-        "Intents are actions you perform. Each response must be a YAML block using one or more intent."
+        "Intents are actions you perform. Each response must be a valid Function Composition block using one or more intent."
             .to_string(),
     );
 
@@ -126,6 +126,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
     // ── Reference sections (tools, workflows, helpers, response schema) ──
 
     // Tools
+    let mut expanded_tools_str = String::new();
     if !ir.tools.is_empty() {
         let mut tool_lines = Vec::new();
         for tool in &ir.tools {
@@ -143,13 +144,14 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             }
             tool_lines.push(sig);
         }
-        sections.push(format!(
-            "# Tools Available\nTools are used when external data access or state mutation is required.\n\n{}",
+        expanded_tools_str = format!(
+            "# Tools Available\nExternal tools you can call. You MUST ONLY use tools from this exact list.\n\n{}",
             tool_lines.join("\n")
-        ));
+        );
     }
 
     // Workflows
+    let mut expanded_wf_str = String::new();
     if !ir.workflows.is_empty() {
         let mut wf_lines = Vec::new();
         for wf in &ir.workflows {
@@ -167,13 +169,14 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             }
             wf_lines.push(sig);
         }
-        sections.push(format!(
-            "# Workflows Available\nWorkflows are used for deterministic or optimized operations.\n\n{}",
+        expanded_wf_str = format!(
+            "# Workflows Available\nDeterministic workflows you can execute. You MUST ONLY use workflows from this exact list.\n\n{}",
             wf_lines.join("\n")
-        ));
+        );
     }
 
     // Helpers
+    let mut expanded_helpers_str = String::new();
     if !ir.helpers.is_empty() {
         let mut helper_lines = Vec::new();
         for helper in &ir.helpers {
@@ -193,99 +196,35 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             }
             helper_lines.push(sig);
         }
-        sections.push(format!(
-            "# Helpers Available\nHelpers delegate subtasks to specialized agents.\n\n{}",
+        expanded_helpers_str = format!(
+            "# Helpers Available\nDelegates subtasks to specialized agents. You MUST ONLY use helpers from this exact list.\n\n{}",
             helper_lines.join("\n")
-        ));
+        );
     }
-
-    // Custom Intents
-    if let Some(custom) = &ir.custom_intents {
-        if !custom.is_empty() {
-            let mut ci_lines = Vec::new();
-            for ci in custom {
-                let mut params = Vec::new();
-                if let Some(obj) = ci.fields.as_object() {
-                    for (name, def) in obj {
-                        let field_type = def["type"].as_str().unwrap_or("any");
-                        params.push(format!("{}: {}", name, field_type));
-                    }
-                }
-                let mut sig = format!("{}({})", ci.name, params.join(", "));
-                if let Some(desc) = &ci.description {
-                    sig.push_str(" // ");
-                    sig.push_str(desc);
-                }
-                ci_lines.push(sig);
-            }
-            sections.push(format!(
-                "# Custom Intents Available\nSpecialized actions defined for this agent.\n\n{}",
-                ci_lines.join("\n")
-            ));
-        }
-    }
-
-    // ── Options (the YAML structures the model can select) ────────────────
-
-    sections.push(
-        "# Instructions\n\
-         Your response MUST be a valid YAML block.\n\
-         What is YAML? It is a structured format using intents as root keys. For example:\n\
-         intent_name:\n\
-           field_name: value\n\
-         \n\
-         What is a Typed YAML field?\n\
-         A field can accept a generic string. If that string is short, write it normally.\n\
-         But if the string spans across multiple lines (like a long explanation), you should Type it as `(multiline)` for better understanding, and use the `|` symbol.\n\
-         For example:\n\
-         intent_name:\n\
-           fiels_name(multiline): |\n\
-             This is a long\n\
-             multi-line string.\n\
-         \n\
-         Never write pseudo-code like `intent(args)`. Never wrap your output in code fences or markdown.\n\
-         if you dont know a type to give a field just use typescript type except when it a long text that is when you use multiline.\n\
-         "
-        .to_string(),
-    );
 
     let mut options: Vec<String> = Vec::new();
 
     // response_schema or response_text
     if let Some(output) = &ir.output {
         if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
-            // Union output: multiple response schema variants
-            // 1. Generate standalone reference section
-            let mut variant_lines = Vec::new();
             let mut variant_names = Vec::new();
-
-            for (variant_name, variant_schema) in variants {
+            for (variant_name, _variant_schema) in variants {
                 variant_names.push(variant_name.clone());
-                let schema_str = schema::format_schema_yaml(variant_schema, 2, ir.types.as_ref());
-                variant_lines.push(format!("{}\n{}", variant_name, schema_str));
             }
-
-            sections.push(format!(
-                "# Response Schemas Available\nUsed for replying directly to the user.\n\n{}",
-                variant_lines.join("\n\n")
-            ));
-
-            // 2. Generate option with type discriminator
             let variant_union = if variant_names.len() > 1 {
                 format!("< {} >", variant_names.join(" | "))
             } else {
                 variant_names[0].clone()
             };
-            options.push(format!("response_schema:\n  type: {}", variant_union));
+            options.push(format!("// Respond to the user using one of the available schema variants\nresponse_schema(\n  type = \"{}\"\n  response = {{ /* match the requested schema's shape */ }}\n)", variant_union));
         } else if matches!(output.as_object(), Some(obj) if !obj.is_empty()) {
-            // Single output type (current behavior)
-            let schema_str = schema::format_schema_yaml(output, 2, ir.types.as_ref());
-            options.push(format!("response_schema:\n{}", schema_str));
+            let schema_str = schema::format_schema_function(output, 2, ir.types.as_ref());
+            options.push(format!("// Respond to the user using the structured schema\nresponse_schema(\n{}\n)", schema_str));
         } else {
-            options.push("response_text:\n  text: string".to_string());
+            options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
         }
     } else {
-        options.push("response_text:\n  text: string".to_string());
+        options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
     }
 
     // tool_call
@@ -297,8 +236,8 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             tool_names[0].clone()
         };
         options.push(format!(
-            "tool_call:\n  type: {}\n  args: {{ key: value }}",
-            tool_union
+            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{ /* match the requested tool's exact shape */ }}\n)\n\n{}",
+            tool_union, expanded_tools_str
         ));
     }
 
@@ -311,8 +250,8 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             wf_names[0].clone()
         };
         options.push(format!(
-            "workflow_call:\n  type: {}\n  args: {{ key: value }}",
-            wf_union
+            "// Execute a predefined workflow. See exact arguments below.\nworkflow_call(\n  type = \"{}\"\n  args = {{ /* match the requested workflow's exact shape */ }}\n)\n\n{}",
+            wf_union, expanded_wf_str
         ));
     }
 
@@ -325,20 +264,48 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             helper_names[0].clone()
         };
         options.push(format!(
-            "helper_call:\n  type: {}\n  args: {{ key: value }}",
-            helper_union
+            "// Delegate a task to a specialized helper. See exact arguments below.\nhelper_call(\n  type = \"{}\"\n  args = {{ /* match the requested helper's exact shape */ }}\n)\n\n{}",
+            helper_union, expanded_helpers_str
         ));
     }
 
-    // custom intents
+    // Custom Intents
     if let Some(custom) = &ir.custom_intents {
         for ci in custom {
-            let schema_str = schema::format_schema_yaml(&ci.fields, 2, ir.types.as_ref());
-            options.push(format!("{}:\n{}", ci.name, schema_str));
+            let schema_str = schema::format_schema_function(&ci.fields, 2, ir.types.as_ref());
+            let mut ci_str = String::new();
+            if let Some(desc) = &ci.description {
+                ci_str.push_str(&format!("// {}\n", desc));
+            }
+            ci_str.push_str(&format!("{}(\n{}\n)", ci.name, schema_str));
+            options.push(ci_str);
         }
     }
 
-    sections.push(format!("# Options\n{}", options.join("\n\n")));
+    sections.push(
+        "# Instructions\n\
+         Your response MUST ONLY be valid Function Composition blocks. ABSOLUTELY NO conversational text or explanations outside of a function block.\n\
+         What is a Function Composition block? It is a structured format using intents as function calls. For example:\n\
+         intent_name(\n\
+           field_name = \"value\"\n\
+         )\n\
+         \n\
+         CRITICAL RULE: You MUST NEVER assume or hallucinate a tool, helper, workflow, or intent that is not explicitly listed in the available options. If it is not listed in the sections above, IT DOES NOT EXIST. If a user asks you to use an unknown tool/helper, you must politely decline and explain what capabilities you actually have.\n\
+         CRITICAL RULE: You are an intelligent AI. You must ALWAYS use your internal reasoning and knowledge to answer questions or converse directly with the user via `response_text` when possible. You should ONLY call specialized tools or helpers if the user explicitly requests a task that requires them.\n\
+         \n\
+         String values MUST be wrapped in double quotes. Multiline strings are supported natively inside quotes.\n\
+         Keys and fields are assigned using `=`. Nested objects use `{}`.\n\
+         For example, to execute an action, you MUST use a function:\n\
+         obey(\n\
+           action = \"This is my action payload.\nIt can span multiple lines.\"\n\
+         )\n\
+         \n\
+         Never wrap your output in code fences or markdown. START IMMEDIATELY with a function name.\n\
+         "
+        .to_string(),
+    );
+
+    sections.push(format!("# Available Actions (Options)\nYou MUST select and output one or more of the following function blocks to perform your turn:\n\n{}", options.join("\n\n")));
 
     sections.join("\n\n")
 }
@@ -374,7 +341,7 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
     // Things to Know (helper variant)
     let mut know_items: Vec<String> = Vec::new();
     know_items.push(
-        "Intents are actions you perform. Each response must be a YAML block using one or more intent."
+        "Intents are actions you perform. Each response must be a valid Function Composition block using one or more intent."
             .to_string(),
     );
     if !allowed_tools.is_empty() {
@@ -401,6 +368,7 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
     sections.push(format!("# Things to Know\n{}", know_lines.join("\n")));
 
     // Tools (filtered)
+    let mut expanded_tools_str = String::new();
     if !allowed_tools.is_empty() {
         let mut tool_lines = Vec::new();
         for tool in &allowed_tools {
@@ -418,61 +386,14 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
             }
             tool_lines.push(sig);
         }
-        sections.push(format!(
-            "# Tools Available\nTools are used when external data access or state mutation is required.\n\n{}",
+        expanded_tools_str = format!(
+            "# Tools Available\nExternal tools you can call. You MUST ONLY use tools from this exact list.\n\n{}",
             tool_lines.join("\n")
-        ));
+        );
     }
-
-    // Custom Intents (Helper)
-    if let Some(custom) = &ir.custom_intents {
-        if !custom.is_empty() {
-            let mut ci_lines = Vec::new();
-            for ci in custom {
-                let mut params = Vec::new();
-                if let Some(obj) = ci.fields.as_object() {
-                    for (name, def) in obj {
-                        let field_type = def["type"].as_str().unwrap_or("any");
-                        params.push(format!("{}: {}", name, field_type));
-                    }
-                }
-                let mut sig = format!("{}({})", ci.name, params.join(", "));
-                if let Some(desc) = &ci.description {
-                    sig.push_str(" // ");
-                    sig.push_str(desc);
-                }
-                ci_lines.push(sig);
-            }
-            sections.push(format!(
-                "# Custom Intents Available\nSpecialized actions defined for this helper.\n\n{}",
-                ci_lines.join("\n")
-            ));
-        }
-    }
-
-    sections.push(
-        "# Instructions\n\
-         Your response MUST be a valid YAML block. Do not include any conversational text or explanation.\n\
-         What is YAML? It is a structured format using intents as root keys. For example:\n\
-         intent_name:\n\
-           field_name: value\n\
-         \n\
-         What is a Typed YAML field?\n\
-         A field can accept a generic string. If that string is short, write it normally.\n\
-         But if the string spans across multiple lines, you should Type it as `(multiline)` for better understanding, and use the `|` symbol.\n\
-         For example:\n\
-         thought:\n\
-           explain(multiline): |\n\
-             This is a long\n\
-             multi-line string.\n\
-         \n\
-         Never write pseudo-code like `intent(args)`. Never wrap your output in code fences or markdown.\n\
-         "
-        .to_string(),
-    );
 
     let mut options: Vec<String> = Vec::new();
-    options.push("response_text:\n  text: string".to_string());
+    options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
 
     if !allowed_tools.is_empty() {
         let tool_names: Vec<String> = allowed_tools.iter().map(|t| t.name.clone()).collect();
@@ -482,19 +403,46 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
             tool_names[0].clone()
         };
         options.push(format!(
-            "tool_call:\n  type: {}\n  args: {{ key: value }}",
-            tool_union
+            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{ /* match the requested tool's exact shape */ }}\n)\n\n{}",
+            tool_union, expanded_tools_str
         ));
     }
 
     if let Some(custom) = &ir.custom_intents {
         for ci in custom {
-            let schema_str = schema::format_schema_yaml(&ci.fields, 2, ir.types.as_ref());
-            options.push(format!("{}:\n{}", ci.name, schema_str));
+            let schema_str = schema::format_schema_function(&ci.fields, 2, ir.types.as_ref());
+            let mut ci_str = String::new();
+            if let Some(desc) = &ci.description {
+                ci_str.push_str(&format!("// {}\n", desc));
+            }
+            ci_str.push_str(&format!("{}(\n{}\n)", ci.name, schema_str));
+            options.push(ci_str);
         }
     }
 
-    sections.push(format!("# Options\n{}", options.join("\n\n")));
+    sections.push(
+        "# Instructions\n\
+         Your response MUST ONLY be valid Function Composition blocks. ABSOLUTELY NO conversational text or explanations outside of a function block.\n\
+         What is a Function Composition block? It is a structured format using intents as function calls. For example:\n\
+         intent_name(\n\
+           field_name = \"value\"\n\
+         )\n\
+         \n\
+         CRITICAL RULE: You MUST NEVER assume or hallucinate a tool, helper, workflow, or intent that is not explicitly listed in the available options. If it is not listed in the sections above, IT DOES NOT EXIST. If a user asks you to use an unknown tool/helper, you must politely decline and explain what capabilities you actually have.\n\
+         CRITICAL RULE: You are an intelligent AI. You must ALWAYS use your internal reasoning and knowledge to answer questions or converse directly with the user via `response_text` when possible. You should ONLY call specialized tools or helpers if the user explicitly requests a task that requires them.\n\
+         String values MUST be wrapped in double quotes. Multiline strings are supported natively inside quotes.\n\
+         Keys and fields are assigned using `=`. Nested objects use `{}`.\n\
+         For example, to execute an action, you MUST use a function:\n\
+         obey(\n\
+           action = \"This is my action payload.\nIt can span multiple lines.\"\n\
+         )\n\
+         \n\
+         Never wrap your output in code fences or markdown. START IMMEDIATELY with a function name.\n\
+         "
+        .to_string(),
+    );
+
+    sections.push(format!("# Available Actions (Options)\nYou MUST select and output one or more of the following function blocks to perform your turn:\n\n{}", options.join("\n\n")));
 
     sections.join("\n\n")
 }

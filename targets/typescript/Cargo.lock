@@ -217,6 +217,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "function-parser"
+version = "0.1.0"
+
+[[package]]
 name = "futures-channel"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -589,6 +593,7 @@ name = "ir-runtime"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "function-parser",
  "futures-util",
  "reqwest",
  "serde",

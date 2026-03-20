@@ -79,6 +79,37 @@ pub fn format_schema_yaml(
     lines.join("\n")
 }
 
+pub fn format_schema_function(
+    schema: &Value,
+    indent_level: usize,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> String {
+    let indent = " ".repeat(indent_level);
+    let mut lines = Vec::new();
+    if let Some(obj) = schema.as_object() {
+        for (name, def) in obj {
+            let is_optional = def["optional"].as_bool().unwrap_or(false);
+            let name_tag = if is_optional {
+                format!("{}?", name)
+            } else {
+                name.clone()
+            };
+
+            let field_type = format_type_value(def, types);
+            
+            // Format as a Function Composition field assignment
+            let mut line = format!("{}{} = /* type: {} */", indent, name_tag, field_type);
+            
+            if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
+                line.push_str(" // ");
+                line.push_str(desc);
+            }
+            lines.push(line);
+        }
+    }
+    lines.join("\n")
+}
+
 pub fn format_schema(schema: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = schema.as_object() {
         let mut fields = Vec::new();

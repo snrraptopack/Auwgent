@@ -39,6 +39,7 @@ export type RouterCustomIntents =
  */
 export type RouterApiKeys = {
     geminiApiKey: string;
+    my_groq_apiApiKey: string;  // API key for custom provider 'my-groq-api'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity

@@ -1,6 +1,6 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
-use crate::intent_parser::orchestrator::Orchestrator;
+use crate::intent_parser::function_orchestrator::FunctionOrchestrator as Orchestrator;
 use crate::runtime::drivers::ModelDriver;
 use crate::runtime::session::SessionState;
 use crate::types::*;
@@ -106,7 +106,7 @@ pub struct AuwgentEngine {
 
 impl AuwgentEngine {
     pub fn new(ir: AgentIR) -> Self {
-        let mut orchestrator = Orchestrator::new(None);
+        let mut orchestrator = Orchestrator::new();
 
         // Register standard Auwgent intents
         orchestrator.register_intent("tool_call");
@@ -595,7 +595,18 @@ impl AuwgentEngine {
                             self.current_raw_response.lock().unwrap().push_str(&text);
                         }
                         self.orchestrator.lock().unwrap().write(&text);
-                        let (_terminal, actions, hard_stop) = self.process_intents().await?;
+                        let process_res = self.process_intents().await;
+                        let (_terminal, actions, hard_stop) = match process_res {
+                            Ok(res) => res,
+                            Err(e) => {
+                                let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                                if !raw_resp.is_empty() {
+                                    let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
+                                    self.session.lock().unwrap().set_model_response(&cleaned);
+                                }
+                                return Err(e);
+                            }
+                        };
                         if actions {
                             actions_performed = true;
                         }
@@ -631,7 +642,18 @@ impl AuwgentEngine {
             // Finalize parsing
             let _final_val = self.orchestrator.lock().unwrap().end();
 
-            let (_terminal, actions, mut hard_stop) = self.process_intents().await?;
+            let process_res = self.process_intents().await;
+            let (_terminal, actions, mut hard_stop) = match process_res {
+                Ok(res) => res,
+                Err(e) => {
+                    let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                    if !raw_resp.is_empty() {
+                        let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
+                        self.session.lock().unwrap().set_model_response(&cleaned);
+                    }
+                    return Err(e);
+                }
+            };
             if actions {
                 actions_performed = true;
             }
@@ -652,7 +674,18 @@ impl AuwgentEngine {
                         orch.write(&cleaned);
                         orch.end();
                     }
-                    let (_t2, a2, h2) = self.process_intents().await?;
+                    let process_res = self.process_intents().await;
+                    let (_t2, a2, h2) = match process_res {
+                        Ok(res) => res,
+                        Err(e) => {
+                            let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                            if !raw_resp.is_empty() {
+                                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
+                                self.session.lock().unwrap().set_model_response(&cleaned);
+                            }
+                            return Err(e);
+                        }
+                    };
                     if a2 {
                         actions_performed = true;
                         hard_stop = h2;
@@ -724,23 +757,16 @@ impl AuwgentEngine {
 
         let mut parts = Vec::new();
         for (name, result) in &*results {
-            let indented_result = match serde_yaml::to_string(result) {
-                Ok(yaml_str) => {
-                    let trimmed = yaml_str.trim();
-                    let content = trimmed.strip_prefix("---\n").unwrap_or(trimmed);
-                    let indented: String = content
-                        .lines()
-                        .map(|line| format!("    {}", line))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("  result:\n{}", indented)
-                }
-                Err(_) => format!("  result: {:?}", result),
-            };
-
+            let json_str = serde_json::to_string_pretty(result).unwrap_or_else(|_| "null".to_string());
+            let indented: String = json_str
+                .lines()
+                .map(|line| format!("  {}", line))
+                .collect::<Vec<_>>()
+                .join("\n");
+                
             parts.push(format!(
-                "tool_result:\n  name: {}\n{}",
-                name, indented_result
+                "tool_result(\n  name = \"{}\"\n  result = {}\n)",
+                name, indented
             ));
         }
         parts.join("\n\n")

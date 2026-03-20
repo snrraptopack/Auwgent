@@ -16,3 +16,4 @@ auwgent-compiler/target/
 ir-runtime/target/
 targets/typescript/target/
 targets/python/target/
+function-parser/target/

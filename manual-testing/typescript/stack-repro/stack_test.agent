@@ -11,12 +11,12 @@ agent Router{
 
     // custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
     default config{
-        model: gemini("gemini-2.5-flash")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
         prompt: {
             """
                 You are a helpful assistant be polite
 
-                when a user ask's for something that can be handed to a helper hand it to the helper 
+                when a user ask's for something that can be handed to a helper hand it to the helper
                 name of the user : {{ctx.user_name}}
             """
         }
@@ -37,7 +37,7 @@ helper StoryTeller{
     description: "A professional story teller"
 
     default config{
-        model: gemini("gemini-2.5-flash")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
         prompt: "You are a professional Story teller always make sure you give out your maximum effort to crack the joke"
     }
 
@@ -49,7 +49,7 @@ helper StoryTeller{
         questions{
             description : "Use this to ask detailed question about the user's request"
             fields{
-                questions:string 
+                questions:string
             }
         }
     }

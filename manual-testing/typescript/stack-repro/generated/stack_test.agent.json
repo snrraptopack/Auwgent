@@ -4,8 +4,10 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "type": "custom",
+          "id": "my-groq-api",
+          "url": "https://api.groq.com/openai/v1/chat/completions",
+          "modelName": "llama-3.3-70b-versatile"
         },
         "embedding": {
           "type": "gemini",
@@ -19,7 +21,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\n                You are a helpful assistant be polite\n\n                when a user ask's for something that can be handed to a helper hand it to the helper \n                name of the user : "
+                  "value": "\n                You are a helpful assistant be polite\n\n                when a user ask's for something that can be handed to a helper hand it to the helper\n                name of the user : "
                 },
                 {
                   "type": "memberAccess",
@@ -73,8 +75,10 @@
         {
           "defaultConfig": {
             "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash"
+              "type": "custom",
+              "id": "my-groq-api",
+              "url": "https://api.groq.com/openai/v1/chat/completions",
+              "modelName": "llama-3.3-70b-versatile"
             },
             "prompt": {
               "value": "You are a professional Story teller always make sure you give out your maximum effort to crack the joke",

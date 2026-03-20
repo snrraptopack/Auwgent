@@ -1,6 +1,6 @@
 import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated/stack_test.agent.types";
 
-import { GEMINI_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
+import { GEMINI_API_KEY, GROQ_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
 import { startRepl } from "../loop"
 
 let one: AuwgentMiddleware = {
@@ -17,6 +17,7 @@ let one: AuwgentMiddleware = {
 
 const config: AuwgentConfig = {
     apiKeys: {
+        my_groq_apiApiKey: GROQ_API_KEY,
         geminiApiKey: GEMINI_API_KEY,
     },
     context: {
@@ -31,9 +32,18 @@ console.log(agent.generatePrompt())
 
 
 agent.onIntent((name, value) => {
-    console.log("***********************************\n")
-    console.log(`line 35 Intent: ${name}`, (value as any)?.text ?? value)
-    console.log("***********************************\n")
+
+  if (name === "response_text") {
+    console.log("response_text",value.text ?? value)
+  }
+
+  if (name === "helper_call") {
+    console.log("helper_call",value)
+  }
+
+  if (name === "thought") {
+    console.log("thought", value.explain ?? value)
+  }
 
 })
 
