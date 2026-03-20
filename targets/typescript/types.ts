@@ -39,6 +39,7 @@ export interface IRHelperDef {
     name: string;
     modelConfig?: IRModelConfigEntry[] | null;
     customIntents?: readonly IRCustomIntentDef[];
+    output?: any;
 }
 
 /**
@@ -56,7 +57,7 @@ export interface AgentIRShape {
     tools: readonly IRToolDef[];
     workflows?: readonly IRWorkflowDef[];
     helpers?: readonly IRHelperDef[];
-    output?: Record<string, unknown> | null;
+    output?: any;
     modelConfig?: IRModelConfigEntry[];
     customIntents?: readonly IRCustomIntentDef[];
 }
@@ -68,6 +69,18 @@ export type ExtractHelperNames<IR extends AgentIRShape> =
     IR['helpers'] extends readonly any[]
     ? IR['helpers'][number]['name']
     : never;
+
+/** 
+ * Collects all possible output shapes from the root agent AND all its helpers.
+ * Used to ensure `response_schema` autocompletion works for everything.
+ */
+export type CollectAllOutputs<IR extends AgentIRShape> =
+    | (IR['output'] extends Record<string, any> ? IR['output'] : never)
+    | (IR['helpers'] extends readonly any[]
+        ? (IR['helpers'][number] extends { output: infer O }
+            ? (O extends Record<string, any> ? (O['type'] extends Record<string, any> ? O['type'] : O) : never)
+            : never)
+        : never);
 
 export type ToolRegistry<IR extends AgentIRShape> = {
     [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
@@ -212,9 +225,8 @@ export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
     | ToolIntents<Tools>
     | WorkflowIntents<IR>
     | HelperIntents<IR>
-    | ([IR['output']] extends [null | undefined]
-        ? ResponseTextIntent
-        : ([Output] extends [never] ? ResponseTextIntent : ResponseSchemaIntent<Output>))
+    | (IsAny<Output> extends true ? (ResponseTextIntent | ResponseSchemaIntent) :
+        [Output] extends [never] ? ResponseTextIntent : (ResponseTextIntent | ResponseSchemaIntent<Output>))
     | ErrorIntent
 );
 
@@ -284,6 +296,7 @@ export type IntentHandler<
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]: [
             name: K,
             value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+            agentName?: string,
         ];
     }[AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]
 ) => IntentControl | Promise<IntentControl>;
@@ -295,7 +308,8 @@ export type IntentHandlers<
     Tools = any
 > = {
     [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
-        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']
+        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+        agentName?: string
     ) => IntentControl | Promise<IntentControl> | void | Promise<void>;
 };
 

@@ -18,12 +18,16 @@ export type StoryTellerOutput = {
 
 }
 
+export type AnalyzerOutput = {
+    type: { sentiment_type: "Positive" | "Negative" | "Neutral"; confidence: number; keywords: string[] };
+}
+
 export type RouterBaseOutput = {
 
 }
 
 /** Union of possible output types (includes transfer destinations) */
-export type RouterOutput = RouterBaseOutput | StoryTellerOutput;
+export type RouterOutput = RouterBaseOutput | StoryTellerOutput | AnalyzerOutput;
 
 export type RouterContext = {
     user_name: string;

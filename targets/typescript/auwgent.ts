@@ -28,7 +28,8 @@ import type {
     PartialIntentHandler,
     PartialIntentHandlers,
     SessionState,
-    ExtractHelperNames
+    ExtractHelperNames,
+    CollectAllOutputs
 } from './types.js';
 
 import type { Middleware, MiddlewareContext } from './middleware.js';
@@ -51,7 +52,7 @@ export interface AuwgentConfig<IR extends AgentIRShape> {
 export class TypedAuwgent<
     IR extends AgentIRShape,
     CustomIntents extends { name: string; value: any } = never,
-    Output = IR['output'] extends Record<string, any> ? IR['output'] : never,
+    Output = CollectAllOutputs<IR>,
     Tools = ToolRegistry<IR>
 > {
     private native: InstanceType<typeof AuwgentNative>;
@@ -247,8 +248,10 @@ export class TypedAuwgent<
 
         // Always register an onIntent callback (even if user didn't provide one)
         // so middleware can still intercept intents.
-        this.native.onIntent(async (name: string, value: any) => {
+        this.native.onIntent(async (name: string, value: any, agentName: string) => {
             const intentCtx = this.getBuildContext();
+            // Sync activeAgent from Rust-provided name
+            intentCtx.activeAgent = agentName as any;
 
             // Extract _raw from Rust-injected field and move to ctx.rawBlock
             // This keeps intent values clean and typed for the user,
@@ -279,7 +282,7 @@ export class TypedAuwgent<
 
             // Forward to user handler
             if (userHandler) {
-                const result = await (userHandler as any)(name, value);
+                const result = await (userHandler as any)(name, value, agentName);
 
                 // Unified Error Hook Bridge:
                 // If this turn was a tool error, trigger the onError lifecycle hook.
@@ -309,8 +312,8 @@ export class TypedAuwgent<
         // Register partial handler if provided
         if (this.storedPartialHandler) {
             const partialHandler = this.storedPartialHandler;
-            this.native.onIntentPartial((name: string, value: any) => {
-                (partialHandler as any)(name, value);
+            this.native.onIntentPartial((name: string, value: any, agentName: string) => {
+                (partialHandler as any)(name, value, agentName);
             });
         }
 

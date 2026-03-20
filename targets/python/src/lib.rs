@@ -161,7 +161,7 @@ impl AuwgentNative {
 
     pub fn on_intent(&self, callback: PyObject) -> PyResult<()> {
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
-            std::sync::Arc::new(move |name: String, value: Value| {
+            std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 let callback = callback.clone();
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
 
@@ -169,7 +169,8 @@ impl AuwgentNative {
                     let py_result = Python::with_gil(|py| {
                         let name_py = pyo3::types::PyString::new(py, &name);
                         let val_py = pyo3::types::PyString::new(py, &value_json);
-                        let res = callback.call1(py, (name_py, val_py))?;
+                        let agent_py = pyo3::types::PyString::new(py, &agent);
+                        let res = callback.call1(py, (name_py, val_py, agent_py))?;
                         pyo3_asyncio::tokio::into_future(res.as_ref(py))
                     });
 

@@ -75,7 +75,7 @@ export declare class Auwgent {
   /** Hook for TypeScript to save a helper session after sub_engine.run() */
   onSubEngineComplete(callback: (helperName: string, completedSessionJson: string) => Promise<void>): void
   /** Hook for TypeScript to receive the prompt before LLM generation */
-  onLlmStart(callback: (prompt: string, systemPrompt: string) => Promise<string | undefined>): void
+  onLlmStart(callback: (prompt: string, systemPrompt: string, contextJson: string) => Promise<{ prompt?: string, stack?: string[] } | undefined>): void
   /** Hook for TypeScript to receive the unparsed response after LLM generation */
   onLlmEnd(callback: (responseString: string, systemPrompt: string) => Promise<void>): void
   clearListeners(): void

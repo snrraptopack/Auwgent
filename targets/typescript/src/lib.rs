@@ -115,23 +115,24 @@ impl Auwgent {
     ///   console.log(`[${name}]`, value);
     /// });
     /// ```
-    #[napi(ts_args_type = "callback: (name: string, value: any) => any")]
+    #[napi(ts_args_type = "callback: (name: string, value: any, agentName: string) => any")]
     pub fn on_intent(&self, callback: JsFunction) -> Result<()> {
-        // Create a TSFN that receives (name, value) as a tuple
-        let tsfn: ThreadsafeFunction<(String, Value), ErrorStrategy::Fatal> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value)>| {
+        // Create a TSFN that receives (name, value, agent) as a triple
+        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value, String)>| {
                 let name = ctx.env.create_string(&ctx.value.0)?;
                 let value = ctx.env.to_js_value(&ctx.value.1)?;
-                Ok(vec![name.into_unknown(), value])
+                let agent = ctx.env.create_string(&ctx.value.2)?;
+                Ok(vec![name.into_unknown(), value, agent.into_unknown()])
             })?;
 
         // Wrap into an AsyncIntentCallback
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
-            std::sync::Arc::new(move |name: String, value: Value| {
+            std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
                     // Call the JS callback and check return value
-                    let result = tsfn.call_async::<Promise<Value>>((name, value)).await;
+                    let result = tsfn.call_async::<Promise<Value>>((name, value, agent)).await;
                     match result {
                         Ok(promise) => match promise.await {
                             Ok(ret) => parse_intent_control(&ret),
@@ -160,22 +161,23 @@ impl Auwgent {
     ///   }
     /// });
     /// ```
-    #[napi(ts_args_type = "callback: (name: string, value: any) => void")]
+    #[napi(ts_args_type = "callback: (name: string, value: any, agentName: string) => void")]
     pub fn on_intent_partial(&self, callback: JsFunction) -> Result<()> {
         use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 
-        let tsfn: ThreadsafeFunction<(String, Value), ErrorStrategy::Fatal> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value)>| {
+        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value, String)>| {
                 let name = ctx.env.create_string(&ctx.value.0)?;
                 let value = ctx.env.to_js_value(&ctx.value.1)?;
-                Ok(vec![name.into_unknown(), value])
+                let agent = ctx.env.create_string(&ctx.value.2)?;
+                Ok(vec![name.into_unknown(), value, agent.into_unknown()])
             })?;
 
         // Wrap into a sync callback (partials are fire-and-forget, no await)
-        let handler: std::sync::Arc<dyn Fn(String, Value) + Send + Sync> =
-            std::sync::Arc::new(move |name: String, value: Value| {
+        let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
+            std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 // Non-blocking call — don't await, just fire
-                tsfn.call((name, value), ThreadsafeFunctionCallMode::NonBlocking);
+                tsfn.call((name, value, agent), ThreadsafeFunctionCallMode::NonBlocking);
             });
 
         self.bridge.engine.on_intent_partial(handler);

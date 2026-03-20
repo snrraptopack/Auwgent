@@ -8,6 +8,7 @@ const stack = ["Router", "Analyzer"]
 let one: AuwgentMiddleware = {
     name: "one",
   onLLMStart: (prompt, ctx) => {
+    ctx.stack = stack
       console.log(ctx.stack)
     },
 
@@ -30,18 +31,26 @@ let agent = auwgent(config)
 
 
 
-agent.onIntent((name, value) => {
+agent.onIntent((intent, value,agent) => {
 
-  if (name === "response_text") {
+  if (intent === "response_text") {
     console.log("response_text",value.text ?? value)
   }
 
-  if (name === "helper_call") {
+  if (intent === "helper_call") {
     console.log("helper_call",value)
   }
 
-  if (name === "thought") {
+  if (intent === "thought") {
     console.log("thought", value.explain ?? value)
+  }
+
+  if (intent === "error") {
+    console.log("an error occured", value.message)
+  }
+
+  if (intent === "response_schema") {
+
   }
 
 })

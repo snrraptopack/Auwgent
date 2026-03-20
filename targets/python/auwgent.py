@@ -7,6 +7,7 @@ object-style intent handlers, and proper session lifecycle management.
 """
 
 import json
+import inspect
 import sys
 import typing
 from typing import (
@@ -280,9 +281,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         # ── 1. Intent Interceptor ──
         user_handler = self._stored_intent_handler
 
-        async def wrap_intent(name: str, value_json_str: str) -> Optional[str]:
+        async def wrap_intent(name: str, value_json_str: str, agent_name: str) -> Optional[str]:
             val_dict: Dict[str, Any] = json.loads(value_json_str)
             ctx = self._build_context()
+            ctx["activeAgent"] = agent_name
 
             # Extract _raw from Rust-injected field
             raw_block = val_dict.get("_raw")
@@ -307,7 +309,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
             # Forward to user handler
             if user_handler:
-                res = await user_handler(name, val_dict)
+                sig = inspect.signature(user_handler)
+                if len(sig.parameters) >= 3:
+                    res = await user_handler(name, val_dict, agent_name)
+                else:
+                    res = await user_handler(name, val_dict)
 
                 # Unified Error Hook Bridge
                 if name == "tool_error" and isinstance(val_dict, dict):
@@ -337,9 +343,13 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
         # ── 2. Partial Intent Interceptor ──
         partial_handler = self._stored_partial_handler
-        def wrap_partial(name: str, value_json_str: str) -> None:
+        def wrap_partial(name: str, value_json_str: str, agent_name: str) -> None:
             if partial_handler is not None:
-                partial_handler(name, json.loads(value_json_str))
+                sig = inspect.signature(partial_handler)
+                if len(sig.parameters) >= 3:
+                    partial_handler(name, json.loads(value_json_str), agent_name)
+                else:
+                    partial_handler(name, json.loads(value_json_str))
         self._native.on_intent_partial(wrap_partial)
 
         # ── 3. SubEngine Hooks ──

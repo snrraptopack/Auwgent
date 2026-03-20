@@ -173,6 +173,7 @@
   ],
   "tests": [],
   "helperHandoff": {
+    "Analyzer": "thenContinue",
     "StoryTeller": "user"
   },
   "customIntents": [

@@ -32,11 +32,14 @@ pub enum IntentControl {
 ///   - `None` → engine proceeds normally (auto-execute)
 ///   - `Some(IntentControl::Skip)` → skip this intent
 ///   - `Some(IntentControl::Override { result })` → use this result
-pub type IntentCallback = Arc<dyn Fn(String, Value) -> Option<IntentControl> + Send + Sync>;
+/// Intent callback for standard synchronous handlers.
+/// Receives (intent_name, intent_value, agent_name).
+pub type IntentCallback = Arc<dyn Fn(String, Value, String) -> Option<IntentControl> + Send + Sync>;
 
 /// Async intent callback for handlers that need to await.
+/// Receives (intent_name, intent_value, agent_name).
 pub type AsyncIntentCallback = Arc<
-    dyn Fn(String, Value) -> futures_util::future::BoxFuture<'static, Option<IntentControl>>
+    dyn Fn(String, Value, String) -> futures_util::future::BoxFuture<'static, Option<IntentControl>>
         + Send
         + Sync,
 >;
@@ -89,7 +92,7 @@ pub struct AuwgentEngine {
     current_raw_response: Arc<Mutex<String>>,
     /// User-facing intent callback
     intent_handler: Arc<Mutex<Option<AsyncIntentCallback>>>,
-    partial_intent_handler: Arc<Mutex<Option<Arc<dyn Fn(String, Value) + Send + Sync>>>>,
+    partial_intent_handler: Arc<Mutex<Option<Arc<dyn Fn(String, Value, String) + Send + Sync>>>>,
     session_preload_handler: Arc<Mutex<Option<AsyncSessionPreloadCallback>>>,
     session_save_handler: Arc<Mutex<Option<SessionSaveCallback>>>,
     llm_start_handler: Arc<Mutex<Option<AsyncLlmStartCallback>>>,
@@ -213,8 +216,9 @@ impl AuwgentEngine {
     /// Register a sync intent callback (convenience wrapper).
     pub fn on_intent_sync(&self, handler: IntentCallback) {
         let handler = handler.clone();
-        *self.intent_handler.lock().unwrap() = Some(Arc::new(move |name, value| {
-            let result = handler(name, value);
+        let agent_name = self.ir.name.clone();
+        *self.intent_handler.lock().unwrap() = Some(Arc::new(move |name, value, agent| {
+            let result = handler(name, value, agent);
             Box::pin(async move { result })
         }));
     }
@@ -227,11 +231,12 @@ impl AuwgentEngine {
     /// - Showing tool call args as they're being typed by the LLM
     /// - Progress indicators for long structured outputs
     ///
-    /// Partial intents are observational only (no control/skip/override).
-    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value) + Send + Sync>) {
+    /// Register a partial intent callback.
+    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
         // Wire into the orchestrator's partial handler
         let user_handler = handler.clone();
         let emitted_partials = Arc::clone(&self.emitted_partial_intents);
+        let agent_name = self.ir.name.clone();
         
         self.orchestrator
             .lock()
@@ -245,8 +250,8 @@ impl AuwgentEngine {
                     partials.insert(partial_key);
                 }
                 
-                // Call user handler
-                user_handler(name, value);
+                // Call user handler with current agent name
+                user_handler(name, value, agent_name.clone());
             }));
         *self.partial_intent_handler.lock().unwrap() = Some(handler);
     }
@@ -798,7 +803,7 @@ impl AuwgentEngine {
     async fn fire_intent(&self, name: String, value: Value) -> Option<IntentControl> {
         let handler = self.intent_handler.lock().unwrap().clone();
         if let Some(h) = handler {
-            h(name, value).await
+            h(name, value, self.ir.name.clone()).await
         } else {
             None
         }
