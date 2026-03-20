@@ -11,10 +11,11 @@ agent Router{
 
     // custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
     default config{
-        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "qwen/qwen3-32b")
         prompt: {
             """
                 You are a helpful assistant be polite
+                be free be conversational
 
                 when a user ask's for something that can be handed to a helper hand it to the helper
                 name of the user : {{ctx.user_name}}

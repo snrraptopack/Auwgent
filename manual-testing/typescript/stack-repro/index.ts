@@ -6,13 +6,9 @@ import { startRepl } from "../loop"
 let one: AuwgentMiddleware = {
     name: "one",
     onLLMStart: (prompt, ctx) => {
-        //console.log(ctx.systemPrompt)
+        console.log(ctx.systemPrompt)
     },
 
-    onError: (error, ctx) => {
-        console.error(error)
-        return true
-    }
 }
 
 const config: AuwgentConfig = {
@@ -28,7 +24,7 @@ const config: AuwgentConfig = {
 
 let agent = auwgent(config)
 
-console.log(agent.generatePrompt())
+//console.log(agent.generatePrompt())
 
 
 agent.onIntent((name, value) => {

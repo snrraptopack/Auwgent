@@ -236,7 +236,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             tool_names[0].clone()
         };
         options.push(format!(
-            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{ /* match the requested tool's exact shape */ }}\n)\n\n{}",
+            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
             tool_union, expanded_tools_str
         ));
     }
@@ -250,7 +250,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             wf_names[0].clone()
         };
         options.push(format!(
-            "// Execute a predefined workflow. See exact arguments below.\nworkflow_call(\n  type = \"{}\"\n  args = {{ /* match the requested workflow's exact shape */ }}\n)\n\n{}",
+            "// Execute a predefined workflow. See exact arguments below.\nworkflow_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
             wf_union, expanded_wf_str
         ));
     }
@@ -264,7 +264,7 @@ pub fn generate_intents(ir: &AgentIR) -> String {
             helper_names[0].clone()
         };
         options.push(format!(
-            "// Delegate a task to a specialized helper. See exact arguments below.\nhelper_call(\n  type = \"{}\"\n  args = {{ /* match the requested helper's exact shape */ }}\n)\n\n{}",
+            "// Delegate a task to a specialized helper. See exact arguments below.\nhelper_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
             helper_union, expanded_helpers_str
         ));
     }
