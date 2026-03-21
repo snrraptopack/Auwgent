@@ -28,7 +28,7 @@ use tower_lsp::{Client, LanguageServer};
 
 /// Debounce delay for `did_change` analysis — prevents flickering from
 /// transient parse errors while the user is actively typing.
-const DEBOUNCE_MS: u64 = 650;
+const DEBOUNCE_MS: u64 = 300;
 
 #[derive(Clone)]
 struct DocumentState {
@@ -304,7 +304,11 @@ impl LanguageServer for Backend {
             .write()
             .await
             .insert(uri.clone(), DocumentState { text, version });
-        self.inner.analyze_and_publish(&uri, None).await;
+
+        let inner = Arc::clone(&self.inner);
+        tokio::spawn(async move {
+            inner.analyze_and_publish(&uri, None).await;
+        });
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {

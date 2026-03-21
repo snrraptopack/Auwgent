@@ -16,8 +16,8 @@ agent Main{
 
     workflow analyze():number {
         description: "Analyze the input and return a number"
-        let result1 = hlp.A({ input: "" })
-        let result2 = hlp.B({ input: "" })
+        let result1 = hlp.A("")
+        let result2 = hlp.B("anything")
 
         return result1 + result2
     }
