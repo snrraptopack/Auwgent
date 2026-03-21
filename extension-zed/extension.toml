@@ -1,0 +1,15 @@
+schema_version = 1
+id = "auwgent"
+name = "Auwgent"
+version = "0.1.0"
+description = "Auwgent DSL support for Zed"
+authors = ["Theophilus"]
+repository = "https://github.com/snrraptopack/Auwgent"
+
+[grammars.auwgent]
+repository = "file://c:/Users/babyface/Desktop/auwgent/Auwgent/extension-zed"
+rev = "HEAD"
+
+[language_servers.auwgent-lsp]
+name = "Auwgent LSP"
+languages = ["Auwgent"]

@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-auwgent",
+  "version": "0.1.0",
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT"
+  },
+  "grammar": "grammar.js",
+  "path": ".",
+  "dependencies": [],
+  "devDependencies": [],
+  "bindings": {
+    "c": true,
+    "rust": true,
+    "node": true,
+    "python": true,
+    "go": true,
+    "swift": true
+  }
+}

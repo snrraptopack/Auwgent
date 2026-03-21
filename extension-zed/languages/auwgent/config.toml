@@ -1,0 +1,6 @@
+name = "Auwgent"
+grammar = "auwgent"
+line_comments = ["//"]
+
+[matcher]
+path_suffixes = ["agent"]
