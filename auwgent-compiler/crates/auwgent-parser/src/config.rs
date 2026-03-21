@@ -478,13 +478,19 @@ pub(crate) fn intent_config_parser(
 pub(crate) fn agent_config_parser(
 ) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone {
     let input_config = tok(TokenKind::Input)
-        .ignore_then(
+        .ignore_then(choice((
+            // input: Text
+            tok(TokenKind::Colon)
+                .ignore_then(type_expr_parser())
+                .map(InputShape::Direct),
+            // input { ... }
             type_config_decl_block_parser()
-                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
-        )
-        .map_with_span(|props, span| {
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+                .map(InputShape::Properties),
+        )))
+        .map_with_span(|shape, span| {
             AgentConfig::Input(InputConfig {
-                properties: props,
+                shape,
                 span: s(span),
             })
         });
@@ -620,7 +626,7 @@ pub(crate) fn agent_config_parser(
         [(TokenKind::LParen, TokenKind::RParen)],
         |span| {
             AgentConfig::Input(InputConfig {
-                properties: vec![],
+                shape: InputShape::Properties(vec![]),
                 span: s(span),
             })
         },

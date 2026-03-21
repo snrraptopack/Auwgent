@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MESSAGE TYPES — used by drivers and session history
@@ -96,6 +98,9 @@ pub struct SessionState {
     pub turns: Vec<Turn>,
     /// The current execution stack (agent names)
     pub stack: Vec<String>,
+    /// The initial input that started this session (for structured scope)
+    pub initial_input: Option<Value>,
+
 }
 
 impl SessionState {

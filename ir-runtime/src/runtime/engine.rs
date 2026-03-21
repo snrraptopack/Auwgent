@@ -61,9 +61,7 @@ pub type SessionSaveCallback =
 /// Receives (input_text, system_prompt, context_json).
 /// Returns a JSON object containing optional "prompt" (String) and "stack" (Array of Strings).
 pub type AsyncLlmStartCallback = Arc<
-    dyn Fn(String, String, String) -> futures_util::future::BoxFuture<'static, Value>
-        + Send
-        + Sync,
+    dyn Fn(String, String, String) -> futures_util::future::BoxFuture<'static, Value> + Send + Sync,
 >;
 
 /// Async callback that fires right after the LLM completes its generation stream.
@@ -135,21 +133,19 @@ impl AuwgentEngine {
                 // Check if this exact intent (by name and value) is already pending
                 // This prevents duplicates when the same intent is emitted during
                 // streaming and then again during finalization
-                let already_pending = pending.iter().any(|(n, v)| {
-                    n == &name && v == &value
-                });
-                
+                let already_pending = pending.iter().any(|(n, v)| n == &name && v == &value);
+
                 if !already_pending {
                     // Also check if this intent was emitted as a partial
                     // If so, skip it to avoid duplicate emissions
                     let value_hash = serde_json::to_string(&value).unwrap_or_default();
                     let partial_key = (name.clone(), value_hash.clone());
-                    
+
                     let was_partial = partials_for_handler
                         .lock()
                         .map(|partials| partials.contains(&partial_key))
                         .unwrap_or(false);
-                    
+
                     if !was_partial {
                         pending.push((name, value));
                     }
@@ -198,7 +194,10 @@ impl AuwgentEngine {
     }
 
     pub fn register_driver(&self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
-        self.drivers.lock().unwrap().insert(provider_type.to_string(), driver);
+        self.drivers
+            .lock()
+            .unwrap()
+            .insert(provider_type.to_string(), driver);
     }
 
     pub fn set_context(&self, context: Value) {
@@ -206,7 +205,10 @@ impl AuwgentEngine {
     }
 
     pub fn register_tool(&self, name: &str, implementation: ToolImplementation) {
-        self.tools.lock().unwrap().insert(name.to_string(), implementation);
+        self.tools
+            .lock()
+            .unwrap()
+            .insert(name.to_string(), implementation);
     }
 
     pub fn on_intent(&self, handler: AsyncIntentCallback) {
@@ -236,7 +238,7 @@ impl AuwgentEngine {
         let user_handler = handler.clone();
         let emitted_partials = Arc::clone(&self.emitted_partial_intents);
         let agent_name = self.ir.name.clone();
-        
+
         self.orchestrator
             .lock()
             .unwrap()
@@ -244,11 +246,11 @@ impl AuwgentEngine {
                 // Track this partial emission to prevent duplicate complete emission
                 let value_hash = serde_json::to_string(&value).unwrap_or_default();
                 let partial_key = (name.clone(), value_hash);
-                
+
                 if let Ok(mut partials) = emitted_partials.lock() {
                     partials.insert(partial_key);
                 }
-                
+
                 // Call user handler with current agent name
                 user_handler(name, value, agent_name.clone());
             }));
@@ -274,12 +276,17 @@ impl AuwgentEngine {
 
     /// Export the session state as JSON for the host to persist.
     pub fn export_session(&self) -> AuwgentResult<String> {
-        self.session.lock().unwrap().export().map_err(AuwgentError::Serialization)
+        self.session
+            .lock()
+            .unwrap()
+            .export()
+            .map_err(AuwgentError::Serialization)
     }
 
     /// Import a session state from JSON, restoring conversation history.
     pub fn import_session(&self, json: &str) -> AuwgentResult<()> {
-        *self.session.lock().unwrap() = SessionState::import(json).map_err(AuwgentError::Serialization)?;
+        *self.session.lock().unwrap() =
+            SessionState::import(json).map_err(AuwgentError::Serialization)?;
         Ok(())
     }
 
@@ -324,12 +331,13 @@ impl AuwgentEngine {
             .as_ref()
             .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
-        let embedding_provider = default_config
-            .embedding
-            .as_ref()
-            .ok_or(AuwgentError::MissingConfig(
-                "No embedding model configured".into(),
-            ))?;
+        let embedding_provider =
+            default_config
+                .embedding
+                .as_ref()
+                .ok_or(AuwgentError::MissingConfig(
+                    "No embedding model configured".into(),
+                ))?;
 
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
@@ -337,7 +345,7 @@ impl AuwgentEngine {
         if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
         }
-        
+
         let provider_info = evaluator.evaluate_provider(embedding_provider, &mut scope)?;
 
         let provider_type = provider_info["provider"].as_str().unwrap_or("gemini");
@@ -347,9 +355,9 @@ impl AuwgentEngine {
             provider_type
         };
 
-        let model_name = provider_info["modelName"]
-            .as_str()
-            .ok_or_else(|| AuwgentError::MissingConfig("modelName is required for embedding".into()))?;
+        let model_name = provider_info["modelName"].as_str().ok_or_else(|| {
+            AuwgentError::MissingConfig("modelName is required for embedding".into())
+        })?;
 
         let config_params = provider_info.get("config").cloned();
 
@@ -380,7 +388,7 @@ impl AuwgentEngine {
         // ── Stack-Aware Resumption ─────────────────────────────────────────
         {
             let mut session = self.session.lock().unwrap();
-            
+
             // 1. Initialize session stack if empty
             if session.stack.is_empty() {
                 session.stack = vec![self.ir.name.clone()];
@@ -401,6 +409,20 @@ impl AuwgentEngine {
             }
         }
 
+        // let initial_input_val = {
+        //     let mut session = self.session.lock().unwrap();
+        //     if session.turns.is_empty() && session.initial_input.is_none() {
+        //         session.initial_input = input.clone();
+        //     }
+        //     session.initial_input.clone()
+        // };
+
+        let mut scope = HashMap::new();
+        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
+            scope.insert("context".to_string(), ctx.clone());
+            scope.insert("ctx".to_string(), ctx.clone());
+        }
+
         let evaluator = Evaluator::new(&self.ir);
 
         // 1. Evaluate Model Info
@@ -414,10 +436,6 @@ impl AuwgentEngine {
             .as_ref()
             .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
-        let mut scope = HashMap::new();
-        if let Some(val) = input.as_ref() {
-            scope.insert("input".to_string(), val.clone());
-        }
         if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
         }
@@ -439,7 +457,10 @@ impl AuwgentEngine {
 
         // 2. Generate system prompt and set it on the session
         let system_prompt = self.generate_prompt(None)?;
-        self.session.lock().unwrap().set_system_prompt(&system_prompt);
+        self.session
+            .lock()
+            .unwrap()
+            .set_system_prompt(&system_prompt);
 
         // 3. Build the initial user input
         let initial_user_input = match input.as_ref() {
@@ -520,10 +541,15 @@ impl AuwgentEngine {
                 // Inject synthetic helper_call — no LLM needed
                 let synthetic_intent = serde_json::json!({
                     "type": next_helper,
-                    "args": {}
+                    "args": {
+                        "user_text": input.as_ref().and_then(|v| v.as_str()).unwrap_or("")
+                    }
                 });
 
-                self.pending_intents.lock().unwrap().push(("helper_call".to_string(), synthetic_intent));
+                self.pending_intents
+                    .lock()
+                    .unwrap()
+                    .push(("helper_call".to_string(), synthetic_intent));
 
                 // Process the synthetic intent
                 let (_terminal, actions, hard_stop) = self.process_intents().await?;
@@ -532,8 +558,7 @@ impl AuwgentEngine {
                     // Record the teleportation turn in the parent session if it finished here
                     let raw_resp = self.current_raw_response.lock().unwrap().clone();
                     if !raw_resp.is_empty() {
-                        let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
-                        self.session.lock().unwrap().set_model_response(cleaned);
+                        self.session.lock().unwrap().set_model_response(&raw_resp);
                     }
                     break;
                 }
@@ -549,12 +574,26 @@ impl AuwgentEngine {
             if loop_count == 1 {
                 let start_handler = self.llm_start_handler.lock().unwrap().clone();
                 if let Some(h) = start_handler {
-                    let sys_prompt = self.session.lock().unwrap().system_prompt.clone().unwrap_or_default();
-                    let input_text = self.session.lock().unwrap().turns.last().map(|t| t.input.clone()).unwrap_or_default();
-                    
+                    let sys_prompt = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .system_prompt
+                        .clone()
+                        .unwrap_or_default();
+                    let input_text = self
+                        .session
+                        .lock()
+                        .unwrap()
+                        .turns
+                        .last()
+                        .map(|t| t.input.clone())
+                        .unwrap_or_default();
+
                     let context_json = {
                         let ctx_lock = self.context.lock().unwrap();
-                        serde_json::to_string(ctx_lock.as_ref().unwrap_or(&Value::Null)).unwrap_or_default()
+                        serde_json::to_string(ctx_lock.as_ref().unwrap_or(&Value::Null))
+                            .unwrap_or_default()
                     };
 
                     let result = h(input_text, sys_prompt, context_json).await;
@@ -564,14 +603,18 @@ impl AuwgentEngine {
                     }
 
                     if let Some(new_stack) = result.get("stack").and_then(|v| v.as_array()) {
-                        let stack_vec: Vec<String> = new_stack.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect();
+                        let stack_vec: Vec<String> = new_stack
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
                         if !stack_vec.is_empty() {
                             let mut session = self.session.lock().unwrap();
                             session.stack = stack_vec;
-                            
+
                             // Re-evaluate teleportation!
                             if session.stack.len() > 1 {
-                                *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
+                                *self.fast_forward_stack.lock().unwrap() =
+                                    Some(session.stack[1..].to_vec());
                                 drop(session); // Important: release lock before continuing
                                 continue; // Restart loop to trigger teleportation check at line 489
                             }
@@ -603,9 +646,12 @@ impl AuwgentEngine {
                     // Critical failure during the request phase (e.g. network error, invalid API key)
                     self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
                         .await;
-                    
+
                     // Ensure the session is not left with a hanging turn
-                    self.session.lock().unwrap().set_model_response(format!("(request error: {})", e));
+                    self.session
+                        .lock()
+                        .unwrap()
+                        .set_model_response(format!("(request error: {})", e));
 
                     return Err(AuwgentError::Driver(e));
                 }
@@ -626,8 +672,7 @@ impl AuwgentEngine {
                             Err(e) => {
                                 let raw_resp = self.current_raw_response.lock().unwrap().clone();
                                 if !raw_resp.is_empty() {
-                                    let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
-                                    self.session.lock().unwrap().set_model_response(&cleaned);
+                                    self.session.lock().unwrap().set_model_response(&raw_resp);
                                 }
                                 return Err(e);
                             }
@@ -638,8 +683,7 @@ impl AuwgentEngine {
                         if hard_stop {
                             let raw_resp = self.current_raw_response.lock().unwrap().clone();
                             if !raw_resp.is_empty() {
-                                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
-                                self.session.lock().unwrap().set_model_response(cleaned);
+                                self.session.lock().unwrap().set_model_response(&raw_resp);
                             }
                             break;
                         }
@@ -648,10 +692,13 @@ impl AuwgentEngine {
                         // Fire error as intent if handler exists
                         self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
                             .await;
-                        
+
                         // Ensure we don't leave a hanging turn with no response in the session
                         // if we are about to return an error.
-                        self.session.lock().unwrap().set_model_response(format!("(error: {})", e));
+                        self.session
+                            .lock()
+                            .unwrap()
+                            .set_model_response(format!("(error: {})", e));
 
                         return Err(AuwgentError::StreamError(e));
                     }
@@ -668,13 +715,12 @@ impl AuwgentEngine {
             let _final_val = self.orchestrator.lock().unwrap().end();
 
             let process_res = self.process_intents().await;
-            let (_terminal, actions, mut hard_stop) = match process_res {
+            let (_terminal, actions, hard_stop) = match process_res {
                 Ok(res) => res,
                 Err(e) => {
                     let raw_resp = self.current_raw_response.lock().unwrap().clone();
                     if !raw_resp.is_empty() {
-                        let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
-                        self.session.lock().unwrap().set_model_response(&cleaned);
+                        self.session.lock().unwrap().set_model_response(&raw_resp);
                     }
                     return Err(e);
                 }
@@ -683,64 +729,25 @@ impl AuwgentEngine {
                 actions_performed = true;
             }
 
-            // Fallback: If no intents were detected in the whole turn, try a deep extraction.
-            let has_terminal = *self.terminal_response_emitted.lock().unwrap();
-            if !actions_performed && !has_terminal {
-                let (needs_fallback, cleaned) = {
-                    let raw = self.current_raw_response.lock().unwrap();
-                    let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw);
-                    (!cleaned.is_empty() && cleaned != *raw, cleaned)
-                };
-
-                if needs_fallback {
-                    {
-                        let mut orch = self.orchestrator.lock().unwrap();
-                        orch.reset();
-                        orch.write(&cleaned);
-                        orch.end();
-                    }
-                    let process_res = self.process_intents().await;
-                    let (_t2, a2, h2) = match process_res {
-                        Ok(res) => res,
-                        Err(e) => {
-                            let raw_resp = self.current_raw_response.lock().unwrap().clone();
-                            if !raw_resp.is_empty() {
-                                let cleaned = crate::intent_parser::orchestrator::extract_yaml(&raw_resp);
-                                self.session.lock().unwrap().set_model_response(&cleaned);
-                            }
-                            return Err(e);
-                        }
-                    };
-                    if a2 {
-                        actions_performed = true;
-                        hard_stop = h2;
-                    }
-                }
-            }
-
             // Fire LLM end hook
             let end_handler = self.llm_end_handler.lock().unwrap().clone();
             if let Some(h) = end_handler {
-                let sys_prompt = self.session.lock().unwrap().system_prompt.clone().unwrap_or_default();
+                let sys_prompt = self
+                    .session
+                    .lock()
+                    .unwrap()
+                    .system_prompt
+                    .clone()
+                    .unwrap_or_default();
                 let raw_resp = self.current_raw_response.lock().unwrap().clone();
                 h(raw_resp, sys_prompt).await;
             }
 
-            // If the model output was wrapped in fences, or contained noise,
-            // the orchestrator might have parsed it, but 'current_raw_response'
-            // still contains the noisy version.
-            // We should ideally store the CLEANED version in the session
-            // if we want to avoid showing fences in the final stored state.
-            let cleaned_response = {
-                let raw = self.current_raw_response.lock().unwrap();
-                crate::intent_parser::orchestrator::extract_yaml(&raw)
-            };
-
             // Save the raw LLM output in the session history so the exact
-            // YAML text is visible in logs and follow-up turns.
+            // textual response is visible in logs and follow-up turns.
             let raw_resp = self.current_raw_response.lock().unwrap().clone();
             if !raw_resp.is_empty() {
-                self.session.lock().unwrap().set_model_response(&cleaned_response);
+                self.session.lock().unwrap().set_model_response(&raw_resp);
             }
 
             // Decide if we loop or stop
@@ -782,13 +789,14 @@ impl AuwgentEngine {
 
         let mut parts = Vec::new();
         for (name, result) in &*results {
-            let json_str = serde_json::to_string_pretty(result).unwrap_or_else(|_| "null".to_string());
+            let json_str =
+                serde_json::to_string_pretty(result).unwrap_or_else(|_| "null".to_string());
             let indented: String = json_str
                 .lines()
                 .map(|line| format!("  {}", line))
                 .collect::<Vec<_>>()
                 .join("\n");
-                
+
             parts.push(format!(
                 "tool_result(\n  name = \"{}\"\n  result = {}\n)",
                 name, indented
@@ -951,7 +959,10 @@ impl AuwgentEngine {
         }
 
         // Store tool results
-        self.pending_tool_results.lock().unwrap().extend(tool_results);
+        self.pending_tool_results
+            .lock()
+            .unwrap()
+            .extend(tool_results);
 
         Ok((has_terminal, has_actions, hard_stop))
     }
@@ -1213,7 +1224,11 @@ impl AuwgentEngine {
 
             // Pre-generate system prompt
             if let Ok(system_prompt) = sub_engine.generate_prompt(None) {
-                sub_engine.session.lock().unwrap().set_system_prompt(&system_prompt);
+                sub_engine
+                    .session
+                    .lock()
+                    .unwrap()
+                    .set_system_prompt(&system_prompt);
             }
 
             // Preload session
@@ -1248,10 +1263,11 @@ impl AuwgentEngine {
 
             let sub_input = {
                 let mut user_input_lock = self.user_input.lock().unwrap();
-                let is_resuming_at_target = sub_initial_stack.as_ref().map_or(false, |s| s.len() == 1);
-                
+                let is_resuming_at_target =
+                    sub_initial_stack.as_ref().map_or(false, |s| s.len() == 1);
+
                 if is_resuming_at_target {
-                    // This is the target of teleportation! 
+                    // This is the target of teleportation!
                     // Feed the original user message to the sub-engine.
                     // println!("[DEBUG] {} is the teleportation target. Injecting user input: {:?}", helper_name, user_input_lock);
                     user_input_lock.take()
@@ -1305,7 +1321,10 @@ impl AuwgentEngine {
                     if emitted_final {
                         // Pop stack — focus returns to parent
                         self.session.lock().unwrap().stack.pop();
-                        let msg = format!("Helper {} delivered final response to user. Continue.", &helper_name);
+                        let msg = format!(
+                            "Helper {} delivered final response to user. Continue.",
+                            &helper_name
+                        );
                         Ok((helper_name, serde_json::json!({ "status": msg })))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
@@ -1362,7 +1381,7 @@ impl AuwgentEngine {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
 
-        // Inject context into scope so prompt templates can use {{context.field}} or {{ctx.field}}
+        // Context is the only thing we explicitly inject into the prompt scope for now
         if let Some(ctx) = self.context.lock().unwrap().as_ref() {
             scope.insert("context".to_string(), ctx.clone());
             scope.insert("ctx".to_string(), ctx.clone());

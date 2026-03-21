@@ -133,6 +133,8 @@ pub enum TokenKind {
     NumberType,
     #[token("boolean")]
     BooleanType,
+    #[token("Text")]
+    TextType,
 
     // ── Operators ────────────────────────────────────────────────────
     #[token("==")]
@@ -294,6 +296,7 @@ impl fmt::Display for TokenKind {
             Self::StringType => write!(f, "'string'"),
             Self::NumberType => write!(f, "'number'"),
             Self::BooleanType => write!(f, "'boolean'"),
+            Self::TextType => write!(f, "'Text'"),
             Self::EqEq => write!(f, "'=='"),
             Self::NotEq => write!(f, "'!='"),
             Self::GtEq => write!(f, "'>='"),

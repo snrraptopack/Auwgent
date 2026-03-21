@@ -37,6 +37,7 @@ export interface IRWorkflowDef {
 
 export interface IRHelperDef {
     name: string;
+    input?: any;
     modelConfig?: IRModelConfigEntry[] | null;
     customIntents?: readonly IRCustomIntentDef[];
     output?: any;
@@ -54,6 +55,8 @@ export class AuwgentToolError extends Error {
 
 export interface AgentIRShape {
     name: string;
+    input: any; // Now mandatory in IR for type extraction
+    lifecycle?: any;
     tools: readonly IRToolDef[];
     workflows?: readonly IRWorkflowDef[];
     helpers?: readonly IRHelperDef[];
@@ -85,6 +88,12 @@ export type CollectAllOutputs<IR extends AgentIRShape> =
 export type ToolRegistry<IR extends AgentIRShape> = {
     [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
 };
+
+export type ExtractInputShape<IR extends AgentIRShape> =
+    IR['input'] extends { kind: 'properties', fields: infer F extends Record<string, any> }
+    ? { [K in keyof F]: any } // Can be further refined by mapping 'string'|'number'|'boolean'
+    : string;
+
 
 // ── Provider type extraction ─────────────────────────────────────────────
 
@@ -358,4 +367,5 @@ export interface SessionState {
     systemPrompt?: string;
     turns: Turn[];
     stack: string[];
+    initialInput?: any;
 }

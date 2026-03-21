@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // Register onIntent callback for real-time visibility
-    engine.on_intent(Arc::new(|name, value| {
+    engine.on_intent(Arc::new(|name, value, _agent| {
         Box::pin(async move {
             println!("\n  [onIntent] {} → {}", name, value);
             None // proceed normally — auto-execute
@@ -62,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("*** SIMULATION MODE ENABLED (No GEMINI_API_KEY found) ***");
 
-        let engine_prompt = engine.generate_prompt()?;
+        let engine_prompt = engine.generate_prompt(None)?;
         println!("Engine Generated Prompt (Length: {})", engine_prompt.len());
         println!(
             "\n--- ENGINE PROMPT START ---\n{}\n--- ENGINE PROMPT END ---",

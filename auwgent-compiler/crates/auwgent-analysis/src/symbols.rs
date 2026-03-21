@@ -61,12 +61,19 @@ pub(crate) fn find_local_variable_definition(
 ) -> Option<Span> {
     for config in workflow.parent_configs {
         match config {
-            AgentConfig::Input(input) => {
-                if let Some(property) = input.properties.iter().find(|property| property.name.value == name)
-                {
-                    return Some(property.name.span);
+            AgentConfig::Input(input) => match &input.shape {
+                auwgent_ast::InputShape::Properties(properties) => {
+                    if let Some(property) =
+                        properties.iter().find(|property| property.name.value == name)
+                    {
+                        return Some(property.name.span);
+                    }
                 }
-            }
+                auwgent_ast::InputShape::Direct(_) if name == "input" => {
+                    return Some(input.span);
+                }
+                _ => {}
+            },
             AgentConfig::Context(context) => {
                 if let Some(property) = context
                     .properties
@@ -224,21 +231,24 @@ fn symbol_in_element(element: &Element, offset: usize) -> Option<SymbolTarget> {
 
 fn symbol_in_agent_config(config: &AgentConfig, offset: usize) -> Option<SymbolTarget> {
     match config {
-        AgentConfig::Input(input) => {
-            for property in &input.properties {
-                if contains_offset(property.name.span.start, property.name.span.end, offset) {
-                    return Some(SymbolTarget {
-                        kind: SymbolTargetKind::Identifier(property.name.value.clone()),
-                        span: property.name.span,
-                    });
-                }
+        AgentConfig::Input(input) => match &input.shape {
+            auwgent_ast::InputShape::Properties(properties) => {
+                for property in properties {
+                    if contains_offset(property.name.span.start, property.name.span.end, offset) {
+                        return Some(SymbolTarget {
+                            kind: SymbolTargetKind::Identifier(property.name.value.clone()),
+                            span: property.name.span,
+                        });
+                    }
 
-                if let Some(symbol) = symbol_in_type_expr(&property.ty, offset) {
-                    return Some(symbol);
+                    if let Some(symbol) = symbol_in_type_expr(&property.ty, offset) {
+                        return Some(symbol);
+                    }
                 }
+                None
             }
-            None
-        }
+            auwgent_ast::InputShape::Direct(ty) => symbol_in_type_expr(ty, offset),
+        },
         AgentConfig::Context(context) => {
             for property in &context.properties {
                 if contains_offset(property.name.span.start, property.name.span.end, offset) {
@@ -640,7 +650,7 @@ fn symbol_in_type_expr(ty: &TypeExpr, offset: usize) -> Option<SymbolTarget> {
                 span: option.span,
             })
         }),
-        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) => None,
+        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => None,
     }
 }
 
@@ -752,15 +762,20 @@ fn collect_element_symbols(element: &Element, symbols: &mut Vec<SymbolTarget>) {
 
 fn collect_agent_config_symbols(config: &AgentConfig, symbols: &mut Vec<SymbolTarget>) {
     match config {
-        AgentConfig::Input(input) => {
-            for property in &input.properties {
-                symbols.push(SymbolTarget {
-                    kind: SymbolTargetKind::Identifier(property.name.value.clone()),
-                    span: property.name.span,
-                });
-                collect_type_expr_symbols(&property.ty, symbols);
+        AgentConfig::Input(input) => match &input.shape {
+            auwgent_ast::InputShape::Properties(properties) => {
+                for property in properties {
+                    symbols.push(SymbolTarget {
+                        kind: SymbolTargetKind::Identifier(property.name.value.clone()),
+                        span: property.name.span,
+                    });
+                    collect_type_expr_symbols(&property.ty, symbols);
+                }
             }
-        }
+            auwgent_ast::InputShape::Direct(ty) => {
+                collect_type_expr_symbols(ty, symbols);
+            }
+        },
         AgentConfig::Context(context) => {
             for property in &context.properties {
                 symbols.push(SymbolTarget {
@@ -1088,6 +1103,6 @@ fn collect_type_expr_symbols(ty: &TypeExpr, symbols: &mut Vec<SymbolTarget>) {
                 });
             }
         }
-        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) => {}
+        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => {}
     }
 }

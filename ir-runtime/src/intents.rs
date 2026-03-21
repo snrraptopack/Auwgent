@@ -196,17 +196,24 @@ pub fn generate_intents(ir: &crate::types::AgentIR) -> String {
         let mut helper_lines = Vec::new();
         for helper in &ir.helpers {
             let mut params = Vec::new();
-            if let Some(input) = &helper.input {
-                if let Some(obj) = input.as_object() {
-                    let mut sorted_keys: Vec<_> = obj.keys().collect();
-                    sorted_keys.sort();
-                    for name in sorted_keys {
-                        let def = &obj[name];
-                        let field_type = schema::format_type_value(def, ir.types.as_ref());
-                        params.push(format!("{}: {}", name, field_type));
+                    if let Some(input_ir) = &helper.input {
+                        if input_ir.get("kind").and_then(|v| v.as_str()) == Some("properties") {
+                            if let Some(fields) = input_ir.get("fields").and_then(|v| v.as_object()) {
+                                let mut sorted_keys: Vec<_> = fields.keys().collect();
+                                sorted_keys.sort();
+                                for name in sorted_keys {
+                                    let def = &fields[name];
+                                    let field_type = schema::format_type_value(def, ir.types.as_ref());
+                                    params.push(format!("{}: {}", name, field_type));
+                                }
+                            }
+                        } else if input_ir.get("kind").and_then(|v| v.as_str()) == Some("direct") {
+                            if let Some(ty) = input_ir.get("type") {
+                                let type_str = schema::format_type_value(ty, ir.types.as_ref());
+                                params.push(format!("input: {}", type_str));
+                            }
+                        }
                     }
-                }
-            }
             let mut sig = format!("{}({})", helper.name, params.join(", "));
             if let Some(desc) = &helper.description {
                 sig.push_str(" // ");

@@ -106,8 +106,14 @@ pub enum AgentConfig {
 
 #[derive(Debug, Clone)]
 pub struct InputConfig {
-    pub properties: Vec<TypeConfigDecl>,
+    pub shape: InputShape,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum InputShape {
+    Properties(Vec<TypeConfigDecl>),
+    Direct(TypeExpr),
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +347,7 @@ pub enum TypeExpr {
     String(Span),
     Number(Span),
     Boolean(Span),
+    Text(Span),
     Array {
         element: Box<TypeExpr>,
         span: Span,

@@ -42,6 +42,8 @@ class SessionState(TypedDict, total=False):
     """Exported session state from the engine."""
     systemPrompt: Optional[str]
     turns: List[SessionTurn]
+    stack: List[str]
+    initialInput: Optional[Any]
 
 # ── Error Types ───────────────────────────────────────────────────────────
 

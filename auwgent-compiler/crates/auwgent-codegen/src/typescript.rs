@@ -346,7 +346,7 @@ fn generate_api_keys(
 }
 
 fn generate_agent_factory(
-    ir: &Value,
+    _ir: &Value,
     agent_name: &str,
     has_tools: bool,
     has_context: bool,

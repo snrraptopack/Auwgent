@@ -15,6 +15,8 @@ pub(crate) fn type_expr_parser(
             tok(TokenKind::NumberType).map_with_span(|_, span| TypeExpr::Number(s(span)));
         let bool_t =
             tok(TokenKind::BooleanType).map_with_span(|_, span| TypeExpr::Boolean(s(span)));
+        let text_t =
+            tok(TokenKind::TextType).map_with_span(|_, span| TypeExpr::Text(s(span)));
 
         let type_ref = ident().map(TypeExpr::TypeRef);
 
@@ -41,7 +43,7 @@ pub(crate) fn type_expr_parser(
                 span: s(span),
             });
 
-        let base = choice((string_t, number_t, bool_t, object_type, type_ref));
+        let base = choice((string_t, number_t, bool_t, text_t, object_type, type_ref));
 
         // Union: "optA" | "optB" | ...
         let union_option = string_lit();

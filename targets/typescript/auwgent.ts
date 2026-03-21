@@ -419,7 +419,7 @@ export class TypedAuwgent<
     }
 
     /** Run the agentic loop. Returns the exported session state. */
-    async run(input?: string): Promise<SessionState> {
+    async run(input?: ExtractInputShape<IR> | string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
         let currentSession = this.exportSession();

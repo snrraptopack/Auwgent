@@ -123,7 +123,14 @@ impl Checker {
                     let mut scope_params = Vec::new();
                     for config in &agent.configs {
                         if let AgentConfig::Input(ic) = config {
-                            scope_params.extend(ic.properties.iter().map(|p| p.name.value.clone()));
+                            match &ic.shape {
+                                InputShape::Properties(props) => {
+                                    scope_params.extend(props.iter().map(|p| p.name.value.clone()));
+                                }
+                                InputShape::Direct(_) => {
+                                    scope_params.push("input".to_string());
+                                }
+                            }
                         }
                         if let AgentConfig::Context(cc) = config {
                             scope_params.extend(cc.properties.iter().map(|p| p.name.value.clone()));
@@ -155,7 +162,7 @@ impl Checker {
                     }
                 }
                 AgentConfig::Workflow(wf) => self.check_workflow(wf, &agent.configs, diags),
-                AgentConfig::Input(ic) => self.check_properties(&ic.properties, diags),
+                AgentConfig::Input(ic) => self.check_input(ic, true, diags),
                 AgentConfig::Output(oc) => self.check_output(oc, diags),
                 AgentConfig::Context(cc) => self.check_properties(&cc.properties, diags),
                 AgentConfig::Helpers(hc) => self.check_helpers_config(hc, diags),
@@ -201,7 +208,7 @@ impl Checker {
                         }
                     }
                 }
-                AgentConfig::Input(ic) => self.check_properties(&ic.properties, diags),
+                AgentConfig::Input(ic) => self.check_input(ic, false, diags),
                 AgentConfig::Output(oc) => self.check_output(oc, diags),
                 AgentConfig::Context(cc) => self.check_properties(&cc.properties, diags),
                 AgentConfig::Tool(tf) => self.check_tool(tf, diags),
@@ -345,6 +352,43 @@ impl Checker {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn check_input(&self, ic: &InputConfig, is_root: bool, diags: &mut Vec<Diagnostic>) {
+        match &ic.shape {
+            InputShape::Direct(ty) => {
+                if is_root {
+                    // Enforce that main agent input is Text (String)
+                    // We allow 'Text' as a TypeRef or explicit 'string' keyword
+                    let is_valid = match ty {
+                        TypeExpr::String(_) => true,
+                        TypeExpr::Text(_) => true,
+                        TypeExpr::TypeRef(name) if name.value == "Text" => true,
+                        _ => false,
+                    };
+
+                    if !is_valid {
+                        diags.push(
+                            Diagnostic::error("Main agent input must be 'Text' for now", ic.span)
+                                .with_help("Change to: input: Text"),
+                        );
+                    }
+                }
+                self.check_type_ref_exists(ty, diags);
+            }
+            InputShape::Properties(props) => {
+                if is_root {
+                    diags.push(
+                        Diagnostic::error(
+                            "Main agent does not support structured input blocks. Use a helper instead.",
+                            ic.span,
+                        )
+                        .with_help("Main agent input must be 'Text'."),
+                    );
+                }
+                self.check_properties(props, diags);
+            }
         }
     }
 

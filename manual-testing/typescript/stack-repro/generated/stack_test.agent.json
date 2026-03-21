@@ -89,10 +89,13 @@
         }
       ],
       "input": {
-        "prompts": {
-          "type": "string",
-          "optional": false,
-          "description": "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
+        "kind": "properties",
+        "fields": {
+          "prompts": {
+            "type": "string",
+            "optional": false,
+            "description": "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
+          }
         }
       },
       "output": null,
@@ -131,10 +134,13 @@
         }
       ],
       "input": {
-        "text": {
-          "type": "string",
-          "optional": false,
-          "description": "the user's sentiment text"
+        "kind": "properties",
+        "fields": {
+          "text": {
+            "type": "string",
+            "optional": false,
+            "description": "the user's sentiment text"
+          }
         }
       },
       "output": {

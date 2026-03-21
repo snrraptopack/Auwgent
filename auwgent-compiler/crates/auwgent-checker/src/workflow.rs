@@ -26,13 +26,20 @@ impl Checker {
         let mut bindings: HashMap<String, (&'static str, Span)> = HashMap::new();
         for config in parent_configs {
             match config {
-                AgentConfig::Input(ic) => {
-                    for p in &ic.properties {
-                        if self.declare_scope_name(&mut bindings, &p.name, "input field", diags) {
-                            env.set(&p.name.value, self.map_type_expr(&p.ty));
+                AgentConfig::Input(ic) => match &ic.shape {
+                    InputShape::Properties(props) => {
+                        for p in props {
+                            if self.declare_scope_name(&mut bindings, &p.name, "input field", diags)
+                            {
+                                env.set(&p.name.value, self.map_type_expr(&p.ty));
+                            }
                         }
                     }
-                }
+                    InputShape::Direct(_) => {
+                        bindings.insert("input".to_string(), ("input field", ic.span));
+                        env.set("input", Type::string());
+                    }
+                },
                 AgentConfig::Context(cc) => {
                     for p in &cc.properties {
                         if self.declare_scope_name(&mut bindings, &p.name, "context field", diags) {
@@ -413,7 +420,7 @@ impl Checker {
 
     pub(crate) fn map_type_expr(&self, ty: &TypeExpr) -> Type {
         match ty {
-            TypeExpr::String(_) => Type::string(),
+            TypeExpr::String(_) | TypeExpr::Text(_) => Type::string(),
             TypeExpr::Number(_) => Type::number(),
             TypeExpr::Boolean(_) => Type::boolean(),
             TypeExpr::Array { element, .. } => Type::Array(Box::new(self.map_type_expr(element))),

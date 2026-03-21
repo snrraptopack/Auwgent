@@ -68,7 +68,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     for config in &agent.configs {
         match config {
             AgentConfig::Input(ic) => {
-                input_val = lower_properties(&ic.properties);
+                input_val = lower_input(ic);
             }
             AgentConfig::Output(oc) => {
                 output_val = lower_output(&oc.shape, &type_decls);
@@ -175,6 +175,23 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
     Ok(Value::Object(ir))
 }
 
+fn lower_input(ic: &InputConfig) -> Value {
+    match &ic.shape {
+        InputShape::Direct(ty) => {
+            json!({
+                "kind": "direct",
+                "type": lower_type_expr_value(ty)
+            })
+        }
+        InputShape::Properties(props) => {
+            json!({
+                "kind": "properties",
+                "fields": lower_properties(props)
+            })
+        }
+    }
+}
+
 // ── Property Maps ────────────────────────────────────────────────────────
 
 fn lower_properties(props: &[TypeConfigDecl]) -> Value {
@@ -275,7 +292,7 @@ fn lower_output_type_decl_fields(type_decl: &TypeDeclaration) -> Value {
 
 fn lower_type_expr_value(ty: &TypeExpr) -> Value {
     match ty {
-        TypeExpr::String(_) => json!("string"),
+        TypeExpr::String(_) | TypeExpr::Text(_) => json!("string"),
         TypeExpr::Number(_) => json!("number"),
         TypeExpr::Boolean(_) => json!("boolean"),
         TypeExpr::Array { element, .. } => {
@@ -1064,7 +1081,7 @@ fn lower_helper(
 
     for config in &helper.configs {
         match config {
-            AgentConfig::Input(ic) => input_val = lower_properties(&ic.properties),
+            AgentConfig::Input(ic) => input_val = lower_input(ic),
             AgentConfig::Output(oc) => output_val = lower_output(&oc.shape, &[]),
             AgentConfig::Context(cc) => context_val = lower_properties(&cc.properties),
             AgentConfig::Tool(tf) => tools_val.push(lower_tool(tf)),
@@ -1189,9 +1206,7 @@ mod tests {
                     prompt: "Hello"
                 }
 
-                input {
-                    text: string
-                }
+                input: Text
 
                 output {
                     name: string
@@ -1213,6 +1228,8 @@ mod tests {
             ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"],
             json!(2000.0)
         );
+        assert_eq!(ir["input"]["kind"], json!("direct"));
+        assert_eq!(ir["input"]["type"], json!("string"));
         assert_eq!(ir["output"]["name"]["description"], json!("no description"));
         assert_eq!(ir["output"]["age"]["description"], json!("no description"));
     }
@@ -1246,9 +1263,7 @@ mod tests {
                     prompt: "Hello" + One
                 }
 
-                input {
-                    text: string
-                }
+                input: Text
 
                 output {
                     name: string
@@ -1299,17 +1314,15 @@ mod tests {
                     model: gemini("gemini-2.5-flash")
                     prompt: "Hello"
                 }
-
-                input {
-                    text: string
-                }
-
+                input: Text
                 output: Hey
             }
-            "#,
-        );
-
-        assert_eq!(ir["output"]["name"]["type"], json!("string"));
+             "#,
+         );
+ 
+         assert_eq!(ir["input"]["kind"], json!("direct"));
+         assert_eq!(ir["input"]["type"], json!("string"));
+         assert_eq!(ir["output"]["name"]["type"], json!("string"));
         assert_eq!(ir["output"]["age"]["type"], json!("number"));
         assert_eq!(ir["output"]["name"]["description"], Value::Null);
         assert_eq!(
@@ -1337,9 +1350,7 @@ mod tests {
                     prompt: "Hello"
                 }
 
-                input {
-                    text: string
-                }
+                input: Text
 
                 output: Hey | A
             }
@@ -1389,9 +1400,7 @@ mod tests {
                     prompt: "Hello" + One
                 }
 
-                input {
-                    text: string
-                }
+                input: Text
 
                 output {
                     name: string

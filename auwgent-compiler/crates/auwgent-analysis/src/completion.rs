@@ -282,11 +282,19 @@ pub(crate) fn build_scope(model: &Model, workflow: ActiveWorkflow<'_>, offset: u
 
     for config in workflow.parent_configs {
         match config {
-            AgentConfig::Input(input) => {
-                for property in &input.properties {
-                    env.insert(property.name.value.clone(), value_type_from_type_expr(&property.ty, &type_map));
+            AgentConfig::Input(input) => match &input.shape {
+                auwgent_ast::InputShape::Properties(properties) => {
+                    for property in properties {
+                        env.insert(
+                            property.name.value.clone(),
+                            value_type_from_type_expr(&property.ty, &type_map),
+                        );
+                    }
                 }
-            }
+                auwgent_ast::InputShape::Direct(ty) => {
+                    env.insert("input".to_string(), value_type_from_type_expr(ty, &type_map));
+                }
+            },
             AgentConfig::Context(context) => {
                 for property in &context.properties {
                     let value = value_type_from_type_expr(&property.ty, &type_map);
@@ -640,6 +648,10 @@ fn scope_completions(scope: &Scope, prefix: &str) -> Vec<CompletionItem> {
         keyword_completion("true", prefix),
         keyword_completion("false", prefix),
         keyword_completion("ctx", prefix),
+        keyword_completion("string", prefix),
+        keyword_completion("number", prefix),
+        keyword_completion("boolean", prefix),
+        keyword_completion("Text", prefix),
     ].into_iter().flatten());
 
     items.extend(scope.variables.iter().filter(|(name, _)| name.starts_with(prefix)).map(
@@ -767,6 +779,7 @@ pub(crate) fn value_type_from_type_expr(
 ) -> ValueType {
     match ty {
         TypeExpr::String(_) => ValueType::Scalar("string".to_string()),
+        TypeExpr::Text(_) => ValueType::Scalar("Text".to_string()),
         TypeExpr::Number(_) => ValueType::Scalar("number".to_string()),
         TypeExpr::Boolean(_) => ValueType::Scalar("boolean".to_string()),
         TypeExpr::Array { element, .. } => {
