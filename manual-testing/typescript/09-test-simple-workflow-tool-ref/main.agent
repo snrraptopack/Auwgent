@@ -1,0 +1,26 @@
+// This manual test is for a workflow
+// with tool definitions
+
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+    input: Text
+    output:Text
+
+    tool outsideTool():string @desc "The model can see and call this"
+
+    workflow first(value:number):string{
+        description: "The description for the workflow mandatory"
+
+        tool insdeTool(id:number):string @desc "The model cant call this tool unless the workflow"
+
+        let out = outsideTool()
+        let inside = insideTool(value)
+
+        return "no"
+    }
+
+}

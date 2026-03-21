@@ -1,4 +1,5 @@
 
+
 intent thought {
     description: "use this to explain your though and actions whilst you are peforming tasks this will make the user know
         the logical steps you took at each layer"
@@ -16,7 +17,6 @@ agent Router{
             """
                 You are a helpful assistant be polite
                 be free be conversational
-
                 when a user ask's for something that can be handed to a helper hand it to the helper
                 name of the user : {{ctx.user_name}}
             """
@@ -45,7 +45,7 @@ helper StoryTeller{
         prompt: "You are a professional Story teller always make sure you give out your maximum effort to crack the joke"
     }
 
-    input{
+    input: {
         prompts:string @desc "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
     }
 

@@ -1,0 +1,89 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [
+    {
+      "description": "The model can see and call this",
+      "params": {},
+      "name": "outsideTool",
+      "returns": "string"
+    }
+  ],
+  "workflows": [
+    {
+      "flowName": "first",
+      "flowParams": {
+        "value": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "body": [
+        {
+          "type": "variableDeclaration",
+          "name": "out",
+          "value": {
+            "type": "functionCall",
+            "value": "outsideTool",
+            "args": []
+          }
+        },
+        {
+          "type": "variableDeclaration",
+          "name": "inside",
+          "value": {
+            "type": "functionCall",
+            "value": "insideTool",
+            "args": [
+              {
+                "type": "varRef",
+                "value": "value"
+              }
+            ]
+          }
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "literal",
+            "value": "no"
+          }
+        }
+      ],
+      "description": "The description for the workflow mandatory",
+      "tools": [
+        {
+          "description": "The model cant call this tool unless the workflow",
+          "params": {
+            "id": {
+              "type": "number",
+              "optional": false
+            }
+          },
+          "name": "insdeTool",
+          "returns": "string"
+        }
+      ]
+    }
+  ],
+  "helpers": [],
+  "tests": []
+}

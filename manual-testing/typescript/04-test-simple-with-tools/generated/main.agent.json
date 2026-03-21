@@ -1,0 +1,44 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [
+    {
+      "description": "used to get the user's location",
+      "params": {},
+      "name": "getlocation",
+      "returns": "string"
+    },
+    {
+      "description": "used to get another location",
+      "params": {},
+      "name": "getAnotherLocation",
+      "returns": "string"
+    },
+    {
+      "description": "",
+      "params": {},
+      "name": "getNearbyLocation",
+      "returns": "string"
+    }
+  ],
+  "workflows": [],
+  "helpers": [],
+  "tests": []
+}

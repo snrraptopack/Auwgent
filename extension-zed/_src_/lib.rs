@@ -10,18 +10,14 @@ impl zed::Extension for AuwgentExtension {
     fn language_server_command(
         &mut self,
         _language_server_id: &zed::LanguageServerId,
-        worktree: &zed::Worktree,
+        _worktree: &zed::Worktree,
     ) -> zed::Result<zed::Command> {
-        // Find the LSP binary. For now, we assume it's in the PATH.
-        // In a production extension, you might download it from GitHub releases.
-        let path = worktree
-            .which("auwgent-lsp")
-            .ok_or_else(|| "auwgent-lsp binary not found in PATH".to_string())?;
+        let path = "c:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\auwgent-compiler\\target\\release\\auwgent-lsp.exe".to_string();
 
         Ok(zed::Command {
             command: path,
             args: vec![],
-            env: vec![],
+            env: Default::default(),
         })
     }
 }

@@ -12,6 +12,8 @@ impl Checker {
                 }
                 Element::Helper(helper) => {
                     self.register_top_level_name(&helper.name, "helper", diags);
+                    self.helper_map
+                        .insert(helper.name.value.clone(), helper.clone());
                 }
                 Element::TypeDecl(td) => {
                     self.register_top_level_name(&td.name, "type", diags);

@@ -21,7 +21,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\n                You are a helpful assistant be polite\n                be free be conversational\n\n                when a user ask's for something that can be handed to a helper hand it to the helper\n                name of the user : "
+                  "value": "\n                You are a helpful assistant be polite\n                be free be conversational\n                when a user ask's for something that can be handed to a helper hand it to the helper\n                name of the user : "
                 },
                 {
                   "type": "memberAccess",
@@ -89,12 +89,14 @@
         }
       ],
       "input": {
-        "kind": "properties",
-        "fields": {
-          "prompts": {
-            "type": "string",
-            "optional": false,
-            "description": "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
+        "kind": "direct",
+        "type": {
+          "type": "object",
+          "properties": {
+            "prompts": {
+              "type": "string",
+              "optional": false
+            }
           }
         }
       },

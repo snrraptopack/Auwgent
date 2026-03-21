@@ -1,0 +1,53 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": {
+    "name": {
+      "type": "string",
+      "optional": false,
+      "description": "no description"
+    },
+    "age": {
+      "type": "number",
+      "optional": false,
+      "description": "no description"
+    }
+  },
+  "context": null,
+  "tools": [],
+  "workflows": [
+    {
+      "flowName": "first",
+      "flowParams": {},
+      "returns": "string",
+      "body": [
+        {
+          "type": "return",
+          "value": {
+            "type": "literal",
+            "value": "returns a madatory string"
+          }
+        }
+      ],
+      "description": "The description for the workflow mandatory",
+      "tools": []
+    }
+  ],
+  "helpers": [],
+  "tests": []
+}

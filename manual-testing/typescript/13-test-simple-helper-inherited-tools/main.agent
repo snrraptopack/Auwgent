@@ -1,0 +1,39 @@
+// This manual test is for helper definitions
+// with tools and inheritance
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+
+    helpers{
+        A with all tools
+        B with tools {bb} // this guarantees only bb is available to B
+    }
+
+    tool aa():number
+    tool bb():boolean
+
+}
+
+
+helper A {
+    description: "mandatory description"
+    default config {
+        model: gemini("gemini-2.5-flash")
+    }
+    input:Text
+
+    tool one():string @desc "This tools is available to the helper only"
+}
+
+helper B {
+    description: "mandatory description"
+    default config {
+        model: gemini("gemini-2.5-flash")
+    }
+    input:Text
+
+    tool one():string @desc "This tools is available to the helper only"
+}

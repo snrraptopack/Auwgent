@@ -1,0 +1,80 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [],
+  "workflows": [
+    {
+      "flowName": "first",
+      "flowParams": {
+        "value": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "body": [
+        {
+          "type": "variableDeclaration",
+          "name": "local_number",
+          "value": {
+            "type": "literal",
+            "value": 10.0
+          }
+        },
+        {
+          "type": "if",
+          "condition": {
+            "type": "comparison",
+            "operator": ">",
+            "left": {
+              "type": "varRef",
+              "value": "local_number"
+            },
+            "right": {
+              "type": "varRef",
+              "value": "value"
+            }
+          },
+          "then": [
+            {
+              "type": "return",
+              "value": {
+                "type": "literal",
+                "value": "yes"
+              }
+            }
+          ],
+          "else": []
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "literal",
+            "value": "no"
+          }
+        }
+      ],
+      "description": "The description for the workflow mandatory",
+      "tools": []
+    }
+  ],
+  "helpers": [],
+  "tests": []
+}

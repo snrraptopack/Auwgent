@@ -47,6 +47,7 @@ struct Checker {
     type_map: HashMap<String, Vec<TypeConfigDecl>>,
     prompt_map: HashMap<String, Vec<TypeConfigDecl>>,
     tool_map: HashMap<String, ToolFunction>,
+    helper_map: HashMap<String, Helper>,
     top_level_names: HashMap<String, (&'static str, Span)>,
     /// Context fields for validating ctx.property references
     context_fields: HashMap<String, Span>,
@@ -58,6 +59,7 @@ impl Checker {
             type_map: HashMap::new(),
             prompt_map: HashMap::new(),
             tool_map: HashMap::new(),
+            helper_map: HashMap::new(),
             top_level_names: HashMap::new(),
             context_fields: HashMap::new(),
         }

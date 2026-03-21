@@ -86,7 +86,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_object_alias(agent_name, "Input", ir.get("input")));
+    sections.push(generate_object_alias(agent_name, "Input", unwrap_input_fields(ir.get("input")).as_ref()));
     for helper in &output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
@@ -533,6 +533,35 @@ fn normalize_ts_type(raw: &str) -> String {
         "bool" | "boolean" => "boolean".to_string(),
         "string" => "string".to_string(),
         other => other.to_string(),
+    }
+}
+
+/// Unwrap the input field from the IR format to the flat format expected by codegen.
+/// IR format: { "kind": "properties", "fields": {...} } or { "kind": "direct", "type": "string" }
+/// Codegen format: {...} (just the fields object)
+fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
+    match input {
+        Some(Value::Object(obj)) => {
+            // Check if it has the "kind" wrapper
+            if let Some(kind) = obj.get("kind").and_then(Value::as_str) {
+                match kind {
+                    "properties" => {
+                        // Return the fields object directly
+                        obj.get("fields").cloned()
+                    }
+                    "direct" => {
+                        // For direct input (input: Text), return null since codegen expects
+                        // properties format. The TypeScript ExtractInputShape will default to string.
+                        None
+                    }
+                    _ => Some(Value::Object(obj.clone()))
+                }
+            } else {
+                // Already in flat format
+                Some(Value::Object(obj.clone()))
+            }
+        }
+        _ => None
     }
 }
 

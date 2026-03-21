@@ -1,0 +1,54 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": null,
+  "tools": [],
+  "workflows": [],
+  "helpers": [
+    {
+      "name": "A",
+      "description": "mandatory description",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "gemini",
+              "modelName": "gemini-2.5-flash"
+            },
+            "prompt": null
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": null,
+      "output": null,
+      "context": null,
+      "tools": [
+        {
+          "description": "This tools is available to the helper only",
+          "params": {},
+          "name": "one",
+          "returns": "string"
+        }
+      ],
+      "workflows": []
+    }
+  ],
+  "tests": []
+}

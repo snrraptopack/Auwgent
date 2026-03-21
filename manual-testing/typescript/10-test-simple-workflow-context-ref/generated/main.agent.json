@@ -1,0 +1,95 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash"
+        },
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": null,
+  "context": {
+    "is_vip": {
+      "type": "boolean",
+      "optional": false
+    }
+  },
+  "tools": [],
+  "workflows": [
+    {
+      "flowName": "delete",
+      "flowParams": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "body": [
+        {
+          "type": "if",
+          "condition": {
+            "type": "contextRef",
+            "property": "is_vip"
+          },
+          "then": [
+            {
+              "type": "variableDeclaration",
+              "name": "u",
+              "value": {
+                "type": "functionCall",
+                "value": "deleteDatabase",
+                "args": [
+                  {
+                    "type": "varRef",
+                    "value": "id"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "return",
+              "value": {
+                "type": "literal",
+                "value": "data deleted"
+              }
+            }
+          ],
+          "else": []
+        },
+        {
+          "type": "return",
+          "value": {
+            "type": "literal",
+            "value": "you cant delete"
+          }
+        }
+      ],
+      "description": "The description for the workflow mandatory",
+      "tools": [
+        {
+          "description": "...",
+          "params": {
+            "id": {
+              "type": "number",
+              "optional": false
+            }
+          },
+          "name": "deleteDatabase",
+          "returns": "string"
+        }
+      ]
+    }
+  ],
+  "helpers": [],
+  "tests": []
+}

@@ -1,0 +1,14 @@
+// This manual test is for basic input and out
+//
+// in the sdk the intent that would should be generated is response_text
+// Text is made to compiled to null where the  engine takes over
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+    input: Text
+    output : Text
+
+}

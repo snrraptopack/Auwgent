@@ -178,6 +178,11 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
 fn lower_input(ic: &InputConfig) -> Value {
     match &ic.shape {
         InputShape::Direct(ty) => {
+            // If input is just Text/string, return null (engine defaults to string)
+            if matches!(ty, TypeExpr::String(_) | TypeExpr::Text(_)) {
+                return Value::Null;
+            }
+            
             json!({
                 "kind": "direct",
                 "type": lower_type_expr_value(ty)
@@ -234,6 +239,46 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
             Value::Object(map)
         }
         OutputShape::Union(types) => {
+            // Check if this is a Text | Object union
+            let has_text = types.iter().any(|t| t.value == "Text" || t.value == "string");
+            
+            if has_text {
+                // Filter out Text from the union
+                let non_text_types: Vec<_> = types.iter()
+                    .filter(|t| t.value != "Text" && t.value != "string")
+                    .collect();
+                
+                if non_text_types.is_empty() {
+                    // Only Text in union → return null
+                    return Value::Null;
+                }
+                
+                // Text | SomeObject → create variants with only the object types
+                let mut variants = Map::new();
+                let mut all_variants_resolved = true;
+
+                for variant in &non_text_types {
+                    if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == variant.value) {
+                        variants.insert(
+                            variant.value.clone(),
+                            lower_output_type_decl_fields(type_decl),
+                        );
+                    } else {
+                        all_variants_resolved = false;
+                        break;
+                    }
+                }
+
+                if all_variants_resolved && !variants.is_empty() {
+                    return json!({ "__variants": variants });
+                }
+                
+                // Fallback to union format
+                let names: Vec<Value> = non_text_types.iter().map(|t| json!(t.value)).collect();
+                return json!({ "type": "union", "options": names });
+            }
+            
+            // No Text in union → process normally
             let mut variants = Map::new();
             let mut all_variants_resolved = true;
 
@@ -258,6 +303,11 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
             json!({ "type": "union", "options": names })
         }
         OutputShape::Direct { ty, desc } => {
+            // If output is just Text/string, return null (engine handles as text-only)
+            if matches!(ty, TypeExpr::String(_) | TypeExpr::Text(_)) {
+                return Value::Null;
+            }
+
             if let TypeExpr::TypeRef(name) = ty {
                 if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == name.value) {
                     return lower_output_type_decl_fields(type_decl);
@@ -1228,8 +1278,7 @@ mod tests {
             ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"],
             json!(2000.0)
         );
-        assert_eq!(ir["input"]["kind"], json!("direct"));
-        assert_eq!(ir["input"]["type"], json!("string"));
+        assert_eq!(ir["input"], Value::Null);  // input: Text compiles to null
         assert_eq!(ir["output"]["name"]["description"], json!("no description"));
         assert_eq!(ir["output"]["age"]["description"], json!("no description"));
     }
@@ -1320,8 +1369,7 @@ mod tests {
              "#,
          );
  
-         assert_eq!(ir["input"]["kind"], json!("direct"));
-         assert_eq!(ir["input"]["type"], json!("string"));
+         assert_eq!(ir["input"], Value::Null);  // input: Text compiles to null
          assert_eq!(ir["output"]["name"]["type"], json!("string"));
         assert_eq!(ir["output"]["age"]["type"], json!("number"));
         assert_eq!(ir["output"]["name"]["description"], Value::Null);

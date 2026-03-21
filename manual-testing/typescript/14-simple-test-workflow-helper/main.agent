@@ -1,0 +1,48 @@
+// This manual test for a helper in a workflow
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+
+    helpers{
+        A with all tools
+        B with tools {bb} // this guarantees only bb is available to B
+    }
+
+    tool aa():number
+    tool bb():boolean
+
+    workflow analyze():number {
+        description: "Analyze the input and return a number"
+        let result1 = hlp.A({ input: "" })
+        let result2 = hlp.B({ input: "" })
+
+        return result1 + result2
+    }
+
+}
+
+
+helper A {
+    description: "mandatory description"
+    default config {
+        model: gemini("gemini-2.5-flash")
+    }
+    input:Text
+
+    output: {response:number}
+
+    tool one():string @desc "This tools is available to the helper only"
+}
+
+helper B {
+    description: "mandatory description"
+    default config {
+        model: gemini("gemini-2.5-flash")
+    }
+    input:Text
+
+    tool one():string @desc "This tools is available to the helper only"
+}

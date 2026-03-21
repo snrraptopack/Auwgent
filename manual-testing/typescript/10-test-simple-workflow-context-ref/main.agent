@@ -1,0 +1,27 @@
+// This manual test is for a workflow
+// with context referencing
+
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+    input: Text
+    output:Text
+
+    context {
+        is_vip:boolean
+    }
+
+    workflow delete(id:number):string{
+        description: "The description for the workflow mandatory"
+        tool deleteDatabase(id:number):string @desc "..."
+        if(ctx.is_vip){
+            let u = deleteDatabase(id)
+            return "data deleted"
+        }
+        return "you cant delete"
+    }
+
+}

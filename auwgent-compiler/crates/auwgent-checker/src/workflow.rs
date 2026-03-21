@@ -319,10 +319,162 @@ impl Checker {
                 Type::string()
             }
             Expr::HelperCall(hc) => {
-                for arg in &hc.args {
-                    self.infer_expression(arg, env, diags);
+                // Look up the helper definition
+                if let Some(helper) = self.helper_map.get(&hc.helper.value) {
+                    // Find the helper's input and output configs
+                    let mut input_shape: Option<&InputShape> = None;
+                    let mut output_shape: Option<&OutputShape> = None;
+
+                    for config in &helper.configs {
+                        match config {
+                            AgentConfig::Input(ic) => input_shape = Some(&ic.shape),
+                            AgentConfig::Output(oc) => output_shape = Some(&oc.shape),
+                            _ => {}
+                        }
+                    }
+
+                    // Validate arguments based on input shape
+                    match input_shape {
+                        Some(InputShape::Direct(_)) => {
+                            // Simple input: Text - allow hlp.A("string") syntax
+                            if hc.args.len() != 1 {
+                                diags.push(Diagnostic::error(
+                                    format!(
+                                        "Helper '{}' expects 1 argument but got {}",
+                                        hc.helper.value,
+                                        hc.args.len()
+                                    ),
+                                    hc.span,
+                                ));
+                            } else {
+                                // Validate the argument is a string
+                                let arg_ty = self.infer_expression(&hc.args[0], env, diags);
+                                if !self.types_compatible(&Type::string(), &arg_ty) {
+                                    diags.push(Diagnostic::error(
+                                        format!(
+                                            "Helper '{}' expects string input but got {}",
+                                            hc.helper.value,
+                                            arg_ty.format()
+                                        ),
+                                        hc.span,
+                                    ));
+                                }
+                            }
+                        }
+                        Some(InputShape::Properties(props)) => {
+                            // Structured input: { field: value } - require object literal
+                            if hc.args.len() != 1 {
+                                diags.push(Diagnostic::error(
+                                    format!(
+                                        "Helper '{}' expects 1 argument (object) but got {}",
+                                        hc.helper.value,
+                                        hc.args.len()
+                                    ),
+                                    hc.span,
+                                ));
+                            } else {
+                                // Validate the argument is an object with correct fields
+                                let arg_ty = self.infer_expression(&hc.args[0], env, diags);
+                                let mut expected_fields = HashMap::new();
+                                let mut expected_optional = HashMap::new();
+                                for p in props {
+                                    expected_fields.insert(p.name.value.clone(), self.map_type_expr(&p.ty));
+                                    expected_optional.insert(p.name.value.clone(), p.optional);
+                                }
+                                let expected_ty = Type::Record {
+                                    fields: expected_fields,
+                                    optional: expected_optional,
+                                };
+                                if !self.types_compatible(&expected_ty, &arg_ty) {
+                                    diags.push(Diagnostic::error(
+                                        format!(
+                                            "Helper '{}' expects {} but got {}",
+                                            hc.helper.value,
+                                            expected_ty.format(),
+                                            arg_ty.format()
+                                        ),
+                                        hc.span,
+                                    ));
+                                }
+                            }
+                        }
+                        None => {
+                            // No input specified - defaults to Text
+                            if hc.args.len() != 1 {
+                                diags.push(Diagnostic::error(
+                                    format!(
+                                        "Helper '{}' expects 1 argument but got {}",
+                                        hc.helper.value,
+                                        hc.args.len()
+                                    ),
+                                    hc.span,
+                                ));
+                            } else {
+                                let arg_ty = self.infer_expression(&hc.args[0], env, diags);
+                                if !self.types_compatible(&Type::string(), &arg_ty) {
+                                    diags.push(Diagnostic::error(
+                                        format!(
+                                            "Helper '{}' expects string input but got {}",
+                                            hc.helper.value,
+                                            arg_ty.format()
+                                        ),
+                                        hc.span,
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    // Infer return type from output shape
+                    match output_shape {
+                        Some(OutputShape::Direct { ty, .. }) => {
+                            return self.map_type_expr(ty);
+                        }
+                        Some(OutputShape::Properties(props)) => {
+                            // Structured output: { field: type }
+                            let mut fields = HashMap::new();
+                            let mut optional = HashMap::new();
+                            for p in props {
+                                fields.insert(p.decl.name.value.clone(), self.map_type_expr(&p.decl.ty));
+                                optional.insert(p.decl.name.value.clone(), p.decl.optional);
+                            }
+                            return Type::Record { fields, optional };
+                        }
+                        Some(OutputShape::Union(types)) => {
+                            // Union output: A | B
+                            let mut union_types = Vec::new();
+                            for type_name in types {
+                                if let Some(fields_decl) = self.type_map.get(&type_name.value) {
+                                    let mut fields = HashMap::new();
+                                    let mut optional = HashMap::new();
+                                    for f in fields_decl {
+                                        fields.insert(f.name.value.clone(), self.map_type_expr(&f.ty));
+                                        optional.insert(f.name.value.clone(), f.optional);
+                                    }
+                                    union_types.push(Type::Record { fields, optional });
+                                }
+                            }
+                            if !union_types.is_empty() {
+                                return Type::Union(union_types);
+                            }
+                            return Type::error("unknown union");
+                        }
+                        None => {
+                            // No output specified - defaults to Text (string)
+                            return Type::string();
+                        }
+                    }
+                } else {
+                    diags.push(Diagnostic::error(
+                        format!("Unknown helper '{}'", hc.helper.value),
+                        hc.helper.span,
+                    ));
+                    // Still infer argument types to catch other errors
+                    for arg in &hc.args {
+                        self.infer_expression(arg, env, diags);
+                    }
+                    return Type::error("unknown");
                 }
-                Type::error("unknown")
             }
             Expr::PromptCall(pc) => {
                 if let Some(params) = self.prompt_map.get(&pc.prompt.value) {
@@ -533,22 +685,24 @@ impl Checker {
 
         match op {
             ComparisonOp::Eq | ComparisonOp::Neq => {
+                // Allow comparisons between same types (string, number, boolean)
                 if left_kind == right_kind {
                     None
                 } else {
                     Some(format!(
-                        "Condition type mismatch: {} vs {} (Type mismatch: {} vs {})",
-                        left_kind, right_kind, left_kind, right_kind
+                        "Cannot compare {} with {} (Type mismatch: {} vs {})",
+                        left_kind, right_kind, left.format(), right.format()
                     ))
                 }
             }
             ComparisonOp::Gt | ComparisonOp::Lt | ComparisonOp::Gte | ComparisonOp::Lte => {
+                // Only allow numeric comparisons for ordering operators
                 if left_kind == "number" && right_kind == "number" {
                     None
                 } else {
                     Some(format!(
-                        "Condition type mismatch: {} vs {} (Type mismatch: {} vs {})",
-                        left_kind, right_kind, left_kind, right_kind
+                        "Ordering comparison requires numbers, got {} and {} (Type mismatch: {} vs {})",
+                        left_kind, right_kind, left.format(), right.format()
                     ))
                 }
             }
@@ -557,9 +711,9 @@ impl Checker {
 
     pub(crate) fn comparison_kind(&self, ty: &Type) -> String {
         match ty {
-            Type::Const(name) if name == "string" || name == "number" || name == "boolean" => {
-                name.clone()
-            }
+            Type::Const(name) if name == "string" => "string".into(),
+            Type::Const(name) if name == "number" => "number".into(),
+            Type::Const(name) if name == "boolean" => "boolean".into(),
             Type::Const(_) => "string".into(),
             Type::Union(options) => {
                 if options.iter().all(|opt| matches!(opt, Type::Const(_))) {

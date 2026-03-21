@@ -499,10 +499,24 @@ pub(crate) fn agent_config_parser(
         .ignore_then(
             tok(TokenKind::Colon)
                 .ignore_then(
-                    ident()
+                    // Union parser: Text | A | B or A | B
+                    // Accept both Text keyword and identifiers
+                    choice((
+                        tok(TokenKind::TextType).map_with_span(|_, span| Spanned {
+                            value: "Text".to_string(),
+                            span: s(span),
+                        }),
+                        ident(),
+                    ))
                         .then(
                             tok(TokenKind::Pipe)
-                                .ignore_then(ident())
+                                .ignore_then(choice((
+                                    tok(TokenKind::TextType).map_with_span(|_, span| Spanned {
+                                        value: "Text".to_string(),
+                                        span: s(span),
+                                    }),
+                                    ident(),
+                                )))
                                 .repeated()
                                 .at_least(1),
                         )

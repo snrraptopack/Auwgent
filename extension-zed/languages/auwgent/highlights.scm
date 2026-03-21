@@ -34,9 +34,7 @@
   "user"
   "assistant"
   "test"
-  "expect"
   "error"
-  "returns"
   "with"
   "all"
   "handoff"
@@ -106,16 +104,16 @@
 (comment) @comment
 
 ; Functions and Agents
-(agent_declaration name: (identifier) @type)
-(helper_declaration name: (identifier) @type)
-(type_declaration name: (identifier) @type)
-(named_prompt_declaration name: (identifier) @function)
-(workflow_config name: (identifier) @function)
-(tool_function name: (identifier) @function)
+(agent_declaration (identifier) @type)
+(helper_declaration (identifier) @type)
+(type_declaration (identifier) @type)
+(named_prompt_declaration (identifier) @function)
+(workflow_config (identifier) @function)
+(tool_function (identifier) @function)
 
 ; Variables and Properties
-(let_statement name: (identifier) @variable)
-(parameter name: (identifier) @variable.parameter)
+(let_statement (identifier) @variable)
+(parameter (identifier) @variable.parameter)
 (property_name) @property
 (identifier) @variable
 

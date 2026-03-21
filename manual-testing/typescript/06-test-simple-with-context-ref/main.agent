@@ -1,0 +1,25 @@
+// This is test is for context injection
+// at compile by default the model doesnt see i
+// so we will reference it using the ctx
+
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: """
+            The age is {{ctx.age}}
+            The name is {{ctx.your_name}}
+        """
+    }
+    input: Text
+    output {
+        name:string
+        age:number
+    }
+
+    context {
+        your_name:string
+        age:number
+    }
+
+}

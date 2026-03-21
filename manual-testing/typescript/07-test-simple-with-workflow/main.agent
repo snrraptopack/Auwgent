@@ -1,0 +1,21 @@
+// This manual test is for a workflow
+
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+    input: Text
+    output {
+        name:string
+        age:number
+    }
+
+    workflow first():string{
+        description: "The description for the workflow mandatory"
+        // variabled, conditional flows can be made here but reserved for other tests
+        return "returns a madatory string"
+    }
+
+}

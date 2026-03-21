@@ -1,0 +1,16 @@
+// This test shows basic tools use
+// the intent that would be generated it tool_call
+
+agent Main{
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helper be polite"
+    }
+
+    tool getlocation():string @desc "used to get the user's location"
+    // or tools
+    tools {
+        getAnotherLocation():string @desc "used to get another location"
+        getNearbyLocation():string // the @desc is optional but recomeded
+    }
+}

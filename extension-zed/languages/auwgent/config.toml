@@ -1,6 +1,35 @@
 name = "Auwgent"
 grammar = "auwgent"
-line_comments = ["//"]
-
-[matcher]
 path_suffixes = ["agent"]
+line_comments = ["// "]
+language_servers = ["auwgent-lsp"]
+
+[[brackets]]
+start = "{"
+end = "}"
+close = true
+newline = true
+
+[[brackets]]
+start = "["
+end = "]"
+close = true
+newline = true
+
+[[brackets]]
+start = "("
+end = ")"
+close = true
+newline = true
+
+[[brackets]]
+start = "\""
+end = "\""
+close = true
+newline = false
+
+[[brackets]]
+start = "'"
+end = "'"
+close = true
+newline = false
