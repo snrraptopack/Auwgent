@@ -5,8 +5,10 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "value": "You are a helper be polite",
           "type": "literal"
@@ -20,16 +22,18 @@
   "context": null,
   "tools": [
     {
+      "name": "aa",
       "description": "",
       "params": {},
-      "name": "aa",
-      "returns": "number"
+      "returns": "number",
+      "examples": []
     },
     {
+      "name": "bb",
       "description": "",
       "params": {},
-      "name": "bb",
-      "returns": "boolean"
+      "returns": "boolean",
+      "examples": []
     }
   ],
   "workflows": [],
@@ -42,8 +46,10 @@
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "gemini-2.5-flash"
+              "modelName": "gemini-2.5-flash",
+              "config": null
             },
+            "embedding": null,
             "prompt": null
           },
           "namedConfig": []
@@ -54,13 +60,16 @@
       "context": null,
       "tools": [
         {
+          "name": "one",
           "description": "This tools is available to the helper only",
           "params": {},
-          "name": "one",
-          "returns": "string"
+          "returns": "string",
+          "examples": []
         }
       ],
-      "workflows": []
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
     },
     {
       "name": "B",
@@ -70,8 +79,10 @@
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "gemini-2.5-flash"
+              "modelName": "gemini-2.5-flash",
+              "config": null
             },
+            "embedding": null,
             "prompt": null
           },
           "namedConfig": []
@@ -82,20 +93,27 @@
       "context": null,
       "tools": [
         {
+          "name": "one",
           "description": "This tools is available to the helper only",
           "params": {},
-          "name": "one",
-          "returns": "string"
+          "returns": "string",
+          "examples": []
         }
       ],
-      "workflows": []
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
     }
   ],
-  "tests": [],
+  "types": null,
   "helperToolGrants": {
-    "A": "all",
     "B": [
       "bb"
-    ]
-  }
+    ],
+    "A": "all"
+  },
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

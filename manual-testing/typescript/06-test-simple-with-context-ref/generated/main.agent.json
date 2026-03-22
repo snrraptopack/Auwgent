@@ -5,8 +5,10 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "type": "template",
           "value": [
@@ -74,5 +76,10 @@
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

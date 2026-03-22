@@ -7,8 +7,10 @@
           "type": "custom",
           "id": "kimi",
           "url": "https://api.moonshot.ai/v1/chat/completions",
-          "modelName": "kimi-k2-0905-preview"
+          "modelName": "kimi-k2-0905-preview",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "value": "You are a helper be polite",
           "type": "literal"
@@ -23,5 +25,10 @@
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

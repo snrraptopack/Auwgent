@@ -1,7 +1,7 @@
 use auwgent_analysis::{load_model_from_source_with_imports, load_model_with_imports, AnalysisError};
 use auwgent_ast::Model;
 use auwgent_errors::{Diagnostic, Severity};
-use serde_json::Value;
+use auwgent_ir_schema::AgentIR;
 use std::path::Path;
 
 /// The result of running the shared compile validation pipeline.
@@ -13,7 +13,7 @@ use std::path::Path;
 pub struct CompileValidation {
     pub model: Model,
     pub diagnostics: Vec<Diagnostic>,
-    pub ir: Option<Value>,
+    pub ir: Option<AgentIR>,
 }
 
 /// Run the same compile-oriented validation pipeline on an in-memory source

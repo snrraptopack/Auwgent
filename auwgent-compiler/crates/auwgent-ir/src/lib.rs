@@ -5,17 +5,18 @@
 
 use auwgent_ast::*;
 use auwgent_errors::{Diagnostic, Severity, Span};
+use auwgent_ir_schema::AgentIR;
 use serde_json::{json, Map, Value};
 
-/// Lower a parsed AST model into IR JSON value.
-/// Returns the JSON for the first agent found, or structured diagnostics if lowering fails.
-pub fn lower(model: &Model) -> Result<Value, Vec<Diagnostic>> {
+/// Lower a parsed AST model into strongly-typed `AgentIR`.
+/// Returns the statically-typed IR for the first agent found, or structured diagnostics if lowering fails.
+pub fn lower(model: &Model) -> Result<AgentIR, Vec<Diagnostic>> {
     lower_with_diagnostics(model)
 }
 
-/// Lower a parsed AST model into IR JSON value while preserving structured diagnostics
+/// Lower a parsed AST model into strictly-typed `AgentIR` while preserving structured diagnostics
 /// for editor and CLI consumers.
-pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
+pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>> {
     // Collect type declarations for the types map
     let mut type_decls: Vec<&TypeDeclaration> = Vec::new();
     let mut intent_decls: Vec<&IntentDeclaration> = Vec::new();
@@ -173,7 +174,15 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
         ir.insert("customIntents".into(), Value::Array(custom_intents_val));
     }
 
-    Ok(Value::Object(ir))
+    let final_ir = Value::Object(ir);
+    match serde_json::from_value(final_ir.clone()) {
+        Ok(typed_ir) => Ok(typed_ir),
+        Err(e) => {
+            // Panic or return diagnostic if the generated IR violates the schema.
+            // This ensures our typed structs are 100% synchronized with the compiler.
+            panic!("Internal Compiler Error: IR schema validation failed during lowering.\nError: {}\nPayload: {}", e, serde_json::to_string_pretty(&final_ir).unwrap());
+        }
+    }
 }
 
 fn lower_input(ic: &InputConfig) -> Value {
@@ -396,8 +405,6 @@ fn lower_type_expr_value(ty: &TypeExpr) -> Value {
         }
     }
 }
-
-// ── Tools ────────────────────────────────────────────────────────────────
 
 fn lower_tool(tf: &ToolFunction) -> Value {
     let mut tool = Map::new();
@@ -1308,7 +1315,8 @@ mod tests {
             "checker diagnostics: {diagnostics:?}"
         );
 
-        lower(&model).expect("IR lowering should succeed")
+        let ir = lower(&model).expect("IR lowering should succeed");
+        serde_json::to_value(ir).expect("failed to serialize typed IR back to value")
     }
 
     #[test]

@@ -5,8 +5,10 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "value": "You are a helper be polite",
           "type": "literal"
@@ -29,8 +31,10 @@
           "defaultConfig": {
             "model": {
               "type": "gemini",
-              "modelName": "gemini-2.5-flash"
+              "modelName": "gemini-2.5-flash",
+              "config": null
             },
+            "embedding": null,
             "prompt": null
           },
           "namedConfig": []
@@ -40,8 +44,15 @@
       "output": null,
       "context": null,
       "tools": [],
-      "workflows": []
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
     }
   ],
-  "tests": []
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

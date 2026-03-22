@@ -149,7 +149,7 @@ pub fn format_type_definitions_yaml(
             } else {
                 prop_name.to_string()
             };
-            let field_type = format_type(&prop.type_value, Some(types));
+            let field_type = format_type(&prop.type_value.0, Some(types));
             let mut line = format!("{}  {}: {}", indent, name_tag, field_type);
             if let Some(desc) = &prop.description {
                 line.push_str(" // ");

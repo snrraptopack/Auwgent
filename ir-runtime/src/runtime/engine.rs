@@ -490,7 +490,7 @@ impl AuwgentEngine {
             .ir
             .lifecycle
             .as_ref()
-            .and_then(|lc| lc.get("maxMessages").and_then(|v| v.as_u64()))
+            .and_then(|lc| lc.0.get("maxMessages").and_then(|v| v.as_u64()))
             .map(|v| v as usize)
             .unwrap_or(12);
 
@@ -1055,8 +1055,8 @@ impl AuwgentEngine {
                 let param_names: Vec<String> = ir_tools
                     .iter()
                     .find(|t| t.name == *name)
-                    .and_then(|t| t.params.as_object())
-                    .map(|params| {
+                    .and_then(|t| t.params.0.as_object())
+                    .map(|params: &serde_json::Map<String, Value>| {
                         let mut names: Vec<_> = params.keys().cloned().collect();
                         names.sort(); // Ensure consistent ordering
                         names
@@ -1076,7 +1076,7 @@ impl AuwgentEngine {
                             }
                         } else {
                             // Convert positional args to named args object
-                            let mut args_obj = serde_json::Map::new();
+                            let mut args_obj: serde_json::Map<String, Value> = serde_json::Map::new();
                             for (i, param_name) in param_names.iter().enumerate() {
                                 if let Some(arg_value) = fn_args.get(i) {
                                     args_obj.insert(param_name.clone(), arg_value.clone());
@@ -1212,7 +1212,7 @@ impl AuwgentEngine {
             }
 
             // 2. Build the sub-agent IR
-            let mut sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
+            let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
             
             // Clone helper tool names before moving sub_ctx.ir
             let helper_tool_names: Vec<String> = sub_ctx.ir.tools.iter().map(|t| t.name.clone()).collect();
@@ -1474,7 +1474,8 @@ impl AuwgentEngine {
             .as_ref()
             .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
-        let prompt_val = evaluator.evaluate(&default.prompt, &mut scope)?;
+        let parsed_prompt: crate::types::Expression = serde_json::from_value(default.prompt.0.clone()).map_err(|e| AuwgentError::Evaluation(format!("Prompt parse error: {}", e)))?;
+        let prompt_val = evaluator.evaluate(&parsed_prompt, &mut scope)?;
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
 
         // ── Magic Context DX: Automatic context injection ─────────────────

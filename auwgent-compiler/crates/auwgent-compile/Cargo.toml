@@ -9,4 +9,5 @@ auwgent-ast = { path = "../auwgent-ast" }
 auwgent-checker = { path = "../auwgent-checker" }
 auwgent-errors = { path = "../auwgent-errors" }
 auwgent-ir = { path = "../auwgent-ir" }
+auwgent-ir-schema = { path = "../auwgent-ir-schema" }
 serde_json = { workspace = true }

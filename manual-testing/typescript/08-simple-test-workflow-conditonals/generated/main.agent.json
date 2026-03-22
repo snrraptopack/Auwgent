@@ -5,8 +5,10 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "value": "You are a helper be polite",
           "type": "literal"
@@ -29,6 +31,7 @@
         }
       },
       "returns": "string",
+      "description": "The description for the workflow mandatory",
       "body": [
         {
           "type": "variableDeclaration",
@@ -71,10 +74,15 @@
           }
         }
       ],
-      "description": "The description for the workflow mandatory",
-      "tools": []
+      "tools": [],
+      "examples": []
     }
   ],
   "helpers": [],
-  "tests": []
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

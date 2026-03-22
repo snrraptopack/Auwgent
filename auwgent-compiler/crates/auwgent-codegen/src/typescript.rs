@@ -134,6 +134,9 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
         lines.push(format!("export type {type_name} = {{"));
         if let Some(properties) = object_at(type_def, &["properties"]) {
             for (prop_name, prop_info) in properties {
+                if prop_name.starts_with('@') || prop_name.starts_with("__") {
+                    continue;
+                }
                 if let Some(description) = string_at(prop_info, &["description"]) {
                     lines.push(String::new());
                     lines.push(format!("    /** {description} */"));
@@ -242,6 +245,7 @@ fn generate_output_interface(ir: &Value, agent_name: &str, output_helpers: &[Val
                     .map(|properties| {
                         properties
                             .iter()
+                            .filter(|(name, _)| !name.starts_with('@') && !name.starts_with("__"))
                             .map(|(name, val)| {
                                 let optional = if val
                                     .get("optional")
@@ -467,6 +471,7 @@ fn object_lines(value: Option<&Value>) -> Vec<String> {
         .map(|properties| {
             properties
                 .iter()
+                .filter(|(name, _)| !name.starts_with('@') && !name.starts_with("__"))
                 .map(|(name, val)| {
                     let optional = if val
                         .get("optional")

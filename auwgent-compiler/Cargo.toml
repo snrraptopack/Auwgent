@@ -9,6 +9,7 @@ members = [
     "crates/auwgent-compile",
     "crates/auwgent-lsp",
     "crates/auwgent-ir",
+    "crates/auwgent-ir-schema",
     "crates/auwgent-codegen",
     "crates/auwgent-cli",
 ]
@@ -18,6 +19,8 @@ resolver = "2"
 # Shared across crates
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
+ts-rs = { version = "10", features = ["serde-compat"] }
+schemars = { version = "0.8", features = ["preserve_order"] }
 chumsky = "0.9"
 ariadne = "0.4"
 clap = { version = "4", features = ["derive"] }

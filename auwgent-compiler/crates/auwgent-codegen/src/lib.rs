@@ -6,12 +6,14 @@ mod common;
 mod python;
 mod typescript;
 
-use serde_json::Value;
+use auwgent_ir_schema::AgentIR;
 
-pub fn generate_typescript(ir: &Value, base_name: &str) -> String {
-    typescript::generate(ir, base_name)
+pub fn generate_typescript(ir: &AgentIR, base_name: &str) -> String {
+    let ir_value = serde_json::to_value(ir).expect("Schema serialization should succeed");
+    typescript::generate(&ir_value, base_name)
 }
 
-pub fn generate_python(ir: &Value, base_name: &str) -> String {
-    python::generate(ir, base_name)
+pub fn generate_python(ir: &AgentIR, base_name: &str) -> String {
+    let ir_value = serde_json::to_value(ir).expect("Schema serialization should succeed");
+    python::generate(&ir_value, base_name)
 }

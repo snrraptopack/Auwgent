@@ -17,19 +17,23 @@ const config: AuwgentConfig = {
 
 const agent = auwgent(config)
 
-console.log(agent.generatePrompt())
+console.log(agent.generatePrompt("ReportGenerator"))
 
 agent.onIntent((name, value, agentName) => {
   if (name === "response_schema") {
-    console.log("response_schema", value)
+    console.log("response_schema", value,"responding",agentName)
   }
 
   if (name === "response_text") {
-    console.log(value)
+    console.log(value,"responding",agentName)
   }
 
   if (name === "workflow_call") {
     console.log("workflow_call", value)
+  }
+
+  if(name === "workflow_result") {
+    console.log("workflow_result", value)
   }
 
   if (name === "SpeakLoud") {
@@ -40,8 +44,16 @@ agent.onIntent((name, value, agentName) => {
     console.log("🔧 Tool call:", value.type, value.args)
   }
 
+  if (name === "tool_result") {
+    console.log("🔧 Tool result:", value)
+  }
+
   if (name === "helper_call") {
     console.log("🤝 Helper call:", value.type)
+  }
+
+  if (name === "helper_result") {
+    console.log("helper result", value)
   }
 
 

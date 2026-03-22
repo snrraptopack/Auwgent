@@ -5,8 +5,10 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "modelName": "gemini-2.5-flash",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "value": "You are a helper be polite",
           "type": "literal"
@@ -20,25 +22,33 @@
   "context": null,
   "tools": [
     {
+      "name": "getlocation",
       "description": "used to get the user's location",
       "params": {},
-      "name": "getlocation",
-      "returns": "string"
+      "returns": "string",
+      "examples": []
     },
     {
+      "name": "getAnotherLocation",
       "description": "used to get another location",
       "params": {},
-      "name": "getAnotherLocation",
-      "returns": "string"
+      "returns": "string",
+      "examples": []
     },
     {
+      "name": "getNearbyLocation",
       "description": "",
       "params": {},
-      "name": "getNearbyLocation",
-      "returns": "string"
+      "returns": "string",
+      "examples": []
     }
   ],
   "workflows": [],
   "helpers": [],
-  "tests": []
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

@@ -54,14 +54,14 @@ impl<'a> Evaluator<'a> {
 
                 if let Some(s) = schema {
                     Ok(Value::String(crate::schema::format_schema(
-                        s,
+                        &s.0,
                         self.ir.types.as_ref(),
                     )))
                 } else {
                     Ok(Value::String("{}".to_string()))
                 }
             }
-            Expression::Literal { value } => Ok(value.clone()),
+            Expression::Literal { value } => Ok(value.0.clone()),
             Expression::VarRef { value } => scope
                 .get(value)
                 .cloned()
@@ -93,8 +93,33 @@ impl<'a> Evaluator<'a> {
                 }
                 Ok(current)
             }
-            Expression::Template { value } | Expression::Parts { value } => {
+            Expression::Template { value } => {
                 // Evaluate all parts first
+                let mut results = Vec::new();
+                let mut all_strings = true;
+
+                let mut parsed_exprs = Vec::new();
+                for part in value {
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    parsed_exprs.push(parsed);
+                }
+
+                for parsed in &parsed_exprs {
+                    let val = self.evaluate(parsed, scope)?;
+                    if !val.is_string() {
+                        all_strings = false;
+                    }
+                    results.push((parsed, val));
+                }
+
+                if all_strings {
+                    let joined = self.join_and_dedent(results);
+                    Ok(Value::String(joined))
+                } else {
+                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
+                }
+            }
+            Expression::Parts { value } => {
                 let mut results = Vec::new();
                 let mut all_strings = true;
 
@@ -106,18 +131,10 @@ impl<'a> Evaluator<'a> {
                     results.push((part, val));
                 }
 
-                // If all parts are strings, join them with smart whitespace handling
                 if all_strings {
                     let joined = self.join_and_dedent(results);
-
-                    // Only trim full result if it was a "Parts" expression (top-level prompt)
-                    if matches!(expr, Expression::Parts { .. }) {
-                        Ok(Value::String(joined.trim().to_string()))
-                    } else {
-                        Ok(Value::String(joined))
-                    }
+                    Ok(Value::String(joined.trim().to_string()))
                 } else {
-                    // Otherwise return array of values
                     Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
                 }
             }
@@ -136,20 +153,24 @@ impl<'a> Evaluator<'a> {
                 then,
                 else_block,
             } => {
-                // 1. Evaluate left and right sides
-                let left = self.evaluate(&condition.left, scope)?;
-                let right = self.evaluate(&condition.right, scope)?;
+                // 1. Evaluate condition
+                let parsed_cond: crate::types::Condition =
+                    serde_json::from_value(condition.0.clone()).map_err(|e| {
+                        AuwgentError::Evaluation(format!("Condition parse error: {}", e))
+                    })?;
+                let is_true = self.evaluate_condition(&parsed_cond, scope)?;
 
-                // 2. Perform comparison
-                let is_true = self.compare_values(&left, &right, &condition.operator)?;
-
-                // 3. Choose which block to execute
+                // 2. Choose which block to execute
                 let block = if is_true { then } else { else_block };
 
-                // 4. Evaluate the chosen block (similar to Parts/Template)
+                // 3. Evaluate the chosen block (similar to Parts/Template)
                 let mut results = Vec::new();
                 for part in block {
                     results.push((part, self.evaluate(part, scope)?));
+                }
+
+                if results.is_empty() {
+                    return Ok(Value::Null);
                 }
 
                 // Join if strings (same logic as Template)
@@ -181,46 +202,14 @@ impl<'a> Evaluator<'a> {
                 then,
                 else_block,
             } => {
-                // Condition is an enum (Comparison, Boolean, or ContextRef), so we need to extract it
-                let (left_expr, right_expr, op) = match condition {
-                    crate::types::Condition::Comparison(cmp) => {
-                        (&cmp.left, &cmp.right, &cmp.operator)
-                    }
-                    crate::types::Condition::Boolean { value } => {
-                        // For now, treat boolean as "value == true"
-                        (
-                            value,
-                            &Box::new(Expression::Literal {
-                                value: Value::Bool(true),
-                            }),
-                            &"==".to_string(),
-                        )
-                    }
-                    crate::types::Condition::ContextRef { property } => {
-                        // Treat contextRef as "ctx.property == true"
-                        (
-                            &Box::new(Expression::ContextRef {
-                                property: property.clone(),
-                            }),
-                            &Box::new(Expression::Literal {
-                                value: Value::Bool(true),
-                            }),
-                            &"==".to_string(),
-                        )
-                    }
-                };
+                // 1. Evaluate condition
+                let parsed_cond: crate::types::Condition = serde_json::from_value(condition.0.clone()).map_err(|e| AuwgentError::Evaluation(format!("Condition parse error: {}", e)))?;
+                let is_true = self.evaluate_condition(&parsed_cond, scope)?;
 
-                // 1. Evaluate left and right sides
-                let left = self.evaluate(left_expr, scope)?;
-                let right = self.evaluate(right_expr, scope)?;
-
-                // 2. Reuse comparison logic
-                let is_true = self.compare_values(&left, &right, op)?;
-
-                // 3. Execute block
+                // 2. Choose which block to execute
                 let block = if is_true { then } else { else_block };
 
-                // Simple block execution
+                // 3. Simple block execution
                 let mut last_result = Value::Null;
                 for stmt in block {
                     last_result = self.evaluate(stmt, scope)?;
@@ -251,15 +240,23 @@ impl<'a> Evaluator<'a> {
                 // 2. Evaluate the prompt block with the local scope
                 let mut results = Vec::new();
                 for part in value {
-                    results.push((part, self.evaluate(part, &mut local_scope)?));
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    let evaluated = self.evaluate(&parsed, &mut local_scope)?;
+
+                    // Here we don't have a direct reference to parsed easily for join_and_dedent
+                    // because join_and_dedent takes &Expression. We can just use an empty literal as dummy
+                    results.push(evaluated);
                 }
 
                 // 3. Join results if all are strings
-                if results.iter().all(|(_, v)| v.is_string()) {
-                    let joined = self.join_and_dedent(results);
-                    Ok(Value::String(joined.trim().to_string()))
+                if results.iter().all(|v| v.is_string()) {
+                    let mut s = String::new();
+                    for v in results {
+                        s.push_str(v.as_str().unwrap());
+                    }
+                    Ok(Value::String(s.trim().to_string()))
                 } else {
-                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
+                    Ok(Value::Array(results.into_iter().collect()))
                 }
             }
 
@@ -297,14 +294,19 @@ impl<'a> Evaluator<'a> {
             Expression::InlinePrompt { parts } => {
                 let mut results = Vec::new();
                 for part in parts {
-                    results.push((part, self.evaluate(part, scope)?));
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    let evaluated = self.evaluate(&parsed, scope)?;
+                    results.push(evaluated);
                 }
 
-                if results.iter().all(|(_, v)| v.is_string()) {
-                    let joined = self.join_and_dedent(results);
-                    Ok(Value::String(joined))
+                if results.iter().all(|v| v.is_string()) {
+                    let mut s = String::new();
+                    for v in results {
+                        s.push_str(v.as_str().unwrap());
+                    }
+                    Ok(Value::String(s))
                 } else {
-                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
+                    Ok(Value::Array(results.into_iter().collect()))
                 }
             }
 
@@ -399,6 +401,32 @@ impl<'a> Evaluator<'a> {
             }
 
             Expression::Expression { value } => self.evaluate(value, scope),
+            Expression::Array { value } => {
+                let mut results = Vec::new();
+                for expr in value {
+                    results.push(self.evaluate(expr, scope)?);
+                }
+                Ok(Value::Array(results))
+            }
+            Expression::IndexAccess { object, index } => {
+                let obj_val = scope
+                    .get(object)
+                    .cloned()
+                    .ok_or_else(|| AuwgentError::VariableNotFound(object.clone()))?;
+                let idx_val = self.evaluate(index, scope)?;
+                if let Value::Array(arr) = obj_val {
+                    if let Some(idx) = idx_val.as_u64() {
+                        if let Some(val) = arr.get(idx as usize) {
+                            return Ok(val.clone());
+                        }
+                    }
+                }
+                Err(AuwgentError::Evaluation("Invalid index access".to_string()))
+            }
+            _ => Err(AuwgentError::Evaluation(format!(
+                "Unsupported expression evaluator node: {:?}",
+                expr
+            ))),
         }
     }
 
@@ -426,7 +454,8 @@ impl<'a> Evaluator<'a> {
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 
                 if let Some(expr) = config {
-                    let evaluated_config = self.evaluate(expr, scope)?;
+                    let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
+                    let evaluated_config = self.evaluate(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -442,7 +471,8 @@ impl<'a> Evaluator<'a> {
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 
                 if let Some(expr) = config {
-                    let evaluated_config = self.evaluate(expr, scope)?;
+                    let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
+                    let evaluated_config = self.evaluate(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -461,7 +491,8 @@ impl<'a> Evaluator<'a> {
                 res.insert("modelName".to_string(), Value::String(model_name.clone()));
 
                 if let Some(expr) = config {
-                    let evaluated_config = self.evaluate(expr, scope)?;
+                    let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
+                    let evaluated_config = self.evaluate(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -472,6 +503,62 @@ impl<'a> Evaluator<'a> {
                 res.insert("ref".to_string(), Value::String(name.clone()));
                 Ok(Value::Object(res))
             }
+        }
+    }
+
+    pub fn evaluate_condition(
+        &self,
+        cond: &crate::types::Condition,
+        scope: &mut HashMap<String, Value>,
+    ) -> AuwgentResult<bool> {
+        match cond {
+            crate::types::Condition::Comparison(cmp) => {
+                let left = self.evaluate(&cmp.left, scope)?;
+                let right = self.evaluate(&cmp.right, scope)?;
+                self.compare_values(&left, &right, &cmp.operator)
+            }
+            crate::types::Condition::Boolean { value } => {
+                let val = self.evaluate(value, scope)?;
+                Ok(self.is_truthy(&val))
+            }
+            crate::types::Condition::ContextRef { property } => {
+                if let Some(Value::Object(ctx)) = scope.get("context") {
+                    let val = ctx.get(property).unwrap_or(&Value::Null);
+                    Ok(self.is_truthy(val))
+                } else {
+                    Ok(false)
+                }
+            }
+            crate::types::Condition::Logical { op, left, right } => {
+                let l = self.evaluate_condition(left, scope)?;
+                if op == "&&" || op == "and" {
+                    if !l {
+                        return Ok(false);
+                    }
+                    self.evaluate_condition(right, scope)
+                } else if op == "||" || op == "or" {
+                    if l {
+                        return Ok(true);
+                    }
+                    self.evaluate_condition(right, scope)
+                } else {
+                    Err(AuwgentError::Evaluation(format!(
+                        "Unsupported logical op: {}",
+                        op
+                    )))
+                }
+            }
+        }
+    }
+
+    fn is_truthy(&self, val: &Value) -> bool {
+        match val {
+            Value::Bool(b) => *b,
+            Value::Null => false,
+            Value::Number(n) => n.as_f64().unwrap_or(1.0) != 0.0,
+            Value::String(s) => !s.is_empty(),
+            Value::Array(a) => !a.is_empty(),
+            Value::Object(o) => !o.is_empty(),
         }
     }
 

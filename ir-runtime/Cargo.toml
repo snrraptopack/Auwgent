@@ -18,3 +18,4 @@ async-trait = "0.1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
 function-parser = { path = "../function-parser" }
+auwgent-ir-schema = { path = "../auwgent-compiler/crates/auwgent-ir-schema" }

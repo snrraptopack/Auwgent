@@ -7,6 +7,7 @@ edition = "2021"
 auwgent-errors = { path = "../auwgent-errors" }
 auwgent-ast = { path = "../auwgent-ast" }
 auwgent-checker = { path = "../auwgent-checker" }
+auwgent-ir-schema = { path = "../auwgent-ir-schema" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

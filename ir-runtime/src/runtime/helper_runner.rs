@@ -47,7 +47,7 @@ pub fn build_sub_agent_context(
 
     if let Some(grants) = &parent_ir.helper_tool_grants {
         if let Some(grant_val) = grants.get(helper_name) {
-            match grant_val {
+            match &grant_val.0 {
                 Value::String(s) if s == "all" => {
                     // Grant all parent tools
                     for tool in &parent_ir.tools {

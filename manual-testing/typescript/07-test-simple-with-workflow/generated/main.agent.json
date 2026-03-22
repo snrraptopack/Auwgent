@@ -7,8 +7,10 @@
           "type": "custom",
           "id": "my-groq-api",
           "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "openai/gpt-oss-120b"
+          "modelName": "openai/gpt-oss-120b",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
           "type": "inlinePrompt",
           "parts": [
@@ -58,6 +60,7 @@
   },
   "tools": [
     {
+      "name": "db_query_users",
       "description": "Query users from in-memory DB. Filter can be 'all', 'id:<id>', 'email:<email>'",
       "params": {
         "filter": {
@@ -65,7 +68,6 @@
           "optional": false
         }
       },
-      "name": "db_query_users",
       "returns": {
         "type": "array",
         "items": {
@@ -83,6 +85,7 @@
       ]
     },
     {
+      "name": "db_query_products",
       "description": "Query products from in-memory DB. Filter can be 'all', 'id:<id>', 'name:<name>'",
       "params": {
         "filter": {
@@ -90,7 +93,6 @@
           "optional": false
         }
       },
-      "name": "db_query_products",
       "returns": {
         "type": "array",
         "items": {
@@ -108,6 +110,7 @@
       ]
     },
     {
+      "name": "db_query_orders",
       "description": "Query orders from in-memory DB. Filter can be 'all', 'user_id:<id>', 'status:<status>'",
       "params": {
         "filter": {
@@ -115,7 +118,6 @@
           "optional": false
         }
       },
-      "name": "db_query_orders",
       "returns": {
         "type": "array",
         "items": {
@@ -133,6 +135,7 @@
       ]
     },
     {
+      "name": "db_create_user",
       "description": "Create a new user in the database",
       "params": {
         "name": {
@@ -144,7 +147,6 @@
           "optional": false
         }
       },
-      "name": "db_create_user",
       "returns": {
         "type": "typeRef",
         "name": "User"
@@ -163,6 +165,7 @@
       ]
     },
     {
+      "name": "db_create_product",
       "description": "Create a new product in the database",
       "params": {
         "name": {
@@ -178,7 +181,6 @@
           "optional": false
         }
       },
-      "name": "db_create_product",
       "returns": {
         "type": "typeRef",
         "name": "Product"
@@ -201,6 +203,7 @@
       ]
     },
     {
+      "name": "db_create_order",
       "description": "Create a new order in the database",
       "params": {
         "user_id": {
@@ -216,7 +219,6 @@
           "optional": false
         }
       },
-      "name": "db_create_order",
       "returns": {
         "type": "typeRef",
         "name": "Order"
@@ -249,6 +251,7 @@
         }
       },
       "returns": "string",
+      "description": "Get all orders for a specific user with product details",
       "body": [
         {
           "type": "variableDeclaration",
@@ -259,11 +262,11 @@
             "args": [
               {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "literal",
                   "value": "id:"
                 },
+                "op": "+",
                 "right": {
                   "type": "varRef",
                   "value": "target_user_id"
@@ -281,11 +284,11 @@
             "args": [
               {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "literal",
                   "value": "user_id:"
                 },
+                "op": "+",
                 "right": {
                   "type": "varRef",
                   "value": "target_user_id"
@@ -345,7 +348,6 @@
           }
         }
       ],
-      "description": "Get all orders for a specific user with product details",
       "tools": [],
       "examples": [
         {
@@ -360,6 +362,7 @@
       "flowName": "calculate_revenue",
       "flowParams": {},
       "returns": "string",
+      "description": "Calculate total revenue from all completed orders",
       "body": [
         {
           "type": "variableDeclaration",
@@ -408,11 +411,11 @@
               "type": "return",
               "value": {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "literal",
                   "value": "Excellent! Total revenue: $"
                 },
+                "op": "+",
                 "right": {
                   "type": "varRef",
                   "value": "total_revenue"
@@ -426,11 +429,11 @@
           "type": "return",
           "value": {
             "type": "binaryOp",
-            "op": "+",
             "left": {
               "type": "literal",
               "value": "Total revenue: $"
             },
+            "op": "+",
             "right": {
               "type": "varRef",
               "value": "total_revenue"
@@ -438,9 +441,9 @@
           }
         }
       ],
-      "description": "Calculate total revenue from all completed orders",
       "tools": [
         {
+          "name": "sum_order_totals",
           "description": "Parse orders JSON and sum totals",
           "params": {
             "orders_json": {
@@ -448,8 +451,8 @@
               "optional": false
             }
           },
-          "name": "sum_order_totals",
-          "returns": "number"
+          "returns": "number",
+          "examples": []
         }
       ],
       "examples": [
@@ -473,6 +476,7 @@
         }
       },
       "returns": "string",
+      "description": "Process multiple orders at once with validation",
       "body": [
         {
           "type": "if",
@@ -535,11 +539,11 @@
               "type": "return",
               "value": {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "literal",
                   "value": "VIP order processed: "
                 },
+                "op": "+",
                 "right": {
                   "type": "varRef",
                   "value": "order1"
@@ -557,9 +561,9 @@
           }
         }
       ],
-      "description": "Process multiple orders at once with validation",
       "tools": [
         {
+          "name": "validate_stock",
           "description": "Check if enough stock available",
           "params": {
             "product_id": {
@@ -571,10 +575,11 @@
               "optional": false
             }
           },
-          "name": "validate_stock",
-          "returns": "boolean"
+          "returns": "boolean",
+          "examples": []
         },
         {
+          "name": "parse_csv",
           "description": "Parse comma-separated values",
           "params": {
             "csv_string": {
@@ -582,8 +587,8 @@
               "optional": false
             }
           },
-          "name": "parse_csv",
-          "returns": "string"
+          "returns": "string",
+          "examples": []
         }
       ],
       "examples": [
@@ -615,8 +620,10 @@
               "type": "custom",
               "id": "my-groq-api",
               "url": "https://api.groq.com/openai/v1/chat/completions",
-              "modelName": "llama-3.3-70b-versatile"
+              "modelName": "llama-3.3-70b-versatile",
+              "config": null
             },
+            "embedding": null,
             "prompt": {
               "type": "inlinePrompt",
               "parts": [
@@ -675,6 +682,7 @@
       "context": null,
       "tools": [
         {
+          "name": "analyze_user_behavior",
           "description": "Analyze a specific user's purchasing behavior",
           "params": {
             "user_id": {
@@ -682,7 +690,6 @@
               "optional": false
             }
           },
-          "name": "analyze_user_behavior",
           "returns": "string",
           "examples": [
             {
@@ -694,9 +701,9 @@
           ]
         },
         {
+          "name": "detect_low_stock",
           "description": "Find products with low stock levels",
           "params": {},
-          "name": "detect_low_stock",
           "returns": "string",
           "examples": [
             {}
@@ -708,6 +715,7 @@
           "flowName": "comprehensive_analysis",
           "flowParams": {},
           "returns": "string",
+          "description": "Run a comprehensive analysis across all database entities",
           "body": [
             {
               "type": "variableDeclaration",
@@ -857,9 +865,9 @@
               }
             }
           ],
-          "description": "Run a comprehensive analysis across all database entities",
           "tools": [
             {
+              "name": "calculate_average",
               "description": "Calculate average from comma-separated numbers",
               "params": {
                 "numbers": {
@@ -867,10 +875,11 @@
                   "optional": false
                 }
               },
-              "name": "calculate_average",
-              "returns": "number"
+              "returns": "number",
+              "examples": []
             },
             {
+              "name": "find_outliers",
               "description": "Identify outliers in dataset",
               "params": {
                 "data": {
@@ -878,10 +887,11 @@
                   "optional": false
                 }
               },
-              "name": "find_outliers",
-              "returns": "string"
+              "returns": "string",
+              "examples": []
             },
             {
+              "name": "analyze_user_behavior",
               "description": "Analyze a specific user's purchasing behavior",
               "params": {
                 "user_id": {
@@ -889,39 +899,21 @@
                   "optional": false
                 }
               },
-              "name": "analyze_user_behavior",
-              "returns": "string"
+              "returns": "string",
+              "examples": []
             }
           ],
           "examples": [
             {}
           ]
         }
-      ]
+      ],
+      "customIntents": null,
+      "examples": []
     },
     {
       "name": "ReportGenerator",
       "description": "Specialized helper for generating formatted reports and summaries",
-      "customIntents": [
-        {
-          "name": "SpeakLoud",
-          "description": "Use this to explain your thought step by step actions you are performing to the user",
-          "fields": {
-            "explain": {
-              "type": "string",
-              "optional": false
-            }
-          },
-          "examples": [
-            {
-              "explain": {
-                "type": "literal",
-                "value": "I'm querying the database to find all users..."
-              }
-            }
-          ]
-        }
-      ],
       "modelConfig": [
         {
           "defaultConfig": {
@@ -929,8 +921,10 @@
               "type": "custom",
               "id": "my-groq-api",
               "url": "https://api.groq.com/openai/v1/chat/completions",
-              "modelName": "openai/gpt-oss-120b"
+              "modelName": "openai/gpt-oss-120b",
+              "config": null
             },
+            "embedding": null,
             "prompt": {
               "type": "inlinePrompt",
               "parts": [
@@ -1023,6 +1017,7 @@
       "context": null,
       "tools": [
         {
+          "name": "format_table",
           "description": "Format data as a text table",
           "params": {
             "data": {
@@ -1030,7 +1025,6 @@
               "optional": false
             }
           },
-          "name": "format_table",
           "returns": "string",
           "examples": [
             {
@@ -1042,6 +1036,7 @@
           ]
         },
         {
+          "name": "generate_chart_description",
           "description": "Generate a textual description of a chart",
           "params": {
             "data": {
@@ -1053,7 +1048,6 @@
               "optional": false
             }
           },
-          "name": "generate_chart_description",
           "returns": "string",
           "examples": [
             {
@@ -1074,6 +1068,7 @@
           "flowName": "generate_sales_report",
           "flowParams": {},
           "returns": "string",
+          "description": "Generate a comprehensive sales report",
           "body": [
             {
               "type": "variableDeclaration",
@@ -1182,11 +1177,11 @@
               "name": "summary",
               "value": {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "literal",
                   "value": "Sales Report for Session: "
                 },
+                "op": "+",
                 "right": {
                   "type": "contextRef",
                   "property": "session_id"
@@ -1198,27 +1193,27 @@
               "name": "details",
               "value": {
                 "type": "binaryOp",
-                "op": "+",
                 "left": {
                   "type": "binaryOp",
-                  "op": "+",
                   "left": {
                     "type": "binaryOp",
-                    "op": "+",
                     "left": {
                       "type": "literal",
                       "value": "Completed: "
                     },
+                    "op": "+",
                     "right": {
                       "type": "varRef",
                       "value": "completed"
                     }
                   },
+                  "op": "+",
                   "right": {
                     "type": "literal",
                     "value": "\\nPending: "
                   }
                 },
+                "op": "+",
                 "right": {
                   "type": "varRef",
                   "value": "pending"
@@ -1270,9 +1265,9 @@
               }
             }
           ],
-          "description": "Generate a comprehensive sales report",
           "tools": [
             {
+              "name": "aggregate_by_status",
               "description": "Group orders by status and count",
               "params": {
                 "orders": {
@@ -1280,10 +1275,11 @@
                   "optional": false
                 }
               },
-              "name": "aggregate_by_status",
-              "returns": "string"
+              "returns": "string",
+              "examples": []
             },
             {
+              "name": "calculate_metrics",
               "description": "Calculate key sales metrics",
               "params": {
                 "orders": {
@@ -1291,83 +1287,84 @@
                   "optional": false
                 }
               },
-              "name": "calculate_metrics",
-              "returns": "string"
+              "returns": "string",
+              "examples": []
             }
           ],
           "examples": [
             {}
           ]
         }
-      ]
+      ],
+      "customIntents": [
+        {
+          "name": "SpeakLoud",
+          "description": "Use this to explain your thought step by step actions you are performing to the user",
+          "fields": {
+            "explain": {
+              "type": "string",
+              "optional": false
+            }
+          },
+          "examples": [
+            {
+              "explain": {
+                "type": "literal",
+                "value": "I'm querying the database to find all users..."
+              }
+            }
+          ]
+        }
+      ],
+      "examples": []
     }
   ],
-  "tests": [],
   "types": {
-    "User": {
+    "AnalysisReport": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "email": {
-          "type": "string",
-          "optional": false
-        },
-        "created_at": {
-          "type": "string",
-          "optional": false
-        }
-      }
-    },
-    "Product": {
-      "isOutput": false,
-      "properties": {
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "price": {
+        "total_products": {
           "type": "number",
-          "optional": false
+          "optional": false,
+          "description": null
         },
-        "stock": {
+        "total_orders": {
           "type": "number",
-          "optional": false
+          "optional": false,
+          "description": null
+        },
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false,
+          "description": null
+        },
+        "total_users": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "revenue": {
+          "type": "number",
+          "optional": false,
+          "description": null
         }
       }
     },
     "Order": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "optional": false
-        },
-        "user_id": {
-          "type": "string",
-          "optional": false
-        },
-        "product_id": {
-          "type": "string",
-          "optional": false
-        },
         "quantity": {
           "type": "number",
-          "optional": false
+          "optional": false,
+          "description": null
         },
         "total": {
           "type": "number",
-          "optional": false
+          "optional": false,
+          "description": null
         },
         "status": {
           "type": {
@@ -1378,103 +1375,95 @@
               "cancelled"
             ]
           },
-          "optional": false
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "user_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "product_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
         }
       }
     },
     "QueryResult": {
       "isOutput": false,
       "properties": {
-        "success": {
-          "type": "boolean",
-          "optional": false
-        },
         "data": {
           "type": "string",
-          "optional": false
+          "optional": false,
+          "description": null
         },
         "message": {
           "type": "string",
-          "optional": false
+          "optional": false,
+          "description": null
+        },
+        "success": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
         }
-      },
-      "@examples": [
-        {
-          "success": {
-            "type": "literal",
-            "value": true
-          },
-          "data": {
-            "type": "literal",
-            "value": "{\\\"users\\\": []}"
-          },
-          "message": {
-            "type": "literal",
-            "value": "Query successful"
-          }
-        }
-      ]
+      }
     },
-    "AnalysisReport": {
+    "Product": {
       "isOutput": false,
       "properties": {
-        "total_users": {
-          "type": "number",
-          "optional": false
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
         },
-        "total_products": {
-          "type": "number",
-          "optional": false
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
         },
-        "total_orders": {
+        "price": {
           "type": "number",
-          "optional": false
+          "optional": false,
+          "description": null
         },
-        "revenue": {
+        "stock": {
           "type": "number",
-          "optional": false
-        },
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false
+          "optional": false,
+          "description": null
         }
-      },
-      "@examples": [
-        {
-          "total_users": {
-            "type": "literal",
-            "value": 10.0
-          },
-          "total_products": {
-            "type": "literal",
-            "value": 5.0
-          },
-          "total_orders": {
-            "type": "literal",
-            "value": 20.0
-          },
-          "revenue": {
-            "type": "literal",
-            "value": 5000.0
-          },
-          "insights": {
-            "type": "array",
-            "value": [
-              {
-                "type": "literal",
-                "value": "Good sales"
-              },
-              {
-                "type": "literal",
-                "value": "Low stock"
-              }
-            ]
-          }
+      }
+    },
+    "User": {
+      "isOutput": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "created_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
         }
-      ]
+      }
     }
   },
   "helperToolGrants": {
@@ -1486,9 +1475,11 @@
     ]
   },
   "helperHandoff": {
-    "DataAnalyzer": "thenContinue",
-    "ReportGenerator": "user"
+    "ReportGenerator": "user",
+    "DataAnalyzer": "thenContinue"
   },
+  "tests": [],
+  "lifecycle": null,
   "customIntents": [
     {
       "name": "SpeakLoud",

@@ -7,11 +7,13 @@
           "type": "custom",
           "id": "my-groq-api",
           "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "openai/gpt-oss-120b"
+          "modelName": "openai/gpt-oss-120b",
+          "config": null
         },
         "embedding": {
           "type": "gemini",
-          "modelName": "gemini-embedding-001"
+          "modelName": "gemini-embedding-001",
+          "config": null
         },
         "prompt": {
           "type": "inlinePrompt",
@@ -59,18 +61,6 @@
     {
       "name": "StoryTeller",
       "description": "A professional story teller",
-      "customIntents": [
-        {
-          "name": "questions",
-          "description": "Use this to ask detailed question about the user's request",
-          "fields": {
-            "questions": {
-              "type": "string",
-              "optional": false
-            }
-          }
-        }
-      ],
       "modelConfig": [
         {
           "defaultConfig": {
@@ -78,8 +68,10 @@
               "type": "custom",
               "id": "my-groq-api",
               "url": "https://api.groq.com/openai/v1/chat/completions",
-              "modelName": "llama-3.3-70b-versatile"
+              "modelName": "llama-3.3-70b-versatile",
+              "config": null
             },
+            "embedding": null,
             "prompt": {
               "value": "You are a professional Story teller always make sure you give out your maximum effort to crack the joke",
               "type": "literal"
@@ -103,7 +95,21 @@
       "output": null,
       "context": null,
       "tools": [],
-      "workflows": []
+      "workflows": [],
+      "customIntents": [
+        {
+          "name": "questions",
+          "description": "Use this to ask detailed question about the user's request",
+          "fields": {
+            "questions": {
+              "type": "string",
+              "optional": false
+            }
+          },
+          "examples": []
+        }
+      ],
+      "examples": []
     },
     {
       "name": "Analyzer",
@@ -115,8 +121,10 @@
               "type": "custom",
               "id": "my-groq-api",
               "url": "https://api.groq.com/openai/v1/chat/completions",
-              "modelName": "openai/gpt-oss-120b"
+              "modelName": "openai/gpt-oss-120b",
+              "config": null
             },
+            "embedding": null,
             "prompt": {
               "type": "inlinePrompt",
               "parts": [
@@ -176,14 +184,19 @@
       },
       "context": null,
       "tools": [],
-      "workflows": []
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
     }
   ],
-  "tests": [],
+  "types": null,
+  "helperToolGrants": null,
   "helperHandoff": {
-    "Analyzer": "thenContinue",
-    "StoryTeller": "user"
+    "StoryTeller": "user",
+    "Analyzer": "thenContinue"
   },
+  "tests": [],
+  "lifecycle": null,
   "customIntents": [
     {
       "name": "thought",
@@ -193,7 +206,8 @@
           "type": "string",
           "optional": false
         }
-      }
+      },
+      "examples": []
     }
   ]
 }

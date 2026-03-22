@@ -227,6 +227,15 @@ fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
             .map(|params| {
                 params
                     .values()
+                    .filter(|type_obj| {
+                        // Filter out internal AST schema items
+                        if let Some(obj) = type_obj.as_object() {
+                            if obj.contains_key("@id") || obj.contains_key("__source") {
+                                return false;
+                            }
+                        }
+                        true
+                    })
                     .map(|type_obj| {
                         let mut python_type = type_to_python_string(type_obj);
                         if type_obj
@@ -331,6 +340,9 @@ fn generate_typed_dict_raw(class_name: &str, value: Option<&Value>) -> String {
     match value.and_then(Value::as_object) {
         Some(properties) if !properties.is_empty() => {
             for (prop_name, prop_info) in properties {
+                if prop_name.starts_with('@') || prop_name.starts_with("__") {
+                    continue;
+                }
                 let mut python_type = type_to_python_string(prop_info);
                 if prop_info
                     .get("optional")
