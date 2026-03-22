@@ -1,6 +1,7 @@
 use crate::schema;
-use crate::types::AgentIR;
+use crate::types::{AgentIR, TypeDefinition};
 use serde_json::Value;
+use std::collections::HashMap;
 
 fn unwrap_schema_properties(val: &Value) -> Option<&serde_json::Map<String, Value>> {
     if let Some(obj) = val.as_object() {
@@ -16,354 +17,193 @@ fn unwrap_schema_properties(val: &Value) -> Option<&serde_json::Map<String, Valu
     val.as_object()
 }
 
-pub fn generate_intents(ir: &crate::types::AgentIR) -> String {
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BLOCK PROTOCOL PROMPT GENERATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Generate system prompt using the @@block protocol format.
+/// This is the new format that replaces function-style intents.
+pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     let mut sections = Vec::new();
 
-    // ── Dynamic "# Things to Know" section ────────────────────────────────
-    // Explains the intent system contextually based on what capabilities
-    // the agent actually has (tools, workflows, response schemas, etc.)
-    let mut know_items: Vec<String> = Vec::new();
-
-    know_items.push(
-        "Intents are actions you perform. Each response must be a valid Function Composition block using one or more intent."
-            .to_string(),
-    );
-
-    if !ir.tools.is_empty() {
-        know_items.push(
-            "A `tool_call` intent invokes an external tool to fetch or mutate data. \
-             After a tool executes, you will receive a `tool_result` — use it to \
-             continue or respond to the user."
-                .to_string(),
-        );
-    }
-
-    if !ir.workflows.is_empty() {
-        know_items.push(
-            "A `workflow_call` intent triggers a deterministic workflow. \
-             After it executes, you will receive a `tool_result` — use it to \
-             continue or respond to the user."
-                .to_string(),
-        );
-    }
-
-    if !ir.helpers.is_empty() {
-        know_items
-            .push("A `helper_call` intent delegates a subtask to a specialized agent.".to_string());
-    }
-
-    if let Some(output) = &ir.output {
-        if matches!(output.as_object(), Some(obj) if !obj.is_empty()) {
-            know_items.push(
-                "A `response_schema` intent sends structured data directly to the user. \
-                 Use it when responding with data that matches the defined schema."
-                    .to_string(),
-            );
-        }
-    }
-
-    // Only mention response_text if the agent has no structured output schema
-    let has_output_schema = ir
-        .output
-        .as_ref()
-        .map(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
-        .unwrap_or(false);
-    if !has_output_schema {
-        know_items
-            .push("A `response_text` intent sends a plain text reply to the user.".to_string());
-    }
-
-    if let Some(custom) = &ir.custom_intents {
-        for ci in custom {
-            let desc = ci.description.as_deref().unwrap_or("User-defined intent.");
-            know_items.push(format!("A `{}` intent {}.", ci.name, desc));
-        }
-    }
-
-    // Only mention tool_result follow-up if the agent can actually call tools/workflows/helpers
-    let has_callables = !ir.tools.is_empty() || !ir.workflows.is_empty() || !ir.helpers.is_empty();
-    if has_callables {
-        let callable_options: Vec<&str> = [
-            ir.output
-                .as_ref()
-                .filter(|o| matches!(o.as_object(), Some(obj) if !obj.is_empty()))
-                .map(|_| "response_schema"),
-            if !has_output_schema {
-                Some("response_text")
-            } else {
-                None
-            },
-            if !ir.tools.is_empty() {
-                Some("tool_call")
-            } else {
-                None
-            },
-            if !ir.workflows.is_empty() {
-                Some("workflow_call")
-            } else {
-                None
-            },
-            if !ir.helpers.is_empty() {
-                Some("helper_call")
-            } else {
-                None
-            },
-        ]
-        .iter()
-        .filter_map(|o| *o)
-        .collect();
-
-        let options_str = if callable_options.len() == 1 {
-            format!("`{}`", callable_options[0])
-        } else {
-            let last = callable_options.last().unwrap();
-            let rest: Vec<_> = callable_options[..callable_options.len() - 1]
-                .iter()
-                .map(|s| format!("`{}`", s))
-                .collect();
-            format!("{} or `{}`", rest.join(", "), last)
-        };
-
-        know_items.push(format!(
-            "When you receive a `tool_result`, you MUST respond with another intent ({}).",
-            options_str
-        ));
-    }
-
-    let know_lines: Vec<String> = know_items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| format!("{}. {}", i + 1, item))
-        .collect();
-
-    sections.push(format!("# Things to Know\n{}", know_lines.join("\n")));
-
-    // ── Reference sections (tools, workflows, helpers, response schema) ──
-
-    // Tools
-    let mut expanded_tools_str = String::new();
-    if !ir.tools.is_empty() {
-        let mut tool_lines = Vec::new();
-        for tool in &ir.tools {
-            let mut params = Vec::new();
-            if let Some(obj) = tool.params.as_object() {
-                for (name, def) in obj {
-                    let field_type = def["type"].as_str().unwrap_or("any");
-                    params.push(format!("{}: {}", name, field_type));
-                }
-            }
-            let mut sig = format!("{}({})", tool.name, params.join(", "));
-            if let Some(desc) = &tool.description {
-                sig.push_str(" // ");
-                sig.push_str(desc);
-            }
-            tool_lines.push(sig);
-        }
-        expanded_tools_str = format!(
-            "# Tools Available\nExternal tools you can call. You MUST ONLY use tools from this exact list.\n\n{}",
-            tool_lines.join("\n")
-        );
-    }
-
-    // Workflows
-    let mut expanded_wf_str = String::new();
-    if !ir.workflows.is_empty() {
-        let mut wf_lines = Vec::new();
-        for wf in &ir.workflows {
-            let mut params = Vec::new();
-            if let Some(obj) = wf.params.as_object() {
-                for (name, def) in obj {
-                    let field_type = def["type"].as_str().unwrap_or("any");
-                    params.push(format!("{}: {}", name, field_type));
-                }
-            }
-            let mut sig = format!("{}({})", wf.name, params.join(", "));
-            if let Some(desc) = &wf.description {
-                sig.push_str(" // ");
-                sig.push_str(desc);
-            }
-            wf_lines.push(sig);
-        }
-        expanded_wf_str = format!(
-            "# Workflows Available\nDeterministic workflows you can execute. You MUST ONLY use workflows from this exact list.\n\n{}",
-            wf_lines.join("\n")
-        );
-    }
-
-    // Helpers
-    let mut expanded_helpers_str = String::new();
-    if !ir.helpers.is_empty() {
-        let mut helper_lines = Vec::new();
-        for helper in &ir.helpers {
-            let mut params = Vec::new();
-                    if let Some(input_ir) = &helper.input {
-                        if input_ir.get("kind").and_then(|v| v.as_str()) == Some("properties") {
-                            if let Some(fields) = input_ir.get("fields").and_then(|v| v.as_object()) {
-                                let mut sorted_keys: Vec<_> = fields.keys().collect();
-                                sorted_keys.sort();
-                                for name in sorted_keys {
-                                    let def = &fields[name];
-                                    let field_type = schema::format_type_value(def, ir.types.as_ref());
-                                    params.push(format!("{}: {}", name, field_type));
-                                }
-                            }
-                        } else if input_ir.get("kind").and_then(|v| v.as_str()) == Some("direct") {
-                            if let Some(ty) = input_ir.get("type") {
-                                let type_str = schema::format_type_value(ty, ir.types.as_ref());
-                                params.push(format!("input: {}", type_str));
-                            }
-                        }
-                    }
-            let mut sig = format!("{}({})", helper.name, params.join(", "));
-            if let Some(desc) = &helper.description {
-                sig.push_str(" // ");
-                sig.push_str(desc);
-            }
-            helper_lines.push(sig);
-        }
-        expanded_helpers_str = format!(
-            "# Helpers Available\nDelegates subtasks to specialized agents. You MUST ONLY use helpers from this exact list.\n\n{}",
-            helper_lines.join("\n")
-        );
-    }
-
-    // Response Schemas (Union Variants)
-    let mut expanded_output_str = String::new();
-    if let Some(output) = &ir.output {
-        if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
-            let mut variant_lines = Vec::new();
-            for (variant_name, variant_schema) in variants {
-                let mut fields = Vec::new();
-                if let Some(obj) = unwrap_schema_properties(variant_schema) {
-                    for (name, def) in obj {
-                        let field_type = schema::format_type_value(def, ir.types.as_ref());
-                        fields.push(format!("{}: {}", name, field_type));
-                    }
-                }
-                variant_lines.push(format!("{}({})", variant_name, fields.join(", ")));
-            }
-            expanded_output_str = format!(
-                "# Response Schemas Available\nYou MUST use exactly the fields defined for your chosen type.\n\n{}",
-                variant_lines.join("\n")
-            );
-        }
-    }
-
-    let mut options: Vec<String> = Vec::new();
-
-    // response_schema or response_text
-    if let Some(output) = &ir.output {
-        if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
-            let mut variant_names = Vec::new();
-            for (variant_name, _variant_schema) in variants {
-                variant_names.push(variant_name.clone());
-            }
-            let variant_union = if variant_names.len() > 1 {
-                format!("< {} >", variant_names.join(" | "))
-            } else {
-                variant_names[0].clone()
-            };
-            options.push(format!("// Respond to the user using one of the available schema variants. See exact fields below.\nresponse_schema(\n  type = \"{}\"\n  response = {{ /* match the selected type's fields */ }}\n)\n\n{}", variant_union, expanded_output_str));
-        } else {
-            if let Some(obj) = unwrap_schema_properties(output) {
-                if !obj.is_empty() {
-                    let schema_str = schema::format_schema_function(&serde_json::Value::Object(obj.clone()), 2, ir.types.as_ref());
-                    options.push(format!("// Respond to the user using the structured schema\nresponse_schema(\n  response = {{\n{}\n  }}\n)", schema_str));
-                } else {
-                    options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
-                }
-            } else {
-                options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
-            }
-        }
-    } else {
-        options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
-    }
-
-    // tool_call
-    if !ir.tools.is_empty() {
-        let tool_names: Vec<String> = ir.tools.iter().map(|t| t.name.clone()).collect();
-        let tool_union = if tool_names.len() > 1 {
-            format!("< {} >", tool_names.join(" | "))
-        } else {
-            tool_names[0].clone()
-        };
-        options.push(format!(
-            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
-            tool_union, expanded_tools_str
-        ));
-    }
-
-    // workflow_call
-    if !ir.workflows.is_empty() {
-        let wf_names: Vec<String> = ir.workflows.iter().map(|w| w.name.clone()).collect();
-        let wf_union = if wf_names.len() > 1 {
-            format!("< {} >", wf_names.join(" | "))
-        } else {
-            wf_names[0].clone()
-        };
-        options.push(format!(
-            "// Execute a predefined workflow. See exact arguments below.\nworkflow_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
-            wf_union, expanded_wf_str
-        ));
-    }
-
-    // helper_call
-    if !ir.helpers.is_empty() {
-        let helper_names: Vec<String> = ir.helpers.iter().map(|h| h.name.clone()).collect();
-        let helper_union = if helper_names.len() > 1 {
-            format!("< {} >", helper_names.join(" | "))
-        } else {
-            helper_names[0].clone()
-        };
-        options.push(format!(
-            "// Delegate a task to a specialized helper. See exact arguments below.\nhelper_call(\n  type = \"{}\"\n  args = {{\n    // PASS YOUR ARGUMENTS HERE USING `=`\n  }}\n)\n\n{}",
-            helper_union, expanded_helpers_str
-        ));
-    }
-
-    // Custom Intents
-    if let Some(custom) = &ir.custom_intents {
-        for ci in custom {
-            let schema_str = schema::format_schema_function(&ci.fields, 2, ir.types.as_ref());
-            let mut ci_str = String::new();
-            if let Some(desc) = &ci.description {
-                ci_str.push_str(&format!("// {}\n", desc));
-            }
-            ci_str.push_str(&format!("{}(\n{}\n)", ci.name, schema_str));
-            options.push(ci_str);
-        }
-    }
-
+    // ═══ HEADER ═══
     sections.push(
-        "# Instructions\n\
-         Your response MUST ONLY be valid Function Composition blocks. ABSOLUTELY NO conversational text or explanations outside of a function block.\n\
-         What is a Function Composition block? It is a structured format using intents as function calls. For example:\n\
-         intent_name(\n\
-           field_name = \"value\"\n\
-         )\n\
-         \n\
-         CRITICAL RULE: You MUST NEVER assume or hallucinate a tool, helper, workflow, or intent that is not explicitly listed in the available options. If it is not listed in the sections above, IT DOES NOT EXIST. If a user asks you to use an unknown tool/helper, you must politely decline and explain what capabilities you actually have.\n\
-         CRITICAL RULE: You are an intelligent AI. You must ALWAYS use your internal reasoning and knowledge to answer questions or converse directly with the user via `response_text` when possible. You should ONLY call specialized tools or helpers if the user explicitly requests a task that requires them.\n\
-         \n\
-         String values MUST be wrapped in double quotes. Multiline strings are supported natively inside quotes.\n\
-         Keys and fields are assigned using `=`. Nested objects use `{}`.\n\
-         For example, to execute an action, you MUST use a function:\n\
-         obey(\n\
-           action = \"This is my action payload.\nIt can span multiple lines.\"\n\
-         )\n\
-         \n\
-         Never wrap your output in code fences or markdown. START IMMEDIATELY with a function name.\n\
-         "
-        .to_string(),
+        "You are an execution engine. You communicate EXCLUSIVELY using the `@@` block protocol.\n\n\
+         # AVAILABLE BLOCKS\n\n\
+         You may ONLY use the following block types:".to_string()
     );
 
-    sections.push(format!("# Available Actions (Options)\nYou MUST select and output one or more of the following function blocks to perform your turn:\n\n{}", options.join("\n\n")));
+    // ═══ @@chat BLOCK ═══
+    sections.push(
+        "\n\n@@chat\n\
+         Use this to when you are responding to the user directly\n\
+         @@end".to_string()
+    );
 
-    sections.join("\n\n")
+    // ═══ @@tool BLOCK ═══
+    if !ir.tools.is_empty() {
+        let mut tool_section = String::from("\n\n@@tool\nUse this to execute parallel tools.\nAvailable tools and their exact arguments:\n");
+
+        for tool in &ir.tools {
+            let params = format_params_signature(&tool.params, ir.types.as_ref());
+            tool_section.push_str(&format!("- {}({})", tool.name, params));
+            if let Some(desc) = &tool.description {
+                tool_section.push_str(&format!(" // {}", desc));
+            }
+            tool_section.push('\n');
+        }
+
+        // Collect examples from tools that have them
+        let example_calls = collect_tool_example_calls(&ir.tools);
+        if !example_calls.is_empty() {
+            tool_section.push_str("\nExample:\n@@tool\n");
+            tool_section.push_str(&example_calls.join("\n"));
+            tool_section.push_str("\n@@end");
+        }
+
+        sections.push(tool_section);
+    }
+
+    // ═══ @@workflow BLOCK ═══
+    if !ir.workflows.is_empty() {
+        let mut wf_section = String::from("\n\n@@workflow\nUse this to execute a single, sequential backend workflow.\nAvailable workflows:\n");
+
+        for wf in &ir.workflows {
+            let params = format_params_signature(&wf.params, ir.types.as_ref());
+            wf_section.push_str(&format!("- {}({})", wf.name, params));
+            if let Some(desc) = &wf.description {
+                wf_section.push_str(&format!(" // {}", desc));
+            }
+            wf_section.push('\n');
+        }
+
+        // Collect examples
+        let example_calls = collect_workflow_example_calls(&ir.workflows);
+        if !example_calls.is_empty() {
+            wf_section.push_str("\nExample:\n@@workflow\n");
+            wf_section.push_str(&example_calls[0]); // Only one workflow per block
+            wf_section.push_str("\n@@end");
+        }
+
+        sections.push(wf_section);
+    }
+
+    // ═══ @@out BLOCK ═══
+    if let Some(output) = &ir.output {
+        if let Some(obj) = output.as_object() {
+            if !obj.is_empty() {
+                let mut schema_section = String::from("\n\n@@out [SchemaName]\nUse this to return structured data to the system.\nAvailable schemas and their exact shapes:\n\n");
+
+                // Format schema structure (TypeScript-style)
+                schema_section.push_str(&format_output_schema_ts_style(output, ir));
+
+                // Add examples
+                if let Some(examples) = output.get("@examples").and_then(|v| v.as_array()) {
+                    if !examples.is_empty() {
+                        let ex = &examples[0];
+                        let schema_name = ex.get("__schema_name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Output");
+
+                        schema_section.push_str(&format!("\nExample:\n@@out {}\n", schema_name));
+                        schema_section.push_str(&format_ts_object_for_example(ex));
+                        schema_section.push_str("\n@@end");
+                    }
+                }
+
+                sections.push(schema_section);
+            }
+        }
+    }
+
+    // ═══ @@helper BLOCK ═══
+    if !ir.helpers.is_empty() {
+        let mut helper_section = String::from("\n\n@@helper\nUse this to delegate to a specialized sub-agent.\nAvailable helpers:\n");
+
+        for helper in &ir.helpers {
+            let params = format_helper_params_signature(&helper.input, ir.types.as_ref());
+            helper_section.push_str(&format!("- {}({})", helper.name, params));
+            if let Some(desc) = &helper.description {
+                helper_section.push_str(&format!(" // {}", desc));
+            }
+            helper_section.push('\n');
+        }
+
+        // Add examples
+        let example_calls = collect_helper_example_calls(&ir.helpers);
+        if !example_calls.is_empty() {
+            helper_section.push_str("\nExample:\n@@helper\n");
+            helper_section.push_str(&example_calls[0]); // Only one helper per block
+            helper_section.push_str("\n@@end");
+        }
+
+        sections.push(helper_section);
+    }
+
+    // ═══ CUSTOM INTENTS ═══
+    if let Some(custom) = &ir.custom_intents {
+        for ci in custom {
+            // Format: @@IntentName
+            // Fields: param1 = type1, param2 = type2
+            let mut custom_section = format!("\n\n@@{}\n", ci.name);
+            
+            if let Some(desc) = &ci.description {
+                custom_section.push_str(&format!("{}\n", desc));
+            }
+
+            // Add field signature as inline format
+            let params_sig = format_params_signature(&ci.fields, ir.types.as_ref());
+            if !params_sig.is_empty() {
+                custom_section.push_str(&format!("Fields: {}\n", params_sig));
+            }
+
+            // Add examples
+            if !ci.examples.is_empty() {
+                custom_section.push_str(&format!("\nExample:\n@@{}\n", ci.name));
+                custom_section.push_str(&format_custom_intent_example_inline(&ci.examples[0]));
+                custom_section.push_str("\n@@end");
+            }
+
+            sections.push(custom_section);
+        }
+    }
+
+    // ═══ CONSTRAINTS ═══
+    let mut constraints = Vec::new();
+    constraints.push("- NEVER invent blocks that are not listed above.".to_string());
+    
+    if !ir.tools.is_empty() {
+        constraints.push("- Your `@@tool` arguments must STRICTLY match the types and shapes provided.".to_string());
+    }
+    
+    if let Some(output) = &ir.output {
+        if let Some(obj) = output.as_object() {
+            if !obj.is_empty() {
+                constraints.push("- Your `@@out` JSON must STRICTLY match the schema shape provided.".to_string());
+                constraints.push("- Do not add properties to `@@out` objects that are not defined in the schema shape.".to_string());
+            }
+        }
+    }
+    
+    if !ir.workflows.is_empty() {
+        constraints.push("- Your `@@workflow` arguments must STRICTLY match the types provided.".to_string());
+    }
+    
+    if !ir.helpers.is_empty() {
+        constraints.push("- Your `@@helper` arguments must STRICTLY match the types provided.".to_string());
+    }
+    
+    constraints.push("- You can use multiple blocks in one response (e.g., @@chat then @@tool then @@chat).".to_string());
+    constraints.push("- Blocks auto-close when you start a new block, but using @@end is recommended for clarity.".to_string());
+
+    sections.push(format!("\n\n# CRITICAL CONSTRAINTS\n\n{}", constraints.join("\n")));
+
+    sections.join("")
 }
 
-pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
+/// Generate helper-specific prompt using block protocol format.
+pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) -> String {
     let mut sections = Vec::new();
 
     // Determine allowed tools
@@ -391,111 +231,483 @@ pub fn generate_helper_intents(ir: &AgentIR, helper_name: &str) -> String {
         }
     }
 
-    // Things to Know (helper variant)
-    let mut know_items: Vec<String> = Vec::new();
-    know_items.push(
-        "Intents are actions you perform. Each response must be a valid Function Composition block using one or more intent."
-            .to_string(),
+    // ═══ HEADER ═══
+    sections.push(
+        "You are a specialized helper agent. You communicate EXCLUSIVELY using the `@@` block protocol.\n\n\
+         # AVAILABLE BLOCKS\n\n\
+         You may ONLY use the following block types:".to_string()
     );
-    if !allowed_tools.is_empty() {
-        know_items.push(
-            "A `tool_call` intent invokes an external tool. \
-             After a tool executes, you will receive a `tool_result` — use it to respond."
-                .to_string(),
-        );
-    }
-    know_items.push("A `response_text` intent sends a plain text reply.".to_string());
 
+    // ═══ @@chat BLOCK ═══
+    sections.push(
+        "\n\n@@chat\n\
+         Use this to speak to the user, explain your actions, or think out loud.\n\
+         @@end".to_string()
+    );
+
+    // ═══ @@tool BLOCK (filtered) ═══
+    if !allowed_tools.is_empty() {
+        let mut tool_section = String::from("\n\n@@tool\nUse this to execute parallel tools.\nAvailable tools and their exact arguments:\n");
+
+        for tool in &allowed_tools {
+            let params = format_params_signature(&tool.params, ir.types.as_ref());
+            tool_section.push_str(&format!("- {}({})", tool.name, params));
+            if let Some(desc) = &tool.description {
+                tool_section.push_str(&format!(" // {}", desc));
+            }
+            tool_section.push('\n');
+        }
+
+        // Collect examples
+        let example_calls = collect_tool_example_calls(&allowed_tools);
+        if !example_calls.is_empty() {
+            tool_section.push_str("\nExample:\n@@tool\n");
+            tool_section.push_str(&example_calls.join("\n"));
+            tool_section.push_str("\n@@end");
+        }
+
+        sections.push(tool_section);
+    }
+
+    // ═══ CUSTOM INTENTS ═══
     if let Some(custom) = &ir.custom_intents {
         for ci in custom {
-            let desc = ci.description.as_deref().unwrap_or("User-defined intent.");
-            know_items.push(format!("A `{}` intent {}.", ci.name, desc));
+            // Format: @@IntentName
+            // Fields: param1 = type1, param2 = type2
+            let mut custom_section = format!("\n\n@@{}\n", ci.name);
+            
+            if let Some(desc) = &ci.description {
+                custom_section.push_str(&format!("{}\n", desc));
+            }
+
+            // Add field signature as inline format
+            let params_sig = format_params_signature(&ci.fields, ir.types.as_ref());
+            if !params_sig.is_empty() {
+                custom_section.push_str(&format!("Fields: {}\n", params_sig));
+            }
+
+            // Add examples
+            if !ci.examples.is_empty() {
+                custom_section.push_str(&format!("\nExample:\n@@{}\n", ci.name));
+                custom_section.push_str(&format_custom_intent_example_inline(&ci.examples[0]));
+                custom_section.push_str("\n@@end");
+            }
+
+            sections.push(custom_section);
         }
     }
 
-    let know_lines: Vec<String> = know_items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| format!("{}. {}", i + 1, item))
-        .collect();
-    sections.push(format!("# Things to Know\n{}", know_lines.join("\n")));
-
-    // Tools (filtered)
-    let mut expanded_tools_str = String::new();
+    // ═══ CONSTRAINTS ═══
+    let mut constraints = Vec::new();
+    constraints.push("- NEVER invent blocks that are not listed above.".to_string());
+    
     if !allowed_tools.is_empty() {
-        let mut tool_lines = Vec::new();
-        for tool in &allowed_tools {
-            let mut params = Vec::new();
-            if let Some(obj) = tool.params.as_object() {
-                for (name, def) in obj {
-                    let field_type = def["type"].as_str().unwrap_or("any");
-                    params.push(format!("{}: {}", name, field_type));
+        constraints.push("- Your `@@tool` arguments must STRICTLY match the types and shapes provided.".to_string());
+    }
+    
+    constraints.push("- You can use multiple blocks in one response (e.g., @@chat then @@tool then @@chat).".to_string());
+    constraints.push("- Blocks auto-close when you start a new block, but using @@end is recommended for clarity.".to_string());
+
+    sections.push(format!("\n\n# CRITICAL CONSTRAINTS\n\n{}", constraints.join("\n")));
+
+    sections.join("")
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS FOR BLOCK PROTOCOL FORMATTING
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Format parameter signature like: session_id: string, apply_compression?: boolean
+fn format_params_signature(params: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
+    if let Some(obj) = params.as_object() {
+        let mut parts = Vec::new();
+        for (name, def) in obj {
+            let type_str = schema::format_type_value(def, types);
+            let optional = def.get("optional")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if optional {
+                parts.push(format!("{}?: {}", name, type_str));
+            } else {
+                parts.push(format!("{}: {}", name, type_str));
+            }
+        }
+        parts.join(", ")
+    } else {
+        String::new()
+    }
+}
+
+/// Format helper parameter signature from input IR
+fn format_helper_params_signature(input_ir: &Option<Value>, types: Option<&HashMap<String, TypeDefinition>>) -> String {
+    if let Some(input) = input_ir {
+        if input.get("kind").and_then(|v| v.as_str()) == Some("properties") {
+            if let Some(fields) = input.get("fields").and_then(|v| v.as_object()) {
+                let mut parts = Vec::new();
+                let mut sorted_keys: Vec<_> = fields.keys().collect();
+                sorted_keys.sort();
+                for name in sorted_keys {
+                    let def = &fields[name];
+                    let type_str = schema::format_type_value(def, types);
+                    let optional = def.get("optional")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+
+                    if optional {
+                        parts.push(format!("{}?: {}", name, type_str));
+                    } else {
+                        parts.push(format!("{}: {}", name, type_str));
+                    }
+                }
+                return parts.join(", ");
+            }
+        } else if input.get("kind").and_then(|v| v.as_str()) == Some("direct") {
+            if let Some(ty) = input.get("type") {
+                // Check if the direct type is an object with properties
+                if ty.get("type").and_then(|v| v.as_str()) == Some("object") {
+                    if let Some(props) = ty.get("properties").and_then(|v| v.as_object()) {
+                        // Expand object properties instead of just showing "object"
+                        let mut parts = Vec::new();
+                        let mut sorted_keys: Vec<_> = props.keys().collect();
+                        sorted_keys.sort();
+                        for name in sorted_keys {
+                            let def = &props[name];
+                            let type_str = schema::format_type_value(def, types);
+                            let optional = def.get("optional")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+
+                            if optional {
+                                parts.push(format!("{}?: {}", name, type_str));
+                            } else {
+                                parts.push(format!("{}: {}", name, type_str));
+                            }
+                        }
+                        return parts.join(", ");
+                    }
+                }
+                // Otherwise format as simple type
+                let type_str = schema::format_type_value(ty, types);
+                return format!("input: {}", type_str);
+            }
+        }
+    }
+    String::new()
+}
+
+/// Collect example function calls from tools
+fn collect_tool_example_calls(tools: &[crate::types::Tool]) -> Vec<String> {
+    let mut calls = Vec::new();
+
+    for tool in tools {
+        if !tool.examples.is_empty() {
+            // Each example is an array of argument values
+            if let Some(first_example) = tool.examples.first() {
+                calls.push(format_function_call_from_args(&tool.name, first_example));
+                if calls.len() >= 5 {
+                    break; // Show max 5 examples in the block example
                 }
             }
-            let mut sig = format!("{}({})", tool.name, params.join(", "));
-            if let Some(desc) = &tool.description {
-                sig.push_str(" // ");
-                sig.push_str(desc);
-            }
-            tool_lines.push(sig);
-        }
-        expanded_tools_str = format!(
-            "# Tools Available\nExternal tools you can call. You MUST ONLY use tools from this exact list.\n\n{}",
-            tool_lines.join("\n")
-        );
-    }
-
-    let mut options: Vec<String> = Vec::new();
-    options.push("// Respond to the user with plain text\nresponse_text(\n  text = \"string\"\n)".to_string());
-
-    if !allowed_tools.is_empty() {
-        let tool_names: Vec<String> = allowed_tools.iter().map(|t| t.name.clone()).collect();
-        let tool_union = if tool_names.len() > 1 {
-            format!("< {} >", tool_names.join(" | "))
-        } else {
-            tool_names[0].clone()
-        };
-        options.push(format!(
-            "// Call a registered tool. See exact arguments below.\ntool_call(\n  type = \"{}\"\n  args = {{ /* match the requested tool's exact shape */ }}\n)\n\n{}",
-            tool_union, expanded_tools_str
-        ));
-    }
-
-    if let Some(custom) = &ir.custom_intents {
-        for ci in custom {
-            let schema_str = schema::format_schema_function(&ci.fields, 2, ir.types.as_ref());
-            let mut ci_str = String::new();
-            if let Some(desc) = &ci.description {
-                ci_str.push_str(&format!("// {}\n", desc));
-            }
-            ci_str.push_str(&format!("{}(\n{}\n)", ci.name, schema_str));
-            options.push(ci_str);
         }
     }
 
-    sections.push(
-        "# Instructions\n\
-         Your response MUST ONLY be valid Function Composition blocks. ABSOLUTELY NO conversational text or explanations outside of a function block.\n\
-         What is a Function Composition block? It is a structured format using intents as function calls. For example:\n\
-         intent_name(\n\
-           field_name = \"value\"\n\
-         )\n\
-         \n\
-         CRITICAL RULE: You MUST NEVER assume or hallucinate a tool, helper, workflow, or intent that is not explicitly listed in the available options. If it is not listed in the sections above, IT DOES NOT EXIST. If a user asks you to use an unknown tool/helper, you must politely decline and explain what capabilities you actually have.\n\
-         CRITICAL RULE: You are an intelligent AI. You must ALWAYS use your internal reasoning and knowledge to answer questions or converse directly with the user via `response_text` when possible. You should ONLY call specialized tools or helpers if the user explicitly requests a task that requires them.\n\
-         String values MUST be wrapped in double quotes. Multiline strings are supported natively inside quotes.\n\
-         Keys and fields are assigned using `=`. Nested objects use `{}`.\n\
-         For example, to execute an action, you MUST use a function:\n\
-         obey(\n\
-           action = \"This is my action payload.\nIt can span multiple lines.\"\n\
-         )\n\
-         \n\
-         Never wrap your output in code fences or markdown. START IMMEDIATELY with a function name.\n\
-         "
-        .to_string(),
-    );
+    calls
+}
 
-    sections.push(format!("# Available Actions (Options)\nYou MUST select and output one or more of the following function blocks to perform your turn:\n\n{}", options.join("\n\n")));
+/// Collect example function calls from workflows
+fn collect_workflow_example_calls(workflows: &[crate::types::Workflow]) -> Vec<String> {
+    let mut calls = Vec::new();
 
-    sections.join("\n\n")
+    for wf in workflows {
+        if !wf.examples.is_empty() {
+            if let Some(first_example) = wf.examples.first() {
+                calls.push(format_function_call_from_args(&wf.name, first_example));
+                break; // Only one workflow per block
+            }
+        }
+    }
+
+    calls
+}
+
+/// Collect example function calls from helpers
+fn collect_helper_example_calls(helpers: &[crate::types::Helper]) -> Vec<String> {
+    let mut calls = Vec::new();
+
+    for helper in helpers {
+        if !helper.examples.is_empty() {
+            if let Some(first_example) = helper.examples.first() {
+                calls.push(format_function_call_from_args(&helper.name, first_example));
+                break; // Only one helper per block
+            }
+        }
+    }
+
+    calls
+}
+
+/// Format a function call from a HashMap of named arguments: ama(id = "20") or fetch_session(session_id = "sess_123")
+fn format_function_call_from_args(name: &str, args: &HashMap<String, Value>) -> String {
+    if args.is_empty() {
+        return format!("{}()", name);
+    }
+    
+    // Format each named argument as key = value
+    // Note: args values are IR expressions like {"type": "literal", "value": 20}
+    let mut formatted_args: Vec<String> = args.iter()
+        .map(|(key, val)| {
+            // Extract the actual value from the IR expression format
+            let formatted_val = if let Some(obj) = val.as_object() {
+                if obj.get("type").and_then(|t| t.as_str()) == Some("literal") {
+                    if let Some(v) = obj.get("value") {
+                        format_value_inline(v)
+                    } else {
+                        format_value_inline(val)
+                    }
+                } else {
+                    format_value_inline(val)
+                }
+            } else {
+                format_value_inline(val)
+            };
+            format!("{} = {}", key, formatted_val)
+        })
+        .collect();
+    
+    // Sort for consistent output
+    formatted_args.sort();
+    
+    format!("{}({})", name, formatted_args.join(", "))
+}
+
+/// Format a value inline for function arguments
+fn format_value_inline(val: &Value) -> String {
+    match val {
+        Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Null => "null".to_string(),
+        Value::Array(arr) => {
+            let items: Vec<String> = arr.iter().map(format_value_inline).collect();
+            format!("[{}]", items.join(", "))
+        }
+        Value::Object(obj) => {
+            let mut fields = Vec::new();
+            for (k, v) in obj {
+                if k.starts_with("__") {
+                    continue; // Skip metadata fields
+                }
+                fields.push(format!("{} = {}", k, format_value_inline(v)));
+            }
+            format!("{{ {} }}", fields.join(", "))
+        }
+    }
+}
+
+/// Format output schema in TypeScript style
+fn format_output_schema_ts_style(output: &Value, ir: &AgentIR) -> String {
+    if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
+        let mut variant_lines = Vec::new();
+        for (variant_name, variant_schema) in variants {
+            variant_lines.push(format!("{} {{\n{}\n}}", variant_name, format_ts_object_fields(variant_schema, 2, ir.types.as_ref())));
+        }
+        variant_lines.join("\n\n")
+    } else if let Some(obj) = unwrap_schema_properties(output) {
+        format!("Output {{\n{}\n}}", format_ts_object_fields(&Value::Object(obj.clone()), 2, ir.types.as_ref()))
+    } else {
+        "{}".to_string()
+    }
+}
+
+/// Format TypeScript object fields with proper indentation
+fn format_ts_object_fields(schema: &Value, indent_level: usize, types: Option<&HashMap<String, TypeDefinition>>) -> String {
+    let indent = "  ".repeat(indent_level / 2);
+    let mut lines = Vec::new();
+
+    if let Some(obj) = unwrap_schema_properties(schema) {
+        for (name, def) in obj {
+            let is_optional = def.get("optional").and_then(|v| v.as_bool()).unwrap_or(false);
+            let name_tag = if is_optional {
+                format!("{}?", name)
+            } else {
+                name.clone()
+            };
+
+            // Check if this is a typeRef that needs expansion
+            let needs_expansion = if let Some(type_obj) = def.get("type").and_then(|t| t.as_object()) {
+                type_obj.get("type").and_then(|t| t.as_str()) == Some("typeRef")
+            } else {
+                false
+            };
+
+            if needs_expansion {
+                // Expand the typeRef inline
+                if let Some(type_obj) = def.get("type").and_then(|t| t.as_object()) {
+                    if let Some(ref_name) = type_obj.get("name").and_then(|n| n.as_str()) {
+                        if let Some(types_map) = types {
+                            if let Some(custom_type) = types_map.get(ref_name) {
+                                // Recursively expand the referenced type
+                                lines.push(format!("{}{}: {{", indent, name_tag));
+                                
+                                // Convert TypeDefinition properties to Value for recursive formatting
+                                if let Ok(props_value) = serde_json::to_value(&custom_type.properties) {
+                                    let nested_fields = format_ts_object_fields(&props_value, indent_level + 2, types);
+                                    lines.push(nested_fields);
+                                }
+                                
+                                lines.push(format!("{}}};", indent));
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Normal field formatting
+            let field_type = schema::format_type_value(def, types);
+            let mut line = format!("{}{}: {};", indent, name_tag, field_type);
+
+            if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
+                line.push_str(&format!(" // {}", desc));
+            }
+            lines.push(line);
+        }
+    }
+
+    lines.join("\n")
+}
+
+/// Format a TypeScript object for examples (used in @@out blocks)
+fn format_ts_object_for_example(val: &Value) -> String {
+    if let Some(obj) = val.as_object() {
+        let mut lines = Vec::new();
+        lines.push("{".to_string());
+
+        for (key, value) in obj {
+            if key.starts_with("__") {
+                continue; // Skip metadata fields
+            }
+            lines.push(format!("  {}: {}", key, format_value_multiline(value, 1)));
+        }
+
+        lines.push("}".to_string());
+        lines.join("\n")
+    } else {
+        "{}".to_string()
+    }
+}
+
+/// Format a value with proper multiline indentation
+fn format_value_multiline(val: &Value, indent_level: usize) -> String {
+    let indent = "  ".repeat(indent_level);
+    let next_indent = "  ".repeat(indent_level + 1);
+
+    match val {
+        Value::String(s) => format!("\"{}\"", s.replace('"', "\\\"")),
+        Value::Number(n) => {
+            let s = n.to_string();
+            if s.ends_with(',') {
+                s
+            } else {
+                format!("{},", s)
+            }
+        }
+        Value::Bool(b) => format!("{},", b),
+        Value::Null => "null,".to_string(),
+        Value::Array(arr) => {
+            if arr.is_empty() {
+                "[],".to_string()
+            } else {
+                let items: Vec<String> = arr.iter()
+                    .map(|v| format!("{}{}", next_indent, format_value_multiline(v, indent_level + 1).trim_end_matches(',')))
+                    .collect();
+                format!("[\n{}\n{}],", items.join(",\n"), indent)
+            }
+        }
+        Value::Object(obj) => {
+            if obj.is_empty() {
+                "{},".to_string()
+            } else {
+                let mut fields = Vec::new();
+                for (k, v) in obj {
+                    if k.starts_with("__") {
+                        continue; // Skip metadata
+                    }
+                    fields.push(format!("{}{}: {}", next_indent, k, format_value_multiline(v, indent_level + 1).trim_end_matches(',')));
+                }
+                format!("{{\n{}\n{}}},", fields.join(",\n"), indent)
+            }
+        }
+    }
+}
+
+/// Format custom intent example as function call
+fn format_custom_intent_example(intent_name: &str, example: &HashMap<String, Value>) -> String {
+    if example.is_empty() {
+        return format!("{}()", intent_name);
+    }
+    
+    // Format each field as key = value
+    // Note: example values are IR expressions like {"type": "literal", "value": "text"}
+    let mut formatted_fields: Vec<String> = example.iter()
+        .map(|(key, val)| {
+            // Extract the actual value from the IR expression format
+            let formatted_val = if let Some(obj) = val.as_object() {
+                if obj.get("type").and_then(|t| t.as_str()) == Some("literal") {
+                    if let Some(v) = obj.get("value") {
+                        format_value_inline(v)
+                    } else {
+                        format_value_inline(val)
+                    }
+                } else {
+                    format_value_inline(val)
+                }
+            } else {
+                format_value_inline(val)
+            };
+            format!("{} = {}", key, formatted_val)
+        })
+        .collect();
+    
+    // Sort for consistent output
+    formatted_fields.sort();
+    
+    // Format as function call: IntentName(field1 = value1, field2 = value2)
+    format!("{}({})", intent_name, formatted_fields.join(", "))
+}
+
+/// Format custom intent example as inline key-value assignments
+fn format_custom_intent_example_inline(example: &HashMap<String, Value>) -> String {
+    if example.is_empty() {
+        return String::new();
+    }
+    
+    // Format each field as key = value (one per line)
+    // Note: example values are IR expressions like {"type": "literal", "value": "text"}
+    let mut formatted_fields: Vec<String> = example.iter()
+        .map(|(key, val)| {
+            // Extract the actual value from the IR expression format
+            let formatted_val = if let Some(obj) = val.as_object() {
+                if obj.get("type").and_then(|t| t.as_str()) == Some("literal") {
+                    if let Some(v) = obj.get("value") {
+                        format_value_inline(v)
+                    } else {
+                        format_value_inline(val)
+                    }
+                } else {
+                    format_value_inline(val)
+                }
+            } else {
+                format_value_inline(val)
+            };
+            format!("{} = {}", key, formatted_val)
+        })
+        .collect();
+    
+    // Sort for consistent output
+    formatted_fields.sort();
+    
+    // Format as bare assignments: field1 = value1\nfield2 = value2
+    formatted_fields.join("\n")
 }

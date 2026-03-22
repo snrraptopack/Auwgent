@@ -10,7 +10,7 @@ pub struct FunctionOrchestrator {
     intent_keys: HashSet<String>,
     intent_handler: Option<IntentHandler>,
     partial_handler: Option<IntentHandler>,
-    emitted_identities: HashSet<usize>,
+    emitted_identities: HashSet<String>, // Changed from usize to String for content-based deduplication
 }
 
 impl FunctionOrchestrator {
@@ -52,7 +52,10 @@ impl FunctionOrchestrator {
     }
 
     fn check_intents(&mut self, is_final: bool) {
-        let mut parser = function_parser::Parser::new(&self.buffer);
+        let mut parser = function_parser::Parser::with_registered_intents(
+            &self.buffer, 
+            self.intent_keys.clone()
+        );
         let intents = parser.parse();
 
         // Fallback: If no intents are found and there's text, treat it as a raw response_text
@@ -60,11 +63,13 @@ impl FunctionOrchestrator {
             let trimmed = self.buffer.trim();
             if !trimmed.is_empty() && self.intent_keys.contains("response_text") {
                 let json_val = serde_json::json!({ "text": trimmed });
+                let content_hash = format!("response_text:{}", serde_json::to_string(&json_val).unwrap_or_default());
+                
                 if is_final {
-                    if !self.emitted_identities.contains(&0) {
+                    if !self.emitted_identities.contains(&content_hash) {
                         if let Some(handler) = &self.intent_handler {
                             handler("response_text".to_string(), json_val);
-                            self.emitted_identities.insert(0);
+                            self.emitted_identities.insert(content_hash);
                         }
                     }
                 } else {
@@ -76,23 +81,67 @@ impl FunctionOrchestrator {
             }
         }
 
+        // Terminal intent types that should use last-complete-wins strategy
+        let terminal_types: HashSet<&str> = ["response_schema", "response_text"].iter().cloned().collect();
+        
+        // Group intents by name to handle multiple attempts
+        let mut intent_groups: std::collections::HashMap<String, Vec<(usize, function_parser::Intent)>> = std::collections::HashMap::new();
+        
         for (i, intent) in intents.into_iter().enumerate() {
             if !self.intent_keys.contains(&intent.name) {
                 continue;
             }
+            intent_groups.entry(intent.name.clone())
+                .or_insert_with(Vec::new)
+                .push((i, intent));
+        }
 
-            let json_val = ast_to_json_object(&intent.fields);
-            let is_complete = intent.is_complete || is_final;
+        // Process each intent group
+        for (intent_name, instances) in intent_groups {
+            let is_terminal = terminal_types.contains(intent_name.as_str());
+            
+            if is_terminal && instances.len() > 1 {
+                // Last-complete-wins: For terminal intents with multiple attempts,
+                // only emit the LAST complete one
+                if let Some((_idx, intent)) = instances.iter()
+                    .rev()
+                    .find(|(_, intent)| intent.is_complete || is_final) 
+                {
+                    let json_val = ast_to_json_object(&intent.fields);
+                    let content_hash = format!("{}:{}", intent_name, serde_json::to_string(&json_val).unwrap_or_default());
+                    let is_complete = intent.is_complete || is_final;
 
-            if !is_complete {
-                if let Some(handler) = &self.partial_handler {
-                    handler(intent.name.clone(), json_val);
+                    if is_complete {
+                        if !self.emitted_identities.contains(&content_hash) {
+                            if let Some(handler) = &self.intent_handler {
+                                handler(intent_name.clone(), json_val);
+                                self.emitted_identities.insert(content_hash);
+                            }
+                        }
+                    } else {
+                        if let Some(handler) = &self.partial_handler {
+                            handler(intent_name.clone(), json_val);
+                        }
+                    }
                 }
             } else {
-                if !self.emitted_identities.contains(&i) {
-                    if let Some(handler) = &self.intent_handler {
-                        handler(intent.name.clone(), json_val);
-                        self.emitted_identities.insert(i);
+                // For non-terminal intents or single attempts, process all instances
+                for (_idx, intent) in instances {
+                    let json_val = ast_to_json_object(&intent.fields);
+                    let content_hash = format!("{}:{}", intent_name, serde_json::to_string(&json_val).unwrap_or_default());
+                    let is_complete = intent.is_complete || is_final;
+
+                    if !is_complete {
+                        if let Some(handler) = &self.partial_handler {
+                            handler(intent_name.clone(), json_val);
+                        }
+                    } else {
+                        if !self.emitted_identities.contains(&content_hash) {
+                            if let Some(handler) = &self.intent_handler {
+                                handler(intent_name.clone(), json_val.clone());
+                                self.emitted_identities.insert(content_hash);
+                            }
+                        }
                     }
                 }
             }

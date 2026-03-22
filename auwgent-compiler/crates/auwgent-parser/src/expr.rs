@@ -29,6 +29,30 @@ pub(crate) fn object_literal_parser(
         })
 }
 
+/// Parse named arguments using `=` syntax: id = 20, name = "test"
+/// Used for @example annotations
+pub(crate) fn named_args_parser(
+) -> impl Parser<TokenKind, ObjectLiteral, Error = Simple<TokenKind>> + Clone {
+    let named_arg = property_name()
+        .then_ignore(tok(TokenKind::Eq))
+        .then(expr_parser())
+        .map_with_span(|(name, value), span| PropertyValue {
+            name,
+            value: Some(value),
+            span: s(span),
+        })
+        .labelled("named argument (e.g., param = value)");
+
+    named_arg
+        .separated_by(tok(TokenKind::Comma))
+        .allow_trailing()
+        .map_with_span(|properties, span| ObjectLiteral {
+            properties,
+            span: s(span),
+        })
+        .labelled("@example with named arguments")
+}
+
 pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<TokenKind>> + Clone {
     recursive(|expr: Recursive<'_, TokenKind, Expr, Simple<TokenKind>>| {
         let args = expr

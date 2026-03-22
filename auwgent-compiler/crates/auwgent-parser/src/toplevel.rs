@@ -6,6 +6,7 @@ use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
 use crate::config::{agent_config_parser, intent_body_parser, model_provider_parser, prompt_stmt_parser};
+use crate::expr::{named_args_parser, object_literal_parser};
 use crate::primitives::*;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
 
@@ -25,6 +26,12 @@ pub(crate) fn agent_parser() -> impl Parser<TokenKind, Agent, Error = Simple<Tok
 }
 
 pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<TokenKind>> + Clone {
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
+
     tok(TokenKind::Helper)
         .ignore_then(ident())
         .then(
@@ -32,13 +39,15 @@ pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<T
                 .ignore_then(tok(TokenKind::Colon))
                 .ignore_then(string_lit())
                 .then(agent_config_parser().repeated())
-                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+                .then(example_args.repeated()),
         )
-        .map_with_span(|(name, (description, configs)), span| Helper {
+        .map_with_span(|(name, ((description, configs), examples)), span| Helper {
             exported: false,
             name,
             description,
             configs,
+            examples,
             span: s(span),
         })
 }

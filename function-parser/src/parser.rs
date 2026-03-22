@@ -1,9 +1,11 @@
 use crate::ast::*;
 use crate::tokenizer::*;
+use std::collections::HashSet;
 
 pub struct Parser {
     tokenizer: Tokenizer,
     current_token: Token,
+    registered_intents: Option<HashSet<String>>,
 }
 
 impl Parser {
@@ -13,11 +15,32 @@ impl Parser {
         Self {
             tokenizer,
             current_token,
+            registered_intents: None,
+        }
+    }
+
+    /// Create a parser with knowledge of registered intent names.
+    /// This enables better recovery when incomplete intents are followed by new intents.
+    pub fn with_registered_intents(input: &str, intents: HashSet<String>) -> Self {
+        let mut tokenizer = Tokenizer::new(input);
+        let current_token = tokenizer.next_token();
+        Self {
+            tokenizer,
+            current_token,
+            registered_intents: Some(intents),
         }
     }
 
     fn advance(&mut self) {
         self.current_token = self.tokenizer.next_token();
+    }
+
+    /// Check if the current token is a registered intent name
+    fn is_registered_intent(&self, name: &str) -> bool {
+        self.registered_intents
+            .as_ref()
+            .map(|set| set.contains(name))
+            .unwrap_or(false)
     }
 
     pub fn parse(&mut self) -> Vec<Intent> {
@@ -67,6 +90,13 @@ impl Parser {
             && self.current_token.kind != TokenKind::CloseBrace {
             match &self.current_token.kind {
                 TokenKind::Identifier(name) => {
+                    // RECOVERY: If we encounter a registered intent name while parsing fields,
+                    // it means the current intent is incomplete and a new one is starting.
+                    // Stop parsing fields and let the main parse loop handle the new intent.
+                    if self.is_registered_intent(name) {
+                        break;
+                    }
+
                     let field_name = name.clone();
                     self.advance(); // consume identifier
 
@@ -109,6 +139,18 @@ impl Parser {
             }
             TokenKind::Null => {
                 let val = ASTValue::Null;
+                self.advance();
+                Some(val)
+            }
+            TokenKind::Identifier(name) => {
+                // RECOVERY: If we encounter a registered intent name while parsing a value,
+                // it means the current intent is incomplete and a new one is starting.
+                // Return None to signal incomplete value and let the parser recover.
+                if self.is_registered_intent(name) {
+                    return None;
+                }
+                // Otherwise treat as a bare identifier value (unquoted string)
+                let val = ASTValue::String(name.clone());
                 self.advance();
                 Some(val)
             }

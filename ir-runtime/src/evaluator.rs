@@ -181,7 +181,7 @@ impl<'a> Evaluator<'a> {
                 then,
                 else_block,
             } => {
-                // Condition is an enum (Comparison or Boolean), so we need to extract it
+                // Condition is an enum (Comparison, Boolean, or ContextRef), so we need to extract it
                 let (left_expr, right_expr, op) = match condition {
                     crate::types::Condition::Comparison(cmp) => {
                         (&cmp.left, &cmp.right, &cmp.operator)
@@ -190,6 +190,18 @@ impl<'a> Evaluator<'a> {
                         // For now, treat boolean as "value == true"
                         (
                             value,
+                            &Box::new(Expression::Literal {
+                                value: Value::Bool(true),
+                            }),
+                            &"==".to_string(),
+                        )
+                    }
+                    crate::types::Condition::ContextRef { property } => {
+                        // Treat contextRef as "ctx.property == true"
+                        (
+                            &Box::new(Expression::ContextRef {
+                                property: property.clone(),
+                            }),
                             &Box::new(Expression::Literal {
                                 value: Value::Bool(true),
                             }),

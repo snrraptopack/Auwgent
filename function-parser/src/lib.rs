@@ -1,10 +1,16 @@
 pub mod ast;
 pub mod tokenizer;
 pub mod parser;
+pub mod block_scanner;
+pub mod ts_object;
+pub mod function;
 
 pub use ast::*;
 pub use tokenizer::Tokenizer;
 pub use parser::Parser;
+pub use block_scanner::{BlockScanner, Block, BlockType};
+pub use ts_object::parse_ts_object;
+pub use function::{parse_function_calls, FunctionCall};
 
 #[cfg(test)]
 mod tests {
@@ -150,3 +156,82 @@ It uses colons instead of equals for assignment."
         } else { panic!("notes not string"); }
     }
 }
+
+    #[test]
+    fn test_multiple_attempts_with_registered_intents() {
+        // Test parser recovery when model makes multiple attempts
+        let input = r#"response_schema(
+  type = "ContextCompilerOutput"
+workflow_call(
+  type = "first"
+response_schema(
+  type = "StraightResponse"
+response_schema(
+  type = "Final"
+  response = {
+    data = "complete"
+  }
+)"#;
+
+        let mut registered = std::collections::HashSet::new();
+        registered.insert("response_schema".to_string());
+        registered.insert("workflow_call".to_string());
+
+        let mut parser = Parser::with_registered_intents(input, registered);
+        let intents = parser.parse();
+
+        // Should find all 4 intents
+        assert_eq!(intents.len(), 4);
+        
+        // Verify the intents
+        assert_eq!(intents[0].name, "response_schema");
+        assert!(!intents[0].is_complete);
+        
+        assert_eq!(intents[1].name, "workflow_call");
+        assert!(!intents[1].is_complete);
+        
+        assert_eq!(intents[2].name, "response_schema");
+        assert!(!intents[2].is_complete);
+        
+        assert_eq!(intents[3].name, "response_schema");
+        assert!(intents[3].is_complete);
+        
+        // Last response_schema should have the complete data
+        if let Some(ASTValue::Object(response)) = intents[3].fields.get("response") {
+            assert!(response.contains_key("data"));
+        } else {
+            panic!("Last response_schema should have response object");
+        }
+    }
+
+    #[test]
+    fn test_intent_name_as_bare_value() {
+        // Test when a registered intent name appears as a bare identifier value
+        // This simulates: workflow_call(type = response_schema
+        let input = r#"workflow_call(
+  type = response_schema
+response_schema(
+  type = "Final"
+)"#;
+
+        let mut registered = std::collections::HashSet::new();
+        registered.insert("response_schema".to_string());
+        registered.insert("workflow_call".to_string());
+
+        let mut parser = Parser::with_registered_intents(input, registered);
+        let intents = parser.parse();
+
+        // Should find 2 intents
+        assert_eq!(intents.len(), 2);
+        
+        // First workflow_call should be incomplete (value parsing stopped at response_schema)
+        assert_eq!(intents[0].name, "workflow_call");
+        assert!(!intents[0].is_complete);
+        // The type field should not have captured response_schema
+        assert!(!intents[0].fields.contains_key("type") || 
+                intents[0].fields.get("type") == Some(&ASTValue::String("".to_string())));
+        
+        // Second should be response_schema
+        assert_eq!(intents[1].name, "response_schema");
+        assert!(!intents[1].is_complete);
+    }

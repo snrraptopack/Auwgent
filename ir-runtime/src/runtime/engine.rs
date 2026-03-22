@@ -1,6 +1,6 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
-use crate::intent_parser::function_orchestrator::FunctionOrchestrator as Orchestrator;
+use crate::intent_parser::block_orchestrator::BlockOrchestrator as Orchestrator;
 use crate::runtime::drivers::ModelDriver;
 use crate::runtime::session::SessionState;
 use crate::types::*;
@@ -85,7 +85,8 @@ pub struct AuwgentEngine {
     /// Track intents that were emitted as partials to avoid duplicate complete emissions
     emitted_partial_intents: Arc<Mutex<std::collections::HashSet<(String, String)>>>,
     /// Tool/workflow results accumulated during the current turn
-    pending_tool_results: Arc<Mutex<Vec<(String, Value)>>>,
+    /// Format: (name, args, result) where args is the input and result is the output
+    pending_tool_results: Arc<Mutex<Vec<(String, Value, Value)>>>,
     /// Accumulated raw response for the current turn
     current_raw_response: Arc<Mutex<String>>,
     /// User-facing intent callback
@@ -109,7 +110,7 @@ impl AuwgentEngine {
     pub fn new(ir: AgentIR) -> Self {
         let mut orchestrator = Orchestrator::new();
 
-        // Register standard Auwgent intents
+        // Register standard Auwgent intentsn
         orchestrator.register_intent("tool_call");
         orchestrator.register_intent("workflow_call");
         orchestrator.register_intent("response_schema");
@@ -779,30 +780,38 @@ impl AuwgentEngine {
     }
 
     /// Build a structured payload of tool/workflow results to feed back to
-    /// the LLM on the next turn. This is critical — without it, the LLM
-    /// has no idea what the tools returned.
+    /// the LLM on the next turn using @@result block format.
     fn build_results_payload(&self) -> String {
         let results = self.pending_tool_results.lock().unwrap();
         if results.is_empty() {
             return String::new();
         }
 
-        let mut parts = Vec::new();
-        for (name, result) in &*results {
-            let json_str =
-                serde_json::to_string_pretty(result).unwrap_or_else(|_| "null".to_string());
-            let indented: String = json_str
-                .lines()
-                .map(|line| format!("  {}", line))
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            parts.push(format!(
-                "tool_result(\n  name = \"{}\"\n  result = {}\n)",
-                name, indented
-            ));
+        let mut lines = Vec::new();
+        for (name, args, result) in &*results {
+            // Format: tool_name(arg1 = value1, arg2 = value2): result
+            let args_str = if let Some(obj) = args.as_object() {
+                if obj.is_empty() {
+                    String::new()
+                } else {
+                    let mut arg_parts: Vec<String> = obj.iter()
+                        .map(|(k, v)| {
+                            let v_str = serde_json::to_string(v).unwrap_or_else(|_| "null".to_string());
+                            format!("{} = {}", k, v_str)
+                        })
+                        .collect();
+                    arg_parts.sort();
+                    format!("({})", arg_parts.join(", "))
+                }
+            } else {
+                String::new()
+            };
+            
+            let result_str = serde_json::to_string(result).unwrap_or_else(|_| "null".to_string());
+            lines.push(format!("{}{}: {}", name, args_str, result_str));
         }
-        parts.join("\n\n")
+
+        format!("@@result\n{}\n@@end", lines.join("\n"))
     }
 
     /// Fire the user's intent callback (if registered).
@@ -829,7 +838,7 @@ impl AuwgentEngine {
         let mut has_actions = false;
         let mut hard_stop = false;
 
-        let mut tool_results: Vec<(String, Value)> = Vec::new();
+        let mut tool_results: Vec<(String, Value, Value)> = Vec::new();
 
         for (name, mut value) in intents {
             // println!("[DEBUG] Processing intent: {} -> {}", name, serde_json::to_string(&value).unwrap_or_default());
@@ -856,31 +865,34 @@ impl AuwgentEngine {
                         Some(IntentControl::Override { result }) => {
                             // User provided a custom result
                             let tool_name = value["type"].as_str().unwrap_or("").to_string();
+                            let args = value["args"].clone();
                             self.fire_intent(
                                 "tool_result".to_string(),
                                 serde_json::json!({
                                     "name": tool_name,
+                                    "args": args,
                                     "result": result,
                                     "overridden": true,
                                 }),
                             )
                             .await;
-                            tool_results.push((tool_name, result));
+                            tool_results.push((tool_name, args, result));
                             has_actions = true;
                         }
                         None => {
                             // Default: auto-execute the tool
-                            let (tool_name, result) = self.execute_tool(&value).await?;
+                            let (tool_name, args, result) = self.execute_tool(&value).await?;
                             // Fire tool_result intent
                             self.fire_intent(
                                 "tool_result".to_string(),
                                 serde_json::json!({
                                     "name": tool_name,
+                                    "args": args,
                                     "result": result,
                                 }),
                             )
                             .await;
-                            tool_results.push((tool_name, result));
+                            tool_results.push((tool_name, args, result));
                             has_actions = true;
                         }
                     }
@@ -889,20 +901,22 @@ impl AuwgentEngine {
                     Some(IntentControl::Skip) => continue,
                     Some(IntentControl::Override { result }) => {
                         let wf_name = value["type"].as_str().unwrap_or("").to_string();
-                        tool_results.push((format!("workflow:{}", wf_name), result));
+                        let args = value["args"].clone();
+                        tool_results.push((format!("workflow:{}", wf_name), args, result));
                         has_actions = true;
                     }
                     None => {
-                        let (wf_name, result) = self.execute_workflow(&value).await?;
+                        let (wf_name, args, result) = self.execute_workflow(&value).await?;
                         self.fire_intent(
                             "workflow_result".to_string(),
                             serde_json::json!({
                                 "name": wf_name,
+                                "args": args,
                                 "result": result,
                             }),
                         )
                         .await;
-                        tool_results.push((format!("workflow:{}", wf_name), result));
+                        tool_results.push((format!("workflow:{}", wf_name), args, result));
                         has_actions = true;
                     }
                 },
@@ -910,11 +924,12 @@ impl AuwgentEngine {
                     Some(IntentControl::Skip) => continue,
                     Some(IntentControl::Override { result }) => {
                         let helper_name = value["type"].as_str().unwrap_or("").to_string();
-                        tool_results.push((format!("helper:{}", helper_name), result));
+                        let args = value["args"].clone();
+                        tool_results.push((format!("helper:{}", helper_name), args, result));
                         has_actions = true;
                     }
                     None => {
-                        let (helper_name, result) = self.execute_helper(&value).await?;
+                        let (helper_name, args, result) = self.execute_helper(&value).await?;
 
                         // Check if the helper signaled a hard stop (handoff mod="user")
                         if let Some(obj) = result.as_object() {
@@ -935,11 +950,12 @@ impl AuwgentEngine {
                             "helper_result".to_string(),
                             serde_json::json!({
                                 "name": helper_name,
+                                "args": args,
                                 "result": result,
                             }),
                         )
                         .await;
-                        tool_results.push((format!("helper:{}", helper_name), result));
+                        tool_results.push((format!("helper:{}", helper_name), args, result));
                         has_actions = true;
                     }
                 },
@@ -967,14 +983,14 @@ impl AuwgentEngine {
         Ok((has_terminal, has_actions, hard_stop))
     }
 
-    async fn execute_tool(&self, call: &Value) -> AuwgentResult<(String, Value)> {
+    async fn execute_tool(&self, call: &Value) -> AuwgentResult<(String, Value, Value)> {
         let tool_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
         let imp = self.tools.lock().unwrap().get(&tool_name).cloned();
         if let Some(imp) = imp {
-            match imp(args).await {
-                Ok(val) => Ok((tool_name, val)),
+            match imp(args.clone()).await {
+                Ok(val) => Ok((tool_name, args, val)),
                 Err(e) => {
                     // Fire a specific tool_error intent so the host can react
                     self.fire_intent(
@@ -987,7 +1003,7 @@ impl AuwgentEngine {
                     .await;
                     // Return the error as the result — the LLM will see it
                     // and can retry or adjust
-                    Ok((tool_name, serde_json::json!({ "error": e })))
+                    Ok((tool_name, args, serde_json::json!({ "error": e })))
                 }
             }
         } else {
@@ -1001,12 +1017,13 @@ impl AuwgentEngine {
             .await;
             Ok((
                 tool_name.clone(),
+                args,
                 serde_json::json!({ "error": format!("Tool '{}' is not registered", tool_name) }),
             ))
         }
     }
 
-    async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value)> {
+    async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value, Value)> {
         let wf_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
@@ -1016,6 +1033,7 @@ impl AuwgentEngine {
                 None => {
                     return Ok((
                         wf_name.clone(),
+                        args.clone(),
                         serde_json::json!({ "error": format!("Workflow not found: {}", wf_name) }),
                     ));
                 }
@@ -1027,17 +1045,46 @@ impl AuwgentEngine {
         let mut tool_fns: HashMap<String, crate::evaluator::SyncToolFn> = HashMap::new();
         {
             let tools = self.tools.lock().unwrap();
+            let ir_tools = &self.ir.tools;
+            
             for (name, imp) in &*tools {
                 let imp = imp.clone();
                 let name_clone = name.clone();
+                
+                // Find tool definition to get parameter names
+                let param_names: Vec<String> = ir_tools
+                    .iter()
+                    .find(|t| t.name == *name)
+                    .and_then(|t| t.params.as_object())
+                    .map(|params| {
+                        let mut names: Vec<_> = params.keys().cloned().collect();
+                        names.sort(); // Ensure consistent ordering
+                        names
+                    })
+                    .unwrap_or_default();
+                
                 tool_fns.insert(
                     name.clone(),
                     std::sync::Arc::new(move |fn_args: Vec<Value>| {
-                        let arg_val = if fn_args.len() == 1 {
-                            fn_args.into_iter().next().unwrap_or(Value::Null)
+                        // Convert positional args to named args object
+                        let arg_val = if param_names.is_empty() {
+                            // No params defined - pass args as-is (legacy behavior)
+                            if fn_args.len() == 1 {
+                                fn_args.into_iter().next().unwrap_or(Value::Null)
+                            } else {
+                                Value::Array(fn_args)
+                            }
                         } else {
-                            Value::Array(fn_args)
+                            // Convert positional args to named args object
+                            let mut args_obj = serde_json::Map::new();
+                            for (i, param_name) in param_names.iter().enumerate() {
+                                if let Some(arg_value) = fn_args.get(i) {
+                                    args_obj.insert(param_name.clone(), arg_value.clone());
+                                }
+                            }
+                            Value::Object(args_obj)
                         };
+                        
                         let rt = tokio::runtime::Handle::current();
                         let imp = imp.clone();
                         std::thread::spawn(move || rt.block_on(imp(arg_val)))
@@ -1084,7 +1131,7 @@ impl AuwgentEngine {
                         "type": target_helper,
                         "args": helper_args
                     });
-                    let (_, sub_result) = self.execute_helper(&helper_call).await?;
+                    let (_, _, sub_result) = self.execute_helper(&helper_call).await?;
                     last_result = sub_result;
                     continue;
                 }
@@ -1099,7 +1146,7 @@ impl AuwgentEngine {
                         "type": target_helper,
                         "args": {}
                     });
-                    let (_, sub_result) = self.execute_helper(&helper_call).await?;
+                    let (_, _, sub_result) = self.execute_helper(&helper_call).await?;
 
                     if let Some(res_obj) = sub_result.as_object() {
                         if res_obj
@@ -1107,7 +1154,7 @@ impl AuwgentEngine {
                             .and_then(|v| v.as_bool())
                             .unwrap_or(false)
                         {
-                            return Ok((wf_name, sub_result));
+                            return Ok((wf_name, args, sub_result));
                         }
                     }
 
@@ -1119,7 +1166,7 @@ impl AuwgentEngine {
             last_result = eval_result;
         }
 
-        Ok((wf_name, last_result))
+        Ok((wf_name, args, last_result))
     }
 
     /// Execute a helper as a fully-featured nested engine.
@@ -1138,7 +1185,7 @@ impl AuwgentEngine {
     fn execute_helper<'a>(
         &'a self,
         call: &'a Value,
-    ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value)>> {
+    ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value, Value)>> {
         let session_preload_handler = self.session_preload_handler.clone();
         let session_save_handler = self.session_save_handler.clone();
 
@@ -1165,7 +1212,18 @@ impl AuwgentEngine {
             }
 
             // 2. Build the sub-agent IR
-            let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
+            let mut sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
+            
+            // Clone helper tool names before moving sub_ctx.ir
+            let helper_tool_names: Vec<String> = sub_ctx.ir.tools.iter().map(|t| t.name.clone()).collect();
+            
+            // Also collect helper workflow tool names
+            let mut helper_workflow_tool_names: Vec<String> = Vec::new();
+            for workflow in &sub_ctx.ir.workflows {
+                for tool in &workflow.tools {
+                    helper_workflow_tool_names.push(tool.name.clone());
+                }
+            }
 
             // 2. Construct a fresh sub-engine
             let sub_engine = AuwgentEngine::new(sub_ctx.ir);
@@ -1179,11 +1237,27 @@ impl AuwgentEngine {
                 }
             }
 
-            // 4. Inject authorized parent tools
+            // 4. Inject authorized parent tools AND helper's own tools
             {
                 let tools = self.tools.lock().unwrap();
                 let mut sub_tools = sub_engine.tools.lock().unwrap();
+                
+                // Add authorized parent tools
                 for tool_name in &sub_ctx.authorized_parent_tool_names {
+                    if let Some(imp) = tools.get(tool_name) {
+                        sub_tools.insert(tool_name.clone(), Arc::clone(imp));
+                    }
+                }
+                
+                // Add helper's own tools
+                for tool_name in &helper_tool_names {
+                    if let Some(imp) = tools.get(tool_name) {
+                        sub_tools.insert(tool_name.clone(), Arc::clone(imp));
+                    }
+                }
+                
+                // Add helper's workflow tools
+                for tool_name in &helper_workflow_tool_names {
                     if let Some(imp) = tools.get(tool_name) {
                         sub_tools.insert(tool_name.clone(), Arc::clone(imp));
                     }
@@ -1307,46 +1381,49 @@ impl AuwgentEngine {
                     if emitted_final {
                         // Pop stack — final response delivered, return to parent
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     } else {
                         // NO terminal response at all? Helper might be broken or just finished tools.
                         // We still treat it as a stop if handoff is user.
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     }
                 }
                 HandoffMode::ThenContinue => {
                     if emitted_final {
                         // Pop stack — focus returns to parent
                         self.session.lock().unwrap().stack.pop();
-                        let msg = format!(
-                            "Helper {} delivered final response to user. Continue.",
-                            &helper_name
-                        );
-                        Ok((helper_name, serde_json::json!({ "status": msg })))
+                        let msg = serde_json::json!({
+                            "status": "complete",
+                            "note": format!("{} has responded to the user directly. No further action needed.
+                            unless you have distinct that is differ from what we have completed entirely.
+                            you can end by providing a useful commet to the user 
+                            ", &helper_name)
+                        });
+                        Ok((helper_name, args, msg))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     } else {
                         // Default to stop if something went wrong but we are in thenContinue
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     }
                 }
                 HandoffMode::Return => {
                     if emitted_final {
                         // Pop stack — focus returns to parent
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                        Ok((helper_name, args, serde_json::json!({ "result": final_resp })))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
                     } else {
                         // For Return mode, if no terminal response, it might be an error or unexpected finish.
                         // We pop and return what we have (could be empty or last turn).
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, serde_json::json!({ "result": final_resp })))
+                        Ok((helper_name, args, serde_json::json!({ "result": final_resp })))
                     }
                 }
             }
@@ -1426,7 +1503,7 @@ impl AuwgentEngine {
             }
         }
 
-        let intents = crate::intents::generate_intents(&self.ir);
+        let intents = crate::intents::generate_block_protocol_prompt(&self.ir);
         if !intents.is_empty() {
             prompt.push_str("\n\n");
             prompt.push_str(&intents);

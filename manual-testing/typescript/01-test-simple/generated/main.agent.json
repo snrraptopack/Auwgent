@@ -4,8 +4,10 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash"
+          "type": "custom",
+          "id": "kimi",
+          "url": "https://api.moonshot.ai/v1/chat/completions",
+          "modelName": "kimi-k2-0905-preview"
         },
         "prompt": {
           "value": "You are a helper be polite",

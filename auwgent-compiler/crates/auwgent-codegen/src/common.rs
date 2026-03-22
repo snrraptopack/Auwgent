@@ -40,6 +40,23 @@ pub fn collect_workflow_tools(ir: &Value) -> Vec<Value> {
     tools
 }
 
+pub fn collect_helper_tools(ir: &Value) -> Vec<Value> {
+    let mut tools = Vec::new();
+    for helper in array_at(ir, &["helpers"]) {
+        // Collect helper's own tools
+        if let Some(helper_tools) = helper.get("tools").and_then(Value::as_array) {
+            tools.extend(helper_tools.iter().cloned());
+        }
+        // Collect helper's workflow tools
+        for workflow in array_at(helper, &["workflows"]) {
+            if let Some(workflow_tools) = workflow.get("tools").and_then(Value::as_array) {
+                tools.extend(workflow_tools.iter().cloned());
+            }
+        }
+    }
+    tools
+}
+
 pub fn merge_tool_defs(base: &[Value], extra: Vec<Value>) -> Vec<Value> {
     let mut merged = Vec::new();
     for tool in base.iter().chain(extra.iter()) {

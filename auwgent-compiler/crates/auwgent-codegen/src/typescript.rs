@@ -1,14 +1,18 @@
 use crate::common::{
-    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_required_providers,
-    collect_transferred_helpers, collect_workflow_tools, join_sections, merge_helpers,
-    merge_tool_defs, object_at, string_at,
+    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_helper_tools,
+    collect_required_providers, collect_transferred_helpers, collect_workflow_tools, join_sections,
+    merge_helpers, merge_tool_defs, object_at, string_at,
 };
 use serde_json::{Map, Value};
 
 pub fn generate(ir: &Value, base_name: &str) -> String {
     let agent_name = string_at(ir, &["name"]).unwrap_or("Agent");
     let workflow_tools = collect_workflow_tools(ir);
-    let all_tools = merge_tool_defs(array_at(ir, &["tools"]), workflow_tools);
+    let helper_tools = collect_helper_tools(ir);
+    let all_tools = merge_tool_defs(
+        array_at(ir, &["tools"]),
+        workflow_tools.into_iter().chain(helper_tools.into_iter()).collect()
+    );
     let has_tools = !all_tools.is_empty();
     let has_context = ir
         .get("context")

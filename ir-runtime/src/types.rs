@@ -9,6 +9,8 @@ pub struct CustomIntentDef {
     pub name: String,
     pub description: Option<String>,
     pub fields: Value, // Object of field definitions
+    #[serde(default)]
+    pub examples: Vec<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -50,6 +52,8 @@ pub struct Helper {
     pub workflows: Vec<Workflow>,
     #[serde(default)]
     pub custom_intents: Option<Vec<CustomIntentDef>>,
+    #[serde(default)]
+    pub examples: Vec<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -63,6 +67,8 @@ pub struct Workflow {
     pub body: Vec<Expression>,
     #[serde(default)]
     pub tools: Vec<Tool>,
+    #[serde(default)]
+    pub examples: Vec<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -71,6 +77,8 @@ pub struct Tool {
     pub description: Option<String>,
     pub params: Value, // Object of field definitions
     pub returns: Value,
+    #[serde(default)]
+    pub examples: Vec<HashMap<String, Value>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -242,6 +250,7 @@ pub enum Expression {
 pub enum Condition {
     Comparison(Comparison),
     Boolean { value: Box<Expression> },
+    ContextRef { property: String },
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

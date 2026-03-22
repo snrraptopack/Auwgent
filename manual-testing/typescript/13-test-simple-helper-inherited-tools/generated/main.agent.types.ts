@@ -25,6 +25,7 @@ export type MainContext = {
 export type MainTools = {
     aa: (args: {  }) => Promise<number>;
     bb: (args: {  }) => Promise<boolean>;
+    one: (args: {  }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */

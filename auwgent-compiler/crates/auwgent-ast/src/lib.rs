@@ -84,6 +84,7 @@ pub struct Helper {
     pub name: Spanned<String>,
     pub description: Spanned<String>,
     pub configs: Vec<AgentConfig>,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 
@@ -155,6 +156,7 @@ pub struct ToolFunction {
     pub params: Vec<TypeConfigDecl>,
     pub returns: Option<TypeExpr>,
     pub description: Vec<Spanned<String>>,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 
@@ -168,6 +170,7 @@ pub struct WorkflowConfig {
     pub description: Option<Spanned<String>>,
     pub tool_configs: Vec<ToolFunction>,
     pub body: Vec<Statement>,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 
@@ -198,6 +201,7 @@ pub struct IntentDeclaration {
     pub name: Spanned<String>,
     pub description: Option<Spanned<String>>,
     pub fields: Vec<TypeConfigDecl>,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 

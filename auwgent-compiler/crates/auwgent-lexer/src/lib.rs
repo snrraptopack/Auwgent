@@ -189,6 +189,8 @@ pub enum TokenKind {
     Pipe,
     #[token("@desc")]
     AtDesc,
+    #[token("@example")]
+    AtExample,
     #[token("hlp")]
     Hlp,
     #[token("ctx")]
@@ -322,6 +324,7 @@ impl fmt::Display for TokenKind {
             Self::Question => write!(f, "'?'"),
             Self::Pipe => write!(f, "'|'"),
             Self::AtDesc => write!(f, "'@desc'"),
+            Self::AtExample => write!(f, "'@example'"),
             Self::Hlp => write!(f, "'hlp'"),
             Self::Ctx => write!(f, "'ctx'"),
             Self::Ident(_) => write!(f, "identifier"),

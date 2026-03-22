@@ -22,6 +22,10 @@ export type MainContext = {
 
 }
 
+export type MainTools = {
+    one: (args: {  }) => Promise<string>;
+}
+
 /** Custom intents defined in the DSL (if any) */
 export type MainCustomIntents =
     | never;
@@ -38,7 +42,7 @@ export type MainAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     MainCustomIntents,
     MainOutput,
-    Record<string, never>
+    MainTools
 >;
 
 /** Middleware object type — consistent with `MainAgent.onIntent` intent narrowing */
@@ -46,11 +50,12 @@ export type MainMiddleware<T extends import("@snrraptopack/auwgent-sdk").Middlew
     typeof agentIR,
     MainCustomIntents,
     MainOutput,
-    Record<string, never>,
+    MainTools,
     T
 >;
 
 export type MainConfig = {
+    tools: MainTools;
     middleware?: MainMiddleware[];
     apiKeys: MainApiKeys;
 }
@@ -60,16 +65,16 @@ export function createMain(config: MainConfig): MainAgent {
         typeof agentIR,
         MainCustomIntents,
         MainOutput,
-        Record<string, never>
+        MainTools
     >(agentIR, {
-        tools: {} as Record<string, never>,
+        tools: config.tools,
         middleware: config.middleware as any,
         apiKeys: config.apiKeys
     });
 }
 
 export const auwgent = createMain;
-export type AuwgentTools = Record<string, never>;
+export type AuwgentTools = MainTools;
 export type AuwgentConfig = MainConfig;
 export type AuwgentAgent = MainAgent;
 export type AuwgentMiddleware = MainMiddleware;

@@ -407,6 +407,15 @@ fn lower_tool(tf: &ToolFunction) -> Value {
         tool.insert("returns".into(), Value::String("any".into()));
     }
 
+    // Examples
+    if !tf.examples.is_empty() {
+        let examples: Vec<Value> = tf.examples.iter().map(|obj_lit| {
+            // Each example is an ObjectLiteral with named arguments
+            lower_object_literal(obj_lit)
+        }).collect();
+        tool.insert("examples".into(), Value::Array(examples));
+    }
+
     Value::Object(tool)
 }
 
@@ -1057,6 +1066,14 @@ fn lower_workflow(wf: &WorkflowConfig) -> Value {
     let tools: Vec<Value> = wf.tool_configs.iter().map(|t| lower_tool(t)).collect();
     obj.insert("tools".into(), Value::Array(tools));
 
+    // Examples
+    if !wf.examples.is_empty() {
+        let examples: Vec<Value> = wf.examples.iter().map(|obj_lit| {
+            lower_object_literal(obj_lit)
+        }).collect();
+        obj.insert("examples".into(), Value::Array(examples));
+    }
+
     Value::Object(obj)
 }
 
@@ -1163,6 +1180,14 @@ fn lower_helper(
     obj.insert("tools".into(), Value::Array(tools_val));
     obj.insert("workflows".into(), Value::Array(workflows_val));
 
+    // Examples
+    if !helper.examples.is_empty() {
+        let examples: Vec<Value> = helper.examples.iter().map(|obj_lit| {
+            lower_object_literal(obj_lit)
+        }).collect();
+        obj.insert("examples".into(), Value::Array(examples));
+    }
+
     Value::Object(obj)
 }
 
@@ -1217,6 +1242,15 @@ fn lower_intent_decl(decl: &IntentDeclaration) -> Value {
         obj.insert("description".into(), json!(desc.value));
     }
     obj.insert("fields".into(), lower_properties(&decl.fields));
+    
+    // Examples
+    if !decl.examples.is_empty() {
+        let examples: Vec<Value> = decl.examples.iter().map(|obj_lit| {
+            lower_object_literal(obj_lit)
+        }).collect();
+        obj.insert("examples".into(), Value::Array(examples));
+    }
+    
     Value::Object(obj)
 }
 

@@ -6,7 +6,7 @@ use auwgent_ast::*;
 use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
-use crate::expr::{condition_parser, expr_parser, object_literal_parser};
+use crate::expr::{condition_parser, expr_parser, named_args_parser, object_literal_parser};
 use crate::primitives::*;
 use crate::stmt::statement_parser;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser, type_expr_parser};
@@ -263,6 +263,12 @@ pub(crate) fn agent_model_config_parser(
 
 pub(crate) fn tool_function_parser(
 ) -> impl Parser<TokenKind, ToolFunction, Error = Simple<TokenKind>> + Clone {
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
+
     ident()
         .then(
             type_config_decl_parser()
@@ -276,11 +282,13 @@ pub(crate) fn tool_function_parser(
                 .or_not(),
         )
         .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).repeated())
-        .map_with_span(|(((name, params), returns), desc), span| ToolFunction {
+        .then(example_args.repeated())
+        .map_with_span(|((((name, params), returns), desc), examples), span| ToolFunction {
             name,
             params,
             returns,
             description: desc,
+            examples,
             span: s(span),
         })
 }
@@ -425,16 +433,24 @@ pub(crate) fn intent_body_parser(
         .or_not()
         .map(|opt| opt.unwrap_or_default());
 
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
+
     ident()
         .then(
             desc.then(fields)
-                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+                .then(example_args.repeated()),
         )
-        .map_with_span(|(name, (description, fields)), span| IntentDeclaration {
+        .map_with_span(|(name, ((description, fields), examples)), span| IntentDeclaration {
             exported: false,
             name,
             description,
             fields,
+            examples,
             span: s(span),
         })
 }
@@ -588,6 +604,12 @@ pub(crate) fn agent_config_parser(
             })
         });
 
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
+
     let workflow = tok(TokenKind::Workflow)
         .ignore_then(ident())
         .then(
@@ -602,8 +624,9 @@ pub(crate) fn agent_config_parser(
                 .or_not(),
         )
         .then(workflow_body_parser().delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)))
+        .then(example_args.repeated())
         .map_with_span(
-            |(((name, params), ret_ty), (desc, tool_configs, body)), span| {
+            |((((name, params), ret_ty), (desc, tool_configs, body)), examples), span| {
                 AgentConfig::Workflow(WorkflowConfig {
                     name,
                     params,
@@ -611,6 +634,7 @@ pub(crate) fn agent_config_parser(
                     description: desc,
                     tool_configs,
                     body,
+                    examples,
                     span: s(span),
                 })
             },

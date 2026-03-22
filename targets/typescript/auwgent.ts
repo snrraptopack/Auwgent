@@ -95,8 +95,10 @@ export class TypedAuwgent<
         this.registerCustomDrivers(apiKeys);
 
         // Register all tools — guaranteed complete by the type system
-        for (const [name, handler] of Object.entries(config.tools)) {
-            this.native.registerTool(name, handler as (args: any) => Promise<any>);
+        if (config.tools) {
+            for (const [name, handler] of Object.entries(config.tools)) {
+                this.native.registerTool(name, handler as (args: any) => Promise<any>);
+            }
         }
     }
 
@@ -419,7 +421,7 @@ export class TypedAuwgent<
     }
 
     /** Run the agentic loop. Returns the exported session state. */
-    async run(input?: ExtractInputShape<IR> | string): Promise<SessionState> {
+    async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
         let currentSession = this.exportSession();

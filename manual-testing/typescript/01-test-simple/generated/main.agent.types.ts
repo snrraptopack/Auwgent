@@ -30,7 +30,7 @@ export type MainCustomIntents =
  * API keys required for Main
  */
 export type MainApiKeys = {
-    geminiApiKey: string;
+    kimiApiKey: string;  // API key for custom provider 'kimi'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity

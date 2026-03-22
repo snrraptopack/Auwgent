@@ -5,7 +5,7 @@
 
 agent Main{
     default config {
-        model: gemini("gemini-2.5-flash")
+        model: custom("kimi","https://api.moonshot.ai/v1/chat/completions","kimi-k2-0905-preview")
         prompt: "You are a helper be polite"
     }
     input: Text
