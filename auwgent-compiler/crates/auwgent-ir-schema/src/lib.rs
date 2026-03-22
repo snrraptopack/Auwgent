@@ -14,18 +14,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use ts_rs::TS;
 
 /// Transparent wrapper around `serde_json::Value` that implements `ts_rs::TS`
 /// mapping natively to TypeScript's `any` and Python's `Any`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, Default)]
 #[serde(transparent)]
-#[ts(export)]
-pub struct JsonValue(
-    #[ts(type = "any")]
-    #[schemars(schema_with = "any_schema")]
-    pub serde_json::Value
-);
+
+pub struct JsonValue(#[schemars(schema_with = "any_schema")] pub serde_json::Value);
 
 fn any_schema(_gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
     schemars::schema::Schema::Bool(true) // Accept anything
@@ -34,9 +29,8 @@ fn any_schema(_gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Sc
 // ── Top-Level Agent IR ───────────────────────────────────────────────────────
 
 /// Root IR for a compiled `.agent` file. Mirrors `ir-runtime/src/types.rs::AgentIR`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct AgentIR {
     pub name: String,
     #[serde(default)]
@@ -74,9 +68,9 @@ pub struct AgentIR {
 // ── Helper IR ────────────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime/src/types.rs::Helper`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+
 pub struct HelperIR {
     pub name: String,
     pub description: Option<String>,
@@ -101,8 +95,7 @@ pub struct HelperIR {
 // ── Workflow IR ──────────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime/src/types.rs::Workflow`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 pub struct WorkflowIR {
     /// Serialized as `flowName`.
     #[serde(rename = "flowName")]
@@ -123,8 +116,7 @@ pub struct WorkflowIR {
 // ── Tool IR ──────────────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime/src/types.rs::Tool`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 pub struct ToolIR {
     pub name: String,
     pub description: Option<String>,
@@ -138,18 +130,17 @@ pub struct ToolIR {
 // ── Type Declaration IR ──────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime/src/types.rs::TypeDefinition`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
 pub struct TypeDeclIR {
     pub is_output: bool,
     pub properties: HashMap<String, TypePropertyIR>,
 }
 
 /// Mirrors `ir-runtime/src/types.rs::TypeProperty`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+
 pub struct TypePropertyIR {
     #[serde(rename = "type")]
     pub type_value: JsonValue,
@@ -161,9 +152,9 @@ pub struct TypePropertyIR {
 // ── Expression IR ────────────────────────────────────────────────────────────
 
 /// Tagged expression union. Mirrors `ir-runtime/src/types.rs::Expression`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(export)]
+
 pub enum ExpressionIR {
     // Literals
     #[serde(rename = "literal")]
@@ -190,7 +181,9 @@ pub enum ExpressionIR {
     Template { value: Vec<JsonValue> },
     /// Inline object literal `{ key: value, ... }`.
     #[serde(rename = "object")]
-    Object { value: HashMap<String, ExpressionIR> },
+    Object {
+        value: HashMap<String, ExpressionIR>,
+    },
     /// Array literal.
     #[serde(rename = "array")]
     Array { value: Vec<ExpressionIR> },
@@ -230,9 +223,15 @@ pub enum ExpressionIR {
     #[serde(rename = "return")]
     Return { value: Box<ExpressionIR> },
     #[serde(rename = "variableDeclaration")]
-    VariableDeclaration { name: String, value: Box<ExpressionIR> },
+    VariableDeclaration {
+        name: String,
+        value: Box<ExpressionIR>,
+    },
     #[serde(rename = "assign")]
-    Assign { variable: String, value: Box<ExpressionIR> },
+    Assign {
+        variable: String,
+        value: Box<ExpressionIR>,
+    },
     #[serde(rename = "parallel")]
     Parallel { body: Vec<ExpressionIR> },
     /// Transfer to a helper: `{ type: "transfer", target: <ExpressionIR>, mode: "..." }`.
@@ -244,11 +243,20 @@ pub enum ExpressionIR {
 
     // Calls
     #[serde(rename = "functionCall")]
-    FunctionCall { value: String, args: Vec<ExpressionIR> },
+    FunctionCall {
+        value: String,
+        args: Vec<ExpressionIR>,
+    },
     #[serde(rename = "helperCall")]
-    HelperCall { value: String, args: Vec<ExpressionIR> },
+    HelperCall {
+        value: String,
+        args: Vec<ExpressionIR>,
+    },
     #[serde(rename = "promptCall")]
-    PromptCall { value: String, args: Vec<ExpressionIR> },
+    PromptCall {
+        value: String,
+        args: Vec<ExpressionIR>,
+    },
 
     // Context
     #[serde(rename = "contextRef")]
@@ -268,8 +276,8 @@ pub enum ExpressionIR {
 }
 
 /// Prompt conversation example pair. Mirrors `ir-runtime::ExamplePair`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct ExamplePairIR {
     pub user: String,
     pub assistant: String,
@@ -278,8 +286,8 @@ pub struct ExamplePairIR {
 // ── Model Config IR ──────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime::ModelConfigEntry`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct ModelConfigBlockIR {
     #[serde(rename = "defaultConfig")]
     pub default_config: Option<ModelConfigIR>,
@@ -288,8 +296,8 @@ pub struct ModelConfigBlockIR {
 }
 
 /// Mirrors `ir-runtime::NamedModelConfig`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct NamedModelConfigIR {
     #[serde(rename = "configName")]
     pub config_name: String,
@@ -298,8 +306,8 @@ pub struct NamedModelConfigIR {
 }
 
 /// Mirrors `ir-runtime::ModelConfig`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct ModelConfigIR {
     pub model: ModelProviderIR,
     pub embedding: Option<ModelProviderIR>,
@@ -307,9 +315,9 @@ pub struct ModelConfigIR {
 }
 
 /// Mirrors `ir-runtime::ModelProvider`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(export)]
+
 pub enum ModelProviderIR {
     #[serde(rename = "gemini")]
     Gemini {
@@ -338,8 +346,8 @@ pub enum ModelProviderIR {
 // ── Intent IR ────────────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime::CustomIntentDef`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct CustomIntentIR {
     pub name: String,
     pub description: Option<String>,
@@ -359,9 +367,9 @@ pub struct CustomIntentIR {
 /// - `ThenContinue` → `"thenContinue"`
 ///
 /// Mirrors `ir-runtime/src/runtime/helper_runner.rs::HandoffMode`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug, PartialEq, Default)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
-#[ts(export)]
+
 pub enum HandoffKindIR {
     /// Helper result is returned silently to the parent agent (default).
     #[default]
@@ -396,9 +404,9 @@ impl HandoffKindIR {
 // ── Condition IR ─────────────────────────────────────────────────────────────
 
 /// Mirrors `ir-runtime::Condition`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
 #[serde(tag = "type", rename_all = "camelCase")]
-#[ts(export)]
+
 pub enum ConditionIR {
     #[serde(rename = "comparison")]
     Comparison(ComparisonIR),
@@ -415,8 +423,8 @@ pub enum ConditionIR {
 }
 
 /// Mirrors `ir-runtime::Comparison`.
-#[derive(Serialize, Deserialize, TS, JsonSchema, Clone, Debug)]
-#[ts(export)]
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+
 pub struct ComparisonIR {
     pub left: Box<ExpressionIR>,
     pub operator: String,

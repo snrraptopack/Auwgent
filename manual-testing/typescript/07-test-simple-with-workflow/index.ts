@@ -17,7 +17,7 @@ const config: AuwgentConfig = {
 
 const agent = auwgent(config)
 
-console.log(agent.generatePrompt("ReportGenerator"))
+console.log(agent.generatePrompt())
 
 agent.onIntent((name, value, agentName) => {
   if (name === "response_schema") {

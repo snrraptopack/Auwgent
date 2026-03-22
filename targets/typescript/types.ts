@@ -316,11 +316,11 @@ export type IntentHandlers<
     Output = any,
     Tools = any
 > = {
-    [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
-        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
-        agentName: string
-    ) => IntentControl | Promise<IntentControl> | void | Promise<void>;
-};
+        [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
+            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+            agentName: string
+        ) => IntentControl | Promise<IntentControl> | void | Promise<void>;
+    };
 
 export type PartialIntentHandlers<
     IR extends AgentIRShape = any,
@@ -328,11 +328,11 @@ export type PartialIntentHandlers<
     Output = any,
     Tools = any
 > = {
-    [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
-        value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
-        agentName: string
-    ) => void;
-};
+        [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
+            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+            agentName: string
+        ) => void;
+    };
 
 export type PartialIntentHandler<
     IR extends AgentIRShape = any,

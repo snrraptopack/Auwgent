@@ -98,7 +98,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         if let Some(obj) = output.0.as_object() {
             if !obj.is_empty() {
                 let mut schema_section = String::from(
-                    "\n\n@@out [SchemaName]\nUse this to return structured data to the system.\nAvailable schemas and their exact shapes:\n\n",
+                    "\n\n@@out [SchemaName]\nUse this to return structured data to the system ONLY when you have the final real data.\nAvailable schemas and their exact shapes:\n\n",
                 );
 
                 // Format schema structure (TypeScript-style)
@@ -184,6 +184,8 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     // ═══ CONSTRAINTS ═══
     let mut constraints = Vec::new();
     constraints.push("- NEVER invent blocks that are not listed above.".to_string());
+    constraints.push("- NEVER output placeholder or empty `@@out` blocks during analysis. Emit `@@out` exactly ONCE at the very end of your final turn.".to_string());
+    constraints.push("- NEVER mix `@@tool`, `@@workflow`, or `@@helper` blocks in the same response. You may execute multiple tools together, but you cannot mix a tool with a workflow or helper in a single turn.".to_string());
 
     if !ir.tools.is_empty() {
         constraints.push(
