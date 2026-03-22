@@ -278,6 +278,8 @@ fn load_model_recursive(
     };
 
     let parsed = parse_source(&source);
+
+    // Report lex errors as hard failures — we cannot recover from invalid tokens.
     if !parsed.lex_diagnostics.is_empty() {
         return Err(AnalysisError::Lex {
             path: file.to_path_buf(),
@@ -286,7 +288,10 @@ fn load_model_recursive(
         });
     }
 
-    if !parsed.parse_diagnostics.is_empty() {
+    // Report parse errors as hard failures only when there are NO elements at all.
+    // If Chumsky recovered some elements, continue with what we have so downstream
+    // tools still get a useful error message rather than a silent crash.
+    if !parsed.parse_diagnostics.is_empty() && parsed.model.elements.is_empty() {
         return Err(AnalysisError::Parse {
             path: file.to_path_buf(),
             source,

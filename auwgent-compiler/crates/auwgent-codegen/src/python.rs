@@ -1,7 +1,7 @@
 use crate::common::{
-    array_at, collect_custom_provider_ids, collect_helper_tools, collect_required_providers,
-    collect_transferred_helpers, collect_workflow_tools, join_sections, merge_tool_defs, object_at,
-    string_at,
+    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_helper_tools,
+    collect_required_providers, collect_transferred_helpers, collect_workflow_tools, join_sections,
+    merge_helpers, merge_tool_defs, object_at, string_at,
 };
 use serde_json::{Map, Value};
 
@@ -13,14 +13,17 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         array_at(ir, &["tools"]),
         workflow_tools.into_iter().chain(helper_tools.into_iter()).collect()
     );
+    let has_tools = !all_tools.is_empty();
     let transferred_helpers = collect_transferred_helpers(ir);
+    let handoff_helpers = collect_handoff_helpers(ir);
+    let output_helpers = merge_helpers(transferred_helpers, handoff_helpers);
     let required_providers = collect_required_providers(ir);
     let custom_provider_ids = collect_custom_provider_ids(ir);
 
     let imports = [
         "import os",
         "import json",
-        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol",
+        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, Literal",
         "",
         "# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10",
         "try:",
@@ -51,12 +54,15 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     }
 
     sections.push(generate_typed_dict(agent_name, "Input", unwrap_input_fields(ir.get("input")).as_ref()));
-    for helper in &transferred_helpers {
+    for helper in &output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
-    sections.push(generate_output_interface(ir, agent_name, &transferred_helpers));
+    sections.push(generate_output_interface(ir, agent_name, &output_helpers));
     sections.push(generate_typed_dict(agent_name, "Context", ir.get("context")));
-    sections.push(generate_tools_protocol(agent_name, &all_tools));
+    if has_tools {
+        sections.push(generate_tools_protocol(agent_name, &all_tools));
+    }
+    sections.push(generate_custom_intents_union(ir, agent_name));
 
     if !required_providers.is_empty() {
         sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
@@ -65,6 +71,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     sections.push(generate_factory_function(
         ir,
         agent_name,
+        has_tools,
         !required_providers.is_empty(),
         base_name,
     ));
@@ -108,6 +115,70 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
 fn generate_helper_output_interface(helper: &Value) -> String {
     let helper_name = string_at(helper, &["name"]).unwrap_or("Helper");
     generate_typed_dict(helper_name, "Output", helper.get("output"))
+}
+
+fn generate_custom_intents_union(ir: &Value, agent_name: &str) -> String {
+    let mut intent_types: Vec<String> = Vec::new();
+
+    // Collect from main agent
+    if let Some(custom) = ir.get("customIntents").and_then(Value::as_array) {
+        for ci in custom {
+            let name = string_at(ci, &["name"]).unwrap_or_default();
+            let fields = ci.get("fields").unwrap_or(&Value::Null);
+            intent_types.push(format!(
+                "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
+                name,
+                name,
+                generate_raw_typed_dict_inline(fields)
+            ));
+        }
+    }
+
+    // Collect from helpers
+    if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
+        for helper in helpers {
+            if let Some(custom) = helper.get("customIntents").and_then(Value::as_array) {
+                for ci in custom {
+                    let name = string_at(ci, &["name"]).unwrap_or_default();
+                    let fields = ci.get("fields").unwrap_or(&Value::Null);
+                    let ty = format!(
+                        "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
+                        name,
+                        name,
+                        generate_raw_typed_dict_inline(fields)
+                    );
+                    if !intent_types.contains(&ty) {
+                        intent_types.push(ty);
+                    }
+                }
+            }
+        }
+    }
+
+    if intent_types.is_empty() {
+        format!("# No custom intents defined\n{agent_name}CustomIntents = None\n")
+    } else if intent_types.len() == 1 {
+        format!("{agent_name}CustomIntents = {}\n", intent_types[0])
+    } else {
+        format!(
+            "{agent_name}CustomIntents = Union[\n    {},\n]\n",
+            intent_types.join(",\n    ")
+        )
+    }
+}
+
+fn generate_raw_typed_dict_inline(value: &Value) -> String {
+    let mut props = Vec::new();
+    if let Some(obj) = value.as_object() {
+        for (name, val) in obj {
+            let mut python_type = type_to_python_string(val);
+            if val.get("optional").and_then(Value::as_bool).unwrap_or(false) {
+                python_type = format!("Optional[{python_type}]");
+            }
+            props.push(format!("\"{name}\": {python_type}"));
+        }
+    }
+    format!("{{{}}}", props.join(", "))
 }
 
 fn generate_output_interface(ir: &Value, agent_name: &str, transferred_helpers: &[Value]) -> String {
@@ -200,18 +271,23 @@ fn generate_api_keys(
     
     // Generate individual API key fields for each custom provider
     for custom_id in custom_ids {
-        let field_name = format!("{}ApiKey", custom_id.replace("-", "_"));
+        let sanitized: String = custom_id
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let field_name = format!("{}ApiKey", sanitized);
         keys.push(format!("    {}: str  # API key for custom provider '{}'", field_name, custom_id));
     }
 
     format!("class {agent_name}ApiKeys(TypedDict, total=False):\n{}\n", keys.join("\n"))
 }
 
-fn generate_factory_function(ir: &Value, agent_name: &str, has_api_keys: bool, base_name: &str) -> String {
-    let mut config_keys = vec![
-        format!("    tools: NotRequired['{agent_name}Tools']"),
-        format!("    middleware: NotRequired[List['{agent_name}Middleware']]"),
-    ];
+fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_api_keys: bool, base_name: &str) -> String {
+    let mut config_keys = Vec::new();
+    if has_tools {
+        config_keys.push(format!("    tools: NotRequired['{agent_name}Tools']"));
+    }
+    config_keys.push(format!("    middleware: NotRequired[List['{agent_name}Middleware']]"));
 
     if matches!(ir.get("context"), Some(context) if !context.is_null()) {
         config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));

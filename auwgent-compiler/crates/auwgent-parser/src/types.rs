@@ -81,6 +81,7 @@ pub(crate) fn type_expr_parser(
                 }
             })
     })
+    .boxed()
 }
 
 pub(crate) fn type_config_decl_parser(

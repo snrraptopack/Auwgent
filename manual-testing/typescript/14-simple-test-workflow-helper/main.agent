@@ -14,8 +14,8 @@ agent Main{
     tool aa():number
     tool bb():boolean
 
-    workflow analyze():number {
-        description: "Analyze the input and return a number"
+    workflow analyze():string {
+        description: "Analyze the input and return a combined result"
         let result1 = hlp.A("")
         let result2 = hlp.B("anything")
 

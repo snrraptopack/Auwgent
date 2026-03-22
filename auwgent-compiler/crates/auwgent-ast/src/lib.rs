@@ -120,6 +120,7 @@ pub enum InputShape {
 #[derive(Debug, Clone)]
 pub struct OutputConfig {
     pub shape: OutputShape,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 
@@ -332,6 +333,7 @@ pub struct TypeDeclaration {
     pub is_output: bool,
     pub name: Spanned<String>,
     pub fields: Vec<TypeConfigDecl>,
+    pub examples: Vec<ObjectLiteral>,
     pub span: Span,
 }
 

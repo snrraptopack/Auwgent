@@ -1,45 +1,6 @@
 // Comprehensive test: Agent with helpers, tools, workflows, handoffs, and in-memory DB
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════════════════════
-
-type User {
-    id: string
-    name: string
-    email: string
-    created_at: string
-}
-
-type Product {
-    id: string
-    name: string
-    price: number
-    stock: number
-}
-
-type Order {
-    id: string
-    user_id: string
-    product_id: string
-    quantity: number
-    total: number
-    status: "pending" | "completed" | "cancelled"
-}
-
-type QueryResult {
-    success: boolean
-    data: string
-    message: string
-}
-
-type AnalysisReport {
-    total_users: number
-    total_products: number
-    total_orders: number
-    revenue: number
-    insights: string[]
-}
+import {User,Product,Order,QueryResult, AnalysisReport} from "./types"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CUSTOM INTENTS
@@ -74,7 +35,8 @@ agent Main {
     }
 
     input: Text
-    output: QueryResult | AnalysisReport
+    output: QueryResult
+
 
     intent: SpeakLoud
 
@@ -86,31 +48,33 @@ agent Main {
 
     // ═══ DATABASE TOOLS ═══
 
-    tool db_query_users(filter: string): string
-        @desc "Query users from in-memory DB. Filter can be 'all', 'id:<id>', 'email:<email>'"
-        @example(filter = "all")
-        @example(filter = "email:example@gmail.com")
-        @example(filter = "id:user_1")
+    tools {
+        db_query_users(filter: string): User[]
+            @desc "Query users from in-memory DB. Filter can be 'all', 'id:<id>', 'email:<email>'"
+            @example(filter = "all")
 
-    tool db_query_products(filter: string): string
-        @desc "Query products from in-memory DB. Filter can be 'all', 'id:<id>', 'name:<name>'"
-        @example(filter = "all")
+        db_query_products(filter: string): Product[]
+            @desc "Query products from in-memory DB. Filter can be 'all', 'id:<id>', 'name:<name>'"
+            @example(filter = "id:10")
 
-    tool db_query_orders(filter: string): string
-        @desc "Query orders from in-memory DB. Filter can be 'all', 'user_id:<id>', 'status:<status>'"
-        @example(filter = "all")
+        db_query_orders(filter: string): Order[]
+            @desc "Query orders from in-memory DB. Filter can be 'all', 'user_id:<id>', 'status:<status>'"
+            @example(filter = "all")
 
-    tool db_create_user(name: string, email: string): string
-        @desc "Create a new user in the database"
-        @example(name = "John Doe", email = "john@example.com")
+        db_create_user(name: string, email: string): User
+            @desc "Create a new user in the database"
+            @example(name = "John Doe", email = "john@example.com")
 
-    tool db_create_product(name: string, price: number, stock: number): string
-        @desc "Create a new product in the database"
-        @example(name = "Laptop", price = 999.99, stock = 50)
+        db_create_product(name: string, price: number, stock: number): Product
+            @desc "Create a new product in the database"
+            @example(name = "Laptop", price = 999.99, stock = 50)
 
-    tool db_create_order(user_id: string, product_id: string, quantity: number): string
-        @desc "Create a new order in the database"
-        @example(user_id = "user_1", product_id = "prod_1", quantity = 2)
+        db_create_order(user_id: string, product_id: string, quantity: number): Order
+            @desc "Create a new order in the database"
+            @example(user_id = "user_1", product_id = "prod_1", quantity = 2)
+
+    }
+
 
     // ═══ WORKFLOWS ═══
 
@@ -128,8 +92,12 @@ agent Main {
         let products_data = db_query_products("all")
 
         // Format and return results
-        return "User: " + user_data + "\nOrders: " + orders_data + "\nProducts: " + products_data
-    } @example(target_user_id = "user_1") @example(target_user_id = "user_1")
+        return """
+            User: {{user_data}}
+            Orders: {{orders_data}}
+            Products: {{products_data}}
+        """
+    } @example(target_user_id = "user_1")
 
     workflow calculate_revenue(): string {
         description: "Calculate total revenue from all completed orders"
@@ -149,7 +117,7 @@ agent Main {
         }
 
         return "Total revenue: $" + total_revenue
-    } @example() @example()
+    } @example()
 
     workflow process_bulk_order(target_user_id: string, product_ids: string, quantities: string): string {
         description: "Process multiple orders at once with validation"
@@ -172,9 +140,7 @@ agent Main {
 
         // Regular user processing
         return "Order queued for processing"
-    } @example(target_user_id = "user_1", product_ids = "prod_1,prod_2", quantities = "2,3") @example(target_user_id = "user_1", product_ids = "prod_1,prod_2", quantities = "2,3")
-
-    // ═══ HELPERS ═══
+    } @example(target_user_id = "user_1", product_ids = "prod_1,prod_2", quantities = "2,3")
 
     helpers {
         DataAnalyzer with all tools handoff user then continue
@@ -210,7 +176,6 @@ helper DataAnalyzer {
 
     output: AnalysisReport
 
-    intent: SpeakLoud
 
     // Helper-specific tools
     tool analyze_user_behavior(user_id: string): string
@@ -242,10 +207,19 @@ helper DataAnalyzer {
 
         // Generate insights
         if (low_stock_items != "") {
-            return "ALERT: Low stock detected!\n" + low_stock_items + "\nUser Analysis: " + user_behavior
+            return """
+                ALERT: Low stock detected!
+                {{low_stock_items}}
+                User Analysis: {{user_behavior}}
+            """
         }
 
-        return "Analysis complete. Users: " + users + "\nProducts: " + products + "\nOrders: " + orders
+        return """
+            Analysis complete.
+            Users: {{users}}
+            Products: {{products}}
+            Orders: {{orders}}
+        """
     } @example()
 }
 
@@ -282,7 +256,7 @@ helper ReportGenerator {
         summary: string
         sections: string[]
         generated_at: string
-    }
+    } @example(report_title = "Sales Report Q1", summary = "Strong performance", sections = ["Overview", "Details"], generated_at = "2026-03-22")
 
     intent: SpeakLoud
 
@@ -319,6 +293,11 @@ helper ReportGenerator {
         let summary = "Sales Report for Session: " + ctx.session_id
         let details = "Completed: " + completed + "\nPending: " + pending
 
-        return summary + "\n" + formatted_metrics + "\n" + chart_desc + "\n" + details
+        return """
+            {{summary}}
+            {{formatted_metrics}}
+            {{chart_desc}}
+            {{details}}
+        """
     } @example()
 }

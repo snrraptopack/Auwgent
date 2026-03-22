@@ -36,66 +36,66 @@ export const db_query_users = async (args: { filter: string }) => {
     const { filter } = args;
 
     if (filter === "all") {
-        return JSON.stringify(db.users, null, 2);
+        return db.users;
     }
 
     if (filter.startsWith("id:")) {
         const id = filter.substring(3);
         const user = db.users.find(u => u.id === id);
-        return user ? JSON.stringify(user, null, 2) : JSON.stringify({ error: "User not found" });
+        return [user]
     }
 
     if (filter.startsWith("email:")) {
         const email = filter.substring(6);
         const user = db.users.find(u => u.email === email);
-        return user ? JSON.stringify(user, null, 2) : JSON.stringify({ error: "User not found" });
+        return [user]
     }
 
-    return JSON.stringify({ error: "Invalid filter" });
+    return []
 };
 
 export const db_query_products = async (args: { filter: string }) => {
     const { filter } = args;
 
     if (filter === "all") {
-        return JSON.stringify(db.products, null, 2);
+        return db.products;
     }
 
     if (filter.startsWith("id:")) {
         const id = filter.substring(3);
         const product = db.products.find(p => p.id === id);
-        return product ? JSON.stringify(product, null, 2) : JSON.stringify({ error: "Product not found" });
+        return [product]
     }
 
     if (filter.startsWith("name:")) {
         const name = filter.substring(5);
         const product = db.products.find(p => p.name.toLowerCase().includes(name.toLowerCase()));
-        return product ? JSON.stringify(product, null, 2) : JSON.stringify({ error: "Product not found" });
+        return [product]
     }
 
-    return JSON.stringify({ error: "Invalid filter" });
+    return []
 };
 
 export const db_query_orders = async (args: { filter: string }) => {
     const { filter } = args;
 
     if (filter === "all") {
-        return JSON.stringify(db.orders, null, 2);
+        return db.orders;
     }
 
     if (filter.startsWith("user_id:")) {
         const user_id = filter.substring(8);
         const orders = db.orders.filter(o => o.user_id === user_id);
-        return JSON.stringify(orders, null, 2);
+        return orders;
     }
 
     if (filter.startsWith("status:")) {
         const status = filter.substring(7) as "pending" | "completed" | "cancelled";
         const orders = db.orders.filter(o => o.status === status);
-        return JSON.stringify(orders, null, 2);
+        return orders;
     }
 
-    return JSON.stringify({ error: "Invalid filter" });
+    return []
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -113,7 +113,7 @@ export const db_create_user = async (args: { name: string; email: string }) => {
     };
 
     db.users.push(newUser);
-    return JSON.stringify({ success: true, user: newUser });
+    return newUser
 };
 
 export const db_create_product = async (args: { name: string; price: number; stock: number }) => {
@@ -127,7 +127,7 @@ export const db_create_product = async (args: { name: string; price: number; sto
     };
 
     db.products.push(newProduct);
-    return JSON.stringify({ success: true, product: newProduct });
+    return newProduct
 };
 
 export const db_create_order = async (args: { user_id: string; product_id: string; quantity: number }) => {

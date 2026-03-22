@@ -67,7 +67,7 @@ pub(crate) fn model_provider_parser(
 // ── Prompt Statement ─────────────────────────────────────────────────────
 
 pub(crate) fn prompt_stmt_parser(
-) -> impl Parser<TokenKind, PromptStatement, Error = Simple<TokenKind>> + Clone {
+) -> impl Parser<TokenKind, PromptStatement, Error = Simple<TokenKind>> + Clone + 'static {
     recursive(
         |pstmt: Recursive<'_, TokenKind, PromptStatement, Simple<TokenKind>>| {
             let expr = expr_parser();
@@ -161,6 +161,7 @@ pub(crate) fn prompt_stmt_parser(
             ))
         },
     )
+    .boxed()
 }
 
 // ── Model Config Block ───────────────────────────────────────────────────
@@ -492,7 +493,7 @@ pub(crate) fn intent_config_parser(
 // ── Agent Config (combined) ──────────────────────────────────────────────
 
 pub(crate) fn agent_config_parser(
-) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone {
+) -> impl Parser<TokenKind, AgentConfig, Error = Simple<TokenKind>> + Clone + 'static {
     let input_config = tok(TokenKind::Input)
         .ignore_then(choice((
             // input: Text
@@ -510,6 +511,12 @@ pub(crate) fn agent_config_parser(
                 span: s(span),
             })
         });
+
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
 
     let output_props = tok(TokenKind::Output)
         .ignore_then(
@@ -536,18 +543,22 @@ pub(crate) fn agent_config_parser(
                                 .repeated()
                                 .at_least(1),
                         )
-                        .map_with_span(|(first, rest), span| {
+                        .then(example_args.clone().repeated())
+                        .map_with_span(|((first, rest), examples), span| {
                             let mut all = vec![first];
                             all.extend(rest);
                             OutputConfig {
                                 shape: OutputShape::Union(all),
+                                examples,
                                 span: s(span),
                             }
                         })
                         .or(type_expr_parser()
                             .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
-                            .map_with_span(|(ty, desc), span| OutputConfig {
+                            .then(example_args.clone().repeated())
+                            .map_with_span(|((ty, desc), examples), span| OutputConfig {
                                 shape: OutputShape::Direct { ty, desc },
+                                examples,
                                 span: s(span),
                             })),
                 )
@@ -560,8 +571,10 @@ pub(crate) fn agent_config_parser(
                     .then_ignore(tok(TokenKind::Comma).or_not())
                     .repeated()
                     .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
-                    .map_with_span(|props, span| OutputConfig {
+                    .then(example_args.repeated())
+                    .map_with_span(|(props, examples), span| OutputConfig {
                         shape: OutputShape::Properties(props),
+                        examples,
                         span: s(span),
                     })),
         )
@@ -669,6 +682,7 @@ pub(crate) fn agent_config_parser(
             })
         },
     ))
+    .boxed()
 }
 
 fn workflow_body_parser() -> impl Parser<

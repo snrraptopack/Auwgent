@@ -71,7 +71,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
                 input_val = lower_input(ic);
             }
             AgentConfig::Output(oc) => {
-                output_val = lower_output(&oc.shape, &type_decls);
+                output_val = lower_output(&oc.shape, &type_decls, &oc.examples);
             }
             AgentConfig::Context(cc) => {
                 context_val = lower_properties(&cc.properties);
@@ -137,6 +137,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<Value, Vec<Diagnostic>> {
             helper,
             &prompts,
             &model_defs,
+            &type_decls,
             &intent_decls,
         ));
     }
@@ -216,8 +217,8 @@ fn lower_properties(props: &[TypeConfigDecl]) -> Value {
     Value::Object(map)
 }
 
-fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
-    match shape {
+fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: &[ObjectLiteral]) -> Value {
+    let mut result = match shape {
         OutputShape::Properties(props) => {
             if props.is_empty() {
                 return Value::Null;
@@ -321,7 +322,29 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration]) -> Value {
             }
             Value::Object(obj)
         }
+    };
+
+    // Add examples if provided
+    if !examples.is_empty() {
+        if let Value::Object(ref mut map) = result {
+            let examples_array: Vec<Value> = examples
+                .iter()
+                .map(|ex| lower_object_literal(ex))
+                .collect();
+            map.insert("@examples".into(), Value::Array(examples_array));
+        } else if result.is_null() {
+            // If output is null (Text-only), create an object to hold examples
+            let mut map = Map::new();
+            let examples_array: Vec<Value> = examples
+                .iter()
+                .map(|ex| lower_object_literal(ex))
+                .collect();
+            map.insert("@examples".into(), Value::Array(examples_array));
+            result = Value::Object(map);
+        }
     }
+
+    result
 }
 
 fn lower_output_type_decl_fields(type_decl: &TypeDeclaration) -> Value {
@@ -1133,6 +1156,7 @@ fn lower_helper(
     helper: &Helper,
     prompts: &[&NamedPrompt],
     model_defs: &[&ModelDefinition],
+    type_decls: &[&TypeDeclaration],
     intent_decls: &[&IntentDeclaration],
 ) -> Value {
     let mut obj = Map::new();
@@ -1149,7 +1173,7 @@ fn lower_helper(
     for config in &helper.configs {
         match config {
             AgentConfig::Input(ic) => input_val = lower_input(ic),
-            AgentConfig::Output(oc) => output_val = lower_output(&oc.shape, &[]),
+            AgentConfig::Output(oc) => output_val = lower_output(&oc.shape, type_decls, &oc.examples),
             AgentConfig::Context(cc) => context_val = lower_properties(&cc.properties),
             AgentConfig::Tool(tf) => tools_val.push(lower_tool(tf)),
             AgentConfig::Tools(tfs) => {
@@ -1208,6 +1232,16 @@ fn lower_type_declaration(td: &TypeDeclaration) -> Value {
         props.insert(field.name.value.clone(), Value::Object(prop));
     }
     obj.insert("properties".into(), Value::Object(props));
+
+    // Add examples if provided
+    if !td.examples.is_empty() {
+        let examples_array: Vec<Value> = td
+            .examples
+            .iter()
+            .map(|ex| lower_object_literal(ex))
+            .collect();
+        obj.insert("@examples".into(), Value::Array(examples_array));
+    }
 
     Value::Object(obj)
 }

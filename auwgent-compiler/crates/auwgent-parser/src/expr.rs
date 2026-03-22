@@ -240,6 +240,7 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
                 })
             })
     })
+    .boxed()
 }
 
 #[derive(Clone)]

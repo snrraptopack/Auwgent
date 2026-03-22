@@ -29,46 +29,17 @@
   ],
   "input": null,
   "output": {
-    "__variants": {
-      "QueryResult": {
-        "success": {
-          "type": "boolean",
-          "optional": false
-        },
-        "data": {
-          "type": "string",
-          "optional": false
-        },
-        "message": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "AnalysisReport": {
-        "total_users": {
-          "type": "number",
-          "optional": false
-        },
-        "total_products": {
-          "type": "number",
-          "optional": false
-        },
-        "total_orders": {
-          "type": "number",
-          "optional": false
-        },
-        "revenue": {
-          "type": "number",
-          "optional": false
-        },
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false
-        }
-      }
+    "success": {
+      "type": "boolean",
+      "optional": false
+    },
+    "data": {
+      "type": "string",
+      "optional": false
+    },
+    "message": {
+      "type": "string",
+      "optional": false
     }
   },
   "context": {
@@ -95,24 +66,18 @@
         }
       },
       "name": "db_query_users",
-      "returns": "string",
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "typeRef",
+          "name": "User"
+        }
+      },
       "examples": [
         {
           "filter": {
             "type": "literal",
             "value": "all"
-          }
-        },
-        {
-          "filter": {
-            "type": "literal",
-            "value": "email:example@gmail.com"
-          }
-        },
-        {
-          "filter": {
-            "type": "literal",
-            "value": "id:user_1"
           }
         }
       ]
@@ -126,12 +91,18 @@
         }
       },
       "name": "db_query_products",
-      "returns": "string",
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "typeRef",
+          "name": "Product"
+        }
+      },
       "examples": [
         {
           "filter": {
             "type": "literal",
-            "value": "all"
+            "value": "id:10"
           }
         }
       ]
@@ -145,7 +116,13 @@
         }
       },
       "name": "db_query_orders",
-      "returns": "string",
+      "returns": {
+        "type": "array",
+        "items": {
+          "type": "typeRef",
+          "name": "Order"
+        }
+      },
       "examples": [
         {
           "filter": {
@@ -168,7 +145,10 @@
         }
       },
       "name": "db_create_user",
-      "returns": "string",
+      "returns": {
+        "type": "typeRef",
+        "name": "User"
+      },
       "examples": [
         {
           "name": {
@@ -199,7 +179,10 @@
         }
       },
       "name": "db_create_product",
-      "returns": "string",
+      "returns": {
+        "type": "typeRef",
+        "name": "Product"
+      },
       "examples": [
         {
           "name": {
@@ -234,7 +217,10 @@
         }
       },
       "name": "db_create_order",
-      "returns": "string",
+      "returns": {
+        "type": "typeRef",
+        "name": "Order"
+      },
       "examples": [
         {
           "user_id": {
@@ -325,60 +311,43 @@
         {
           "type": "return",
           "value": {
-            "type": "binaryOp",
-            "op": "+",
-            "left": {
-              "type": "binaryOp",
-              "op": "+",
-              "left": {
-                "type": "binaryOp",
-                "op": "+",
-                "left": {
-                  "type": "binaryOp",
-                  "op": "+",
-                  "left": {
-                    "type": "binaryOp",
-                    "op": "+",
-                    "left": {
-                      "type": "literal",
-                      "value": "User: "
-                    },
-                    "right": {
-                      "type": "varRef",
-                      "value": "user_data"
-                    }
-                  },
-                  "right": {
-                    "type": "literal",
-                    "value": "\\nOrders: "
-                  }
-                },
-                "right": {
-                  "type": "varRef",
-                  "value": "orders_data"
-                }
-              },
-              "right": {
+            "type": "template",
+            "value": [
+              {
                 "type": "literal",
-                "value": "\\nProducts: "
+                "value": "\r\n            User: "
+              },
+              {
+                "type": "varRef",
+                "value": "user_data"
+              },
+              {
+                "type": "literal",
+                "value": "\r\n            Orders: "
+              },
+              {
+                "type": "varRef",
+                "value": "orders_data"
+              },
+              {
+                "type": "literal",
+                "value": "\r\n            Products: "
+              },
+              {
+                "type": "varRef",
+                "value": "products_data"
+              },
+              {
+                "type": "literal",
+                "value": "\r\n        "
               }
-            },
-            "right": {
-              "type": "varRef",
-              "value": "products_data"
-            }
+            ]
           }
         }
       ],
       "description": "Get all orders for a specific user with product details",
       "tools": [],
       "examples": [
-        {
-          "target_user_id": {
-            "type": "literal",
-            "value": "user_1"
-          }
-        },
         {
           "target_user_id": {
             "type": "literal",
@@ -484,7 +453,6 @@
         }
       ],
       "examples": [
-        {},
         {}
       ]
     },
@@ -632,20 +600,6 @@
             "type": "literal",
             "value": "2,3"
           }
-        },
-        {
-          "target_user_id": {
-            "type": "literal",
-            "value": "user_1"
-          },
-          "product_ids": {
-            "type": "literal",
-            "value": "prod_1,prod_2"
-          },
-          "quantities": {
-            "type": "literal",
-            "value": "2,3"
-          }
         }
       ]
     }
@@ -654,26 +608,6 @@
     {
       "name": "DataAnalyzer",
       "description": "Specialized helper for deep data analysis and insights generation",
-      "customIntents": [
-        {
-          "name": "SpeakLoud",
-          "description": "Use this to explain your thought step by step actions you are performing to the user",
-          "fields": {
-            "explain": {
-              "type": "string",
-              "optional": false
-            }
-          },
-          "examples": [
-            {
-              "explain": {
-                "type": "literal",
-                "value": "I'm querying the database to find all users..."
-              }
-            }
-          ]
-        }
-      ],
       "modelConfig": [
         {
           "defaultConfig": {
@@ -714,9 +648,28 @@
         }
       },
       "output": {
-        "type": {
-          "type": "typeRef",
-          "name": "AnalysisReport"
+        "total_users": {
+          "type": "number",
+          "optional": false
+        },
+        "total_products": {
+          "type": "number",
+          "optional": false
+        },
+        "total_orders": {
+          "type": "number",
+          "optional": false
+        },
+        "revenue": {
+          "type": "number",
+          "optional": false
+        },
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false
         }
       },
       "context": null,
@@ -839,32 +792,29 @@
                 {
                   "type": "return",
                   "value": {
-                    "type": "binaryOp",
-                    "op": "+",
-                    "left": {
-                      "type": "binaryOp",
-                      "op": "+",
-                      "left": {
-                        "type": "binaryOp",
-                        "op": "+",
-                        "left": {
-                          "type": "literal",
-                          "value": "ALERT: Low stock detected!\\n"
-                        },
-                        "right": {
-                          "type": "varRef",
-                          "value": "low_stock_items"
-                        }
-                      },
-                      "right": {
+                    "type": "template",
+                    "value": [
+                      {
                         "type": "literal",
-                        "value": "\\nUser Analysis: "
+                        "value": "\r\n                ALERT: Low stock detected!\r\n                "
+                      },
+                      {
+                        "type": "varRef",
+                        "value": "low_stock_items"
+                      },
+                      {
+                        "type": "literal",
+                        "value": "\r\n                User Analysis: "
+                      },
+                      {
+                        "type": "varRef",
+                        "value": "user_behavior"
+                      },
+                      {
+                        "type": "literal",
+                        "value": "\r\n            "
                       }
-                    },
-                    "right": {
-                      "type": "varRef",
-                      "value": "user_behavior"
-                    }
+                    ]
                   }
                 }
               ],
@@ -873,48 +823,37 @@
             {
               "type": "return",
               "value": {
-                "type": "binaryOp",
-                "op": "+",
-                "left": {
-                  "type": "binaryOp",
-                  "op": "+",
-                  "left": {
-                    "type": "binaryOp",
-                    "op": "+",
-                    "left": {
-                      "type": "binaryOp",
-                      "op": "+",
-                      "left": {
-                        "type": "binaryOp",
-                        "op": "+",
-                        "left": {
-                          "type": "literal",
-                          "value": "Analysis complete. Users: "
-                        },
-                        "right": {
-                          "type": "varRef",
-                          "value": "users"
-                        }
-                      },
-                      "right": {
-                        "type": "literal",
-                        "value": "\\nProducts: "
-                      }
-                    },
-                    "right": {
-                      "type": "varRef",
-                      "value": "products"
-                    }
-                  },
-                  "right": {
+                "type": "template",
+                "value": [
+                  {
                     "type": "literal",
-                    "value": "\\nOrders: "
+                    "value": "\r\n            Analysis complete.\r\n            Users: "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "users"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n            Products: "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "products"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n            Orders: "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "orders"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n        "
                   }
-                },
-                "right": {
-                  "type": "varRef",
-                  "value": "orders"
-                }
+                ]
               }
             }
           ],
@@ -1050,7 +989,36 @@
               "optional": false
             }
           }
-        }
+        },
+        "@examples": [
+          {
+            "report_title": {
+              "type": "literal",
+              "value": "Sales Report Q1"
+            },
+            "summary": {
+              "type": "literal",
+              "value": "Strong performance"
+            },
+            "sections": {
+              "type": "array",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "Overview"
+                },
+                {
+                  "type": "literal",
+                  "value": "Details"
+                }
+              ]
+            },
+            "generated_at": {
+              "type": "literal",
+              "value": "2026-03-22"
+            }
+          }
+        ]
       },
       "context": null,
       "tools": [
@@ -1260,56 +1228,45 @@
             {
               "type": "return",
               "value": {
-                "type": "binaryOp",
-                "op": "+",
-                "left": {
-                  "type": "binaryOp",
-                  "op": "+",
-                  "left": {
-                    "type": "binaryOp",
-                    "op": "+",
-                    "left": {
-                      "type": "binaryOp",
-                      "op": "+",
-                      "left": {
-                        "type": "binaryOp",
-                        "op": "+",
-                        "left": {
-                          "type": "binaryOp",
-                          "op": "+",
-                          "left": {
-                            "type": "varRef",
-                            "value": "summary"
-                          },
-                          "right": {
-                            "type": "literal",
-                            "value": "\\n"
-                          }
-                        },
-                        "right": {
-                          "type": "varRef",
-                          "value": "formatted_metrics"
-                        }
-                      },
-                      "right": {
-                        "type": "literal",
-                        "value": "\\n"
-                      }
-                    },
-                    "right": {
-                      "type": "varRef",
-                      "value": "chart_desc"
-                    }
-                  },
-                  "right": {
+                "type": "template",
+                "value": [
+                  {
                     "type": "literal",
-                    "value": "\\n"
+                    "value": "\r\n            "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "summary"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n            "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "formatted_metrics"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n            "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "chart_desc"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n            "
+                  },
+                  {
+                    "type": "varRef",
+                    "value": "details"
+                  },
+                  {
+                    "type": "literal",
+                    "value": "\r\n        "
                   }
-                },
-                "right": {
-                  "type": "varRef",
-                  "value": "details"
-                }
+                ]
               }
             }
           ],
@@ -1440,7 +1397,23 @@
           "type": "string",
           "optional": false
         }
-      }
+      },
+      "@examples": [
+        {
+          "success": {
+            "type": "literal",
+            "value": true
+          },
+          "data": {
+            "type": "literal",
+            "value": "{\\\"users\\\": []}"
+          },
+          "message": {
+            "type": "literal",
+            "value": "Query successful"
+          }
+        }
+      ]
     },
     "AnalysisReport": {
       "isOutput": false,
@@ -1468,7 +1441,40 @@
           },
           "optional": false
         }
-      }
+      },
+      "@examples": [
+        {
+          "total_users": {
+            "type": "literal",
+            "value": 10.0
+          },
+          "total_products": {
+            "type": "literal",
+            "value": 5.0
+          },
+          "total_orders": {
+            "type": "literal",
+            "value": 20.0
+          },
+          "revenue": {
+            "type": "literal",
+            "value": 5000.0
+          },
+          "insights": {
+            "type": "array",
+            "value": [
+              {
+                "type": "literal",
+                "value": "Good sales"
+              },
+              {
+                "type": "literal",
+                "value": "Low stock"
+              }
+            ]
+          }
+        }
+      ]
     }
   },
   "helperToolGrants": {

@@ -1,0 +1,43 @@
+
+export type User {
+    id: string
+    name: string
+    email: string
+    created_at: string
+}
+
+export type Product {
+    id: string
+    name: string
+    price: number
+    stock: number
+}
+
+export type Order {
+    id: string
+    user_id: string
+    product_id: string
+    quantity: number
+    total: number
+    status: "pending" | "completed" | "cancelled"
+}
+
+export type QueryResult {
+    success: boolean
+    data: string
+    message: string
+}@example(success = true, data = "{\"users\": []}", message = "Query successful")
+
+export type AnalysisReport {
+    total_users: number
+    total_products: number
+    total_orders: number
+    revenue: number
+    insights: string[]
+} @example(
+    total_users = 10,
+    total_products = 5,
+    total_orders = 20,
+    revenue = 5000.0,
+    insights = ["Good sales", "Low stock"]
+)

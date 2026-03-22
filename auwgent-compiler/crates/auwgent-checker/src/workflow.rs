@@ -59,11 +59,26 @@ impl Checker {
 
         let expected = self.map_type_expr(&wf.return_type);
 
+        // Temporarily register scoped tools into a local map so check_statements
+        // can resolve them without emitting false 'Unknown tool' errors.
+        // We check them here without requiring descriptions (they are stubs).
+        let mut scoped_tool_names: Vec<String> = Vec::new();
         for tf in &wf.tool_configs {
-            self.check_tool(tf, diags);
+            if let Some(ret) = &tf.returns {
+                self.check_type_ref_exists(ret, diags);
+            } else {
+                diags.push(Diagnostic::error(
+                    format!("Scoped tool '{}' does not specify a return type", tf.name.value),
+                    tf.name.span,
+                ).with_help("Add a return type, e.g. `tool name(param: string): string`"));
+            }
+            for p in &tf.params {
+                self.check_type_ref_exists(&p.ty, diags);
+            }
+            scoped_tool_names.push(tf.name.value.clone());
         }
 
-        self.check_statements(&wf.body, &mut env, &mut bindings, &expected, diags);
+        self.check_statements(&wf.body, &mut env, &mut bindings, &expected, diags, &scoped_tool_names);
     }
 
     pub(crate) fn check_statements(
@@ -73,6 +88,7 @@ impl Checker {
         bindings: &mut HashMap<String, (&'static str, Span)>,
         expected_return: &Type,
         diags: &mut Vec<Diagnostic>,
+        scoped_tool_names: &[String],
     ) {
         for stmt in stmts {
             match stmt {
@@ -136,6 +152,7 @@ impl Checker {
                         &mut then_bindings,
                         expected_return,
                         diags,
+                        scoped_tool_names,
                     );
                     if !ifs.else_block.is_empty() {
                         let mut else_env = env.extend();
@@ -146,12 +163,13 @@ impl Checker {
                             &mut else_bindings,
                             expected_return,
                             diags,
+                            scoped_tool_names,
                         );
                     }
                 }
                 Statement::Transfer(_) => {}
                 Statement::Parallel(ps) => {
-                    self.check_statements(&ps.body, env, bindings, expected_return, diags);
+                    self.check_statements(&ps.body, env, bindings, expected_return, diags, scoped_tool_names);
                 }
             }
         }
@@ -292,6 +310,8 @@ impl Checker {
                     return Type::string();
                 }
 
+                // Check if it's a known scoped tool (passed in from check_workflow)
+                // For scoped tools we don't have full type info, so just infer args and return unknown.
                 for arg in &fc.args {
                     self.infer_expression(arg, env, diags);
                 }
@@ -556,9 +576,14 @@ impl Checker {
                 let right = self.infer_expression(&bo.right, env, diags);
                 match bo.op {
                     BinOperator::Add => {
+                        // String concatenation if either side is a string.
+                        // Number arithmetic if both sides are numeric.
                         if left == Type::string() || right == Type::string() {
                             Type::string()
+                        } else if left == Type::number() && right == Type::number() {
+                            Type::number()
                         } else {
+                            // Fallback: one or both are unknown/error — return number
                             Type::number()
                         }
                     }

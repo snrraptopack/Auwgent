@@ -339,7 +339,12 @@ fn generate_api_keys(
     
     // Generate individual API key fields for each custom provider (URL is in the IR, not needed here)
     for custom_id in custom_ids {
-        let field_name = format!("{}ApiKey", custom_id.replace("-", "_"));
+        // Sanitize the provider ID into a valid TS identifier: replace non-alphanumeric chars with '_'.
+        let sanitized: String = custom_id
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let field_name = format!("{}ApiKey", sanitized);
         keys.push(format!("    {}: string;  // API key for custom provider '{}'", field_name, custom_id));
     }
 

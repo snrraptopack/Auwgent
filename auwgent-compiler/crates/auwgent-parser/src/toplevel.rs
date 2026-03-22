@@ -6,7 +6,7 @@ use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
 use crate::config::{agent_config_parser, intent_body_parser, model_provider_parser, prompt_stmt_parser};
-use crate::expr::{named_args_parser, object_literal_parser};
+use crate::expr::named_args_parser;
 use crate::primitives::*;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
 
@@ -54,17 +54,25 @@ pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<T
 
 pub(crate) fn type_decl_parser(
 ) -> impl Parser<TokenKind, TypeDeclaration, Error = Simple<TokenKind>> + Clone {
+    let example_args = tok(TokenKind::AtExample)
+        .ignore_then(
+            named_args_parser()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+        );
+
     tok(TokenKind::Type)
         .ignore_then(ident())
         .then(
             type_config_decl_block_parser()
-                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
+                .then(example_args.repeated()),
         )
-        .map_with_span(|(name, fields), span| TypeDeclaration {
+        .map_with_span(|(name, (fields, examples)), span| TypeDeclaration {
             exported: false,
             is_output: false,
             name,
             fields,
+            examples,
             span: s(span),
         })
 }
@@ -161,7 +169,7 @@ pub(crate) fn import_parser(
 
 // ── Entry Point ──────────────────────────────────────────────────────────
 
-pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<TokenKind>> {
+pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<TokenKind>> + 'static {
     let element = choice((
         tok(TokenKind::Export).ignore_then(choice((
             helper_parser().map(|mut h| {
@@ -203,14 +211,18 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
                 is_output: false,
                 name: Spanned::new("__error__".to_string(), recovery_span),
                 fields: vec![],
+                examples: vec![],
                 span: recovery_span,
             })
         },
-    ));
+    ))
+    .boxed();
 
     import_parser()
         .repeated()
         .then(element.repeated())
         .then_ignore(end())
         .map(|(imports, elements)| Model { imports, elements })
+        .boxed()
 }
+

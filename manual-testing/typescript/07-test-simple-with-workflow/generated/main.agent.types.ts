@@ -51,26 +51,26 @@ export type MainInput = {
 }
 
 export type DataAnalyzerOutput = {
-    type: AnalysisReport;
-}
-
-export type ReportGeneratorOutput = {
-    type: { report_title: string; summary: string; sections: string[]; generated_at: string };
-}
-
-export type MainOutput =
-    | { type: "QueryResult";
-    success: boolean;
-    data: string;
-    message: string;
-}
-    | { type: "AnalysisReport";
     total_users: number;
     total_products: number;
     total_orders: number;
     revenue: number;
     insights: string[];
-};
+}
+
+export type ReportGeneratorOutput = {
+    type: { report_title: string; summary: string; sections: string[]; generated_at: string };
+    @examples: unknown;
+}
+
+export type MainBaseOutput = {
+    success: boolean;
+    data: string;
+    message: string;
+}
+
+/** Union of possible output types (includes transfer destinations) */
+export type MainOutput = MainBaseOutput | DataAnalyzerOutput | ReportGeneratorOutput;
 
 export type MainContext = {
     is_vip: boolean;
@@ -79,12 +79,12 @@ export type MainContext = {
 }
 
 export type MainTools = {
-    db_query_users: (args: { filter: string }) => Promise<string>;
-    db_query_products: (args: { filter: string }) => Promise<string>;
-    db_query_orders: (args: { filter: string }) => Promise<string>;
-    db_create_user: (args: { name: string, email: string }) => Promise<string>;
-    db_create_product: (args: { name: string, price: number, stock: number }) => Promise<string>;
-    db_create_order: (args: { user_id: string, product_id: string, quantity: number }) => Promise<string>;
+    db_query_users: (args: { filter: string }) => Promise<User[]>;
+    db_query_products: (args: { filter: string }) => Promise<Product[]>;
+    db_query_orders: (args: { filter: string }) => Promise<Order[]>;
+    db_create_user: (args: { name: string, email: string }) => Promise<User>;
+    db_create_product: (args: { name: string, price: number, stock: number }) => Promise<Product>;
+    db_create_order: (args: { user_id: string, product_id: string, quantity: number }) => Promise<Order>;
     sum_order_totals: (args: { orders_json: string }) => Promise<number>;
     validate_stock: (args: { product_id: string, quantity: number }) => Promise<boolean>;
     parse_csv: (args: { csv_string: string }) => Promise<string>;

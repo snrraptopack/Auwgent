@@ -164,13 +164,13 @@ impl Checker {
                     self.check_condition(&ifs.condition, &env, diags);
                     let mut bindings = HashMap::new();
                     let expected_return = Type::string();
-                    self.check_statements(&ifs.then_block, &mut env, &mut bindings, &expected_return, diags);
-                    self.check_statements(&ifs.else_block, &mut env, &mut bindings, &expected_return, diags);
+                    self.check_statements(&ifs.then_block, &mut env, &mut bindings, &expected_return, diags, &[]);
+                    self.check_statements(&ifs.else_block, &mut env, &mut bindings, &expected_return, diags, &[]);
                 }
                 PromptStatement::Statement(s) => {
                     let mut bindings = HashMap::new();
                     let expected_return = Type::string();
-                    self.check_statements(&[s.clone()], &mut env, &mut bindings, &expected_return, diags);
+                    self.check_statements(&[s.clone()], &mut env, &mut bindings, &expected_return, diags, &[]);
                 }
                 PromptStatement::Example(ex) => {
                     let param_strs: Vec<&str> = params.iter().map(|s| s.as_str()).collect();

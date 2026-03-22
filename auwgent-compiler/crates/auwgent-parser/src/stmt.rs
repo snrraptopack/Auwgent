@@ -9,7 +9,7 @@ use crate::primitives::*;
 use crate::types::type_expr_parser;
 
 pub(crate) fn statement_parser(
-) -> impl Parser<TokenKind, Statement, Error = Simple<TokenKind>> + Clone {
+) -> impl Parser<TokenKind, Statement, Error = Simple<TokenKind>> + Clone + 'static {
     recursive(
         |stmt: Recursive<'_, TokenKind, Statement, Simple<TokenKind>>| {
             let expr = expr_parser();
@@ -125,4 +125,5 @@ pub(crate) fn statement_parser(
             ))
         },
     )
+    .boxed()
 }
