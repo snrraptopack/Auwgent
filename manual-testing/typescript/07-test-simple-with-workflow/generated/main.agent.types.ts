@@ -6,32 +6,107 @@ import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Main";
-  workflows: ({ flowName: "first"; returns: string })[];
-  helpers: undefined;
+  workflows: ({ flowName: "get_user_orders"; returns: string } | { flowName: "calculate_revenue"; returns: string } | { flowName: "process_bulk_order"; returns: string })[];
+  helpers: ({ name: "DataAnalyzer" } | { name: "ReportGenerator" })[];
 };
 const agentIR = _importedIR as unknown as MainIR;
+export type User = {
+    id: string;
+    name: string;
+    email: string;
+    created_at: string;
+}
+
+export type Product = {
+    id: string;
+    name: string;
+    price: number;
+    stock: number;
+}
+
+export type Order = {
+    id: string;
+    user_id: string;
+    product_id: string;
+    quantity: number;
+    total: number;
+    status: "pending" | "completed" | "cancelled";
+}
+
+export type QueryResult = {
+    success: boolean;
+    data: string;
+    message: string;
+}
+
+export type AnalysisReport = {
+    total_users: number;
+    total_products: number;
+    total_orders: number;
+    revenue: number;
+    insights: string[];
+}
 export type MainInput = {
 
 }
 
-export type MainOutput = {
-    name: string;
-    age: number;
+export type DataAnalyzerOutput = {
+    type: AnalysisReport;
 }
 
-export type MainContext = {
+export type ReportGeneratorOutput = {
+    type: { report_title: string; summary: string; sections: string[]; generated_at: string };
+}
 
+export type MainOutput =
+    | { type: "QueryResult";
+    success: boolean;
+    data: string;
+    message: string;
+}
+    | { type: "AnalysisReport";
+    total_users: number;
+    total_products: number;
+    total_orders: number;
+    revenue: number;
+    insights: string[];
+};
+
+export type MainContext = {
+    is_vip: boolean;
+    user_id: string;
+    session_id: string;
+}
+
+export type MainTools = {
+    db_query_users: (args: { filter: string }) => Promise<string>;
+    db_query_products: (args: { filter: string }) => Promise<string>;
+    db_query_orders: (args: { filter: string }) => Promise<string>;
+    db_create_user: (args: { name: string, email: string }) => Promise<string>;
+    db_create_product: (args: { name: string, price: number, stock: number }) => Promise<string>;
+    db_create_order: (args: { user_id: string, product_id: string, quantity: number }) => Promise<string>;
+    sum_order_totals: (args: { orders_json: string }) => Promise<number>;
+    validate_stock: (args: { product_id: string, quantity: number }) => Promise<boolean>;
+    parse_csv: (args: { csv_string: string }) => Promise<string>;
+    analyze_user_behavior: (args: { user_id: string }) => Promise<string>;
+    detect_low_stock: (args: {  }) => Promise<string>;
+    calculate_average: (args: { numbers: string }) => Promise<number>;
+    find_outliers: (args: { data: string }) => Promise<string>;
+    format_table: (args: { data: string }) => Promise<string>;
+    generate_chart_description: (args: { data: string, chart_type: string }) => Promise<string>;
+    aggregate_by_status: (args: { orders: string }) => Promise<string>;
+    calculate_metrics: (args: { orders: string }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */
 export type MainCustomIntents =
-    | never;
+    | { name: "SpeakLoud"; value: { explain: string } };
 
 /**
  * API keys required for Main
  */
 export type MainApiKeys = {
-    geminiApiKey: string;
+    my_groq_apiApiKey: string;  // API key for custom provider 'my-groq-api'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
@@ -39,7 +114,7 @@ export type MainAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     MainCustomIntents,
     MainOutput,
-    Record<string, never>
+    MainTools
 >;
 
 /** Middleware object type — consistent with `MainAgent.onIntent` intent narrowing */
@@ -47,12 +122,14 @@ export type MainMiddleware<T extends import("@snrraptopack/auwgent-sdk").Middlew
     typeof agentIR,
     MainCustomIntents,
     MainOutput,
-    Record<string, never>,
+    MainTools,
     T
 >;
 
 export type MainConfig = {
+    tools: MainTools;
     middleware?: MainMiddleware[];
+    context: MainContext;
     apiKeys: MainApiKeys;
 }
 
@@ -61,16 +138,17 @@ export function createMain(config: MainConfig): MainAgent {
         typeof agentIR,
         MainCustomIntents,
         MainOutput,
-        Record<string, never>
+        MainTools
     >(agentIR, {
-        tools: {} as Record<string, never>,
+        tools: config.tools,
         middleware: config.middleware as any,
+        context: config.context,
         apiKeys: config.apiKeys
     });
 }
 
 export const auwgent = createMain;
-export type AuwgentTools = Record<string, never>;
+export type AuwgentTools = MainTools;
 export type AuwgentConfig = MainConfig;
 export type AuwgentAgent = MainAgent;
 export type AuwgentMiddleware = MainMiddleware;
