@@ -391,6 +391,9 @@ fn lower_type_expr_value(ty: &TypeExpr) -> Value {
                 let mut prop = Map::new();
                 prop.insert("type".into(), lower_type_expr_value(&p.ty));
                 prop.insert("optional".into(), json!(p.optional));
+                if let Some(desc) = &p.description {
+                    prop.insert("description".into(), json!(desc.value));
+                }
                 props.insert(p.name.value.clone(), Value::Object(prop));
             }
             map.insert("properties".into(), Value::Object(props));
@@ -424,6 +427,9 @@ fn lower_tool(tf: &ToolFunction) -> Value {
         let mut param = Map::new();
         param.insert("type".into(), lower_type_expr_value(&p.ty));
         param.insert("optional".into(), json!(p.optional));
+        if let Some(desc) = &p.description {
+            param.insert("description".into(), json!(desc.value));
+        }
         params.insert(p.name.value.clone(), Value::Object(param));
     }
     tool.insert("params".into(), Value::Object(params));

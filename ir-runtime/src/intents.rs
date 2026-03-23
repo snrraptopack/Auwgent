@@ -59,9 +59,13 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         // Collect examples from tools that have them
         let example_calls = collect_tool_example_calls(&ir.tools);
         if !example_calls.is_empty() {
-            tool_section.push_str("\nExample:\n@@tool\n");
-            tool_section.push_str(&example_calls.join("\n"));
-            tool_section.push_str("\n@@end");
+            tool_section.push_str("\nExamples:\n");
+            // Limit to at most 3 examples, wrapped in distinct blocks
+            for ex in example_calls.iter().take(3) {
+                tool_section.push_str("@@tool\n");
+                tool_section.push_str(ex);
+                tool_section.push_str("\n@@end\n");
+            }
         }
 
         sections.push(tool_section);
@@ -135,7 +139,19 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
                 helper.input.as_ref().map(|v| &v.0),
                 ir.types.as_ref(),
             );
-            helper_section.push_str(&format!("- {}({})", helper.name, params));
+            
+            let handoff_mode = ir.helper_handoff.as_ref()
+                .and_then(|h| h.get(&helper.name).map(|s| s.as_str()))
+                .unwrap_or("return");
+
+            let behavior_note = match handoff_mode {
+                "user" => " [BEHAVIOR: This helper takes over the conversation directly. YOU WILL NOT SEE ITS RESULT. Do not wait for it or summarize it.]",
+                "thenContinue" => " [BEHAVIOR: This helper takes over the conversation directly, but you will receive an alert when it finishes so you can continue closing out the turn.]",
+                _ => " [BEHAVIOR: This helper runs silently in the background and returns its result directly back to you.]",
+            };
+
+            helper_section.push_str(&format!("- {}({}){}", helper.name, params, behavior_note));
+            
             if let Some(desc) = &helper.description {
                 helper_section.push_str(&format!(" // {}", desc));
             }
@@ -373,11 +389,16 @@ fn format_params_signature(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
 
-            if optional {
-                parts.push(format!("{}?: {}", name, type_str));
+            let mut param_decl = if optional {
+                format!("{}?: {}", name, type_str)
             } else {
-                parts.push(format!("{}: {}", name, type_str));
+                format!("{}: {}", name, type_str)
+            };
+
+            if let Some(desc) = def.get("description").and_then(|v| v.as_str()) {
+                param_decl.push_str(&format!(" /* {} */", desc));
             }
+            parts.push(param_decl);
         }
         parts.join(", ")
     } else {
@@ -404,11 +425,16 @@ fn format_helper_params_signature(
                         .and_then(|v| v.as_bool())
                         .unwrap_or(false);
 
-                    if optional {
-                        parts.push(format!("{}?: {}", name, type_str));
+                    let mut param_decl = if optional {
+                        format!("{}?: {}", name, type_str)
                     } else {
-                        parts.push(format!("{}: {}", name, type_str));
+                        format!("{}: {}", name, type_str)
+                    };
+
+                    if let Some(desc) = def.get("description").and_then(|v| v.as_str()) {
+                        param_decl.push_str(&format!(" /* {} */", desc));
                     }
+                    parts.push(param_decl);
                 }
                 return parts.join(", ");
             }
@@ -429,11 +455,16 @@ fn format_helper_params_signature(
                                 .and_then(|v| v.as_bool())
                                 .unwrap_or(false);
 
-                            if optional {
-                                parts.push(format!("{}?: {}", name, type_str));
+                            let mut param_decl = if optional {
+                                format!("{}?: {}", name, type_str)
                             } else {
-                                parts.push(format!("{}: {}", name, type_str));
+                                format!("{}: {}", name, type_str)
+                            };
+
+                            if let Some(desc) = def.get("description").and_then(|v| v.as_str()) {
+                                param_decl.push_str(&format!(" /* {} */", desc));
                             }
+                            parts.push(param_decl);
                         }
                         return parts.join(", ");
                     }

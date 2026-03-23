@@ -49,7 +49,7 @@ agent.onIntent((name, value, agentName) => {
   }
 
   if (name === "helper_call") {
-    console.log("🤝 Helper call:", value.type)
+    console.log("🤝 Helper call:", value)
   }
 
   if (name === "helper_result") {

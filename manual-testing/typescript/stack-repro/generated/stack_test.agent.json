@@ -87,7 +87,8 @@
           "properties": {
             "prompts": {
               "type": "string",
-              "optional": false
+              "optional": false,
+              "description": "A specialized story teller that can go from raw idea to finish. Ask questions even when the story is detailed"
             }
           }
         }
@@ -177,7 +178,8 @@
                 "type": "array",
                 "items": "string"
               },
-              "optional": false
+              "optional": false,
+              "description": "for some key note you think it worth bulleting"
             }
           }
         }

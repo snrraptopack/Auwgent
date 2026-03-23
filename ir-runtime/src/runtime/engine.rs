@@ -470,6 +470,9 @@ impl AuwgentEngine {
             None => None,
         };
 
+        *self.terminal_response_emitted.lock().unwrap() = false;
+        *self.final_response_emitted.lock().unwrap() = false;
+
         // Start the first turn if an explicit input is provided AND we are not teleporting.
         // If we ARE teleporting, the turn will be started by the target agent.
         let is_teleporting = self.fast_forward_stack.lock().unwrap().is_some();
@@ -508,8 +511,6 @@ impl AuwgentEngine {
 
             self.current_raw_response.lock().unwrap().clear();
             self.pending_tool_results.lock().unwrap().clear();
-            *self.terminal_response_emitted.lock().unwrap() = false;
-            *self.final_response_emitted.lock().unwrap() = false;
             self.orchestrator.lock().unwrap().reset();
 
             // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
@@ -691,7 +692,7 @@ impl AuwgentEngine {
                     }
                     Err(e) => {
                         // Fire error as intent if handler exists
-                        self.fire_intent("error".to_string(), serde_json::json!({ "message": e }))
+                        self.fire_intent("error".to_string(), serde_json::json!({ "message": e.clone() }))
                             .await;
 
                         // Ensure we don't leave a hanging turn with no response in the session
