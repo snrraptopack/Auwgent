@@ -708,10 +708,10 @@ impl AuwgentEngine {
             }
 
             // Log the raw model output for debugging
-            // eprintln!(
-            //     "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
-            //     loop_count, self.current_raw_response
-            // );
+            eprintln!(
+                "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
+                loop_count, self.current_raw_response.lock().unwrap()
+            );
 
             // Finalize parsing
             let _final_val = self.orchestrator.lock().unwrap().end();

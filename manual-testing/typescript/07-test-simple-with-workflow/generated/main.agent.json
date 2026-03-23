@@ -7,7 +7,7 @@
           "type": "custom",
           "id": "my-groq-api",
           "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "openai/gpt-oss-120b",
+          "modelName": "llama-3.3-70b-versatile",
           "config": null
         },
         "embedding": null,
@@ -922,7 +922,7 @@
               "type": "custom",
               "id": "my-groq-api",
               "url": "https://api.groq.com/openai/v1/chat/completions",
-              "modelName": "openai/gpt-oss-120b",
+              "modelName": "llama-3.3-70b-versatile",
               "config": null
             },
             "embedding": null,
@@ -1323,48 +1323,6 @@
     }
   ],
   "types": {
-    "Order": {
-      "isOutput": false,
-      "properties": {
-        "total": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "product_id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "status": {
-          "type": {
-            "type": "union",
-            "options": [
-              "pending",
-              "completed",
-              "cancelled"
-            ]
-          },
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "quantity": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "user_id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
     "QueryResult": {
       "isOutput": false,
       "properties": {
@@ -1388,22 +1346,22 @@
     "User": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "email": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "created_at": {
           "type": "string",
           "optional": false,
           "description": null
         },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "email": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1413,7 +1371,7 @@
     "AnalysisReport": {
       "isOutput": false,
       "properties": {
-        "total_products": {
+        "revenue": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1423,7 +1381,12 @@
           "optional": false,
           "description": null
         },
-        "revenue": {
+        "total_users": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "total_products": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1435,9 +1398,46 @@
           },
           "optional": false,
           "description": null
+        }
+      }
+    },
+    "Order": {
+      "isOutput": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
         },
-        "total_users": {
+        "product_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "quantity": {
           "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "user_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "total": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "status": {
+          "type": {
+            "type": "union",
+            "options": [
+              "pending",
+              "completed",
+              "cancelled"
+            ]
+          },
           "optional": false,
           "description": null
         }
@@ -1446,7 +1446,7 @@
     "Product": {
       "isOutput": false,
       "properties": {
-        "name": {
+        "id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1456,13 +1456,13 @@
           "optional": false,
           "description": null
         },
-        "stock": {
-          "type": "number",
+        "name": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
+        "stock": {
+          "type": "number",
           "optional": false,
           "description": null
         }

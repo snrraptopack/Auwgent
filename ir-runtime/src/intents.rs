@@ -199,6 +199,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
 
     // ═══ CONSTRAINTS ═══
     let mut constraints = Vec::new();
+    constraints.push("- You must ALWAYS reply with at least one @@block. If you only want to speak to the user, use the @@chat block.".to_string());
     constraints.push("- NEVER invent blocks that are not listed above.".to_string());
     constraints.push("- NEVER output placeholder or empty `@@out` blocks during analysis. Emit `@@out` exactly ONCE at the very end of your final turn.".to_string());
     constraints.push("- NEVER mix `@@tool`, `@@workflow`, or `@@helper` blocks in the same response. You may execute multiple tools together, but you cannot mix a tool with a workflow or helper in a single turn.".to_string());
