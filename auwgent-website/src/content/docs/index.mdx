@@ -1,16 +1,19 @@
 ---
 title: Auwgent
-description: The compiler-first framework for building AI agents.
+description: The compiler-first framework for building production-grade AI agents.
 template: splash
 hero:
-  tagline: High-performance, architecturally sound AI agents.
+  tagline: Write your agent once. The compiler handles the rest.
+  image:
+    alt: Auwgent block protocol diagram
   actions:
+    - text: Get Started
+      link: /guides/getting-started/
+      icon: rocket
+      variant: primary
     - text: What is Auwgent?
       link: /introduction/
       icon: right-arrow
-    - text: Getting Started
-      link: /guides/getting-started/
-      icon: rocket
       variant: secondary
     - text: GitHub
       link: https://github.com/snrraptopack/Auwgent
@@ -20,23 +23,25 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+## Why Auwgent?
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
+	<Card title="Declarative agent definitions" icon="document">
+		Define your agent's model, prompts, tools, and context in the Auwgent DSL. The compiler generates fully-typed, production-ready bindings for your target language — no boilerplate, no wiring by hand.
 	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
+	<Card title="Prompt composition" icon="pencil">
+		Build prompts from reusable, typed blocks. Mix named prompts, inline strings, and conditional templates. Inject runtime context, schema definitions, and few-shot examples — all resolved at compile time.
 	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
+	<Card title="Deterministic workflows" icon="setting">
+		Tools the model calls freely. Workflows the model triggers but cannot influence. Scope privileged tools inside a workflow and they become invisible to the model — safe from prompt injection by design.
 	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
+	<Card title="Composable helpers" icon="puzzle">
+		Split intelligence across specialised agents. Wire them together with `helpers` — each with its own model, context, and tools. Control exactly what data each helper inherits and how it hands off back to the parent.
 	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
+	<Card title="Full lifecycle middleware" icon="seti:pipeline">
+		Intercept any stage of the execution pipeline. Load and save sessions, inject RAG context, skip or override tool calls, stream partial responses, and handle errors — all through a single composable middleware system.
+	</Card>
+	<Card title="Stream-first by default" icon="seti:clock">
+		Auwgent is built around streaming from the ground up. Responses and structured outputs arrive as they are generated. Your handlers receive data as it flows — no waiting for the full response before acting.
 	</Card>
 </CardGrid>

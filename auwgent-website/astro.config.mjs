@@ -6,7 +6,7 @@ import starlight from '@astrojs/starlight';
 export default defineConfig({
 	integrations: [
 		starlight({
-			title: 'My Docs',
+			title: 'Auwgent',
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
 			sidebar: [
 				{
@@ -27,12 +27,12 @@ export default defineConfig({
 					items: [
 						{ label: 'The Agent', slug: 'core-concepts/agent' },
 						{ label: "Prompt and Context", slug: 'core-concepts/prompt-context' },
-						{ label: "Input and Ouput", slug: "core-concepts/input-output" },
+						{ label: "Input and Output", slug: "core-concepts/input-output" },
 						{ label: "Tools", slug: "core-concepts/tools" },
 						{ label: "Workflows", slug: "core-concepts/workflows" },
 						{ label: "Helpers", slug: "core-concepts/helpers" },
 						{ label: "Organizing Your Codebase", slug: "core-concepts/organize-codebase" },
-						{ label: "session", slug: "core-concepts/sessions" },
+						{ label: "Sessions", slug: "core-concepts/sessions" },
 						{ label: "Middleware", slug: "core-concepts/middleware" }
 					],
 				},

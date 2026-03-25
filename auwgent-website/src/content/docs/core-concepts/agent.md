@@ -172,7 +172,7 @@ Named configs let a single agent behave differently depending on context — dif
 
 The `prompt` field defines the system prompt passed to the model. Because prompts are a significant part of how you shape agent behaviour in Auwgent — with support for dynamic context, intent shaping, and more — they have a dedicated page.
 
-→ See [Prompts](#) for the full reference.
+→ See [Prompts and Context](/core-concepts/prompt-context) for the full reference.
 
 ---
 
@@ -180,4 +180,4 @@ The `prompt` field defines the system prompt passed to the model. Because prompt
 
 With your agent and its configuration defined, the next thing to explore is giving your agent capabilities it can act on.
 
-→ See [Tools](#) to learn how to declare tools the model can call.
+→ See [Tools](/core-concepts/tools) to learn how to declare tools the model can call.
