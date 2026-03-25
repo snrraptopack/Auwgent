@@ -257,8 +257,7 @@ Scoped tools declared inside a workflow still need implementations in your appli
   </TabItem>
   <TabItem label="Python">
     ```python
-    from auwgent import create_auwgent
-    from generated.main_agent_types import ir
+    from generated.main_types import auwgent
 
     async def remove_user(id: str) -> str:
         # your implementation here
@@ -268,7 +267,7 @@ Scoped tools declared inside a workflow still need implementations in your appli
         # your implementation here
         return f"user {id}"
 
-    agent = create_auwgent(ir, {
+    agent = auwgent({
         "apiKeys": {
             "geminiApiKey": "YOUR_API_KEY"
         },

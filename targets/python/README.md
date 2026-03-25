@@ -25,10 +25,9 @@ This produces a `generated/` folder containing the compiled IR and Python bindin
 
 ```python
 import asyncio
-from auwgent import create_auwgent
-from generated.main_agent_types import ir
+from generated.main_types import auwgent
 
-agent = create_auwgent(ir, {
+agent = auwgent({
     "apiKeys": {
         "geminiApiKey": "YOUR_API_KEY"
     }

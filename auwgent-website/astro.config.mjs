@@ -19,7 +19,6 @@ export default defineConfig({
 					label: 'Guides',
 					items: [
 						{ label: 'Getting Started', slug: 'guides/getting-started' },
-						{ label: 'Example Guide', slug: 'guides/example' },
 					],
 				},
 				{
@@ -35,10 +34,6 @@ export default defineConfig({
 						{ label: "Sessions", slug: "core-concepts/sessions" },
 						{ label: "Middleware", slug: "core-concepts/middleware" }
 					],
-				},
-				{
-					label: 'Reference',
-					autogenerate: { directory: 'reference' },
 				},
 			],
 		}),

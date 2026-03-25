@@ -5,6 +5,9 @@ slug: guides/getting-started
 ---
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
+import VSCodeBanner from '@components/VSCodeBanner.astro';
+
+<VSCodeBanner />
 
 This page walks you through installing Auwgent, writing your first agent, and wiring it into your application. By the end you will have a running agent that accepts text input and streams structured output into your codebase.
 
@@ -12,7 +15,11 @@ This page walks you through installing Auwgent, writing your first agent, and wi
 
 ## Prerequisites
 
-Auwgent requires **Node.js 18 or later**. No other runtime dependencies are needed.
+For **TypeScript**, Auwgent requires **Node.js 18 or later**.
+
+For **Python**, Auwgent requires **Python 3.8 or later**. Install the SDK with `pip install auwgent-sdk`.
+
+No other runtime dependencies are needed.
 
 ---
 
@@ -140,20 +147,20 @@ After a successful compile, your `generated` folder will contain two files:
     ```
     generated/
       main.agent.json         ← compiled IR, describes your agent's intents and structure
-      main_agent_types.py     ← generated Python types, ready to import
+      main_types.py           ← generated Python types, ready to import
     ```
   </TabItem>
 </Tabs>
 
-You will only ever work with `main.agent.types.ts`. The JSON file is an internal artifact — it is already embedded in the types file. You do not need to read or reference it directly.
+You will only ever work with the generated types file. The JSON file is an internal artifact — it is already embedded in the types file. You do not need to read or reference it directly.
 
 ---
 
 ## Wiring it up
 
-Open `main.agent.types.ts` and look at what was generated. You will find two named exports at the bottom of the file that are all you need for now: `auwgent` and `AuwgentConfig`.
+Open the generated types file and look at what was generated. You will find a named export at the bottom — `auwgent` — which is a factory function pre-wired to your agent definition. It is all you need to create and run your agent.
 
-`AuwgentConfig` is a TypeScript type that describes exactly what your agent needs to run — including which API key fields are required for the model you declared. Your editor will surface these through intellisense; you do not need to look them up.
+`AuwgentConfig` is a type that describes exactly what your agent needs to run — including which API key fields are required for the model you declared. TypeScript users will get intellisense; Python users will get full type hints. You do not need to look them up.
 
 In your application:
 
@@ -173,10 +180,9 @@ In your application:
   </TabItem>
   <TabItem label="Python">
     ```python
-    from auwgent import create_auwgent
-    from generated.main_agent_types import ir
+    from generated.main_types import auwgent
 
-    agent = create_auwgent(ir, {
+    agent = auwgent({
         "apiKeys": {
             "geminiApiKey": "YOUR_API_KEY"
         }

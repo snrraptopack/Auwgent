@@ -116,10 +116,9 @@ Declaring a tool in the DSL defines the contract. The implementation lives entir
     Register your tools in the agent config alongside your API keys and context:
 
     ```python
-    from auwgent import create_auwgent
-    from generated.main_agent_types import ir
+    from generated.main_types import auwgent
 
-    agent = create_auwgent(ir, {
+    agent = auwgent({
         "apiKeys": {
             "geminiApiKey": "YOUR_API_KEY"
         },
