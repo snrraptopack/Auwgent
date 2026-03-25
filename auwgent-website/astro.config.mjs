@@ -7,7 +7,7 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Auwgent',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
+			social: [],
 			sidebar: [
 				{
 					label: 'Introduction',
