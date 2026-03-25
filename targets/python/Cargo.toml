@@ -9,8 +9,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ir-runtime = { path = "../../ir-runtime" }
-pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
-pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38", "generate-import-lib"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime", "attributes"] }
 tokio = { version = "1.43", features = ["full", "rt", "macros"] }
 serde_json = "1.0"
 futures-util = "0.3"

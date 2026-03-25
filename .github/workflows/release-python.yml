@@ -33,21 +33,20 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        target: [x64, x86]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: PyO3/maturin-action@v1
         with:
           command: build
           args: --release --out dist
-          target: ${{ matrix.target }}
           working-directory: targets/python
       - name: Upload windows wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-windows-${{ matrix.target }}
+          name: wheels-windows-x64
           path: targets/python/dist
 
   macos:
@@ -57,6 +56,9 @@ jobs:
         target: [x86_64, aarch64]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: PyO3/maturin-action@v1
         with:
           command: build
