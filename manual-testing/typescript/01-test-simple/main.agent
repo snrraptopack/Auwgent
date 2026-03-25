@@ -3,12 +3,76 @@
 // in the sdk the intent that would should be generated is response_text
 // Text is made to compiled to null where the  engine takes over
 
+
+model MyGemini{
+    provider: gemini("gemini-2.5-flash",{
+
+        // here every provider configuration can be set
+        // like top_k and co and they must match the http equivalent
+    })
+}
+
+export prompt NonParamPrompt{
+    // the prompt comes here
+}
+
+    import {NonParamPrompt} from "filename"
+
+prompt ParamPrompt(name:string, is_vip:boolean){
+    """
+    The helps us to dynamically inject things into the prompt
+    ie {{name}}
+
+    or {{@schema(output)}} this will refrence the schema output the we define
+    or {{@schema(input)}} this will refrence the schema input the we define
+
+
+    {{#if is_vip == true}}
+        the true prompt
+    {{else}}
+        the false prompt
+    {{/if}}
+
+    """
+
+    Example {
+        user: "Hello, I need help with my account."
+        assistant: "I'd be happy to help! Could you please provide your name?"
+    }
+
+    Example{
+       user: "Hey what is today's date",
+       assistant: "I dont know"
+    }
+    // or we can have something like
+
+    if (is_vip){
+       return  the true prompt
+    }else {
+        return the false prompt
+    }
+}
+
+
+
 agent Main{
     default config {
-        model: custom("kimi","https://api.moonshot.ai/v1/chat/completions","kimi-k2-0905-preview")
-        prompt: "You are a helper be polite"
+        model: MyGemini
+        prompt: ParamPrompt(name, is_vip) + NonParamPrompt + "normal prompt" + {
+            "this type the compositon mixig goes on."
+        }
     }
-    input: Text
-    output : Text
+
+    context {
+        is_vip:boolean
+        name:string
+    }
+
+    tool get_weather():string @desc "Gets the current weather"
+
+    tools {
+        get_details():string @desc "Gets the weather details"
+        get_forecast():string
+    }
 
 }

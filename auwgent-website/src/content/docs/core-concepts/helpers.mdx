@@ -1,0 +1,269 @@
+---
+title: Helpers
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A helper is a full agent that another agent can call. From the outside it looks and behaves like a tool — the parent agent decides when to invoke it. On the inside it is a complete agent with its own model, prompts, tools, workflows, and context. This makes helpers the primary way to compose specialised intelligence into a larger system without overloading a single agent's context.
+
+---
+
+## Declaring a helper
+
+A helper is declared with the `helper` keyword at the top level of your file. It has everything a regular agent has — `default config`, named configs, tools, workflows, context — with two differences:
+
+- The `description` field is mandatory inside `default config`. This is what the parent agent sees when deciding whether to call the helper.
+- Input can be structured, not just `Text`. Since the parent agent calls a helper like a tool, it may need to pass structured data rather than a plain string.
+
+```ts
+helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+        prompt: {
+            """
+            You are a data analyst expert. Analyse records and provide
+            statistical insights, trends, and recommendations.
+            """
+        }
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+        @example()
+}
+```
+
+---
+
+## Using helpers in an agent
+
+To make helpers available to an agent, declare them inside a `helpers` block within the agent.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant."
+    }
+
+    helpers {
+        DataAnalyzer
+        ReportGenerator
+    }
+}
+```
+
+Each line inside `helpers` declares one helper and optionally configures how it inherits tools from the parent and how it delivers its response.
+
+---
+
+## Tool inheritance
+
+By default a helper only has access to its own declared tools. You can extend this by inheriting tools from the parent agent using the `with` clause.
+
+**No inheritance — default:**
+```ts
+helpers {
+    DataAnalyzer
+}
+```
+The helper uses only the tools it declared itself.
+
+**Inherit all parent tools:**
+```ts
+helpers {
+    DataAnalyzer with all tools
+}
+```
+The helper has access to every tool the parent agent has, in addition to its own.
+
+**Inherit specific parent tools:**
+```ts
+helpers {
+    DataAnalyzer with tools { db_query_users, db_query_products }
+}
+```
+The helper only inherits the listed tools from the parent. Everything else in the parent's tool set remains invisible to it.
+
+---
+
+## Handoff modes
+
+By default, when a helper finishes, its output is passed back to the parent agent. The parent then decides what to say to the user. This keeps the parent in full control of the conversation.
+
+The `handoff` clause changes this behaviour.
+
+**Default — return to parent:**
+```ts
+helpers {
+    DataAnalyzer
+}
+```
+Helper output goes to the parent. The parent responds to the user.
+
+**`handoff user` — respond and end:**
+```ts
+helpers {
+    DataAnalyzer handoff user
+}
+```
+The helper responds directly to the user and ends. The parent receives nothing. Use this when the helper's response is the final answer and the parent has nothing more to contribute.
+
+**`handoff user then continue` — respond and notify:**
+```ts
+helpers {
+    DataAnalyzer handoff user then continue
+}
+```
+The helper responds directly to the user. Once delivery is confirmed, the parent receives an alert that the helper has finished so it can resume whatever it was doing. Use this when the helper handles a self-contained part of the conversation but the parent still has work to continue.
+
+---
+
+## Combining tool inheritance and handoff
+
+The `with` clause and the `handoff` clause are independent. When both are present, `with` comes first.
+
+```ts
+helpers {
+    DataAnalyzer with all tools handoff user then continue
+    ReportGenerator with tools { db_query_users, db_query_products } handoff user
+}
+```
+
+The full syntax for each helper line is:
+
+```
+HelperName [with all tools | with tools { ... }] [handoff user | handoff user then continue]
+```
+
+All combinations are valid. The clauses you omit fall back to their defaults.
+
+---
+
+## A complete example
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+type AnalysisReport {
+    summary: string @desc "high level summary of findings"
+    recommendations: string @desc "recommended actions based on the analysis"
+}
+
+helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+        prompt: {
+            """
+            You are a data analyst expert. Analyse records and provide
+            statistical insights, trends, and recommendations.
+            """
+        }
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+        @example()
+
+    workflow comprehensive_analysis(): string {
+        description: "Run a comprehensive analysis across all entities"
+
+        tool calculate_average(numbers: string): number
+            @desc "Calculate average from comma-separated numbers"
+
+        let low_stock = detect_low_stock()
+
+        if (low_stock != "") {
+            return "ALERT: Low stock detected"
+        }
+
+        return "Analysis complete. No critical issues found."
+    } @example()
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant. Delegate analysis tasks to your helpers."
+    }
+
+    tool db_query_users(filter: string): string
+        @desc "Query users from the database"
+
+    tool db_query_products(filter: string): string
+        @desc "Query products from the database"
+
+    helpers {
+        DataAnalyzer with tools { db_query_users, db_query_products } handoff user then continue
+    }
+}
+```
+
+---
+
+## The helper lifecycle
+
+A helper is an agent. Its internal lifecycle is identical to that of a regular agent — the same intents fire, the same output rules apply. If a helper's output is `Text` it fires `response_text`. If it declares a structured output type it fires `response_schema`. Everything you already know about agent output applies inside a helper.
+
+At the parent level, two additional intents wrap the helper's execution:
+
+| Intent | When it fires |
+|---|---|
+| `helper_call` | The parent agent has decided to invoke a helper. Fires before execution |
+| `helper_result` | The helper has finished and returned its result to the parent |
+
+### Knowing who is speaking
+
+Because helpers are agents, multiple agents may be emitting intents during a single conversation. The third argument in your `onIntent` handler is the name of the agent or helper currently speaking. Use it to route intent handling correctly.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "helper_call") {
+            console.log(`helper invoked: ${agentName}`)
+        }
+
+        if (name === "helper_result") {
+            console.log(`helper finished: ${agentName}`, value)
+        }
+
+        if (name === "response_text") {
+            console.log(`${agentName} says:`, value.text)
+        }
+
+        if (name === "response_schema") {
+            console.log(`${agentName} returned structured output:`, value)
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+This becomes especially useful when you have multiple helpers — `agentName` tells you whether `response_text` is coming from the main agent, `DataAnalyzer`, `ReportGenerator`, or any other helper in the system.
+
+---
+
+## Next steps
+
+Helpers introduce the idea of agents that can respond directly to the user, outlast a single session, and resume where they left off. This opens the door to a more advanced pattern.
+
+→ See [Teleportation and Stack-Aware Resumption](#) to explore how helpers and handoff combine to enable persistent, context-aware multi-agent conversations.

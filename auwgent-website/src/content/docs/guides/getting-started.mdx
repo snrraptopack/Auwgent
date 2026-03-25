@@ -1,0 +1,202 @@
+---
+title: Getting Started
+description: This page walks you through installing Auwgent, writing your first agent, and wiring it into your application.
+slug: guides/getting-started
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This page walks you through installing Auwgent, writing your first agent, and wiring it into your application. By the end you will have a running agent that accepts text input and streams structured output into your codebase.
+
+---
+
+## Prerequisites
+
+Auwgent requires **Node.js 18 or later**. No other runtime dependencies are needed.
+
+---
+
+## Installation
+
+Auwgent ships as two separate packages — a CLI for compiling your agent definitions, and an SDK that your application imports at runtime.
+
+Install the CLI globally:
+
+```bash
+npm install -g @snrraptopack/auwgent-cli
+```
+
+Install the SDK in your project:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```bash
+    npm install @snrraptopack/auwgent-sdk
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Project configuration
+
+In the root of your project, create an `auwgent.yml` file. This tells the compiler where your agent definitions live, where to write the generated output, and what language to compile to.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```yaml
+    source: "main.agent"
+    output: "generated"
+    targets:
+      - ts
+    ```
+  </TabItem>
+</Tabs>
+
+**`source`** points to either a single `.agent` file or a folder. If you point to a folder, the compiler will pick up every `.agent` file inside it.
+
+**`output`** is the folder the compiler writes generated files into.
+
+**`targets`** is the list of languages to compile to. Currently `ts` is supported.
+
+If you prefer a folder-based source layout:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```yaml
+    source: "auwgent_src"
+    output: "generated"
+    targets:
+      - ts
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Your first agent
+
+Create the file you pointed `source` to — in this case `main.agent` — and add the following:
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant. Be polite."
+    }
+}
+```
+
+This is the minimal agent definition. It declares an agent named `Main`, assigns it a model, and gives it a system prompt. With just this, the agent accepts plain text input and returns plain text output.
+
+---
+
+## Generate
+
+Run the compiler:
+
+```bash
+auwgent generate
+```
+
+During development you can run it in watch mode, which recompiles automatically whenever you save changes to your `.agent` files:
+
+```bash
+auwgent generate --watch
+```
+
+After a successful compile, your `generated` folder will contain two files:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```
+    generated/
+      main.agent.json         ← compiled IR, describes your agent's intents and structure
+      main.agent.types.ts     ← generated TypeScript types, ready to import
+    ```
+  </TabItem>
+</Tabs>
+
+You will only ever work with `main.agent.types.ts`. The JSON file is an internal artifact — it is already embedded in the types file. You do not need to read or reference it directly.
+
+---
+
+## Wiring it up
+
+Open `main.agent.types.ts` and look at what was generated. You will find two named exports at the bottom of the file that are all you need for now: `auwgent` and `AuwgentConfig`.
+
+`AuwgentConfig` is a TypeScript type that describes exactly what your agent needs to run — including which API key fields are required for the model you declared. Your editor will surface these through intellisense; you do not need to look them up.
+
+In your application:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Handling output
+
+Auwgent uses an intent-driven output model. Instead of returning a single response value, the agent emits named intents as it runs. You register a handler to receive them.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agent) => {
+        if (name === "response_text") {
+            console.log(value.text)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+For this basic agent, two intents are emitted:
+
+| Intent | When it fires |
+|---|---|
+| `response_text` | The model has produced a text response |
+| `error` | Something went wrong during execution |
+
+As your agent grows — custom intents, tools, workflows — new intent names will appear in this handler. The generated types will keep them typed and discoverable.
+
+---
+
+## Run it
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    await agent.run("hello")
+    ```
+  </TabItem>
+</Tabs>
+
+That's it. Your agent sends the input to the model, the model responds, and `onIntent` fires with a `response_text` intent carrying the reply.
+
+---
+
+## Next steps
+
+The agent you built here is intentionally minimal. From here you can explore:
+
+- **Tools** — declare capabilities the model can invoke, and implement them as plain functions in your application
+- **Workflows** — define multi-step sequences with compile-time verified state transitions
+- **Custom intents** — shape exactly what structured output the model emits
+- **Middleware** — intercept and transform the agent's execution pipeline

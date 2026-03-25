@@ -1,0 +1,254 @@
+---
+title: Workflows
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Workflows give you deterministic control over what your agent does. Where a tool is a capability the model calls freely, a workflow is a predefined sequence the model triggers but cannot influence. Once a workflow is invoked, it runs exactly as written — no model inference, no deviation, no prompt injection can alter its path.
+
+---
+
+## The problem workflows solve
+
+When you hand an agent a set of tools, the model decides when and how to call them. For most tasks that flexibility is exactly what you want. But there are two scenarios where it becomes a liability.
+
+**Dependent operations.** Suppose getting the weather requires a location, and getting the location requires a separate tool call. Left to its own devices, the model makes two roundtrips — first to get the location, then to call the weather tool with the result. You can encode that dependency directly in a workflow: get the location, store it in a variable, pass it to the weather tool. One additional step, no extra roundtrips, no guessing.
+
+**Privileged operations.** Dangerous tools — ones that delete records, execute transactions, or modify critical state — should not sit in the model's context where prompt injection could trigger them. A workflow lets you keep those tools completely invisible to the model. The model calls the workflow by name. Inside the workflow, your checks run first. The privileged tool only executes if those checks pass, and the model never knew it existed.
+
+---
+
+## Declaring a workflow
+
+Workflows are declared inside the agent block. Every workflow requires a `description` field — this is what the model sees when deciding whether to call it.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    workflow check_value(value: number): string {
+        description: "Checks whether the given value is above the threshold"
+
+        let threshold = 10
+
+        if (value > threshold) {
+            return "above threshold"
+        }
+
+        return "below threshold"
+    }
+}
+```
+
+Workflows support `let` variable declarations, `if/else` conditionals, tool calls, `ctx` access, and `return` statements — the building blocks of any deterministic sequence.
+
+---
+
+## Scoped tools
+
+Tools declared inside a workflow are scoped to that workflow. They are completely invisible to the model outside of it. The model cannot call them directly, cannot reference them by name, and cannot be manipulated into triggering them through prompt injection. The only way they execute is through the workflow itself.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    tool get_location(): string
+        @desc "Gets the user's current location"
+
+    workflow get_weather(): string {
+        description: "Gets the weather for the user's current location"
+
+        tool fetch_weather(location: string): string
+
+        let location = get_location()
+        let weather = fetch_weather(location)
+
+        return weather
+    }
+}
+```
+
+Here `get_location` is a regular tool — the model can see and call it directly. `fetch_weather` is scoped inside the workflow — the model has no knowledge of it. The workflow coordinates the two in a guaranteed sequence.
+
+---
+
+## Context in workflows
+
+Workflows have full access to `ctx`, the same as prompts. This makes them well-suited for enforcing runtime conditions that should not be visible to the model.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    context {
+        is_admin: boolean
+    }
+
+    workflow delete_record(id: number): string {
+        description: "Deletes a record by ID"
+
+        tool delete_from_db(id: number): string
+
+
+        if (ctx.is_admin) {
+            let result = delete_from_db(id)
+            return "record deleted"
+        }
+
+        return "you do not have permission to perform this action"
+    }
+}
+```
+
+`delete_from_db` is never exposed to the model. Even if the model were somehow told the tool exists, it has no way to call it. The permission check runs inside the workflow and the model only ever sees the outcome.
+
+---
+
+## Teaching the model with examples
+
+Like tools, workflows support the `@example()` annotation to teach the model how and when to call them.
+
+```ts
+workflow get_weather(): string {
+    description: "Gets the weather for the user's current location"
+    
+
+    tool fetch_weather(location: string): string
+
+    let location = get_location()
+    let weather = fetch_weather(location)
+
+    return weather
+}@example()
+```
+
+The same 5-example limit that applies to tools applies across tools and workflows combined. Annotate the ones where call-time accuracy matters most.
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant. You can query and manage records."
+    }
+
+    context {
+        is_admin: boolean
+        user_id: string
+    }
+
+    tool get_user(id: string): string
+        @desc "Retrieves a user record by ID"
+        @example(id = "user_1")
+
+    workflow delete_user(id: string): string {
+        description: "Deletes a user record. Requires admin privileges."
+
+        tool remove_user(id: string): string
+
+        if (ctx.is_admin) {
+            let result = remove_user(id)
+            return "user deleted"
+        }
+
+        return "you do not have permission to delete users"
+    }
+}
+```
+
+The model can call `get_user` freely. It can call `delete_user` by name, but what happens inside is entirely under your control — `remove_user` never appears in the model's context, and the admin check runs unconditionally before any deletion occurs.
+
+---
+
+## The workflow execution lifecycle
+
+When the model calls a workflow, Auwgent fires two intents through your `onIntent` handler — one before execution and one after.
+
+| Intent | When it fires |
+|---|---|
+| `workflow_call` | The model has decided to call a workflow. Fires before execution |
+| `workflow_result` | The workflow has finished and returned a result |
+
+These give you visibility into when workflows are triggered and what they return, without any intervention required on your part.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "workflow_call") {
+            console.log("workflow triggered:", value.type)
+        }
+
+        if (name === "workflow_result") {
+            console.log("workflow result:", value)
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Implementing workflow tools at runtime
+
+Scoped tools declared inside a workflow still need implementations in your application, just like regular tools. They will appear in the generated types file alongside your regular tools. You implement and register them the same way.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const remove_user = async (args: { id: string }) => {
+        const { id } = args
+        // your implementation here
+        return `deleted user ${id}`
+    }
+
+    const get_user = async (args: { id: string }) => {
+        const { id } = args
+        // your implementation here
+        return `user ${id}`
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        context: {
+            is_admin: true,
+            user_id: "user_1"
+        },
+        tools: {
+            get_user,
+            remove_user
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+With workflows covered, the next concept to explore is helpers — reusable logic you can share across your agent definitions.
+
+→ See [Helpers](#) to learn how to define and reuse shared logic.

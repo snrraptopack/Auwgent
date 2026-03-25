@@ -1,0 +1,245 @@
+---
+title: Middleware
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Middleware is the primary extension point in Auwgent. It lets you intercept every stage of the agent's execution pipeline — before and after runs, before and after individual model calls, and on every intent the model emits. Every language binding exposes the same hooks with the same behaviour.
+
+---
+
+## The agentic loop
+
+Before understanding middleware hooks it helps to understand what Auwgent actually does when you call `agent.run()`. It does not make a single LLM call and return. It runs a loop.
+
+```
+agent.run() → [LLM call] → tool result → [LLM call] → response
+```
+
+A single `agent.run()` can make multiple LLM calls — one for the initial response, and more each time the model calls a tool and needs to see the result before deciding what to do next. Understanding this loop is the key to understanding which hook to use for any given task.
+
+---
+
+## Hooks
+
+Auwgent provides five middleware hooks.
+
+| Hook | Fires | Receives |
+|---|---|---|
+| `onRunStart` | Once when `agent.run()` is called | Full session state |
+| `onRunComplete` | Once when `agent.run()` fully exits | Final session state |
+| `onLLMStart` | Every time the LLM is called within the loop | The prompt string for this call |
+| `onLLMEnd` | Only when the LLM produces a terminal response | The terminal response value |
+| `onIntent` | Every time the model emits an intent | Intent name, value, and context |
+
+---
+
+## Run hooks vs LLM hooks
+
+This is the most important distinction in the middleware system.
+
+**Run hooks** — `onRunStart` and `onRunComplete` — wrap the entire agentic loop. They fire once per `agent.run()` call regardless of how many LLM calls happen inside it.
+
+**LLM hooks** — `onLLMStart` and `onLLMEnd` — wrap individual model calls within the loop.
+
+In a run where the model calls one tool before responding:
+
+```
+onRunStart            ← fires once
+
+  onLLMStart          ← turn 1: model decides to call a tool
+  (tool executes)
+  onLLMStart          ← turn 2: model sees tool result and responds
+  onLLMEnd            ← terminal response emitted
+
+onRunComplete         ← fires once
+```
+
+`onLLMStart` fires twice — once before each model call. `onLLMEnd` fires once — only when the model produces something terminal. Intermediate calls that result in tool invocations do not trigger `onLLMEnd`.
+
+| | `onRunStart` | `onLLMStart` |
+|---|---|---|
+| Fires | Once per run | Once per LLM call |
+| Receives | Full session history | Current prompt string |
+| Can modify | Entire session | Prompt being sent |
+| Use for | Loading sessions, history management | RAG injection, prompt enrichment |
+
+| | `onRunComplete` | `onLLMEnd` |
+|---|---|---|
+| Fires | Once per run | Only on terminal responses |
+| Receives | Final session state | Terminal response value |
+| Use for | Saving sessions, run analytics | Response auditing, post-processing |
+
+---
+
+## The MiddlewareContext
+
+Every hook receives a `MiddlewareContext` as its last argument. This object carries everything you need to understand and influence the current execution.
+
+### `activeAgent`
+
+The name of the agent or helper currently executing. Starts as the root agent name and changes to a helper's name when that helper is running. Use this to scope logic in a global middleware without needing separate middleware instances.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const middleware: Middleware = {
+        name: "scoped-logic",
+        onIntent: (name, value, ctx) => {
+            if (ctx.activeAgent === "BillingHelper") {
+                // only runs when BillingHelper is active
+            }
+        }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+### `rootAgent`
+
+The name of the top-level agent that was originally called. Never changes during a run, even as helpers come and go. Use this when you need to know who owns the session regardless of delegations.
+
+### `systemPrompt`
+
+The fully evaluated system prompt for the `activeAgent` at this point in the run. Available in all hooks. Useful for auditing what was actually sent to the model, or confirming that prompt composition resolved as expected.
+
+### `rawBlock`
+
+Only available in `onIntent`. The raw, unparsed output the model produced for this intent — exactly as it came out of the LLM, before Auwgent parsed it into a structured object.
+
+Two main uses: strict auditing where you need to log the exact model output rather than the parsed interpretation, and custom parsing where you need to extract something the default parser does not expose.
+
+### `setContext(data)`
+
+Replaces the agent's runtime context with the object you pass. This is what your `ctx.name`, `ctx.is_vip`, and other context values are resolved from at prompt evaluation time.
+
+The most common use is inside `onRunStart` — load user-specific data from your application and inject it before the prompts evaluate.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const contextMiddleware: Middleware = {
+        name: "context-injection",
+        onRunStart: async (session, ctx) => {
+            const user = await db.users.get(userId)
+            ctx.setContext({ name: user.name, is_vip: user.plan === "premium" })
+            return session
+        }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+### `embed` and `embedBatch`
+
+Utilities for vector embedding available on the context. Covered in detail in the Embeddings chapter.
+
+---
+
+## The shared blackboard
+
+`MiddlewareContext` is an open object. You can attach any property to it and it will be available across every hook in that run — including hooks in other middleware plugins. It lives for exactly the duration of one `agent.run()` call.
+
+This makes it a natural place to share state between hooks without reaching for external variables.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const observabilityMiddleware: Middleware = {
+        name: "observability",
+        onRunStart: async (session, ctx) => {
+            ctx.traceId = crypto.randomUUID()
+            ctx.startTime = Date.now()
+            return session
+        },
+        onRunComplete: async (session, ctx) => {
+            logger.log({
+                traceId: ctx.traceId,
+                duration: Date.now() - ctx.startTime
+            })
+        }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Scoping middleware to a specific helper
+
+The `target` field on a middleware definition scopes it to a specific agent or helper. When set, every hook in that middleware only fires when `activeAgent` matches the target name. As a bonus, the type system narrows `ctx.activeAgent` to that specific name inside every hook — no guard checks needed.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const researcherMiddleware: Middleware<IR, never, any, any, "Researcher"> = {
+        name: "researcher-middleware",
+        target: "Researcher",
+        onLLMStart: (prompt, ctx) => {
+            // ctx.activeAgent is typed as "Researcher" here
+        }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Putting it together
+
+A complete middleware setup combining session persistence, context injection, and observability:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig, Middleware } from "./generated/main.agent.types"
+
+    const sessionMiddleware: Middleware = {
+        name: "session-persistence",
+        onRunStart: async (session, ctx) => {
+            const user = await db.users.get(userId)
+            ctx.setContext({ name: user.name, is_vip: user.plan === "premium" })
+            const saved = await db.sessions.get(userId)
+            return saved || session
+        },
+        onRunComplete: async (session, ctx) => {
+            await db.sessions.save(userId, session)
+        }
+    }
+
+    const observabilityMiddleware: Middleware = {
+        name: "observability",
+        onRunStart: async (session, ctx) => {
+            ctx.traceId = crypto.randomUUID()
+            ctx.startTime = Date.now()
+            return session
+        },
+        onRunComplete: async (session, ctx) => {
+            logger.log({
+                traceId: ctx.traceId,
+                duration: Date.now() - ctx.startTime
+            })
+        }
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        middleware: [sessionMiddleware, observabilityMiddleware]
+    }
+
+    const agent = auwgent(config)
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+With middleware covered you have the full picture of how Auwgent's execution pipeline works. The next topic builds directly on middleware context to explore how embeddings and vector search fit into the system.
+
+→ See [Embeddings](#) to learn how to use `embed` and `embedBatch` inside your middleware.

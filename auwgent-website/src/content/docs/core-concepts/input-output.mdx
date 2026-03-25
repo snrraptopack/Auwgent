@@ -1,0 +1,204 @@
+---
+title: Input and Output
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Input and output define the data contract of your agent — what it receives and what it is expected to produce. Auwgent uses these declarations to shape the model's behaviour at compile time, not as a runtime hint.
+
+---
+
+## Defaults
+
+When you do not declare input or output explicitly, Auwgent defaults both to `Text`.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+    }
+}
+```
+
+This is equivalent to:
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+        input: Text
+        output: Text
+    }
+}
+```
+
+A `Text` output means the model returns a plain text response. At runtime this fires the `response_text` intent.
+
+---
+
+## Input
+
+Auwgent currently supports `Text` as the input type. You can omit the input declaration entirely — it will always default to `Text`.
+
+Support for structured input types is on the roadmap.
+
+---
+
+## Output
+
+Output is where the data contract becomes expressive. Declaring anything other than `Text` as your output signals to the model that it must produce a structured response matching the shape you defined.
+
+When structured output is declared, the runtime fires the `response_schema` intent instead of `response_text`, carrying the structured object the model produced.
+
+### Text output
+
+The default. The model returns plain text.
+
+```ts
+output: Text
+```
+
+### Inline object output
+
+Define the expected shape directly in the output declaration.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract the user's name and age from their message."
+        output: { name: string, age: number }
+    }
+}
+```
+
+The model is expected to return an object that matches this structure exactly.
+
+### Named type output
+
+For reusable shapes, or when you want to document individual fields, declare a standalone `type` block and reference it by name.
+
+```ts
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract the person's details from the message."
+        output: Person
+    }
+}
+```
+
+The `@desc` annotation is optional. When present it gives the model additional context about what a field represents, which can improve extraction accuracy for ambiguous field names.
+
+### Multiple output types
+
+The pipe operator lets you declare more than one possible output shape. The model chooses which shape to return based on what best fits the response.
+
+```ts
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+type Organisation {
+    company_name: string
+    industry: string
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract whatever entity is described in the message."
+        output: Person | Organisation
+    }
+}
+```
+
+You are not constraining the model to a single structure — you are giving it a set of valid shapes and trusting it to pick the right one. This is useful when your agent handles varied input where the shape of the response is context-dependent.
+
+---
+
+## How output affects the runtime intent
+
+The output declaration determines which intent fires at runtime.
+
+| Output declaration | Intent fired |
+|---|---|
+| `Text` or omitted | `response_text` |
+| Any structured output | `response_schema` |
+
+This means your intent handler needs to account for what your agent is configured to produce.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agent) => {
+
+        if (name === "response_schema") {
+            console.log(value)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+type Organisation {
+    company_name: string
+    industry: string
+}
+
+prompt ExtractionPrompt {
+    "You are an entity extraction assistant. Extract structured information from the user's message."
+
+    Example {
+        user: "My name is Kwame and I am 28 years old."
+        assistant: "Extracted a Person entity."
+    }
+
+    Example {
+        user: "I work at AngloGold Ashanti, a mining company."
+        assistant: "Extracted an Organisation entity."
+    }
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: ExtractionPrompt
+        output: Person | Organisation
+    }
+}
+```
+
+---
+
+## Next steps
+
+With your agent's data contract defined, the next step is giving it capabilities it can act on.
+
+→ See [Tools](#) to learn how to declare tools the model can call.

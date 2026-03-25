@@ -1,0 +1,177 @@
+---
+title: Organizing Your Codebase
+---
+
+As your agent definitions grow, keeping everything in a single file becomes hard to maintain. Auwgent supports `export` and `import` statements so you can split your definitions across multiple files and compose them cleanly.
+
+---
+
+## Exporting
+
+Any of the following top-level constructs can be exported:
+
+- `model`
+- `prompt`
+- `type`
+- `helper`
+
+To export, add the `export` keyword before the declaration.
+
+```ts
+export model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+export type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+export prompt BasePrompt {
+    "You are a helpful assistant."
+}
+```
+
+---
+
+## Importing
+
+To use an exported construct in another file, import it by name.
+
+```ts
+import { MyGemini } from "./models"
+import { Person } from "./types"
+import { BasePrompt } from "./prompts"
+```
+
+You can import multiple constructs from the same file in a single statement.
+
+```ts
+import { MyGemini, MyGroq } from "./models"
+import { Person, Organisation, AnalysisReport } from "./types"
+```
+
+---
+
+## A suggested project structure
+
+There is no enforced folder structure in Auwgent. A structure that works well as projects grow is:
+
+```
+auwgent_src/
+  models.agent       ← model definitions
+  types.agent        ← shared type definitions
+  prompts.agent      ← reusable prompts
+  helpers/
+    data_analyzer.agent
+    report_generator.agent
+  main.agent         ← agent definition, imports everything it needs
+```
+
+Each file contains only the constructs relevant to it. The agent file stays focused on the agent definition itself — configs, tools, workflows, and helper references — while shared building blocks live in their own files.
+
+---
+
+## Example
+
+**models.agent**
+```ts
+export model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+export model MyGroq {
+    provider: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+}
+```
+
+**types.agent**
+```ts
+export type AnalysisReport {
+    summary: string @desc "high level summary of findings"
+    recommendations: string @desc "recommended actions based on the analysis"
+}
+```
+
+**prompts.agent**
+```ts
+export prompt BasePrompt {
+    "You are a helpful assistant. Be polite and concise."
+}
+
+export prompt PersonalisedPrompt(name: string, is_vip: boolean) {
+    """
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Offer premium support.
+    {{else}}
+        Apply standard support guidelines.
+    {{/if}}
+    """
+}
+```
+
+**helpers/data_analyzer.agent**
+```ts
+import { MyGroq } from "../models"
+import { AnalysisReport } from "../types"
+
+export helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: MyGroq
+        prompt: "You are a data analyst expert."
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+}
+```
+
+**main.agent**
+```ts
+import { MyGemini } from "./models"
+import { BasePrompt, PersonalisedPrompt } from "./prompts"
+import { DataAnalyzer } from "./helpers/data_analyzer"
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: BasePrompt + PersonalisedPrompt(ctx.name, ctx.is_vip)
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+
+    tool db_query_users(filter: string): string
+        @desc "Query users from the database"
+
+    helpers {
+        DataAnalyzer with tools { db_query_users } handoff user then continue
+    }
+}
+```
+
+---
+
+## What stays in the agent file
+
+Tools and workflows are always declared directly inside the agent or helper that uses them. They cannot be exported or imported. This keeps the agent's execution contract — what it can do and how it does it — co-located and easy to reason about.
+
+---
+
+## Next steps
+
+With your codebase organized, the next topics cover how agents manage conversation state across multiple turns and how you can intercept and transform the execution pipeline.
+
+→ See [Sessions](#) to learn how Auwgent handles conversation history and state.

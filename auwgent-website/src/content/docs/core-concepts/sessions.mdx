@@ -1,0 +1,89 @@
+---
+title: Sessions
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Every time you call `agent.run()` it returns a session. That session is the complete record of what happened during the run — the system prompt, the execution stack, and the full turn history of user and model messages.
+
+On its own that is useful for inspecting a single run. But it is not enough to build a real application on. Without a way to load previous sessions before a run and save them after, your agent starts from scratch every time. There is no memory, no continuity, and no opportunity to manage context as conversations grow.
+
+Auwgent's answer to this is middleware. Session persistence is not a built-in feature with a prescribed database or storage format — it is a pattern you implement through two middleware hooks that give you full control over how sessions are loaded and saved.
+
+---
+
+## The session object
+
+When `agent.run()` completes it returns a session object with three parts:
+
+| Field | Description |
+|---|---|
+| `system_prompt` | The compiled system prompt that was sent to the model |
+| `stack` | The execution stack — agents and helpers that were active during the run |
+| `turns` | The ordered history of user and model messages |
+
+During execution Auwgent maintains this in memory. It is a plain object — nothing proprietary, nothing tied to a specific runtime or storage system. You own it completely.
+
+---
+
+## Persisting sessions with middleware
+
+Two middleware hooks handle session persistence. They are the same across every language Auwgent supports — the pattern and the developer experience are identical regardless of your target runtime.
+
+### `onRunStart`
+
+Fires before the engine starts. Receives the current in-memory session and allows you to replace it with one loaded from your storage. Whatever you return becomes the session the engine runs with.
+
+### `onRunComplete`
+
+Fires after the agent finishes. Receives the final session state. This is where you persist it.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { Middleware } from "@snrraptopack/auwgent-sdk"
+
+    const persistenceMiddleware: Middleware = {
+        name: "session-persistence",
+
+        onRunStart: async (session, ctx) => {
+            const saved = await db.sessions.get(ctx.userId)
+            return saved || session
+        },
+
+        onRunComplete: async (finalSession, ctx) => {
+            await db.sessions.save(ctx.userId, finalSession)
+        }
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        middleware: [persistenceMiddleware]
+    }
+
+    const agent = auwgent(config)
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+</Tabs>
+
+With this in place every run automatically loads the previous session before the model sees anything and saves the updated session when it is done. Your application code stays focused on the interaction — the middleware handles the persistence entirely behind the scenes.
+
+---
+
+## Storage is yours to choose
+
+Auwgent does not prescribe a database or storage format. The session object is plain data. You can store it in a relational database, a document store, a key-value cache, the filesystem, or anywhere else that makes sense for your application. The middleware hooks give you the integration point — what happens inside them is entirely up to you.
+
+The only storage Auwgent manages itself is a temporary in-memory store it uses during execution. This is just an array that lives for the duration of the run and is discarded when it completes. It is not something you interact with directly.
+
+---
+
+## Next steps
+
+Sessions and persistence are just two of the things middleware can do. Middleware is the primary extension point in Auwgent — it lets you intercept and transform every stage of the agent's execution pipeline.
+
+→ See [Middleware](#) to explore the full set of hooks and what you can build with them.

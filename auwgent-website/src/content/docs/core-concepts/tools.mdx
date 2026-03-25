@@ -1,0 +1,173 @@
+---
+title: Tools
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Tools are capabilities you give your agent. You define the contract — the name, arguments, and return type — in the DSL. The actual logic lives in your application, written in whatever language you are targeting. The model sees what tools are available and calls them as it sees fit during a conversation.
+
+---
+
+## Declaring a tool
+
+Use the `tool` keyword to declare a single tool. Every tool must have a return type. A description is optional but strongly advisable — it tells the model what the tool does and when to use it.
+
+```ts
+tool get_weather(): string @desc "Gets the current weather for the user's location"
+```
+
+Tools can accept arguments:
+
+```ts
+tool get_weather(location: string): string @desc "Gets the current weather for a given location"
+```
+
+Argument types and return types can reference standalone `type` blocks defined elsewhere in your file:
+
+```ts
+type WeatherResult {
+    temperature: number @desc "temperature in celsius"
+    condition: string @desc "weather condition eg. sunny, cloudy, rainy"
+}
+
+tool get_weather(location: string): WeatherResult @desc "Gets the current weather for a given location"
+```
+
+---
+
+## The tools block
+
+When you have multiple tools, use the `tools` block to group them together.
+
+```ts
+tools {
+    get_weather(location: string): string @desc "Gets the current weather for a given location"
+    get_forecast(location: string, days: number): string @desc "Gets the weather forecast for the next N days"
+    get_humidity(location: string): number @desc "Gets the current humidity percentage"
+}
+```
+
+---
+
+## Teaching the model with examples
+
+The `@example()` annotation teaches the model how to call a tool correctly. It takes the tool's argument names as named parameters.
+
+```ts
+tools {
+    get_weather(location: string): string
+        @desc "Gets the current weather for a given location"
+        @example(location = "Accra")
+
+    get_forecast(location: string, days: number): string
+        @desc "Gets the weather forecast for the next N days"
+        @example(location = "Kumasi", days = 3)
+}
+```
+
+`@example()` is optional but providing it significantly improves how reliably the model calls your tools — especially for tools with non-obvious argument formats.
+
+Auwgent includes a maximum of **5 examples total across all tools** in the compiled agent context. If you annotate more than 5 tools with examples, the compiler selects the most relevant ones. This keeps the model context lean regardless of how many tools your agent has.
+
+---
+
+## Implementing tools at runtime
+
+Declaring a tool in the DSL defines the contract. The implementation lives entirely in your application — plain code with no framework-specific requirements. When the compiler generates the output for your target language, it produces typed bindings that your implementation must satisfy.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    Implement each tool as an async function. The arguments arrive as a typed object matching the signature you declared in the DSL.
+
+    ```ts
+    const get_weather = async (args: { location: string }) => {
+        const { location } = args
+        // your implementation here
+        return JSON.stringify({ temperature: 28, condition: "sunny" })
+    }
+    ```
+
+    Register your tools in the agent config alongside your API keys and context:
+
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        tools: {
+            get_weather
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+</Tabs>
+
+The generated types will tell you exactly what each tool's function signature should look like. Your editor will surface any mismatches before you run anything.
+
+---
+
+## The tool execution lifecycle
+
+When the model decides to call a tool, Auwgent fires a sequence of intents through your `onIntent` handler. These give you full visibility into what the model is doing and the ability to intervene at any point.
+
+| Intent | When it fires |
+|---|---|
+| `tool_call` | The model has decided to call a tool. Fires before execution |
+| `tool_result` | The tool has executed and returned a result |
+| `tool_skipped` | The tool was skipped before execution |
+| `tool_error` | The tool encountered an error during execution |
+
+You do not need to do anything for the basic case — the engine executes your registered tools automatically and feeds the results back to the model. The intents are there when you need visibility or control.
+
+---
+
+## Skipping a tool call
+
+Returning `{ skip: true }` from your `onIntent` handler when a `tool_call` fires tells the engine not to execute that tool. The model will see a `tool_skipped` event in its next turn history and can decide how to proceed.
+
+This is useful when you want to guard against certain tool calls based on runtime conditions — without the model knowing the rule exists in your application.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "tool_call" && value.type === "delete_records") {
+            console.log("Skipping dangerous tool call")
+            return { skip: true }
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Overriding a tool result
+
+Returning `{ result: ... }` from your handler bypasses execution entirely and feeds a synthetic result directly back to the model. The tool implementation is never called.
+
+This is useful for caching, mocking during development, or transforming what the model sees without changing the tool implementation itself.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent(async (name, value) => {
+        if (name === "tool_call" && value.type === "get_weather") {
+            return { result: "Sunny, 28°C" }
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+You now know how to declare tools, implement them, and control their execution lifecycle. To define exactly when and in what sequence the model uses those tools — and to build multi-step agent behaviour — move on to workflows.
+
+→ See [Workflows](#) to learn how to structure complex agent logic.

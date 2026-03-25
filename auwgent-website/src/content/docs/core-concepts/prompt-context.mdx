@@ -1,0 +1,273 @@
+---
+title: Prompts and Context
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Prompts and context work together in Auwgent. Context defines what runtime values your agent has access to. Prompts define what the model sees — and they can pull from that context to shape the model's behaviour dynamically.
+
+---
+
+## Context
+
+The `context` block is declared inside your agent. It defines a set of typed values that will be injected at runtime — things like the current user's name, their role, a session flag, or any other application-level data your prompts need to reference.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+Declaring a context block does not make those values visible to the model on its own. Context values only reach the model when a prompt explicitly references them. The context block is a contract — it tells the compiler what values will be available, and the compiler enforces that they are provided at runtime.
+
+Context values are accessed inside prompts using the built-in `ctx` reference:
+
+```ts
+ctx.name
+ctx.is_vip
+```
+
+---
+
+## Prompts
+
+A prompt is a top-level block that defines what gets sent to the model as a system prompt. Prompts are declared outside the agent and referenced by name inside a config block.
+
+Auwgent has two flavors of prompt.
+
+---
+
+### Non-param prompt
+
+A static prompt with no arguments. The content is fixed at compile time.
+
+```ts
+prompt WelcomePrompt {
+    "You are a helpful assistant. Be polite and concise."
+}
+```
+
+---
+
+### Param prompt
+
+A prompt that accepts typed arguments, enabling dynamic content. Arguments can come from `ctx` values, runtime data, or any value available at the call site.
+
+```ts
+prompt GreetingPrompt(name: string, is_vip: boolean) {
+    """
+    You are a helpful assistant.
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Prioritise their request and offer premium options.
+    {{else}}
+        Treat this customer with standard support guidelines.
+    {{/if}}
+
+    Always be polite and concise.
+    """
+}
+```
+
+The param prompt body supports several forms of dynamic content.
+
+#### Parameter interpolation
+
+Inject any argument directly into the prompt body:
+
+```ts
+{{name}}
+{{is_vip}}
+```
+
+#### Schema injection
+
+Pull the agent's declared input or output schema directly into the prompt. This is useful for telling the model exactly what structure to expect or produce:
+
+```ts
+{{@schema(input)}}
+{{@schema(output)}}
+```
+
+#### Conditionals
+
+Two equivalent syntaxes are available. Use whichever reads more naturally for your prompt:
+
+**Template style:**
+```ts
+{{#if is_vip == true}}
+    This is a VIP customer.
+{{else}}
+    This is a standard customer.
+{{/if}}
+```
+
+**JS style:**
+```ts
+if (is_vip) {
+    return "This is a VIP customer."
+} else {
+    return "This is a standard customer."
+}
+```
+
+Both compile to the same output.
+
+---
+
+## Example blocks
+
+Any prompt body can include `Example` blocks. These are compiled into few-shot examples that teach the model the expected conversational pattern for this prompt.
+
+```ts
+prompt SupportPrompt {
+    "You are a customer support agent."
+
+    Example {
+        user: "Hello, I need help with my account."
+        assistant: "I'd be happy to help. Could you please provide your account email?"
+    }
+
+    Example {
+        user: "What is today's date?"
+        assistant: "I don't have access to real-time information, so I'm unable to tell you today's date."
+    }
+}
+```
+
+You can include as many `Example` blocks as you need. They appear in the compiled prompt in the order they are written.
+
+---
+
+## Prompt composition
+
+Prompts are composable. Inside a config block, the `prompt` field accepts any combination of named prompts, inline strings, and inline blocks joined with the `+` operator.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: GreetingPrompt(ctx.name, ctx.is_vip) + WelcomePrompt + "Always respond in English." + {
+            "Additional instructions can go here."
+        }
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+The order is preserved. The model receives the composed prompt in exactly the left-to-right order it is written. In the example above, `GreetingPrompt` comes first, then `WelcomePrompt`, then the inline string, then the inline block.
+
+The four composable forms are:
+
+| Form | Example |
+|---|---|
+| Named param prompt | `GreetingPrompt(ctx.name, ctx.is_vip)` |
+| Named non-param prompt | `WelcomePrompt` |
+| Inline string | `"Always respond in English."` |
+| Inline block | `{ "Additional instructions." }` |
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+prompt BasePrompt {
+    "You are a helpful assistant."
+
+    Example {
+        user: "Hello"
+        assistant: "Hi there! How can I help you today?"
+    }
+}
+
+prompt PersonalisedPrompt(name: string, is_vip: boolean) {
+    """
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Offer premium support.
+    {{else}}
+        Apply standard support guidelines.
+    {{/if}}
+    """
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: BasePrompt + PersonalisedPrompt(ctx.name, ctx.is_vip)
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+---
+
+## Injecting context at runtime
+
+Once your agent is compiled, the generated output reflects exactly what your context block declared. Your language's type system will surface the expected shape — you just fill it in when initialising the agent. There is no separate wiring step.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        context: {
+            name: "Auwgent",
+            is_vip: true
+        }
+    }
+
+    const agent = auwgent(config)
+
+    
+    agent.onIntent((name, value, agent) => {
+        if (name === "response_text") {
+            console.log(value.text)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+
+    await agent.run("hello")
+    
+    ```
+  </TabItem>
+</Tabs>
+
+The context values are validated against the types the compiler generated from your DSL definition. If your context block declares `is_vip` as a `boolean`, passing a string will be caught before the agent runs.
+
+---
+
+## Next steps
+
+With prompts and context covered, the next step is shaping what goes into your agent and what comes back out.
+
+→ See [Input and Output](#) to learn how to define your agent's data contract.

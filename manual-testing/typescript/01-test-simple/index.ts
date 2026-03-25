@@ -1,15 +1,23 @@
-import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
-import {GEMINI_API_KEY, KIMI_API_KEY} from "@snrraptopack/auwgent-sdk/secrets"
+import { auwgent, AuwgentConfig, AuwgentMiddleware } from "./generated/main.agent.types"
+
+
+let one: AuwgentMiddleware = {
+  name: "one",
+  target: "one",
+
+}
 
 const config: AuwgentConfig = {
   apiKeys: {
-    kimiApiKey:KIMI_API_KEY
+    GeminiApiKey:YOUR API KEY
+  },
+  context: {
+    is_vip: false,
+    name: "auwgent"
   }
 }
 
 const agent = auwgent(config)
-
-console.log(agent.generatePrompt())
 
 agent.onIntent((name, value, agent) => {
   if (name === "response_text") {
@@ -17,4 +25,4 @@ agent.onIntent((name, value, agent) => {
   }
 })
 
-const session = await agent.run("hello")
+await agent.run("hello")
