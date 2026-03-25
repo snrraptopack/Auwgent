@@ -4,10 +4,14 @@ description: This page walks you through installing Auwgent, writing your first 
 slug: guides/getting-started
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
-import VSCodeBanner from '@components/VSCodeBanner.astro';
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
-<VSCodeBanner />
+<Aside type="tip" title="VS Code Extension (Alpha)">
+  Auwgent is currently in Alpha, so we provide the VS Code extension as a manual download. 
+  It provides syntax highlighting and essential language support for your `.agent` files.
+  
+  [**Download VSIX from GitHub**](https://github.com/snrraptopack/vscode-dist)
+</Aside>
 
 This page walks you through installing Auwgent, writing your first agent, and wiring it into your application. By the end you will have a running agent that accepts text input and streams structured output into your codebase.
 
