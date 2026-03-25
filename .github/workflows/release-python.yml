@@ -11,26 +11,6 @@ permissions:
   id-token: write   # required for PyPI Trusted Publishers (OIDC)
 
 jobs:
-  linux:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target: [x86_64, aarch64, armv7]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --out dist
-          target: ${{ matrix.target }}
-          manylinux: auto
-          working-directory: targets/python
-      - name: Upload linux wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-linux-${{ matrix.target }}
-          path: targets/python/dist
-
   windows:
     runs-on: windows-latest
     steps:
@@ -88,7 +68,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [linux, windows, macos, sdist]
+    needs: [windows, macos, sdist]
     runs-on: ubuntu-latest
     environment: pypi
     steps:
