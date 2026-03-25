@@ -7,7 +7,7 @@ authors = ["Theophilus"]
 repository = "https://github.com/snrraptopack/Auwgent"
 
 [grammars.auwgent]
-repository = "file://c:/Users/babyface/Desktop/auwgent/Auwgent/extension-zed/grammars/auwgent"
+repository = "file://C:/Users/babyface/Desktop/auwgent/Auwgent/extension-zed/grammars/auwgent"
 rev = "HEAD"
 
 [language_servers.auwgent-lsp]

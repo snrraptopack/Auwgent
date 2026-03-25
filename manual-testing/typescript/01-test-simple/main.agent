@@ -12,11 +12,6 @@ model MyGemini{
     })
 }
 
-export prompt NonParamPrompt{
-    // the prompt comes here
-}
-
-    import {NonParamPrompt} from "filename"
 
 prompt ParamPrompt(name:string, is_vip:boolean){
     """

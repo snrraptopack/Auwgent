@@ -4,7 +4,9 @@ import { auwgent, type AuwgentConfig, type AuwgentMiddleware } from "./generated
 const logger: AuwgentMiddleware = {
     name: "logger",
     onRunStart(session, ctx) {
-        console.log("start here")
+      console.log("start here")
+
+      ctx.
         return session
     },
 
@@ -46,5 +48,3 @@ agent.onIntent((name, value) => {
 
 
 const session = await agent.run("do you have the cup")
-
-
