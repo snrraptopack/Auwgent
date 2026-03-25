@@ -32,12 +32,12 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         "    from typing_extensions import NotRequired",
         "",
         "try:",
-        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
         "",
     ]
     .join("\n");
@@ -59,9 +59,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     }
     sections.push(generate_output_interface(ir, agent_name, &output_helpers));
     sections.push(generate_typed_dict(agent_name, "Context", ir.get("context")));
-    if has_tools {
-        sections.push(generate_tools_protocol(agent_name, &all_tools));
-    }
+    sections.push(generate_tools_protocol(agent_name, &all_tools));
     sections.push(generate_custom_intents_union(ir, agent_name));
 
     if !required_providers.is_empty() {

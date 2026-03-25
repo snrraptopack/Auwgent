@@ -20,9 +20,20 @@ impl Config {
     /// Load `auwgent.yml` from the given path, or from the current directory if `None`.
     /// Returns `None` silently if the file doesn't exist, or with a warning if it's malformed.
     pub fn load(explicit_path: Option<&Path>) -> Option<Self> {
-        let path = explicit_path
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("auwgent.yml"));
+        let path = if let Some(p) = explicit_path {
+            p.to_path_buf()
+        } else {
+            let yml = std::path::PathBuf::from("auwgent.yml");
+            if yml.exists() {
+                yml
+            } else {
+                std::path::PathBuf::from("auwgent.yaml")
+            }
+        };
+
+        if !path.exists() {
+            return None;
+        }
         let base_dir = path
             .parent()
             .map(Path::to_path_buf)

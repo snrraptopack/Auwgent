@@ -4,13 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "auwgent-sdk"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 requires-python = ">=3.8"
 description = "The Python SDK for Auwgent — a compiler-first framework for building production-grade AI agents."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
-    { name = "snrraptopack", email = "contact@snrraptopack.dev" }
+    { name = "snrraptopack", email = "snrraptopack@gmail.com" }
 ]
 keywords = ["ai", "agents", "llm", "auwgent"]
 classifiers = [
@@ -36,4 +36,4 @@ Documentation = "https://auwgent.dev"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "auwgent_sdk"
+module-name = "_auwgent_sdk"

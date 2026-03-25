@@ -93,8 +93,7 @@ pub fn watch_and_generate(
     loop {
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(event)) => {
-                let relevant =
-                    matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
+                let relevant = matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_));
                 if relevant {
                     for path in event.paths {
                         if path.extension().map_or(false, |e| e == "agent") {

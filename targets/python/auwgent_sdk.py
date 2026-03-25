@@ -16,15 +16,12 @@ from typing import (
     cast
 )
 
-# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10
+# ── Native Binding Import ────────────────────────────────────────────────
 try:
-    from . import auwgent_sdk
-except (ImportError, ValueError):
-    try:
-        import auwgent_sdk
-    except ImportError:
-        # Fallback for static analysis in some environments
-        auwgent_sdk = Any 
+    import _auwgent_sdk as _native
+except ImportError:
+    # Fallback for static analysis in some environments
+    _native = Any 
 
 # ── Type Variables ────────────────────────────────────────────────────────
 AgentIR = TypeVar("AgentIR")
@@ -101,7 +98,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     def __init__(self, ir: Any, config: AuwgentConfig):
         ir_json = json.dumps(ir) if isinstance(ir, dict) else ir
-        self._native = auwgent_sdk.AuwgentNative(ir_json)
+        self._native = _native.AuwgentNative(ir_json)
         self.ir: Dict[str, Any] = ir if isinstance(ir, dict) else json.loads(ir_json)
         self.middleware: List[Any] = [*cast(list, config.get("middleware", []))]
         self._shared_context: Dict[str, Any] = {}
