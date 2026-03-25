@@ -14,3 +14,7 @@ pyo3-asyncio = { version = "0.20", features = ["tokio-runtime", "attributes"] }
 tokio = { version = "1.43", features = ["full", "rt", "macros"] }
 serde_json = "1.0"
 futures-util = "0.3"
+# Override reqwest to use rustls instead of native OpenSSL (avoids openssl-sys in manylinux)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+openssl = { version = "0.10", features = ["vendored"] }
+
