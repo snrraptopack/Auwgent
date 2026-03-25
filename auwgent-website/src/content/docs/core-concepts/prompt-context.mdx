@@ -260,6 +260,33 @@ Once your agent is compiled, the generated output reflects exactly what your con
     
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    from auwgent import create_auwgent
+    from generated.main_agent_types import ir
+
+    agent = create_auwgent(ir, {
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "context": {
+            "name": "Auwgent",
+            "is_vip": True
+        }
+    })
+
+    async def handle_intent(name: str, value: dict, agent_name: str):
+        if name == "response_text":
+            print(value.get("text"))
+
+        if name == "error":
+            print("Error:", value)
+
+    agent.on_intent(handle_intent)
+
+    await agent.run("hello")
+    ```
+  </TabItem>
 </Tabs>
 
 The context values are validated against the types the compiler generated from your DSL definition. If your context block declares `is_vip` as a `boolean`, passing a string will be caught before the agent runs.

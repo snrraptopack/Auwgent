@@ -201,6 +201,18 @@ These give you visibility into when workflows are triggered and what they return
     })
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    async def handle_intent(name: str, value: dict, agent_name: str):
+        if name == "workflow_call":
+            print("workflow triggered:", value.get("type"))
+
+        if name == "workflow_result":
+            print("workflow result:", value)
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
 </Tabs>
 
 ---
@@ -241,6 +253,34 @@ Scoped tools declared inside a workflow still need implementations in your appli
     }
 
     const agent = auwgent(config)
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    from auwgent import create_auwgent
+    from generated.main_agent_types import ir
+
+    async def remove_user(id: str) -> str:
+        # your implementation here
+        return f"deleted user {id}"
+
+    async def get_user(id: str) -> str:
+        # your implementation here
+        return f"user {id}"
+
+    agent = create_auwgent(ir, {
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "context": {
+            "is_admin": True,
+            "user_id": "user_1"
+        },
+        "tools": {
+            "get_user": get_user,
+            "remove_user": remove_user
+        }
+    })
     ```
   </TabItem>
 </Tabs>

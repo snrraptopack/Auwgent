@@ -256,6 +256,24 @@ Because helpers are agents, multiple agents may be emitting intents during a sin
     })
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    async def handle_intent(name: str, value: dict, agent_name: str):
+        if name == "helper_call":
+            print(f"helper invoked: {agent_name}")
+
+        if name == "helper_result":
+            print(f"helper finished: {agent_name}", value)
+
+        if name == "response_text":
+            print(f"{agent_name} says:", value.get("text"))
+
+        if name == "response_schema":
+            print(f"{agent_name} returned structured output:", value)
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
 </Tabs>
 
 This becomes especially useful when you have multiple helpers — `agentName` tells you whether `response_text` is coming from the main agent, `DataAnalyzer`, `ReportGenerator`, or any other helper in the system.

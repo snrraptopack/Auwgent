@@ -93,6 +93,16 @@ The name of the agent or helper currently executing. Starts as the root agent na
     }
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    class ScopedMiddleware:
+        name = "scoped-logic"
+
+        async def onIntent(self, name: str, value: dict, ctx: dict):
+            if ctx.get("activeAgent") == "BillingHelper":
+                pass  # only runs when BillingHelper is active
+    ```
+  </TabItem>
 </Tabs>
 
 ### `rootAgent`
@@ -128,6 +138,17 @@ The most common use is inside `onRunStart` — load user-specific data from your
     }
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    class ContextMiddleware:
+        name = "context-injection"
+
+        async def onRunStart(self, session: dict, ctx: dict) -> dict:
+            user = await db.users.get(user_id)
+            ctx["set_context"]({"name": user.name, "is_vip": user.plan == "premium"})
+            return session
+    ```
+  </TabItem>
 </Tabs>
 
 ### `embed` and `embedBatch`
@@ -161,6 +182,24 @@ This makes it a natural place to share state between hooks without reaching for 
     }
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    import time
+    import uuid
+
+    class ObservabilityMiddleware:
+        name = "observability"
+
+        async def onRunStart(self, session: dict, ctx: dict) -> dict:
+            ctx["trace_id"] = str(uuid.uuid4())
+            ctx["start_time"] = time.time()
+            return session
+
+        async def onRunComplete(self, session: dict, ctx: dict) -> None:
+            duration = time.time() - ctx.get("start_time", 0)
+            logger.info({"trace_id": ctx.get("trace_id"), "duration": duration})
+    ```
+  </TabItem>
 </Tabs>
 
 ---
@@ -179,6 +218,17 @@ The `target` field on a middleware definition scopes it to a specific agent or h
             // ctx.activeAgent is typed as "Researcher" here
         }
     }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class ResearcherMiddleware:
+        name = "researcher-middleware"
+        target = "Researcher"  # only fires when Researcher helper is active
+
+        async def onLLMStart(self, prompt: str, ctx: dict) -> None:
+            # ctx["activeAgent"] is guaranteed to be "Researcher" here
+            pass
     ```
   </TabItem>
 </Tabs>
@@ -230,6 +280,45 @@ A complete middleware setup combining session persistence, context injection, an
     }
 
     const agent = auwgent(config)
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import time, uuid
+    from auwgent import create_auwgent
+
+    class SessionMiddleware:
+        name = "session-persistence"
+
+        async def onRunStart(self, session: dict, ctx: dict) -> dict:
+            user = await db.users.get(user_id)
+            ctx["set_context"]({"name": user.name, "is_vip": user.plan == "premium"})
+            saved = await db.sessions.get(user_id)
+            return saved or session
+
+        async def onRunComplete(self, session: dict, ctx: dict) -> None:
+            await db.sessions.save(user_id, session)
+
+    class ObservabilityMiddleware:
+        name = "observability"
+
+        async def onRunStart(self, session: dict, ctx: dict) -> dict:
+            ctx["trace_id"] = str(uuid.uuid4())
+            ctx["start_time"] = time.time()
+            return session
+
+        async def onRunComplete(self, session: dict, ctx: dict) -> None:
+            duration = time.time() - ctx.get("start_time", 0)
+            logger.info({"trace_id": ctx.get("trace_id"), "duration": duration})
+
+    agent = create_auwgent(ir, {
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "middleware": [SessionMiddleware(), ObservabilityMiddleware()]
+    })
 
     await agent.run("Hello")
     ```

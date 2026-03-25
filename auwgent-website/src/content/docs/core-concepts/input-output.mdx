@@ -151,6 +151,18 @@ This means your intent handler needs to account for what your agent is configure
     })
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    async def handle_intent(name: str, value: dict, agent_name: str):
+        if name == "response_schema":
+            print(value)
+
+        if name == "error":
+            print("Error:", value)
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
 </Tabs>
 
 ---

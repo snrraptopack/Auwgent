@@ -34,6 +34,11 @@ Install the SDK in your project:
     npm install @snrraptopack/auwgent-sdk
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```bash
+    pip install snrraptopack-auwgent-sdk
+    ```
+  </TabItem>
 </Tabs>
 
 ---
@@ -51,13 +56,21 @@ In the root of your project, create an `auwgent.yml` file. This tells the compil
       - ts
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```yaml
+    source: "main.agent"
+    output: "generated"
+    targets:
+      - py
+    ```
+  </TabItem>
 </Tabs>
 
 **`source`** points to either a single `.agent` file or a folder. If you point to a folder, the compiler will pick up every `.agent` file inside it.
 
 **`output`** is the folder the compiler writes generated files into.
 
-**`targets`** is the list of languages to compile to. Currently `ts` is supported.
+**`targets`** is the list of languages to compile to. Currently `ts` (TypeScript) and `py` (Python) are supported.
 
 If you prefer a folder-based source layout:
 
@@ -68,6 +81,14 @@ If you prefer a folder-based source layout:
     output: "generated"
     targets:
       - ts
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```yaml
+    source: "auwgent_src"
+    output: "generated"
+    targets:
+      - py
     ```
   </TabItem>
 </Tabs>
@@ -115,6 +136,13 @@ After a successful compile, your `generated` folder will contain two files:
       main.agent.types.ts     ← generated TypeScript types, ready to import
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```
+    generated/
+      main.agent.json         ← compiled IR, describes your agent's intents and structure
+      main_agent_types.py     ← generated Python types, ready to import
+    ```
+  </TabItem>
 </Tabs>
 
 You will only ever work with `main.agent.types.ts`. The JSON file is an internal artifact — it is already embedded in the types file. You do not need to read or reference it directly.
@@ -143,6 +171,18 @@ In your application:
     const agent = auwgent(config)
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    from auwgent import create_auwgent
+    from generated.main_agent_types import ir
+
+    agent = create_auwgent(ir, {
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        }
+    })
+    ```
+  </TabItem>
 </Tabs>
 
 ---
@@ -165,6 +205,18 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
     })
     ```
   </TabItem>
+  <TabItem label="Python">
+    ```python
+    async def handle_intent(name: str, value: dict, agent_name: str):
+        if name == "response_text":
+            print(value.get("text"))
+
+        if name == "error":
+            print("Error:", value)
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
 </Tabs>
 
 For this basic agent, two intents are emitted:
@@ -183,6 +235,11 @@ As your agent grows — custom intents, tools, workflows — new intent names wi
 <Tabs>
   <TabItem label="TypeScript">
     ```ts
+    await agent.run("hello")
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
     await agent.run("hello")
     ```
   </TabItem>
