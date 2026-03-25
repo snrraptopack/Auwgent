@@ -37,4 +37,3 @@ Documentation = "https://auwgent.dev"
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "auwgent_sdk"
-python-source = "."
