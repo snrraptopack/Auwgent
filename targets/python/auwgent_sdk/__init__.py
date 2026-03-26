@@ -113,6 +113,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._last_intent_val: Any = None
         self._last_intent_name: Optional[str] = None
         self._last_raw_block: Optional[str] = None
+        self._partial_text_cursor: Dict[str, str] = {}
 
         # ── 1. Context ──
         if "context" in config:
@@ -347,11 +348,23 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         partial_handler = self._stored_partial_handler
         def wrap_partial(name: str, value_json_str: str, agent_name: str) -> None:
             if partial_handler is not None:
+                value_dict = json.loads(value_json_str)
+                if (
+                    name == "response_text"
+                    and isinstance(value_dict, dict)
+                    and isinstance(value_dict.get("text"), str)
+                ):
+                    key = f"{agent_name}:{name}"
+                    previous = self._partial_text_cursor.get(key, "")
+                    current = cast(str, value_dict["text"])
+                    delta = current[len(previous):] if current.startswith(previous) else current
+                    self._partial_text_cursor[key] = current
+                    value_dict = {**value_dict, "delta": delta}
                 sig = inspect.signature(partial_handler)
                 if len(sig.parameters) >= 3:
-                    partial_handler(name, json.loads(value_json_str), agent_name)
+                    partial_handler(name, value_dict, agent_name)
                 else:
-                    partial_handler(name, json.loads(value_json_str))
+                    partial_handler(name, value_dict)
         self._native.on_intent_partial(wrap_partial)
 
         # ── 3. SubEngine Hooks ──
@@ -436,6 +449,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._shared_context = {}
         self._agent_stack = [self.ir.get("name", "agent")]
         self._last_raw_block = None
+        self._partial_text_cursor = {}
 
         current_session = self.export_session()
         self._activate_listeners()

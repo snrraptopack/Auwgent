@@ -329,7 +329,9 @@ export type PartialIntentHandlers<
     Tools = any
 > = {
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
-            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+            value: K extends 'response_text'
+                ? Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'] & { delta?: string }
+                : Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
             agentName: string
         ) => void;
     };
@@ -343,7 +345,9 @@ export type PartialIntentHandler<
     ...args: {
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]: [
             name: K,
-            value: Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+            value: K extends 'response_text'
+                ? Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'] & { delta?: string }
+                : Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
             agentName: string,
         ];
     }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
