@@ -136,7 +136,12 @@ impl ModelDriver for OpenAIDriver {
         Ok(Box::pin(stream))
     }
 
-    async fn embed(&self, model: &str, text: &str, config: Option<Value>) -> Result<Vec<f32>, String> {
+    async fn embed(
+        &self,
+        model: &str,
+        text: &str,
+        config: Option<Value>,
+    ) -> Result<Vec<f32>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
             base.to_string()
@@ -170,7 +175,10 @@ impl ModelDriver for OpenAIDriver {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(format!("OpenAI Embedding API error ({}): {}", status, error_text));
+            return Err(format!(
+                "OpenAI Embedding API error ({}): {}",
+                status, error_text
+            ));
         }
 
         let json_val: Value = response
@@ -192,7 +200,12 @@ impl ModelDriver for OpenAIDriver {
             .collect())
     }
 
-    async fn embed_batch(&self, model: &str, texts: &[String], config: Option<Value>) -> Result<Vec<Vec<f32>>, String> {
+    async fn embed_batch(
+        &self,
+        model: &str,
+        texts: &[String],
+        config: Option<Value>,
+    ) -> Result<Vec<Vec<f32>>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
             base.to_string()
@@ -226,7 +239,10 @@ impl ModelDriver for OpenAIDriver {
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
-            return Err(format!("OpenAI Embedding API error ({}): {}", status, error_text));
+            return Err(format!(
+                "OpenAI Embedding API error ({}): {}",
+                status, error_text
+            ));
         }
 
         let json_val: Value = response
@@ -234,12 +250,9 @@ impl ModelDriver for OpenAIDriver {
             .await
             .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
 
-        let data = json_val["data"].as_array().ok_or_else(|| {
-            format!(
-                "Missing 'data' field in response: {}",
-                json_val.to_string()
-            )
-        })?;
+        let data = json_val["data"]
+            .as_array()
+            .ok_or_else(|| format!("Missing 'data' field in response: {}", json_val.to_string()))?;
 
         let mut results = Vec::new();
         for item in data {
@@ -263,7 +276,10 @@ mod tests {
 
     #[test]
     fn test_url_construction() {
-        let driver1 = OpenAIDriver::new("key".to_string(), Some("https://api.groq.com/openai/v1/chat/completions".to_string()));
+        let driver1 = OpenAIDriver::new(
+            "key".to_string(),
+            Some("https://api.groq.com/openai/v1/chat/completions".to_string()),
+        );
         let base1 = driver1.base_url.trim_end_matches('/');
         let url1 = if base1.ends_with("/chat/completions") {
             base1.to_string()
@@ -272,7 +288,10 @@ mod tests {
         };
         assert_eq!(url1, "https://api.groq.com/openai/v1/chat/completions");
 
-        let driver2 = OpenAIDriver::new("key".to_string(), Some("https://api.openai.com/v1".to_string()));
+        let driver2 = OpenAIDriver::new(
+            "key".to_string(),
+            Some("https://api.openai.com/v1".to_string()),
+        );
         let base2 = driver2.base_url.trim_end_matches('/');
         let url2 = if base2.ends_with("/chat/completions") {
             base2.to_string()

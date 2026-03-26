@@ -1,7 +1,7 @@
 use crate::runtime::AuwgentEngine;
+use crate::runtime::drivers::ModelDriver;
 use crate::runtime::drivers::gemini::GeminiDriver;
 use crate::runtime::drivers::openai::OpenAIDriver;
-use crate::runtime::drivers::ModelDriver;
 use crate::types::AgentIR;
 use serde_json::Value;
 use std::sync::Arc;
@@ -65,7 +65,9 @@ impl EngineBridge {
     }
 
     pub fn import_session(&self, json: String) -> Result<(), String> {
-        self.engine.import_session(&json).map_err(|e| format!("{}", e))
+        self.engine
+            .import_session(&json)
+            .map_err(|e| format!("{}", e))
     }
 
     pub fn clear_session(&self) {
@@ -73,7 +75,9 @@ impl EngineBridge {
     }
 
     pub fn generate_prompt(&self, helper_name: Option<String>) -> Result<String, String> {
-        self.engine.generate_prompt(helper_name).map_err(|e| format!("{}", e))
+        self.engine
+            .generate_prompt(helper_name)
+            .map_err(|e| format!("{}", e))
     }
 
     pub fn get_tool_names(&self) -> Vec<String> {
@@ -112,14 +116,24 @@ impl EngineBridge {
         self.engine.clear_llm_handlers();
     }
 
-    pub async fn run_async(&self, input: Option<Value>, initial_stack: Option<Vec<String>>) -> Result<String, String> {
-        self.engine.run(input, initial_stack).await.map_err(|e| format!("{}", e))?;
+    pub async fn run_async(
+        &self,
+        input: Option<Value>,
+        initial_stack: Option<Vec<String>>,
+    ) -> Result<String, String> {
+        self.engine
+            .run(input, initial_stack)
+            .await
+            .map_err(|e| format!("{}", e))?;
         self.engine.export_session().map_err(|e| format!("{}", e))
     }
 
     pub async fn process_intents_async(&self) -> Result<String, String> {
-        let (terminal, actions, hard_stop) =
-            self.engine.process_intents().await.map_err(|e| format!("{}", e))?;
+        let (terminal, actions, hard_stop) = self
+            .engine
+            .process_intents()
+            .await
+            .map_err(|e| format!("{}", e))?;
         Ok(serde_json::json!({
             "terminal": terminal,
             "actions": actions,
@@ -133,6 +147,9 @@ impl EngineBridge {
     }
 
     pub async fn embed_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
-        self.engine.embed_batch(&texts).await.map_err(|e| format!("{}", e))
+        self.engine
+            .embed_batch(&texts)
+            .await
+            .map_err(|e| format!("{}", e))
     }
 }

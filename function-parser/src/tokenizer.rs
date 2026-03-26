@@ -54,29 +54,64 @@ impl Tokenizer {
 
         if let Some(ch) = self.advance() {
             match ch {
-                '(' => Token { kind: TokenKind::OpenParen, position: start_pos },
-                ')' => Token { kind: TokenKind::CloseParen, position: start_pos },
-                '{' => Token { kind: TokenKind::OpenBrace, position: start_pos },
-                '}' => Token { kind: TokenKind::CloseBrace, position: start_pos },
-                '[' => Token { kind: TokenKind::OpenBracket, position: start_pos },
-                ']' => Token { kind: TokenKind::CloseBracket, position: start_pos },
-                ',' => Token { kind: TokenKind::Comma, position: start_pos },
-                '=' | ':' => Token { kind: TokenKind::Equals, position: start_pos }, // Treat : and = interchangeably as assignment
+                '(' => Token {
+                    kind: TokenKind::OpenParen,
+                    position: start_pos,
+                },
+                ')' => Token {
+                    kind: TokenKind::CloseParen,
+                    position: start_pos,
+                },
+                '{' => Token {
+                    kind: TokenKind::OpenBrace,
+                    position: start_pos,
+                },
+                '}' => Token {
+                    kind: TokenKind::CloseBrace,
+                    position: start_pos,
+                },
+                '[' => Token {
+                    kind: TokenKind::OpenBracket,
+                    position: start_pos,
+                },
+                ']' => Token {
+                    kind: TokenKind::CloseBracket,
+                    position: start_pos,
+                },
+                ',' => Token {
+                    kind: TokenKind::Comma,
+                    position: start_pos,
+                },
+                '=' | ':' => Token {
+                    kind: TokenKind::Equals,
+                    position: start_pos,
+                }, // Treat : and = interchangeably as assignment
                 '"' => self.read_string(start_pos),
                 c if c.is_ascii_alphabetic() || c == '_' => {
                     self.pos -= 1; // back up
-                    if ch == '\n' { self.line -= 1; } else { self.column -= 1; }
+                    if ch == '\n' {
+                        self.line -= 1;
+                    } else {
+                        self.column -= 1;
+                    }
                     self.read_identifier_or_keyword(start_pos)
                 }
                 c if c.is_ascii_digit() || c == '-' || c == '.' => {
                     self.pos -= 1;
-                    if ch == '\n' { self.line -= 1; } else { self.column -= 1; }
+                    if ch == '\n' {
+                        self.line -= 1;
+                    } else {
+                        self.column -= 1;
+                    }
                     self.read_number(start_pos)
                 }
                 _ => self.next_token(), // Skip unknown characters for error recovery
             }
         } else {
-            Token { kind: TokenKind::EOF, position: start_pos }
+            Token {
+                kind: TokenKind::EOF,
+                position: start_pos,
+            }
         }
     }
 
@@ -121,7 +156,10 @@ impl Tokenizer {
             _ => TokenKind::Identifier(value),
         };
 
-        Token { kind, position: start_pos }
+        Token {
+            kind,
+            position: start_pos,
+        }
     }
 
     fn read_number(&mut self, start_pos: Position) -> Token {
@@ -136,10 +174,16 @@ impl Tokenizer {
         }
 
         if let Ok(num) = value.parse::<f64>() {
-            Token { kind: TokenKind::NumberLiteral(num), position: start_pos }
+            Token {
+                kind: TokenKind::NumberLiteral(num),
+                position: start_pos,
+            }
         } else {
             // Fallback to identifier if it's malformed like a weird version string
-            Token { kind: TokenKind::Identifier(value), position: start_pos }
+            Token {
+                kind: TokenKind::Identifier(value),
+                position: start_pos,
+            }
         }
     }
 }

@@ -56,7 +56,7 @@ impl Parser {
                     if self.current_token.kind == TokenKind::OpenParen {
                         self.advance(); // consume '('
                         let fields = self.parse_fields();
-                        
+
                         // Expect ')'
                         let mut is_complete = false;
                         if self.current_token.kind == TokenKind::CloseParen {
@@ -85,9 +85,10 @@ impl Parser {
     fn parse_fields(&mut self) -> std::collections::HashMap<String, ASTValue> {
         let mut fields = std::collections::HashMap::new();
 
-        while self.current_token.kind != TokenKind::EOF 
-            && self.current_token.kind != TokenKind::CloseParen 
-            && self.current_token.kind != TokenKind::CloseBrace {
+        while self.current_token.kind != TokenKind::EOF
+            && self.current_token.kind != TokenKind::CloseParen
+            && self.current_token.kind != TokenKind::CloseBrace
+        {
             match &self.current_token.kind {
                 TokenKind::Identifier(name) => {
                     // RECOVERY: If we encounter a registered intent name while parsing fields,
@@ -165,7 +166,9 @@ impl Parser {
             TokenKind::OpenBracket => {
                 self.advance(); // consume '['
                 let mut arr = Vec::new();
-                while self.current_token.kind != TokenKind::EOF && self.current_token.kind != TokenKind::CloseBracket {
+                while self.current_token.kind != TokenKind::EOF
+                    && self.current_token.kind != TokenKind::CloseBracket
+                {
                     if self.current_token.kind == TokenKind::Comma {
                         self.advance();
                         continue;
@@ -181,7 +184,7 @@ impl Parser {
                 }
                 Some(ASTValue::Array(arr))
             }
-            _ => None
+            _ => None,
         }
     }
 }

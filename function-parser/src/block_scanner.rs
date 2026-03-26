@@ -1,5 +1,13 @@
-/// Block scanner for @@marker-based protocol
-/// Scans for @@chat, @@tool, @@workflow, @@helper, @@out, @@result, @@error, @@end
+/// Block scanner for the tag/bracket protocol
+/// Scans for:
+/// - <response_text>...</response_text>
+/// - [tool_call: name]...[/tool]
+/// - [workflow_call: name]...[/workflow]
+/// - [helper_call: name]...[/helper]
+/// - [schema: name]...[/schema]
+/// - [custom: name]...[/custom]
+/// - [result]...[/result]
+/// - [error]...[/error]
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BlockType {
@@ -17,7 +25,7 @@ pub enum BlockType {
 pub struct Block {
     pub block_type: BlockType,
     pub content: String,
-    pub schema_name: Option<String>, // For @@out blocks (schema name on same line)
+    pub target_name: Option<String>,
 }
 
 pub struct BlockScanner {
@@ -37,45 +45,123 @@ impl BlockScanner {
         self.chars.get(self.pos).copied()
     }
 
-    fn peek_ahead(&self, offset: usize) -> Option<char> {
-        self.chars.get(self.pos + offset).copied()
-    }
-
     fn advance(&mut self) -> Option<char> {
         let ch = self.peek()?;
         self.pos += 1;
         Some(ch)
     }
 
-    /// Check if we're at a @@marker
-    fn check_marker(&self) -> Option<String> {
-        if self.peek() != Some('@') || self.peek_ahead(1) != Some('@') {
-            return None;
+    fn check_literal(&self, literal: &str) -> bool {
+        let literal_chars: Vec<char> = literal.chars().collect();
+        if self.pos + literal_chars.len() > self.chars.len() {
+            return false;
         }
 
-        let mut marker = String::new();
-        let mut i = 2; // Skip @@
-        while let Some(ch) = self.chars.get(self.pos + i) {
-            if ch.is_ascii_alphabetic() || *ch == '_' {
-                marker.push(*ch);
-                i += 1;
-            } else {
-                break;
+        for (idx, ch) in literal_chars.iter().enumerate() {
+            if self.chars[self.pos + idx] != *ch {
+                return false;
             }
         }
 
-        if marker.is_empty() {
-            None
-        } else {
-            Some(marker)
+        true
+    }
+
+    fn consume_literal(&mut self, literal: &str) -> bool {
+        if !self.check_literal(literal) {
+            return false;
+        }
+
+        self.pos += literal.chars().count();
+        true
+    }
+
+    fn try_read_header(&self) -> Option<String> {
+        if self.peek() != Some('[') {
+            return None;
+        }
+
+        let mut idx = self.pos + 1;
+        let mut header = String::new();
+        while let Some(ch) = self.chars.get(idx) {
+            if *ch == ']' {
+                return Some(header.trim().to_string());
+            }
+            header.push(*ch);
+            idx += 1;
+        }
+
+        None
+    }
+
+    fn consume_header(&mut self) -> Option<String> {
+        let header = self.try_read_header()?;
+        self.pos += header.chars().count() + 2;
+        Some(header)
+    }
+
+    fn is_known_closing_header(&self, header: &str) -> bool {
+        matches!(
+            header.trim(),
+            "/tool" | "/workflow" | "/helper" | "/schema" | "/custom" | "/result" | "/error"
+        )
+    }
+
+    fn parse_header(&self, header: &str) -> Option<(BlockType, Option<String>, &'static str)> {
+        let header = header.trim();
+
+        if header.eq_ignore_ascii_case("result") {
+            return Some((BlockType::Result, None, "[/result]"));
+        }
+
+        if header.eq_ignore_ascii_case("error") {
+            return Some((BlockType::Error, None, "[/error]"));
+        }
+
+        let (kind, target) = header.split_once(':')?;
+        let kind = kind.trim();
+        let target = target.trim();
+        if target.is_empty() {
+            return None;
+        }
+
+        match kind {
+            "tool_call" => Some((BlockType::Tool, Some(target.to_string()), "[/tool]")),
+            "workflow_call" => Some((BlockType::Workflow, Some(target.to_string()), "[/workflow]")),
+            "helper_call" => Some((BlockType::Helper, Some(target.to_string()), "[/helper]")),
+            "schema" => Some((BlockType::Out, Some(target.to_string()), "[/schema]")),
+            "custom" => Some((
+                BlockType::Custom(target.to_string()),
+                Some(target.to_string()),
+                "[/custom]",
+            )),
+            _ => None,
         }
     }
 
-    /// Consume a marker (@@word)
-    fn consume_marker(&mut self) -> Option<String> {
-        let marker = self.check_marker()?;
-        self.pos += 2 + marker.len(); // Skip @@ + marker
-        Some(marker)
+    fn read_until_literal_or_eof(&mut self, literal: &str) -> String {
+        let mut content = String::new();
+
+        while self.pos < self.chars.len() {
+            if self.check_literal(literal) {
+                break;
+            }
+
+            if self.check_literal("<response_text>") {
+                break;
+            }
+
+            if let Some(header) = self.try_read_header() {
+                if self.parse_header(&header).is_some() || self.is_known_closing_header(&header) {
+                    break;
+                }
+            }
+
+            if let Some(ch) = self.advance() {
+                content.push(ch);
+            }
+        }
+
+        content.trim().to_string()
     }
 
     pub fn scan(&mut self) -> Vec<Block> {
@@ -83,96 +169,49 @@ impl BlockScanner {
         let mut implicit_chat = String::new();
 
         while self.pos < self.chars.len() {
-            if let Some(marker) = self.check_marker() {
-                // Flush any implicit chat text before this marker
+            if self.check_literal("<response_text>") {
                 if !implicit_chat.trim().is_empty() {
                     blocks.push(Block {
                         block_type: BlockType::Chat,
                         content: implicit_chat.trim().to_string(),
-                        schema_name: None,
+                        target_name: None,
                     });
                     implicit_chat.clear();
                 }
 
-                self.consume_marker();
-                // Don't skip whitespace here - let read_until_marker_or_eof handle it
-
-                match marker.as_str() {
-                    "end" => {
-                        // @@end just closes the current block, nothing to do
-                        continue;
-                    }
-                    "chat" => {
-                        let content = self.read_until_marker_or_eof();
+                self.consume_literal("<response_text>");
+                let content = self.read_until_literal_or_eof("</response_text>");
+                self.consume_literal("</response_text>");
+                blocks.push(Block {
+                    block_type: BlockType::Chat,
+                    content,
+                    target_name: None,
+                });
+            } else if let Some(header) = self.try_read_header() {
+                if let Some((block_type, target_name, close_literal)) = self.parse_header(&header) {
+                    if !implicit_chat.trim().is_empty() {
                         blocks.push(Block {
                             block_type: BlockType::Chat,
-                            content,
-                            schema_name: None,
+                            content: implicit_chat.trim().to_string(),
+                            target_name: None,
                         });
+                        implicit_chat.clear();
                     }
-                    "tool" => {
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Tool,
-                            content,
-                            schema_name: None,
-                        });
-                    }
-                    "workflow" => {
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Workflow,
-                            content,
-                            schema_name: None,
-                        });
-                    }
-                    "helper" => {
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Helper,
-                            content,
-                            schema_name: None,
-                        });
-                    }
-                    "out" => {
-                        // Read schema name on the same line
-                        let schema_name = self.read_schema_name();
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Out,
-                            content,
-                            schema_name: Some(schema_name),
-                        });
-                    }
-                    "result" => {
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Result,
-                            content,
-                            schema_name: None,
-                        });
-                    }
-                    "error" => {
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Error,
-                            content,
-                            schema_name: None,
-                        });
-                    }
-                    _ => {
-                        // Unknown marker - could be custom intent
-                        // Read content and create Custom block
-                        let content = self.read_until_marker_or_eof();
-                        blocks.push(Block {
-                            block_type: BlockType::Custom(marker),
-                            content,
-                            schema_name: None,
-                        });
-                    }
+
+                    self.consume_header();
+                    let content = self.read_until_literal_or_eof(close_literal);
+                    self.consume_literal(close_literal);
+                    blocks.push(Block {
+                        block_type,
+                        content,
+                        target_name,
+                    });
+                } else if self.is_known_closing_header(&header) {
+                    self.consume_header();
+                } else if let Some(ch) = self.advance() {
+                    implicit_chat.push(ch);
                 }
             } else {
-                // Not a marker - accumulate as implicit chat
                 if let Some(ch) = self.advance() {
                     implicit_chat.push(ch);
                 }
@@ -184,52 +223,11 @@ impl BlockScanner {
             blocks.push(Block {
                 block_type: BlockType::Chat,
                 content: implicit_chat.trim().to_string(),
-                schema_name: None,
+                target_name: None,
             });
         }
 
         blocks
-    }
-
-    /// Read schema name after @@out (on the same line)
-    fn read_schema_name(&mut self) -> String {
-        let mut name = String::new();
-        while let Some(ch) = self.peek() {
-            if ch == '\n' {
-                self.advance();
-                break;
-            } else if ch.is_whitespace() {
-                self.advance();
-                if !name.is_empty() {
-                    // Already got the name, skip remaining whitespace
-                    continue;
-                }
-            } else if ch.is_ascii_alphanumeric() || ch == '_' {
-                name.push(ch);
-                self.advance();
-            } else {
-                break;
-            }
-        }
-        name
-    }
-
-    /// Read content until we hit @@end, another @@marker, or EOF
-    fn read_until_marker_or_eof(&mut self) -> String {
-        let mut content = String::new();
-
-        while self.pos < self.chars.len() {
-            if self.check_marker().is_some() {
-                // Hit another marker - auto-close current block
-                break;
-            }
-
-            if let Some(ch) = self.advance() {
-                content.push(ch);
-            }
-        }
-
-        content.trim().to_string()
     }
 }
 
@@ -238,8 +236,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_basic_chat_block() {
-        let input = "@@chat\nHello world\n@@end";
+    fn test_basic_response_text_block() {
+        let input = "<response_text>Hello world</response_text>";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -249,21 +247,20 @@ mod tests {
     }
 
     #[test]
-    fn test_auto_close() {
-        let input = "@@chat\nHello\n@@tool\nfetch()";
+    fn test_tool_block() {
+        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].block_type, BlockType::Chat);
-        assert_eq!(blocks[0].content, "Hello");
-        assert_eq!(blocks[1].block_type, BlockType::Tool);
-        assert_eq!(blocks[1].content, "fetch()");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].target_name, Some("fetch_user".to_string()));
+        assert_eq!(blocks[0].content, "id: \"123\"");
     }
 
     #[test]
     fn test_implicit_chat() {
-        let input = "Hello\n@@tool\nfetch()\n@@end\nGoodbye";
+        let input = "Hello\n[tool_call: fetch]\nid: \"123\"\n[/tool]\nGoodbye";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -276,14 +273,40 @@ mod tests {
     }
 
     #[test]
-    fn test_out_with_schema() {
-        let input = "@@out MySchema\n{data: \"test\"}";
+    fn test_schema_with_target_name() {
+        let input = "[schema: MySchema]\ndata: \"test\"\n[/schema]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].block_type, BlockType::Out);
-        assert_eq!(blocks[0].schema_name, Some("MySchema".to_string()));
+        assert_eq!(blocks[0].target_name, Some("MySchema".to_string()));
         assert!(blocks[0].content.contains("data"));
+    }
+
+    #[test]
+    fn test_auto_closes_when_next_block_starts() {
+        let input = "<response_text>Hello\n[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hello");
+        assert_eq!(blocks[1].block_type, BlockType::Tool);
+        assert_eq!(blocks[1].target_name, Some("fetch_user".to_string()));
+    }
+
+    #[test]
+    fn test_ignores_stray_closing_headers() {
+        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/workflow]\n<response_text>Done</response_text>";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].content, "id: \"123\"");
+        assert_eq!(blocks[1].block_type, BlockType::Chat);
+        assert_eq!(blocks[1].content, "Done");
     }
 }

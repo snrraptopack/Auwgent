@@ -1,8 +1,7 @@
+use crate::ast::{ASTValue, TokenKind};
 /// Simplified function call parser for @@tool, @@workflow, @@helper blocks
 /// Parses: tool_name(arg1 = "value", arg2 = {...})
-
 use crate::tokenizer::Tokenizer;
-use crate::ast::{TokenKind, ASTValue};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -43,7 +42,7 @@ impl FunctionParser {
                 if self.current == TokenKind::OpenParen {
                     self.advance(); // consume '('
                     let args = self.parse_args();
-                    
+
                     if self.current == TokenKind::CloseParen {
                         self.advance();
                     }
@@ -64,10 +63,10 @@ impl FunctionParser {
     fn parse_args(&mut self) -> HashMap<String, ASTValue> {
         let mut args = HashMap::new();
 
-        while self.current != TokenKind::EOF 
-            && self.current != TokenKind::CloseParen 
-            && self.current != TokenKind::CloseBrace {
-            
+        while self.current != TokenKind::EOF
+            && self.current != TokenKind::CloseParen
+            && self.current != TokenKind::CloseBrace
+        {
             if let TokenKind::Identifier(key) = &self.current {
                 let arg_name = key.clone();
                 self.advance();
@@ -131,7 +130,7 @@ impl FunctionParser {
                 }
                 Ok(ASTValue::Array(arr))
             }
-            _ => Err(format!("Unexpected token: {:?}", self.current))
+            _ => Err(format!("Unexpected token: {:?}", self.current)),
         }
     }
 
@@ -170,7 +169,10 @@ mod tests {
 
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "fetch");
-        assert_eq!(calls[0].args.get("id"), Some(&ASTValue::String("123".to_string())));
+        assert_eq!(
+            calls[0].args.get("id"),
+            Some(&ASTValue::String("123".to_string()))
+        );
     }
 
     #[test]

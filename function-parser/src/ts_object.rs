@@ -1,13 +1,195 @@
+use crate::ast::{ASTValue, TokenKind};
 /// TypeScript-style object parser for @@out blocks
 /// Supports both unquoted keys (TS-style) and quoted keys (JSON-style)
-
 use crate::tokenizer::Tokenizer;
-use crate::ast::{TokenKind, ASTValue};
 use std::collections::HashMap;
 
 pub fn parse_ts_object(input: &str) -> Result<ASTValue, String> {
     let mut parser = TSObjectParser::new(input);
     parser.parse_value()
+}
+
+pub fn parse_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>, String> {
+    match parse_ts_object(&format!("{{{}}}", input)) {
+        Ok(ASTValue::Object(obj)) => Ok(obj),
+        Ok(_) => Err("Expected assignment object".to_string()),
+        Err(_) => parse_indented_assignment_object(input),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct IndentedLine {
+    indent: usize,
+    text: String,
+}
+
+fn parse_indented_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>, String> {
+    let lines = collect_indented_lines(input);
+    if lines.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut index = 0;
+    parse_indented_object(&lines, &mut index, lines[0].indent)
+}
+
+fn collect_indented_lines(input: &str) -> Vec<IndentedLine> {
+    input
+        .lines()
+        .filter_map(|line| {
+            let trimmed_end = line.trim_end();
+            if trimmed_end.trim().is_empty() {
+                return None;
+            }
+
+            let indent = line
+                .chars()
+                .take_while(|ch| ch.is_whitespace())
+                .map(|ch| if ch == '\t' { 4 } else { 1 })
+                .sum();
+
+            Some(IndentedLine {
+                indent,
+                text: trimmed_end.trim_start().to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_indented_object(
+    lines: &[IndentedLine],
+    index: &mut usize,
+    indent: usize,
+) -> Result<HashMap<String, ASTValue>, String> {
+    let mut map = HashMap::new();
+
+    while *index < lines.len() {
+        let line = &lines[*index];
+        if line.indent < indent {
+            break;
+        }
+        if line.indent > indent {
+            return Err(format!("Unexpected indentation near '{}'", line.text));
+        }
+        if line.text.starts_with('-') {
+            return Err(format!("Unexpected array item near '{}'", line.text));
+        }
+
+        let (key, value) = parse_object_entry(lines, index)?;
+        map.insert(key, value);
+    }
+
+    Ok(map)
+}
+
+fn parse_object_entry(
+    lines: &[IndentedLine],
+    index: &mut usize,
+) -> Result<(String, ASTValue), String> {
+    let line = &lines[*index];
+    let (key, value_text) = split_key_value(&line.text)
+        .ok_or_else(|| format!("Expected 'key: value' pair near '{}'", line.text))?;
+    let current_indent = line.indent;
+    *index += 1;
+
+    let value = if value_text.is_empty() {
+        parse_nested_value(lines, index, current_indent)?
+    } else {
+        parse_ts_object(&value_text)?
+    };
+
+    Ok((key, value))
+}
+
+fn parse_nested_value(
+    lines: &[IndentedLine],
+    index: &mut usize,
+    parent_indent: usize,
+) -> Result<ASTValue, String> {
+    if *index >= lines.len() || lines[*index].indent <= parent_indent {
+        return Ok(ASTValue::Null);
+    }
+
+    let child_indent = lines[*index].indent;
+    if lines[*index].text.starts_with('-') {
+        Ok(ASTValue::Array(parse_indented_array(
+            lines,
+            index,
+            child_indent,
+        )?))
+    } else {
+        Ok(ASTValue::Object(parse_indented_object(
+            lines,
+            index,
+            child_indent,
+        )?))
+    }
+}
+
+fn parse_indented_array(
+    lines: &[IndentedLine],
+    index: &mut usize,
+    indent: usize,
+) -> Result<Vec<ASTValue>, String> {
+    let mut items = Vec::new();
+
+    while *index < lines.len() {
+        let line = &lines[*index];
+        if line.indent < indent {
+            break;
+        }
+        if line.indent > indent {
+            return Err(format!("Unexpected indentation near '{}'", line.text));
+        }
+        if !line.text.starts_with('-') {
+            break;
+        }
+
+        let remainder = line.text[1..].trim_start();
+        let current_indent = line.indent;
+        *index += 1;
+
+        let value = if remainder.is_empty() {
+            parse_nested_value(lines, index, current_indent)?
+        } else if let Some((key, value_text)) = split_key_value(remainder) {
+            let mut object = HashMap::new();
+            let first_value = if value_text.is_empty() {
+                parse_nested_value(lines, index, current_indent)?
+            } else {
+                parse_ts_object(&value_text)?
+            };
+            object.insert(key, first_value);
+
+            if *index < lines.len() && lines[*index].indent > current_indent {
+                let nested_indent = lines[*index].indent;
+                let nested_object = parse_indented_object(lines, index, nested_indent)?;
+                for (nested_key, nested_value) in nested_object {
+                    object.insert(nested_key, nested_value);
+                }
+            }
+
+            ASTValue::Object(object)
+        } else {
+            parse_ts_object(remainder)?
+        };
+
+        items.push(value);
+    }
+
+    Ok(items)
+}
+
+fn split_key_value(text: &str) -> Option<(String, String)> {
+    let separator_index = text.find(':').or_else(|| text.find('='))?;
+    let key = text[..separator_index].trim();
+    if key.is_empty() {
+        return None;
+    }
+
+    Some((
+        key.to_string(),
+        text[separator_index + 1..].trim().to_string(),
+    ))
 }
 
 struct TSObjectParser {
@@ -69,7 +251,7 @@ impl TSObjectParser {
                 self.advance();
                 Ok(val)
             }
-            _ => Err(format!("Unexpected token: {:?}", self.current))
+            _ => Err(format!("Unexpected token: {:?}", self.current)),
         }
     }
 
@@ -94,7 +276,7 @@ impl TSObjectParser {
                     continue;
                 }
                 TokenKind::CloseBrace => break,
-                _ => return Err(format!("Expected key, got: {:?}", self.current))
+                _ => return Err(format!("Expected key, got: {:?}", self.current)),
             };
 
             // Expect : or =
@@ -148,9 +330,12 @@ mod tests {
     fn test_unquoted_keys() {
         let input = r#"{session_id: "123", count: 42}"#;
         let result = parse_ts_object(input).unwrap();
-        
+
         if let ASTValue::Object(obj) = result {
-            assert_eq!(obj.get("session_id"), Some(&ASTValue::String("123".to_string())));
+            assert_eq!(
+                obj.get("session_id"),
+                Some(&ASTValue::String("123".to_string()))
+            );
             assert_eq!(obj.get("count"), Some(&ASTValue::Number(42.0)));
         } else {
             panic!("Expected object");
@@ -161,9 +346,12 @@ mod tests {
     fn test_quoted_keys() {
         let input = r#"{"session_id": "123", "count": 42}"#;
         let result = parse_ts_object(input).unwrap();
-        
+
         if let ASTValue::Object(obj) = result {
-            assert_eq!(obj.get("session_id"), Some(&ASTValue::String("123".to_string())));
+            assert_eq!(
+                obj.get("session_id"),
+                Some(&ASTValue::String("123".to_string()))
+            );
             assert_eq!(obj.get("count"), Some(&ASTValue::Number(42.0)));
         } else {
             panic!("Expected object");
@@ -174,11 +362,17 @@ mod tests {
     fn test_nested_objects() {
         let input = r#"{user: {id: "usr_123", name: "Nana"}}"#;
         let result = parse_ts_object(input).unwrap();
-        
+
         if let ASTValue::Object(obj) = result {
             if let Some(ASTValue::Object(user)) = obj.get("user") {
-                assert_eq!(user.get("id"), Some(&ASTValue::String("usr_123".to_string())));
-                assert_eq!(user.get("name"), Some(&ASTValue::String("Nana".to_string())));
+                assert_eq!(
+                    user.get("id"),
+                    Some(&ASTValue::String("usr_123".to_string()))
+                );
+                assert_eq!(
+                    user.get("name"),
+                    Some(&ASTValue::String("Nana".to_string()))
+                );
             } else {
                 panic!("user should be object");
             }
@@ -191,7 +385,7 @@ mod tests {
     fn test_arrays() {
         let input = r#"{items: [1, 2, 3], tags: ["a", "b"]}"#;
         let result = parse_ts_object(input).unwrap();
-        
+
         if let ASTValue::Object(obj) = result {
             if let Some(ASTValue::Array(items)) = obj.get("items") {
                 assert_eq!(items.len(), 3);

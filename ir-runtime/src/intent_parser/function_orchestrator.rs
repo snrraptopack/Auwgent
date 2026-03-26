@@ -53,8 +53,8 @@ impl FunctionOrchestrator {
 
     fn check_intents(&mut self, is_final: bool) {
         let mut parser = function_parser::Parser::with_registered_intents(
-            &self.buffer, 
-            self.intent_keys.clone()
+            &self.buffer,
+            self.intent_keys.clone(),
         );
         let intents = parser.parse();
 
@@ -63,8 +63,11 @@ impl FunctionOrchestrator {
             let trimmed = self.buffer.trim();
             if !trimmed.is_empty() && self.intent_keys.contains("response_text") {
                 let json_val = serde_json::json!({ "text": trimmed });
-                let content_hash = format!("response_text:{}", serde_json::to_string(&json_val).unwrap_or_default());
-                
+                let content_hash = format!(
+                    "response_text:{}",
+                    serde_json::to_string(&json_val).unwrap_or_default()
+                );
+
                 if is_final {
                     if !self.emitted_identities.contains(&content_hash) {
                         if let Some(handler) = &self.intent_handler {
@@ -82,16 +85,23 @@ impl FunctionOrchestrator {
         }
 
         // Terminal intent types that should use last-complete-wins strategy
-        let terminal_types: HashSet<&str> = ["response_schema", "response_text"].iter().cloned().collect();
-        
+        let terminal_types: HashSet<&str> = ["response_schema", "response_text"]
+            .iter()
+            .cloned()
+            .collect();
+
         // Group intents by name to handle multiple attempts
-        let mut intent_groups: std::collections::HashMap<String, Vec<(usize, function_parser::Intent)>> = std::collections::HashMap::new();
-        
+        let mut intent_groups: std::collections::HashMap<
+            String,
+            Vec<(usize, function_parser::Intent)>,
+        > = std::collections::HashMap::new();
+
         for (i, intent) in intents.into_iter().enumerate() {
             if !self.intent_keys.contains(&intent.name) {
                 continue;
             }
-            intent_groups.entry(intent.name.clone())
+            intent_groups
+                .entry(intent.name.clone())
                 .or_insert_with(Vec::new)
                 .push((i, intent));
         }
@@ -99,16 +109,21 @@ impl FunctionOrchestrator {
         // Process each intent group
         for (intent_name, instances) in intent_groups {
             let is_terminal = terminal_types.contains(intent_name.as_str());
-            
+
             if is_terminal && instances.len() > 1 {
                 // Last-complete-wins: For terminal intents with multiple attempts,
                 // only emit the LAST complete one
-                if let Some((_idx, intent)) = instances.iter()
+                if let Some((_idx, intent)) = instances
+                    .iter()
                     .rev()
-                    .find(|(_, intent)| intent.is_complete || is_final) 
+                    .find(|(_, intent)| intent.is_complete || is_final)
                 {
                     let json_val = ast_to_json_object(&intent.fields);
-                    let content_hash = format!("{}:{}", intent_name, serde_json::to_string(&json_val).unwrap_or_default());
+                    let content_hash = format!(
+                        "{}:{}",
+                        intent_name,
+                        serde_json::to_string(&json_val).unwrap_or_default()
+                    );
                     let is_complete = intent.is_complete || is_final;
 
                     if is_complete {
@@ -128,7 +143,11 @@ impl FunctionOrchestrator {
                 // For non-terminal intents or single attempts, process all instances
                 for (_idx, intent) in instances {
                     let json_val = ast_to_json_object(&intent.fields);
-                    let content_hash = format!("{}:{}", intent_name, serde_json::to_string(&json_val).unwrap_or_default());
+                    let content_hash = format!(
+                        "{}:{}",
+                        intent_name,
+                        serde_json::to_string(&json_val).unwrap_or_default()
+                    );
                     let is_complete = intent.is_complete || is_final;
 
                     if !is_complete {

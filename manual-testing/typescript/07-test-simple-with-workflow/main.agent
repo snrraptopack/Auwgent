@@ -156,7 +156,7 @@ helper DataAnalyzer {
     description: "Specialized helper for deep data analysis and insights generation"
 
     default config {
-        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
         prompt: {
             """
             You are a data analyst expert. Analyze database records and provide:
@@ -231,7 +231,7 @@ helper ReportGenerator {
     description: "Specialized helper for generating formatted reports and summaries"
 
     default config {
-        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
         prompt: {
             """
             You are a report generation specialist. Create well-formatted, professional reports.

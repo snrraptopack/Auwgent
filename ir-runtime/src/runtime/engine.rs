@@ -121,7 +121,36 @@ impl AuwgentEngine {
         if let Some(custom) = &ir.custom_intents {
             for ci in custom {
                 orchestrator.register_intent(&ci.name);
+                orchestrator.register_custom_intent_shape(
+                    &ci.name,
+                    &ci.fields.0,
+                    ir.types.as_ref(),
+                );
             }
+        }
+
+        for tool in &ir.tools {
+            orchestrator.register_tool_shape(&tool.name, &tool.params.0, ir.types.as_ref());
+        }
+
+        for workflow in &ir.workflows {
+            orchestrator.register_workflow_shape(
+                &workflow.name,
+                &workflow.params.0,
+                ir.types.as_ref(),
+            );
+        }
+
+        for helper in &ir.helpers {
+            orchestrator.register_helper_shape(
+                &helper.name,
+                helper.input.as_ref().map(|v| &v.0),
+                ir.types.as_ref(),
+            );
+        }
+
+        if let Some(output) = &ir.output {
+            orchestrator.register_output_shape(&output.0, ir.types.as_ref());
         }
 
         let pending_intents = Arc::new(Mutex::new(Vec::new()));
@@ -680,8 +709,11 @@ impl AuwgentEngine {
                     }
                     Err(e) => {
                         // Fire error as intent if handler exists
-                        self.fire_intent("error".to_string(), serde_json::json!({ "message": e.clone() }))
-                            .await;
+                        self.fire_intent(
+                            "error".to_string(),
+                            serde_json::json!({ "message": e.clone() }),
+                        )
+                        .await;
 
                         // Ensure we don't leave a hanging turn with no response in the session
                         // if we are about to return an error.
@@ -763,38 +795,32 @@ impl AuwgentEngine {
     }
 
     /// Build a structured payload of tool/workflow results to feed back to
-    /// the LLM on the next turn using @@result block format.
+    /// the LLM on the next turn using result blocks.
     fn build_results_payload(&self) -> String {
         let results = self.pending_tool_results.lock().unwrap();
         if results.is_empty() {
             return String::new();
         }
 
-        let mut lines = Vec::new();
+        let mut blocks = Vec::new();
         for (name, args, result) in &*results {
-            // Format: tool_name(arg1 = value1, arg2 = value2): result
-            let args_str = if let Some(obj) = args.as_object() {
-                if obj.is_empty() {
-                    String::new()
-                } else {
-                    let mut arg_parts: Vec<String> = obj.iter()
-                        .map(|(k, v)| {
-                            let v_str = serde_json::to_string(v).unwrap_or_else(|_| "null".to_string());
-                            format!("{} = {}", k, v_str)
-                        })
-                        .collect();
-                    arg_parts.sort();
-                    format!("({})", arg_parts.join(", "))
-                }
-            } else {
-                String::new()
-            };
-            
-            let result_str = serde_json::to_string(result).unwrap_or_else(|_| "null".to_string());
-            lines.push(format!("{}{}: {}", name, args_str, result_str));
+            let payload = serde_json::json!({
+                "name": name,
+                "args": args,
+                "result": result
+            });
+
+            let body = serde_yaml::to_string(&payload)
+                .unwrap_or_default()
+                .trim()
+                .trim_start_matches("---")
+                .trim()
+                .to_string();
+
+            blocks.push(format!("[result]\n{}\n[/result]", body));
         }
 
-        format!("@@result\n{}\n@@end", lines.join("\n"))
+        blocks.join("\n\n")
     }
 
     /// Fire the user's intent callback (if registered).
@@ -1029,11 +1055,11 @@ impl AuwgentEngine {
         {
             let tools = self.tools.lock().unwrap();
             let ir_tools = &self.ir.tools;
-            
+
             for (name, imp) in &*tools {
                 let imp = imp.clone();
                 let name_clone = name.clone();
-                
+
                 // Find tool definition to get parameter names
                 let param_names: Vec<String> = ir_tools
                     .iter()
@@ -1045,7 +1071,7 @@ impl AuwgentEngine {
                         names
                     })
                     .unwrap_or_default();
-                
+
                 tool_fns.insert(
                     name.clone(),
                     std::sync::Arc::new(move |fn_args: Vec<Value>| {
@@ -1059,7 +1085,8 @@ impl AuwgentEngine {
                             }
                         } else {
                             // Convert positional args to named args object
-                            let mut args_obj: serde_json::Map<String, Value> = serde_json::Map::new();
+                            let mut args_obj: serde_json::Map<String, Value> =
+                                serde_json::Map::new();
                             for (i, param_name) in param_names.iter().enumerate() {
                                 if let Some(arg_value) = fn_args.get(i) {
                                     args_obj.insert(param_name.clone(), arg_value.clone());
@@ -1067,7 +1094,7 @@ impl AuwgentEngine {
                             }
                             Value::Object(args_obj)
                         };
-                        
+
                         let rt = tokio::runtime::Handle::current();
                         let imp = imp.clone();
                         std::thread::spawn(move || rt.block_on(imp(arg_val)))
@@ -1196,10 +1223,11 @@ impl AuwgentEngine {
 
             // 2. Build the sub-agent IR
             let sub_ctx = build_sub_agent_context(&self.ir, &helper_name)?;
-            
+
             // Clone helper tool names before moving sub_ctx.ir
-            let helper_tool_names: Vec<String> = sub_ctx.ir.tools.iter().map(|t| t.name.clone()).collect();
-            
+            let helper_tool_names: Vec<String> =
+                sub_ctx.ir.tools.iter().map(|t| t.name.clone()).collect();
+
             // Also collect helper workflow tool names
             let mut helper_workflow_tool_names: Vec<String> = Vec::new();
             for workflow in &sub_ctx.ir.workflows {
@@ -1224,21 +1252,21 @@ impl AuwgentEngine {
             {
                 let tools = self.tools.lock().unwrap();
                 let mut sub_tools = sub_engine.tools.lock().unwrap();
-                
+
                 // Add authorized parent tools
                 for tool_name in &sub_ctx.authorized_parent_tool_names {
                     if let Some(imp) = tools.get(tool_name) {
                         sub_tools.insert(tool_name.clone(), Arc::clone(imp));
                     }
                 }
-                
+
                 // Add helper's own tools
                 for tool_name in &helper_tool_names {
                     if let Some(imp) = tools.get(tool_name) {
                         sub_tools.insert(tool_name.clone(), Arc::clone(imp));
                     }
                 }
-                
+
                 // Add helper's workflow tools
                 for tool_name in &helper_workflow_tool_names {
                     if let Some(imp) = tools.get(tool_name) {
@@ -1364,14 +1392,26 @@ impl AuwgentEngine {
                     if emitted_final {
                         // Pop stack — final response delivered, return to parent
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     } else {
                         // NO terminal response at all? Helper might be broken or just finished tools.
                         // We still treat it as a stop if handoff is user.
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     }
                 }
                 HandoffMode::ThenContinue => {
@@ -1388,25 +1428,45 @@ impl AuwgentEngine {
                         Ok((helper_name, args, msg))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     } else {
                         // Default to stop if something went wrong but we are in thenContinue
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     }
                 }
                 HandoffMode::Return => {
                     if emitted_final {
                         // Pop stack — focus returns to parent
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, args, serde_json::json!({ "result": final_resp })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "result": final_resp }),
+                        ))
                     } else if emitted_terminal {
                         // DO NOT pop stack — still in helper (e.g. asking questions via custom intent)
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     } else {
                         // For Return mode, if no terminal response, it might be an error or unexpected finish.
                         // We pop and return what we have (could be empty or last turn).
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, args, serde_json::json!({ "result": final_resp })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "result": final_resp }),
+                        ))
                     }
                 }
             }
@@ -1457,7 +1517,9 @@ impl AuwgentEngine {
             .as_ref()
             .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
-        let parsed_prompt: crate::types::Expression = serde_json::from_value(default.prompt.0.clone()).map_err(|e| AuwgentError::Evaluation(format!("Prompt parse error: {}", e)))?;
+        let parsed_prompt: crate::types::Expression =
+            serde_json::from_value(default.prompt.0.clone())
+                .map_err(|e| AuwgentError::Evaluation(format!("Prompt parse error: {}", e)))?;
         let prompt_val = evaluator.evaluate(&parsed_prompt, &mut scope)?;
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
 

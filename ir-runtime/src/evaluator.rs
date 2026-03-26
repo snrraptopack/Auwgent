@@ -203,7 +203,10 @@ impl<'a> Evaluator<'a> {
                 else_block,
             } => {
                 // 1. Evaluate condition
-                let parsed_cond: crate::types::Condition = serde_json::from_value(condition.0.clone()).map_err(|e| AuwgentError::Evaluation(format!("Condition parse error: {}", e)))?;
+                let parsed_cond: crate::types::Condition =
+                    serde_json::from_value(condition.0.clone()).map_err(|e| {
+                        AuwgentError::Evaluation(format!("Condition parse error: {}", e))
+                    })?;
                 let is_true = self.evaluate_condition(&parsed_cond, scope)?;
 
                 // 2. Choose which block to execute

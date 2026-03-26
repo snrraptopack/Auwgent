@@ -129,9 +129,14 @@ impl ModelDriver for GeminiDriver {
                             if let Some(candidate) = json_val["candidates"].get(0) {
                                 if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
                                     result_text.push_str(t);
-                                } else if let Some(finish_reason) = candidate["finishReason"].as_str() {
+                                } else if let Some(finish_reason) =
+                                    candidate["finishReason"].as_str()
+                                {
                                     if finish_reason != "STOP" {
-                                        return Err(format!("Gemini stopped unexpectedly: {}", finish_reason));
+                                        return Err(format!(
+                                            "Gemini stopped unexpectedly: {}",
+                                            finish_reason
+                                        ));
                                     }
                                 }
                             } else if let Some(error) = json_val["error"].get("message") {
@@ -148,7 +153,12 @@ impl ModelDriver for GeminiDriver {
         Ok(Box::pin(stream))
     }
 
-    async fn embed(&self, model: &str, text: &str, config: Option<Value>) -> Result<Vec<f32>, String> {
+    async fn embed(
+        &self,
+        model: &str,
+        text: &str,
+        config: Option<Value>,
+    ) -> Result<Vec<f32>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent?key={}",
             model, self.api_key
@@ -204,7 +214,12 @@ impl ModelDriver for GeminiDriver {
             .collect())
     }
 
-    async fn embed_batch(&self, model: &str, texts: &[String], config: Option<Value>) -> Result<Vec<Vec<f32>>, String> {
+    async fn embed_batch(
+        &self,
+        model: &str,
+        texts: &[String],
+        config: Option<Value>,
+    ) -> Result<Vec<Vec<f32>>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:batchEmbedContents?key={}",
             model, self.api_key
@@ -217,7 +232,7 @@ impl ModelDriver for GeminiDriver {
                     "model": format!("models/{}", model),
                     "content": { "parts": [{ "text": t }] }
                 });
-                
+
                 // Merge optional config into each request in the batch
                 if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
                     if let Some(req_obj) = req.as_object_mut() {

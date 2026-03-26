@@ -1,6 +1,5 @@
 /// Parser for @@result blocks (system-injected tool/workflow results)
 /// Format: name: {"json": "object"}
-
 use serde_json::Value;
 
 pub fn parse_results(input: &str) -> Vec<(String, Value)> {

@@ -1,21 +1,21 @@
 /// Integration tests for block protocol
-
 use ir_runtime::intent_parser::block_orchestrator::BlockOrchestrator;
+use serde_json::json;
 use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_chat_to_response_text() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@chat\nHello world\n@@end");
+    orch.write("<response_text>Hello world</response_text>");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -28,15 +28,17 @@ fn test_chat_to_response_text() {
 fn test_tool_to_tool_call() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("tool_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@tool\nfetch_session(session_id = \"sess_123\")\nget_user(user_id = \"usr_456\")\n@@end");
+    orch.write(
+        "[tool_call: fetch_session]\nsession_id: \"sess_123\"\n[/tool]\n[tool_call: get_user]\nuser_id: \"usr_456\"\n[/tool]",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -52,21 +54,39 @@ fn test_tool_to_tool_call() {
 fn test_out_to_response_schema() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_schema");
-    
+    orch.register_output_shape(
+        &json!({
+            "session_id": { "type": "string", "optional": false },
+            "user": {
+                "type": {
+                    "type": "object",
+                    "properties": {
+                        "id": { "type": "string", "optional": false },
+                        "name": { "type": "string", "optional": false }
+                    }
+                },
+                "optional": false
+            }
+        }),
+        None,
+    );
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@out ContextCompilerOutput\n{session_id: \"sess_123\", user: {id: \"usr_456\", name: \"Nana\"}}\n@@end");
+    orch.write(
+        "[schema: Output]\nsession_id: \"sess_123\"\nuser_id: \"usr_456\"\nuser_name: \"Nana\"\n[/schema]",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0, "response_schema");
-    assert_eq!(results[0].1["type"], "ContextCompilerOutput");
+    assert_eq!(results[0].1["type"], "Output");
     assert_eq!(results[0].1["response"]["session_id"], "sess_123");
     assert_eq!(results[0].1["response"]["user"]["name"], "Nana");
 }
@@ -75,15 +95,17 @@ fn test_out_to_response_schema() {
 fn test_workflow_to_workflow_call() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("workflow_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@workflow\nprocess_data(input = \"test\", config = {timeout = 30})\n@@end");
+    orch.write(
+        "[workflow_call: process_data]\ninput: \"test\"\nconfig: { timeout: 30 }\n[/workflow]",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -97,15 +119,15 @@ fn test_workflow_to_workflow_call() {
 fn test_helper_to_helper_call() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("helper_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@helper\nStoryTeller(city = \"Accra\", days = 3)\n@@end");
+    orch.write("[helper_call: StoryTeller]\ncity: \"Accra\"\ndays: 3\n[/helper]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -120,27 +142,29 @@ fn test_multi_block_response() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
     orch.register_intent("tool_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
     let input = r#"
-@@chat
+<response_text>
 Let me fetch that data.
-@@end
+</response_text>
 
-@@tool
-fetch_session(session_id = "sess_123")
-get_user(user_id = "usr_456")
-@@end
+[tool_call: fetch_session]
+session_id: "sess_123"
+[/tool]
+[tool_call: get_user]
+user_id: "usr_456"
+[/tool]
 
-@@chat
+<response_text>
 Here's the result.
-@@end
+</response_text>
 "#;
 
     orch.write(input);
@@ -159,10 +183,10 @@ fn test_implicit_chat() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
     orch.register_intent("tool_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
@@ -170,9 +194,9 @@ fn test_implicit_chat() {
     let input = r#"
 Let me help you.
 
-@@tool
-fetch(id = "123")
-@@end
+[tool_call: fetch]
+id: "123"
+[/tool]
 
 Here's the result.
 "#;
@@ -183,10 +207,20 @@ Here's the result.
     let results = emitted.lock().unwrap();
     assert_eq!(results.len(), 3); // implicit chat + tool + implicit chat
     assert_eq!(results[0].0, "response_text");
-    assert!(results[0].1["text"].as_str().unwrap().contains("Let me help"));
+    assert!(
+        results[0].1["text"]
+            .as_str()
+            .unwrap()
+            .contains("Let me help")
+    );
     assert_eq!(results[1].0, "tool_call");
     assert_eq!(results[2].0, "response_text");
-    assert!(results[2].1["text"].as_str().unwrap().contains("Here's the result"));
+    assert!(
+        results[2].1["text"]
+            .as_str()
+            .unwrap()
+            .contains("Here's the result")
+    );
 }
 
 #[test]
@@ -194,16 +228,15 @@ fn test_auto_close() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
     orch.register_intent("tool_call");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    // Missing @@end - should auto-close when next marker appears
-    orch.write("@@chat\nHello\n@@tool\nfetch(id = \"123\")");
+    orch.write("<response_text>\nHello\n[tool_call: fetch]\nid: \"123\"\n[/tool]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -216,17 +249,17 @@ fn test_auto_close() {
 fn test_last_wins_for_terminal() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    // Multiple chat blocks - in block protocol, each block is intentional and should be emitted
-    // The "last-wins" behavior applies to response_schema (structured output), not response_text
-    orch.write("@@chat\nFirst attempt\n@@end\n@@chat\nSecond attempt\n@@end\n@@chat\nFinal answer\n@@end");
+    orch.write(
+        "<response_text>First attempt</response_text><response_text>Second attempt</response_text><response_text>Final answer</response_text>",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -240,15 +273,17 @@ fn test_last_wins_for_terminal() {
 fn test_custom_intent() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("ask_user");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("@@ask_user\nconfirm(question = \"Are you sure?\", options = [\"yes\", \"no\"])\n@@end");
+    orch.write(
+        "[custom: ask_user]\nquestion: \"Are you sure?\"\noptions: [\"yes\", \"no\"]\n[/custom]",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -261,20 +296,131 @@ fn test_custom_intent() {
 fn test_last_wins_for_response_schema() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_schema");
-    
+
     let emitted = Arc::new(Mutex::new(Vec::new()));
     let emitted_clone = Arc::clone(&emitted);
-    
+
     orch.on_intent_ready(Arc::new(move |name, value| {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    // Multiple @@out blocks - should only emit the last one (last-wins for structured output)
-    orch.write("@@out Result\n{status: \"first\"}\n@@end\n@@out Result\n{status: \"second\"}\n@@end\n@@out Result\n{status: \"final\"}\n@@end");
+    orch.write(
+        "[schema: Result]\nstatus: \"first\"\n[/schema]\n[schema: Result]\nstatus: \"second\"\n[/schema]\n[schema: Result]\nstatus: \"final\"\n[/schema]",
+    );
     orch.end();
 
     let results = emitted.lock().unwrap();
     assert_eq!(results.len(), 1); // Only last one
     assert_eq!(results[0].0, "response_schema");
     assert_eq!(results[0].1["response"]["status"], "final");
+}
+
+#[test]
+fn test_tool_call_unflattens_nested_args_from_aliases() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+    orch.register_tool_shape(
+        "create_user",
+        &json!({
+            "profile": {
+                "type": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string", "optional": false },
+                        "contact": {
+                            "type": {
+                                "type": "object",
+                                "properties": {
+                                    "email": { "type": "string", "optional": false }
+                                }
+                            },
+                            "optional": false
+                        }
+                    }
+                },
+                "optional": false
+            }
+        }),
+        None,
+    );
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[tool_call: create_user]\nprofile_name: \"Ada\"\nprofile_contact_email: \"ada@test.com\"\n[/tool]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].1["args"]["profile"]["name"], "Ada");
+    assert_eq!(
+        results[0].1["args"]["profile"]["contact"]["email"],
+        "ada@test.com"
+    );
+}
+
+#[test]
+fn test_custom_intent_unflattens_nested_fields_from_aliases() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("Thoughts");
+    orch.register_custom_intent_shape(
+        "Thoughts",
+        &json!({
+            "trace": {
+                "type": {
+                    "type": "object",
+                    "properties": {
+                        "explain": { "type": "string", "optional": false }
+                    }
+                },
+                "optional": false
+            }
+        }),
+        None,
+    );
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[custom: Thoughts]\ntrace_explain: \"Need lookup first\"\n[/custom]");
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "Thoughts");
+    assert_eq!(results[0].1["trace"]["explain"], "Need lookup first");
+}
+
+#[test]
+fn test_malformed_close_tag_recovers_and_keeps_next_block() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+    orch.register_intent("response_text");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[tool_call: fetch]\nid: \"123\"\n[/workflow]\n<response_text>Done</response_text>");
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].0, "tool_call");
+    assert_eq!(results[0].1["args"]["id"], "123");
+    assert_eq!(results[1].0, "response_text");
+    assert_eq!(results[1].1["text"], "Done");
 }
