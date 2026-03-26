@@ -127,7 +127,6 @@ impl AuwgentEngine {
         let pending_intents = Arc::new(Mutex::new(Vec::new()));
         let intents_for_handler = Arc::clone(&pending_intents);
         let emitted_partial_intents = Arc::new(Mutex::new(std::collections::HashSet::new()));
-        let partials_for_handler = Arc::clone(&emitted_partial_intents);
 
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
             if let Ok(mut pending) = intents_for_handler.lock() {
@@ -137,19 +136,7 @@ impl AuwgentEngine {
                 let already_pending = pending.iter().any(|(n, v)| n == &name && v == &value);
 
                 if !already_pending {
-                    // Also check if this intent was emitted as a partial
-                    // If so, skip it to avoid duplicate emissions
-                    let value_hash = serde_json::to_string(&value).unwrap_or_default();
-                    let partial_key = (name.clone(), value_hash.clone());
-
-                    let was_partial = partials_for_handler
-                        .lock()
-                        .map(|partials| partials.contains(&partial_key))
-                        .unwrap_or(false);
-
-                    if !was_partial {
-                        pending.push((name, value));
-                    }
+                    pending.push((name, value));
                 }
             }
         }));
@@ -511,6 +498,7 @@ impl AuwgentEngine {
 
             self.current_raw_response.lock().unwrap().clear();
             self.pending_tool_results.lock().unwrap().clear();
+            self.emitted_partial_intents.lock().unwrap().clear();
             self.orchestrator.lock().unwrap().reset();
 
             // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
@@ -706,12 +694,6 @@ impl AuwgentEngine {
                     }
                 }
             }
-
-            // Log the raw model output for debugging
-            eprintln!(
-                "[RAW MODEL OUTPUT turn {}]\n{}\n[/RAW]",
-                loop_count, self.current_raw_response.lock().unwrap()
-            );
 
             // Finalize parsing
             let _final_val = self.orchestrator.lock().unwrap().end();

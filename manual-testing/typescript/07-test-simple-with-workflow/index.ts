@@ -11,15 +11,17 @@ const config: AuwgentConfig = {
     session_id: "session_" + Date.now()
   },
   apiKeys: {
+    //geminiApiKey:GEMINI_API_KEY,
     my_groq_apiApiKey: GROQ_API_KEY
   }
 }
 
 const agent = auwgent(config)
 
-console.log(agent.generatePrompt())
-
 agent.onIntent((name, value, agentName) => {
+
+  console.log("This block has to fire")
+
   if (name === "response_schema") {
     console.log("response_schema", value,"responding",agentName)
   }

@@ -7,7 +7,7 @@
           "type": "custom",
           "id": "my-groq-api",
           "url": "https://api.groq.com/openai/v1/chat/completions",
-          "modelName": "llama-3.3-70b-versatile",
+          "modelName": "openai/gpt-oss-120b",
           "config": null
         },
         "embedding": null,
@@ -1323,21 +1323,26 @@
     }
   ],
   "types": {
-    "QueryResult": {
+    "Product": {
       "isOutput": false,
       "properties": {
-        "success": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "message": {
+        "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "data": {
+        "id": {
           "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "price": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "stock": {
+          "type": "number",
           "optional": false,
           "description": null
         }
@@ -1346,17 +1351,12 @@
     "User": {
       "isOutput": false,
       "properties": {
-        "created_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "created_at": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1365,37 +1365,9 @@
           "type": "string",
           "optional": false,
           "description": null
-        }
-      }
-    },
-    "AnalysisReport": {
-      "isOutput": false,
-      "properties": {
-        "revenue": {
-          "type": "number",
-          "optional": false,
-          "description": null
         },
-        "total_orders": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_users": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_products": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         }
@@ -1404,8 +1376,25 @@
     "Order": {
       "isOutput": false,
       "properties": {
+        "total": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
         "id": {
           "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "status": {
+          "type": {
+            "type": "union",
+            "options": [
+              "pending",
+              "completed",
+              "cancelled"
+            ]
+          },
           "optional": false,
           "description": null
         },
@@ -1423,45 +1412,56 @@
           "type": "string",
           "optional": false,
           "description": null
-        },
-        "total": {
-          "type": "number",
+        }
+      }
+    },
+    "QueryResult": {
+      "isOutput": false,
+      "properties": {
+        "data": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "status": {
-          "type": {
-            "type": "union",
-            "options": [
-              "pending",
-              "completed",
-              "cancelled"
-            ]
-          },
+        "message": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "success": {
+          "type": "boolean",
           "optional": false,
           "description": null
         }
       }
     },
-    "Product": {
+    "AnalysisReport": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "price": {
+        "total_orders": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "name": {
-          "type": "string",
+        "revenue": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "stock": {
+        "total_users": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false,
+          "description": null
+        },
+        "total_products": {
           "type": "number",
           "optional": false,
           "description": null

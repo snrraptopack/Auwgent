@@ -19,7 +19,7 @@ intent SpeakLoud {
 
 agent Main {
     default config {
-        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile")
+        model:  custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
         prompt: {
             """
             You are a helpful database assistant. You can:

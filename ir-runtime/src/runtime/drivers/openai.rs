@@ -119,7 +119,6 @@ impl ModelDriver for OpenAIDriver {
                     }
 
                     if let Some(data) = trimmed.strip_prefix("data: ") {
-                        eprintln!("[RAW SSE CHUNK] {}", data);
                         if let Ok(json_val) = serde_json::from_str::<Value>(data) {
                             if let Some(content) =
                                 json_val["choices"][0]["delta"]["content"].as_str()
