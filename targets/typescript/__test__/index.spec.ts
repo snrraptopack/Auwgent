@@ -235,6 +235,41 @@ describe('TypedAuwgent', () => {
         expect(events).toEqual([]);
     });
 
+    it('adds response_text delta in onIntentPartial for realtime streaming', () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        let partialCallback: ((name: string, value: any, agentName: string) => void) | undefined;
+
+        native.onIntent = () => {};
+        native.onSubEngineStart = () => {};
+        native.onSubEngineComplete = () => {};
+        native.onLlmStart = () => {};
+        native.onLlmEnd = () => {};
+        native.onIntentPartial = (cb: (name: string, value: any, agentName: string) => void) => {
+            partialCallback = cb;
+        };
+
+        const deltas: string[] = [];
+        agent.onIntentPartial((name, value) => {
+            if (name === 'response_text') {
+                deltas.push((value as any).delta);
+            }
+        });
+
+        (agent as any).activateListeners();
+
+        partialCallback?.('response_text', { text: 'Hello' }, 'Main');
+        partialCallback?.('response_text', { text: 'Hello there' }, 'Main');
+
+        expect(deltas).toEqual(['Hello', ' there']);
+    });
+
     it('parseIR returns typed IR', () => {
         const ir = parseIR(IR_JSON);
         expect(ir.name).toBe('test-agent');

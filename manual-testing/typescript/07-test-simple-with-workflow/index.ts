@@ -18,6 +18,12 @@ const config: AuwgentConfig = {
 
 const agent = auwgent(config)
 
+agent.onIntentPartial((name, value,agentName) => {
+  if (name === "response_text") {
+    process.stdout.write(value.delta ?? "")
+  }
+})
+
 agent.onIntent((name, value, agentName) => {
 
   console.log("This block has to fire")

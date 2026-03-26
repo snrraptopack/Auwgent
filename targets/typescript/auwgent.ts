@@ -69,6 +69,7 @@ export class TypedAuwgent<
     private lastTurnIntentValue: any = null;
     private lastTurnIntentName: string | null = null;
     private lastTurnRawBlock: string | undefined = undefined;
+    private partialTextCursor = new Map<string, string>();
     private agentStack: string[] = [];
     private helperSessions = new Map<string, SessionState>();
 
@@ -315,6 +316,15 @@ export class TypedAuwgent<
         if (this.storedPartialHandler) {
             const partialHandler = this.storedPartialHandler;
             this.native.onIntentPartial((name: string, value: any, agentName: string) => {
+                if (name === 'response_text' && value && typeof value === 'object' && typeof value.text === 'string') {
+                    const key = `${agentName}:${name}`;
+                    const previous = this.partialTextCursor.get(key) ?? '';
+                    const current = value.text;
+                    const delta = current.startsWith(previous) ? current.slice(previous.length) : current;
+                    this.partialTextCursor.set(key, current);
+                    (partialHandler as any)(name, { ...value, delta }, agentName);
+                    return;
+                }
                 (partialHandler as any)(name, value, agentName);
             });
         }
@@ -424,6 +434,7 @@ export class TypedAuwgent<
     async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
+        this.partialTextCursor.clear();
         let currentSession = this.exportSession();
 
         // Activation / ThreadSafeFunction binding
