@@ -51,6 +51,7 @@ struct Checker {
     top_level_names: HashMap<String, (&'static str, Span)>,
     /// Context fields for validating ctx.property references
     context_fields: HashMap<String, Span>,
+    context_types: HashMap<String, state::Type>,
 }
 
 impl Checker {
@@ -62,6 +63,7 @@ impl Checker {
             helper_map: HashMap::new(),
             top_level_names: HashMap::new(),
             context_fields: HashMap::new(),
+            context_types: HashMap::new(),
         }
     }
 
@@ -109,11 +111,14 @@ impl Checker {
 
         // Collect context fields for ctx.property validation *before* other checks
         self.context_fields.clear();
+        self.context_types.clear();
         for config in &agent.configs {
             if let AgentConfig::Context(cc) = config {
                 for p in &cc.properties {
                     self.context_fields
                         .insert(p.name.value.clone(), p.name.span);
+                    self.context_types
+                        .insert(p.name.value.clone(), self.map_type_expr(&p.ty));
                 }
             }
         }
@@ -188,11 +193,14 @@ impl Checker {
 
         // Collect context fields for ctx.property validation *before* other checks
         self.context_fields.clear();
+        self.context_types.clear();
         for config in &helper.configs {
             if let AgentConfig::Context(cc) = config {
                 for p in &cc.properties {
                     self.context_fields
                         .insert(p.name.value.clone(), p.name.span);
+                    self.context_types
+                        .insert(p.name.value.clone(), self.map_type_expr(&p.ty));
                 }
             }
         }
@@ -433,4 +441,90 @@ impl Checker {
         }
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check;
+    use auwgent_lexer::tokenize;
+    use auwgent_parser::parse;
+
+    fn check_source(source: &str) -> Vec<String> {
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+
+        check(&model)
+            .into_iter()
+            .map(|diag| diag.message)
+            .collect()
+    }
+
+    #[test]
+    fn rejects_string_boolean_comparisons_in_workflows() {
+        let diagnostics = check_source(
+            r#"
+            agent Manager {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                context {
+                    user_type: string
+                }
+
+                workflow deleteAccount(id: string): { delete: boolean, reason?: string } {
+                    description: "delete with authorization checks"
+
+                    if (ctx.user_type == true) {
+                        return { delete: true }
+                    }
+
+                    return { delete: false, reason: "not allowed" }
+                }
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics
+                .iter()
+                .any(|message| message.contains("Cannot compare string with boolean")),
+            "expected string/boolean comparison error, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_non_boolean_if_conditions() {
+        let diagnostics = check_source(
+            r#"
+            agent Manager {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                workflow deleteAccount(id: string): { delete: boolean } {
+                    description: "delete with authorization checks"
+
+                    if ("admin") {
+                        return { delete: true }
+                    }
+
+                    return { delete: false }
+                }
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics
+                .iter()
+                .any(|message| message.contains("If-condition must be boolean")),
+            "expected boolean condition error, got {diagnostics:?}"
+        );
+    }
 }

@@ -61,6 +61,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     sections.push(generate_typed_dict(agent_name, "Context", ir.get("context")));
     sections.push(generate_tools_protocol(agent_name, &all_tools));
     sections.push(generate_custom_intents_union(ir, agent_name));
+    sections.push(generate_intent_typing(ir, agent_name));
 
     if !required_providers.is_empty() {
         sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
@@ -263,6 +264,233 @@ fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
     lines.join("\n") + "\n"
 }
 
+fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
+    let mut blocks = vec![
+        format!("class {agent_name}ResponseTextIntent(TypedDict, total=False):"),
+        "    text: str".to_string(),
+        String::new(),
+        format!("{agent_name}ResponseSchemaIntent = {agent_name}Output"),
+        String::new(),
+        format!("class {agent_name}ErrorIntent(TypedDict, total=False):"),
+        "    message: str".to_string(),
+    ];
+    let mut value_types = vec![
+        format!("{agent_name}ResponseTextIntent"),
+        format!("{agent_name}ResponseSchemaIntent"),
+        format!("{agent_name}ErrorIntent"),
+    ];
+    let mut workflow_call_types = Vec::new();
+    let mut workflow_result_types = Vec::new();
+    let mut helper_call_types = Vec::new();
+    let mut helper_result_types = Vec::new();
+
+    if let Some(workflows) = ir.get("workflows").and_then(Value::as_array) {
+        for workflow in workflows {
+            let flow_name = string_at(workflow, &["flowName"]).unwrap_or("workflow");
+            let safe_name = sanitize_python_type_name(flow_name);
+            let args_type_name = format!("{agent_name}{safe_name}WorkflowArgs");
+            let result_type_name = format!("{agent_name}{safe_name}WorkflowResultValue");
+            let call_type_name = format!("{agent_name}{safe_name}WorkflowCall");
+            let result_intent_name = format!("{agent_name}{safe_name}WorkflowResult");
+
+            blocks.push(generate_named_python_shape(
+                &args_type_name,
+                workflow.get("flowParams"),
+                "{}",
+                false,
+            ));
+            blocks.push(generate_named_python_shape(
+                &result_type_name,
+                workflow.get("returns"),
+                "str",
+                false,
+            ));
+            blocks.push(format!("class {call_type_name}(TypedDict, total=False):"));
+            blocks.push(format!("    type: Literal[\"{flow_name}\"]"));
+            blocks.push(format!("    args: {args_type_name}"));
+            blocks.push(String::new());
+            blocks.push(format!("class {result_intent_name}(TypedDict, total=False):"));
+            blocks.push(format!("    name: Literal[\"{flow_name}\"]"));
+            blocks.push(format!("    result: {result_type_name}"));
+            blocks.push(String::new());
+
+            value_types.push(call_type_name.clone());
+            value_types.push(result_intent_name.clone());
+            workflow_call_types.push(call_type_name);
+            workflow_result_types.push(result_intent_name);
+        }
+    }
+
+    if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
+        for helper in helpers {
+            let helper_name = string_at(helper, &["name"]).unwrap_or("Helper");
+            let safe_name = sanitize_python_type_name(helper_name);
+            let args_type_name = format!("{agent_name}{safe_name}HelperArgs");
+            let result_type_name = format!("{agent_name}{safe_name}HelperResultValue");
+            let call_type_name = format!("{agent_name}{safe_name}HelperCall");
+            let result_intent_name = format!("{agent_name}{safe_name}HelperResult");
+
+            blocks.push(generate_named_python_shape(
+                &args_type_name,
+                helper.get("input"),
+                "str",
+                true,
+            ));
+            blocks.push(generate_named_python_shape(
+                &result_type_name,
+                helper.get("output"),
+                "TypedDict('_TextOutput', {\"text\": str}, total=False)",
+                false,
+            ));
+            blocks.push(format!("class {call_type_name}(TypedDict, total=False):"));
+            blocks.push(format!("    type: Literal[\"{helper_name}\"]"));
+            blocks.push(format!("    args: {args_type_name}"));
+            blocks.push(String::new());
+            blocks.push(format!("class {result_intent_name}(TypedDict, total=False):"));
+            blocks.push(format!("    name: Literal[\"{helper_name}\"]"));
+            blocks.push(format!("    result: {result_type_name}"));
+            blocks.push(String::new());
+
+            value_types.push(call_type_name.clone());
+            value_types.push(result_intent_name.clone());
+            helper_call_types.push(call_type_name);
+            helper_result_types.push(result_intent_name);
+        }
+    }
+
+    blocks.push(format!(
+        "{agent_name}IntentValue = Union[\n    {},\n]",
+        value_types.join(",\n    ")
+    ));
+    blocks.push(String::new());
+    blocks.push(format!(
+        "{agent_name}IntentHandler = Callable[[str, {agent_name}IntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"
+    ));
+    blocks.push(format!(
+        "{agent_name}PartialIntentHandler = Callable[[str, {agent_name}IntentValue, str], None]"
+    ));
+    blocks.push(String::new());
+    blocks.push(format!("class {agent_name}IntentHandlers(TypedDict, total=False):"));
+    blocks.push(format!(
+        "    response_text: Callable[[{agent_name}ResponseTextIntent, str], Awaitable[Any]]"
+    ));
+    blocks.push(format!(
+        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent, str], Awaitable[Any]]"
+    ));
+    blocks.push(format!(
+        "    error: Callable[[{agent_name}ErrorIntent, str], Awaitable[Any]]"
+    ));
+    if !workflow_call_types.is_empty() {
+        blocks.push(format!(
+            "    workflow_call: Callable[[Union[{}], str], Awaitable[Any]]",
+            workflow_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "    workflow_result: Callable[[Union[{}], str], Awaitable[Any]]",
+            workflow_result_types.join(", ")
+        ));
+    }
+    if !helper_call_types.is_empty() {
+        blocks.push(format!(
+            "    helper_call: Callable[[Union[{}], str], Awaitable[Any]]",
+            helper_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "    helper_result: Callable[[Union[{}], str], Awaitable[Any]]",
+            helper_result_types.join(", ")
+        ));
+    }
+    blocks.push(String::new());
+    blocks.push(format!("class {agent_name}PartialIntentHandlers(TypedDict, total=False):"));
+    blocks.push(format!(
+        "    response_text: Callable[[{agent_name}ResponseTextIntent, str], None]"
+    ));
+    blocks.push(format!(
+        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent, str], None]"
+    ));
+    blocks.push(format!(
+        "    error: Callable[[{agent_name}ErrorIntent, str], None]"
+    ));
+    if !workflow_call_types.is_empty() {
+        blocks.push(format!(
+            "    workflow_call: Callable[[Union[{}], str], None]",
+            workflow_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "    workflow_result: Callable[[Union[{}], str], None]",
+            workflow_result_types.join(", ")
+        ));
+    }
+    if !helper_call_types.is_empty() {
+        blocks.push(format!(
+            "    helper_call: Callable[[Union[{}], str], None]",
+            helper_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "    helper_result: Callable[[Union[{}], str], None]",
+            helper_result_types.join(", ")
+        ));
+    }
+
+    blocks.join("\n") + "\n"
+}
+
+fn sanitize_python_type_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect();
+
+    if sanitized.is_empty() {
+        "Value".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn generate_named_python_shape(
+    type_name: &str,
+    value: Option<&Value>,
+    null_fallback: &str,
+    unwrap_input_kind: bool,
+) -> String {
+    if let Some(shape) = value {
+        if let Some(properties) = python_shape_properties(shape, unwrap_input_kind) {
+            return generate_typed_dict_raw(type_name, Some(&properties));
+        }
+
+        return format!("{type_name} = {}\n", python_shape_type(shape, null_fallback));
+    }
+
+    format!("{type_name} = {null_fallback}\n")
+}
+
+fn python_shape_properties(value: &Value, unwrap_input_kind: bool) -> Option<Value> {
+    match value {
+        Value::Object(obj) if unwrap_input_kind => match obj.get("kind").and_then(Value::as_str) {
+            Some("properties") => obj.get("fields").cloned(),
+            _ => None,
+        },
+        Value::Object(obj) => {
+            if obj.get("type").and_then(Value::as_str) == Some("object") {
+                obj.get("properties").cloned()
+            } else if obj.contains_key("type") {
+                None
+            } else {
+                Some(Value::Object(obj.clone()))
+            }
+        }
+        _ => None,
+    }
+}
+
+fn python_shape_type(value: &Value, null_fallback: &str) -> String {
+    match value {
+        Value::Null => null_fallback.to_string(),
+        _ => type_to_python_string(value),
+    }
+}
+
 fn generate_api_keys(
     agent_name: &str,
     providers: &std::collections::BTreeSet<String>,
@@ -324,6 +552,11 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
         format!("AuwgentAgent = {agent_name}Agent"),
         format!("AuwgentMiddleware = {agent_name}Middleware"),
         format!("AuwgentContext = {agent_name}Context"),
+        format!("AuwgentIntentValue = {agent_name}IntentValue"),
+        format!("AuwgentIntentHandler = {agent_name}IntentHandler"),
+        format!("AuwgentPartialIntentHandler = {agent_name}PartialIntentHandler"),
+        format!("AuwgentIntentHandlers = {agent_name}IntentHandlers"),
+        format!("AuwgentPartialIntentHandlers = {agent_name}PartialIntentHandlers"),
     ]
     .join("\n")
 }
@@ -462,5 +695,52 @@ mod tests {
         assert!(output.contains("my_groqApiKey: str"));
         assert!(!output.contains("customUrl: NotRequired[str]"));
         assert!(output.contains("main.agent.json"));
+    }
+
+    #[test]
+    fn emits_python_intent_typing_for_workflows_and_helpers() {
+        let ir = json!({
+            "name": "Manager",
+            "modelConfig": [],
+            "input": null,
+            "output": {
+                "approved": { "type": "boolean", "optional": false }
+            },
+            "context": null,
+            "tools": [],
+            "workflows": [{
+                "flowName": "deleteAccount",
+                "flowParams": {
+                    "id": { "type": "string", "optional": false }
+                },
+                "returns": {
+                    "type": "object",
+                    "properties": {
+                        "delete": { "type": "boolean", "optional": false }
+                    }
+                }
+            }],
+            "helpers": [{
+                "name": "Reviewer",
+                "input": {
+                    "kind": "properties",
+                    "fields": {
+                        "text": { "type": "string", "optional": false }
+                    }
+                },
+                "output": {
+                    "type": "object",
+                    "properties": {
+                        "approved": { "type": "boolean", "optional": false }
+                    }
+                }
+            }]
+        });
+
+        let output = generate(&ir, "main");
+        assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
+        assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
+        assert!(output.contains("ManagerIntentHandler = Callable[[str, ManagerIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"));
+        assert!(output.contains("class ManagerIntentHandlers(TypedDict, total=False):"));
     }
 }

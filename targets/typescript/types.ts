@@ -65,6 +65,70 @@ export interface AgentIRShape {
     customIntents?: readonly IRCustomIntentDef[];
 }
 
+type PrimitiveTypeName = 'string' | 'Text' | 'text' | 'number' | 'int' | 'float' | 'boolean' | 'bool';
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+type NormalizePrimitive<T> =
+    T extends 'string' | 'Text' | 'text' ? string :
+    T extends 'number' | 'int' | 'float' ? number :
+    T extends 'boolean' | 'bool' ? boolean :
+    never;
+
+type NormalizeUnionOption<T> =
+    T extends PrimitiveTypeName ? NormalizePrimitive<T> :
+    T extends string ? T :
+    IRSchemaToType<T>;
+
+type IsRawPropertyMap<T> =
+    T extends Record<string, any>
+    ? [keyof T] extends [never]
+        ? false
+        : T[keyof T] extends { type?: any }
+            ? true
+            : false
+    : false;
+
+type RequiredPropertyKeys<T extends Record<string, any>> = {
+    [K in keyof T]-?: T[K] extends { optional: true } ? never : K;
+}[keyof T];
+
+type OptionalPropertyKeys<T extends Record<string, any>> = {
+    [K in keyof T]-?: T[K] extends { optional: true } ? K : never;
+}[keyof T];
+
+type PropertyValueType<T> =
+    T extends { type: infer U } ? IRSchemaToType<U> : IRSchemaToType<T>;
+
+type PropertyMapToType<T extends Record<string, any>> = Simplify<
+    { [K in RequiredPropertyKeys<T>]: PropertyValueType<T[K]> } &
+    { [K in OptionalPropertyKeys<T>]?: PropertyValueType<T[K]> }
+>;
+
+export type IRSchemaToType<T> =
+    [T] extends [null | undefined] ? never :
+    T extends string ? (NormalizePrimitive<T> extends never ? T : NormalizePrimitive<T>) :
+    T extends { kind: 'properties', fields: infer F extends Record<string, any> } ? PropertyMapToType<F> :
+    T extends { type: infer U }
+    ? U extends 'array'
+        ? T extends { items: infer I } ? IRSchemaToType<I>[] : unknown[]
+        : U extends 'object'
+            ? T extends { properties: infer P extends Record<string, any> } ? PropertyMapToType<P> : Record<string, unknown>
+            : U extends 'union'
+                ? T extends { options: infer O extends readonly any[] } ? NormalizeUnionOption<O[number]> : unknown
+                : U extends 'typeRef'
+                    ? unknown
+                    : U extends PrimitiveTypeName
+                        ? NormalizePrimitive<U>
+                        : U extends object
+                            ? IRSchemaToType<U>
+                            : unknown
+    : IsRawPropertyMap<T> extends true
+        ? PropertyMapToType<Extract<T, Record<string, any>>>
+        : T;
+
+type ResolveShape<T, NullFallback> =
+    [T] extends [null | undefined] ? NullFallback : IRSchemaToType<T>;
+
 export type ExtractToolNames<IR extends AgentIRShape> =
     IR['tools'][number]['name'];
 
@@ -73,26 +137,43 @@ export type ExtractHelperNames<IR extends AgentIRShape> =
     ? IR['helpers'][number]['name']
     : never;
 
+type ExtractToolDef<IR extends AgentIRShape, K extends ExtractToolNames<IR>> =
+    Extract<IR['tools'][number], { name: K }>;
+
+type ExtractToolArgsFromIR<IR extends AgentIRShape, K extends ExtractToolNames<IR>> =
+    ExtractToolDef<IR, K> extends { params: infer P } ? ResolveShape<P, Record<string, never>> : Record<string, never>;
+
+type ExtractToolResultFromIR<IR extends AgentIRShape, K extends ExtractToolNames<IR>> =
+    ExtractToolDef<IR, K> extends { returns: infer R } ? ResolveShape<R, unknown> : unknown;
+
+type ExtractWorkflowArgs<W> =
+    W extends { flowParams: infer P } ? ResolveShape<P, Record<string, never>> : Record<string, never>;
+
+type ExtractWorkflowResult<W> =
+    W extends { returns: infer R } ? ResolveShape<R, unknown> : unknown;
+
+type ExtractHelperInput<H> =
+    H extends { input: infer I } ? ResolveShape<I, string> : string;
+
+type ExtractHelperOutput<H> =
+    H extends { output: infer O } ? ResolveShape<O, { text: string }> : { text: string };
+
 /** 
  * Collects all possible output shapes from the root agent AND all its helpers.
  * Used to ensure `response_schema` autocompletion works for everything.
  */
 export type CollectAllOutputs<IR extends AgentIRShape> =
-    | (IR['output'] extends Record<string, any> ? IR['output'] : never)
+    | ResolveShape<IR['output'], never>
     | (IR['helpers'] extends readonly any[]
-        ? (IR['helpers'][number] extends { output: infer O }
-            ? (O extends Record<string, any> ? (O['type'] extends Record<string, any> ? O['type'] : O) : never)
-            : never)
+        ? ExtractHelperOutput<IR['helpers'][number]>
         : never);
 
 export type ToolRegistry<IR extends AgentIRShape> = {
-    [K in ExtractToolNames<IR>]: (args: Record<string, unknown>) => Promise<unknown>;
+    [K in ExtractToolNames<IR>]: (args: ExtractToolArgsFromIR<IR, K>) => Promise<ExtractToolResultFromIR<IR, K>>;
 };
 
 export type ExtractInputShape<IR extends AgentIRShape> =
-    IR['input'] extends { kind: 'properties', fields: infer F extends Record<string, any> }
-    ? { [K in keyof F]: any } // Can be further refined by mapping 'string'|'number'|'boolean'
-    : string;
+    ResolveShape<IR['input'], string>;
 
 
 // ── Provider type extraction ─────────────────────────────────────────────
@@ -213,7 +294,7 @@ export type WorkflowIntents<IR extends AgentIRShape> =
     ? (IR['workflows'][number] extends never ? never :
         IR['workflows'][number] extends infer W extends IRWorkflowDef
         ? W extends { flowName: infer N extends string }
-        ? (WorkflowCallIntent<N, any> | WorkflowResultIntent<N, W['returns']>)
+        ? (WorkflowCallIntent<N, ExtractWorkflowArgs<W>> | WorkflowResultIntent<N, ExtractWorkflowResult<W>>)
         : (WorkflowCallIntent | WorkflowResultIntent)
         : never
     )
@@ -224,7 +305,7 @@ export type HelperIntents<IR extends AgentIRShape> =
     ? (IR['helpers'][number] extends never ? never :
         IR['helpers'][number] extends infer H extends IRHelperDef
         ? H extends { name: infer N extends string }
-        ? (HelperCallIntent<N, any> | HelperResultIntent<N, any>)
+        ? (HelperCallIntent<N, ExtractHelperInput<H>> | HelperResultIntent<N, ExtractHelperOutput<H>>)
         : (HelperCallIntent | HelperResultIntent)
         : never
     )
@@ -291,7 +372,7 @@ export type AuwgentTargetedResponseValue<
     ? AuwgentResponseValue<IR, Custom, Output, Tools>
     : (IR['helpers'] extends readonly any[]
         ? (Extract<IR['helpers'][number], { name: T }> extends { output: infer O }
-            ? (O extends null ? { text: string } : O)
+            ? ExtractHelperOutput<{ output: O }>
             : { text: string })
         : { text: string });
 

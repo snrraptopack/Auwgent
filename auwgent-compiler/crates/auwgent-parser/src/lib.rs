@@ -105,3 +105,38 @@ fn get_help(expected: &[String], found: &str) -> Option<String> {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse;
+    use auwgent_lexer::tokenize;
+
+    #[test]
+    fn workflow_return_object_literal_parses_inside_if_else() {
+        let source = r#"
+        agent Manager {
+            context {
+                user_type: string
+            }
+
+            workflow deleteAccount(id: string): { delete: boolean, reason?: string } {
+                description: "This is used to delete someone account with checks and safer way"
+                tool delete(id: string): boolean @desc "used to delete someone account"
+
+                if (ctx.user_type == "admin") {
+                    let result = delete(id)
+                    return { delete: result }
+                }
+
+                return { delete: false, reason: "You are not authorized to delete accounts" }
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (_model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+    }
+}

@@ -62,7 +62,6 @@ impl Checker {
         // Temporarily register scoped tools into a local map so check_statements
         // can resolve them without emitting false 'Unknown tool' errors.
         // We check them here without requiring descriptions (they are stubs).
-        let mut scoped_tool_names: Vec<String> = Vec::new();
         for tf in &wf.tool_configs {
             if let Some(ret) = &tf.returns {
                 self.check_type_ref_exists(ret, diags);
@@ -75,10 +74,9 @@ impl Checker {
             for p in &tf.params {
                 self.check_type_ref_exists(&p.ty, diags);
             }
-            scoped_tool_names.push(tf.name.value.clone());
         }
 
-        self.check_statements(&wf.body, &mut env, &mut bindings, &expected, diags, &scoped_tool_names);
+        self.check_statements(&wf.body, &mut env, &mut bindings, &expected, diags);
     }
 
     pub(crate) fn check_statements(
@@ -88,7 +86,6 @@ impl Checker {
         bindings: &mut HashMap<String, (&'static str, Span)>,
         expected_return: &Type,
         diags: &mut Vec<Diagnostic>,
-        scoped_tool_names: &[String],
     ) {
         for stmt in stmts {
             match stmt {
@@ -152,7 +149,6 @@ impl Checker {
                         &mut then_bindings,
                         expected_return,
                         diags,
-                        scoped_tool_names,
                     );
                     if !ifs.else_block.is_empty() {
                         let mut else_env = env.extend();
@@ -163,13 +159,12 @@ impl Checker {
                             &mut else_bindings,
                             expected_return,
                             diags,
-                            scoped_tool_names,
                         );
                     }
                 }
                 Statement::Transfer(_) => {}
                 Statement::Parallel(ps) => {
-                    self.check_statements(&ps.body, env, bindings, expected_return, diags, scoped_tool_names);
+                    self.check_statements(&ps.body, env, bindings, expected_return, diags);
                 }
             }
         }
@@ -199,8 +194,17 @@ impl Checker {
                 self.check_condition(left, env, diags);
                 self.check_condition(right, env, diags);
             }
-            Condition::Boolean { value, .. } => {
-                self.infer_expression(value, env, diags);
+            Condition::Boolean { value, span } => {
+                let value_ty = self.infer_expression(value, env, diags);
+                if !self.types_compatible(&Type::boolean(), &value_ty) {
+                    diags.push(Diagnostic::error(
+                        format!(
+                            "If-condition must be boolean, got {}",
+                            value_ty.format()
+                        ),
+                        *span,
+                    ));
+                }
             }
         }
     }
@@ -336,7 +340,11 @@ impl Checker {
                         .with_help(help),
                     );
                 }
-                Type::string()
+                self.context_types
+                    .get(&cr.property.value)
+                    .cloned()
+                    .or_else(|| env.get(&cr.property.value).cloned())
+                    .unwrap_or_else(Type::string)
             }
             Expr::HelperCall(hc) => {
                 // Look up the helper definition

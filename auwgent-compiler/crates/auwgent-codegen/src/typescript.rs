@@ -28,10 +28,12 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
             .iter()
             .map(|workflow| {
                 let flow_name = string_at(workflow, &["flowName"]).unwrap_or_default();
+                let flow_params = workflow.get("flowParams").unwrap_or(&Value::Null);
                 let returns = workflow.get("returns").unwrap_or(&Value::Null);
                 format!(
-                    "{{ flowName: \"{}\"; returns: {} }}",
+                    "{{ flowName: \"{}\"; flowParams: {}; returns: {} }}",
                     flow_name,
+                    workflow_params_to_ts_string(flow_params),
                     type_to_ts_string(returns)
                 )
             })
@@ -43,8 +45,18 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     let helper_types = match ir.get("helpers").and_then(Value::as_array) {
         Some(helpers) if !helpers.is_empty() => helpers
             .iter()
-            .filter_map(|helper| string_at(helper, &["name"]))
-            .map(|name| format!("{{ name: \"{}\" }}", name))
+            .filter_map(|helper| {
+                let name = string_at(helper, &["name"])?;
+                let input = helper.get("input").unwrap_or(&Value::Null);
+                let output = helper.get("output").unwrap_or(&Value::Null);
+
+                Some(format!(
+                    "{{ name: \"{}\"; input: {}; output: {} }}",
+                    name,
+                    helper_input_to_ts_string(input),
+                    helper_output_to_ts_string(output)
+                ))
+            })
             .collect::<Vec<_>>()
             .join(" | "),
         _ => "undefined".to_string(),
@@ -228,6 +240,34 @@ fn generate_raw_object_type(value: &Value) -> String {
         }
     }
     format!("{{ {} }}", props.join("; "))
+}
+
+fn workflow_params_to_ts_string(value: &Value) -> String {
+    value
+        .as_object()
+        .map(|_| generate_raw_object_type(value))
+        .unwrap_or_else(|| "{}".to_string())
+}
+
+fn helper_input_to_ts_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Object(obj) => match obj.get("kind").and_then(Value::as_str) {
+            Some("properties") => obj
+                .get("fields")
+                .map(generate_raw_object_type)
+                .unwrap_or_else(|| "{}".to_string()),
+            _ => type_to_ts_string(value),
+        },
+        _ => type_to_ts_string(value),
+    }
+}
+
+fn helper_output_to_ts_string(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        _ => type_to_ts_string(value),
+    }
 }
 
 fn generate_helper_output_interface(helper: &Value) -> String {
@@ -604,5 +644,49 @@ mod tests {
         assert!(output.contains("./main.agent.json"));
         assert!(output.contains("my_groqApiKey: string;"));
         assert!(!output.contains("customUrl?: string;"));
+    }
+
+    #[test]
+    fn emits_workflow_and_helper_shape_metadata_for_runtime_narrowing() {
+        let ir = json!({
+            "name": "Test",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [{
+                "flowName": "deleteAccount",
+                "flowParams": {
+                    "id": { "type": "string", "optional": false }
+                },
+                "returns": {
+                    "type": "object",
+                    "properties": {
+                        "delete": { "type": "boolean", "optional": false },
+                        "reason": { "type": "string", "optional": true }
+                    }
+                }
+            }],
+            "helpers": [{
+                "name": "Reviewer",
+                "input": {
+                    "kind": "properties",
+                    "fields": {
+                        "text": { "type": "string", "optional": false }
+                    }
+                },
+                "output": {
+                    "type": "object",
+                    "properties": {
+                        "approved": { "type": "boolean", "optional": false }
+                    }
+                }
+            }]
+        });
+
+        let output = generate(&ir, "main");
+        assert!(output.contains("flowName: \"deleteAccount\"; flowParams: { id: string }; returns: { delete: boolean; reason: string }"));
+        assert!(output.contains("name: \"Reviewer\"; input: { text: string }; output: { approved: boolean }"));
     }
 }

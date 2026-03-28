@@ -11,15 +11,22 @@ use crate::primitives::*;
 
 pub(crate) fn object_literal_parser(
 ) -> impl Parser<TokenKind, ObjectLiteral, Error = Simple<TokenKind>> + Clone {
-    let obj_prop = property_name()
-        .then(tok(TokenKind::Colon).ignore_then(expr_parser()).or_not())
+    let obj_prop_with_value = property_name()
+        .then_ignore(tok(TokenKind::Colon))
+        .then(expr_parser())
         .map_with_span(|(name, value), span| PropertyValue {
             name,
-            value,
+            value: Some(value),
             span: s(span),
         });
 
-    obj_prop
+    let obj_shorthand_prop = property_name().map_with_span(|name, span| PropertyValue {
+            name,
+            value: None,
+            span: s(span),
+        });
+
+    choice((obj_prop_with_value, obj_shorthand_prop))
         .separated_by(tok(TokenKind::Comma))
         .allow_trailing()
         .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
@@ -87,15 +94,22 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             });
 
         // Object literal: { name: expr, ... }
-        let obj_prop = property_name()
-            .then(tok(TokenKind::Colon).ignore_then(expr.clone()).or_not())
+        let obj_prop_with_value = property_name()
+            .then_ignore(tok(TokenKind::Colon))
+            .then(expr.clone())
             .map_with_span(|(name, value), span| PropertyValue {
                 name,
-                value,
+                value: Some(value),
                 span: s(span),
             });
 
-        let object_lit = obj_prop
+        let obj_shorthand_prop = property_name().map_with_span(|name, span| PropertyValue {
+                name,
+                value: None,
+                span: s(span),
+            });
+
+        let object_lit = choice((obj_prop_with_value, obj_shorthand_prop))
             .separated_by(tok(TokenKind::Comma))
             .allow_trailing()
             .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
