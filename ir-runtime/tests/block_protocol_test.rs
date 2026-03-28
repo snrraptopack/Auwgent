@@ -424,3 +424,26 @@ fn test_malformed_close_tag_recovers_and_keeps_next_block() {
     assert_eq!(results[1].0, "response_text");
     assert_eq!(results[1].1["text"], "Done");
 }
+
+#[test]
+fn test_partial_response_text_does_not_emit_incomplete_open_tag() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("response_text");
+
+    let partials = Arc::new(Mutex::new(Vec::new()));
+    let partials_clone = Arc::clone(&partials);
+
+    orch.on_intent_partial(Arc::new(move |name, value| {
+        partials_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("<response_text");
+    assert!(partials.lock().unwrap().is_empty());
+
+    orch.write(">Hello");
+
+    let partials = partials.lock().unwrap();
+    assert_eq!(partials.len(), 1);
+    assert_eq!(partials[0].0, "response_text");
+    assert_eq!(partials[0].1["text"], "Hello");
+}

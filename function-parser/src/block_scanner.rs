@@ -75,6 +75,17 @@ impl BlockScanner {
         true
     }
 
+    fn check_incomplete_response_text_open(&self) -> bool {
+        const OPEN_TAG: &str = "<response_text>";
+        let remaining_len = self.chars.len().saturating_sub(self.pos);
+        if remaining_len == 0 || remaining_len >= OPEN_TAG.chars().count() {
+            return false;
+        }
+
+        let remaining: String = self.chars[self.pos..].iter().collect();
+        OPEN_TAG.starts_with(&remaining)
+    }
+
     fn try_read_header(&self) -> Option<String> {
         if self.peek() != Some('[') {
             return None;
@@ -150,6 +161,10 @@ impl BlockScanner {
                 break;
             }
 
+            if self.check_incomplete_response_text_open() {
+                break;
+            }
+
             if let Some(header) = self.try_read_header() {
                 if self.parse_header(&header).is_some() || self.is_known_closing_header(&header) {
                     break;
@@ -187,6 +202,16 @@ impl BlockScanner {
                     content,
                     target_name: None,
                 });
+            } else if self.check_incomplete_response_text_open() {
+                if !implicit_chat.trim().is_empty() {
+                    blocks.push(Block {
+                        block_type: BlockType::Chat,
+                        content: implicit_chat.trim().to_string(),
+                        target_name: None,
+                    });
+                    implicit_chat.clear();
+                }
+                break;
             } else if let Some(header) = self.try_read_header() {
                 if let Some((block_type, target_name, close_literal)) = self.parse_header(&header) {
                     if !implicit_chat.trim().is_empty() {
@@ -308,5 +333,25 @@ mod tests {
         assert_eq!(blocks[0].content, "id: \"123\"");
         assert_eq!(blocks[1].block_type, BlockType::Chat);
         assert_eq!(blocks[1].content, "Done");
+    }
+
+    #[test]
+    fn test_incomplete_response_text_open_is_not_emitted_as_chat() {
+        let input = "<response_text";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_incomplete_response_text_open_flushes_prior_chat_only() {
+        let input = "Hello<response_text";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hello");
     }
 }

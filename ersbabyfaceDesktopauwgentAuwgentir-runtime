@@ -1,0 +1,44 @@
+warning: in the working copy of 'ARCHITECTURE_EVOLUTION.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ir-runtime/src/runtime/bridge.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ir-runtime/src/runtime/engine.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/07-test-simple-with-workflow/generated/main.agent.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/07-test-simple-with-workflow/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/08-simple-test-workflow-conditonals/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/09-test-simple-workflow-tool-ref/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/10-test-simple-workflow-context-ref/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/11-test-simple-helper/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/12-test-simple-helper-with-tools/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/13-test-simple-helper-inherited-tools/generated/main.agent.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/13-test-simple-helper-inherited-tools/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/14-simple-test-workflow-helper/generated/main.agent.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/14-simple-test-workflow-helper/generated/main.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/stack-repro/generated/stack_test.agent.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'manual-testing/typescript/stack-repro/generated/stack_test.agent.types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'targets/python/src/lib.rs', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'targets/typescript/__test__/index.spec.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'targets/typescript/index.d.ts', LF will be replaced by CRLF the next time Git touches it
+ ARCHITECTURE_EVOLUTION.md                          | 435 [32m+++++++++++++++++++[m[31m--[m
+ ir-runtime/src/runtime/bridge.rs                   |  33 [32m++[m
+ ir-runtime/src/runtime/engine.rs                   | 409 [32m++++++++++++++++++[m[31m-[m
+ .../generated/main.agent.json                      | 110 [32m+++[m[31m---[m
+ .../generated/main.agent.types.ts                  |  42 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.json                      |   4 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   2 [32m+[m[31m-[m
+ .../generated/main.agent.json                      |   4 [32m+[m[31m-[m
+ .../generated/main.agent.types.ts                  |   4 [32m+[m[31m-[m
+ .../stack-repro/generated/stack_test.agent.json    |   4 [32m+[m[31m-[m
+ .../generated/stack_test.agent.types.ts            |   2 [32m+[m[31m-[m
+ targets/python/auwgent_sdk.py                      | 268 [32m++++++[m[31m-------[m
+ targets/python/auwgent_sdk/__init__.py             | 268 [32m++++++[m[31m-------[m
+ targets/python/src/lib.rs                          |  72 [32m++[m[31m--[m
+ targets/typescript/__test__/index.spec.ts          |   7 [32m+[m[31m-[m
+ .../typescript/auwgent-runtime.win32-x64-msvc.node | Bin [31m5419008[m -> [32m10481664[m bytes
+ targets/typescript/auwgent.ts                      | 322 [32m+++++++[m[31m--------[m
+ targets/typescript/index.d.ts                      |   5 [32m+[m[31m-[m
+ targets/typescript/src/lib.rs                      |  87 [32m+[m[31m----[m
+ 24 files changed, 1319 insertions(+), 769 deletions(-)

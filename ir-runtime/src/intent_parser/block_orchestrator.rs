@@ -142,7 +142,10 @@ impl BlockOrchestrator {
         if blocks.is_empty() {
             // Fallback: treat entire buffer as implicit chat
             let trimmed = self.buffer.trim();
-            if !trimmed.is_empty() && self.intent_keys.contains("response_text") {
+            if !trimmed.is_empty()
+                && self.intent_keys.contains("response_text")
+                && !is_incomplete_response_text_open(trimmed)
+            {
                 let intent = serde_json::json!({ "text": trimmed });
                 self.emit_intent("response_text", intent, is_final, true);
             }
@@ -358,6 +361,14 @@ fn parse_schema_content(content: &str) -> Result<ASTValue, String> {
     } else {
         parse_assignment_object(trimmed).map(ASTValue::Object)
     }
+}
+
+fn is_incomplete_response_text_open(input: &str) -> bool {
+    const OPEN_TAG: &str = "<response_text>";
+    let trimmed = input.trim_start();
+    !trimmed.is_empty()
+        && trimmed.len() < OPEN_TAG.len()
+        && OPEN_TAG.starts_with(trimmed)
 }
 
 // Convert ASTValue to serde_json::Value

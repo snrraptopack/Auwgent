@@ -18,8 +18,8 @@ export function startRepl(agent: any) {
 
         try {
           let session = await agent.run(trimmed)
-          console.log("This log is from the repl loop file")
-            console.log(JSON.stringify(session.turns, null, 2))
+          //console.log("This log is from the repl loop file")
+           // console.log(JSON.stringify(session.turns, null, 2))
         } catch (err) {
             console.error("Agent error:", err)
         }
