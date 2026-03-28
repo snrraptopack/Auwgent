@@ -1323,54 +1323,26 @@
     }
   ],
   "types": {
-    "AnalysisReport": {
+    "Product": {
       "isOutput": false,
       "properties": {
-        "total_products": {
+        "price": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "revenue": {
+        "stock": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "total_orders": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false,
-          "description": null
-        },
-        "total_users": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "QueryResult": {
-      "isOutput": false,
-      "properties": {
-        "data": {
+        "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "message": {
+        "id": {
           "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "success": {
-          "type": "boolean",
           "optional": false,
           "description": null
         }
@@ -1389,37 +1361,32 @@
           "optional": false,
           "description": null
         },
-        "name": {
+        "created_at": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "created_at": {
+        "name": {
           "type": "string",
           "optional": false,
           "description": null
         }
       }
     },
-    "Product": {
+    "QueryResult": {
       "isOutput": false,
       "properties": {
-        "name": {
+        "data": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "price": {
-          "type": "number",
+        "success": {
+          "type": "boolean",
           "optional": false,
           "description": null
         },
-        "stock": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "id": {
+        "message": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1429,6 +1396,26 @@
     "Order": {
       "isOutput": false,
       "properties": {
+        "quantity": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "user_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "total": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "product_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "id": {
           "type": "string",
           "optional": false,
@@ -1445,23 +1432,36 @@
           },
           "optional": false,
           "description": null
-        },
-        "product_id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "quantity": {
+        }
+      }
+    },
+    "AnalysisReport": {
+      "isOutput": false,
+      "properties": {
+        "total_users": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "user_id": {
-          "type": "string",
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
           "optional": false,
           "description": null
         },
-        "total": {
+        "total_products": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "total_orders": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "revenue": {
           "type": "number",
           "optional": false,
           "description": null

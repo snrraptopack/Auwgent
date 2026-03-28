@@ -66,10 +66,7 @@ export class TypedAuwgent<
     // N-API TSFN from keeping the Node.js event loop alive forever.
     private storedIntentHandler: IntentHandler<IR, CustomIntents, Output, Tools> | null = null;
     private storedPartialHandler: PartialIntentHandler<IR, CustomIntents, Output, Tools> | null = null;
-    private lastTurnIntentValue: any = null;
-    private lastTurnIntentName: string | null = null;
     private lastTurnRawBlock: string | undefined = undefined;
-    private partialTextCursor = new Map<string, string>();
     private agentStack: string[] = [];
     private helperSessions = new Map<string, SessionState>();
 
@@ -190,7 +187,7 @@ export class TypedAuwgent<
             stack: [...this.agentStack],
             rootAgent: this.ir.name,
             rawBlock: this.lastTurnRawBlock,
-            setContext: (data: any) => this.native.setContext(JSON.stringify(data)),
+            setContext: (data: any) => this.native.setContext(data),
             embed: async (text: string) => {
                 try {
                     return await this.native.embed(text);
@@ -209,6 +206,132 @@ export class TypedAuwgent<
             },
             ...this.sharedContext
         } as MiddlewareContext<IR>;
+    }
+
+    private buildContextFromRuntimeEvent(event: any): MiddlewareContext<IR> {
+        const ctx = this.getBuildContext();
+        const runtimeCtx = event?.context;
+
+        if (runtimeCtx && typeof runtimeCtx.activeAgent === 'string') {
+            ctx.activeAgent = runtimeCtx.activeAgent as any;
+        }
+        if (runtimeCtx && Array.isArray(runtimeCtx.stack)) {
+            ctx.stack = [...runtimeCtx.stack];
+            this.agentStack = [...runtimeCtx.stack];
+        }
+        if (runtimeCtx && typeof runtimeCtx.rootAgent === 'string') {
+            ctx.rootAgent = runtimeCtx.rootAgent;
+        }
+        if (runtimeCtx && typeof runtimeCtx.rawBlock === 'string') {
+            ctx.rawBlock = runtimeCtx.rawBlock;
+            this.lastTurnRawBlock = runtimeCtx.rawBlock;
+        }
+        if (runtimeCtx && typeof runtimeCtx.systemPrompt === 'string') {
+            ctx.systemPrompt = runtimeCtx.systemPrompt;
+        }
+
+        return ctx;
+    }
+
+    private async handleMiddlewareEvent(eventJson: string): Promise<string | undefined> {
+        const event = JSON.parse(eventJson);
+        const ctx = this.buildContextFromRuntimeEvent(event);
+
+        switch (event?.type) {
+            case 'intent': {
+                const value = event?.value && typeof event.value === 'object'
+                    ? { ...event.value }
+                    : event?.value;
+
+                if (value && typeof value === 'object' && '_raw' in value) {
+                    delete value._raw;
+                }
+
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onIntent) {
+                        const control = await (m.onIntent as any)(event.name, value, ctx);
+                        if (control !== undefined && control !== null) {
+                            return JSON.stringify(control);
+                        }
+                    }
+                }
+
+                return undefined;
+            }
+            case 'llm_start': {
+                let currentPrompt = typeof event?.prompt === 'string' ? event.prompt : '';
+
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onLLMStart) {
+                        const modified = await (m.onLLMStart as any)(currentPrompt, ctx);
+                        if (typeof modified === 'string') {
+                            currentPrompt = modified;
+                        }
+                    }
+                }
+
+                return JSON.stringify({
+                    prompt: currentPrompt,
+                    stack: ctx.stack,
+                });
+            }
+            case 'llm_end': {
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onLLMEnd) {
+                        await (m.onLLMEnd as any)(event.response ?? {}, ctx);
+                    }
+                }
+
+                return undefined;
+            }
+            case 'run_start': {
+                let session = event.session as SessionState;
+
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onRunStart) {
+                        session = await (m.onRunStart as any)(session, ctx);
+                    }
+                }
+
+                if (ctx.stack.length > 0) {
+                    session.stack = [...ctx.stack];
+                    this.agentStack = [...ctx.stack];
+                }
+
+                return JSON.stringify({ session });
+            }
+            case 'run_complete': {
+                const session = event.session as SessionState;
+
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onRunComplete) {
+                        await (m.onRunComplete as any)(session, ctx);
+                    }
+                }
+
+                return undefined;
+            }
+            case 'error': {
+                const errorPayload = event?.error ?? {};
+                const error = errorPayload?.kind === 'tool_error'
+                    ? new AuwgentToolError(errorPayload.tool || 'unknown', errorPayload.message || 'unknown')
+                    : new Error(errorPayload.message || 'Unknown runtime error');
+                const session = event?.session as SessionState | undefined;
+
+                for (const m of this.getMiddleware(ctx)) {
+                    if (m.onError) {
+                        const shouldSwallow = await (m.onError as any)(error, session, ctx);
+                        if (shouldSwallow) {
+                            return JSON.stringify({ swallow: true });
+                        }
+                    }
+                }
+
+                return undefined;
+            }
+            default:
+                return undefined;
+        }
     }
 
     private async triggerError(error: Error) {
@@ -249,174 +372,43 @@ export class TypedAuwgent<
     private activateListeners(): void {
         const userHandler = this.storedIntentHandler;
 
-        // Always register an onIntent callback (even if user didn't provide one)
-        // so middleware can still intercept intents.
         this.native.onIntent(async (name: string, value: any, agentName: string) => {
             const intentCtx = this.getBuildContext();
-            // Sync activeAgent from Rust-provided name
             intentCtx.activeAgent = agentName as any;
 
-            // Extract _raw from Rust-injected field and move to ctx.rawBlock
-            // This keeps intent values clean and typed for the user,
-            // while making raw YAML available to middleware for logging/audit
             if (value && typeof value === 'object' && '_raw' in value) {
                 intentCtx.rawBlock = value._raw;
                 this.lastTurnRawBlock = value._raw;
                 delete value._raw;
             }
 
-            // Pipeline through middleware
-            for (const m of this.getMiddleware(intentCtx)) {
-                if (m.onIntent) {
-                    try {
-                        const control = await (m.onIntent as any)(name, value, intentCtx);
-                        if (control !== undefined && control !== null) {
-                            return control as any;
-                        }
-                    } catch (e) {
-                        throw e;
-                    }
-                }
-            }
-
-            // Track last intent value for onLLMEnd
-            this.lastTurnIntentValue = value;
-            this.lastTurnIntentName = name;
-
-            // Forward to user handler
             if (userHandler) {
                 const result = await (userHandler as any)(name, value, agentName);
-
-                // Unified Error Hook Bridge:
-                // If this turn was a tool error, trigger the onError lifecycle hook.
-                if (name === 'tool_error' && value && typeof value === 'object') {
-                    const toolErr = new AuwgentToolError(value.tool || 'unknown', value.message || 'unknown');
-                    for (const m of this.getMiddleware(intentCtx)) {
-                        if (m.onError) {
-                            await (m as any).onError(toolErr, undefined, intentCtx);
-                        }
-                    }
-                }
-
                 return result ?? null;
-            }
-
-            // Unified Error Hook Bridge (when no user handler is defined)
-            if (name === 'tool_error' && value && typeof value === 'object') {
-                const toolErr = new AuwgentToolError(value.tool || 'unknown', value.message || 'unknown');
-                for (const m of this.getMiddleware(intentCtx)) {
-                    if (m.onError) {
-                        await (m as any).onError(toolErr, undefined, intentCtx);
-                    }
-                }
             }
         });
 
-        // Register partial handler if provided
         if (this.storedPartialHandler) {
             const partialHandler = this.storedPartialHandler;
             this.native.onIntentPartial((name: string, value: any, agentName: string) => {
-                if (name === 'response_text' && value && typeof value === 'object' && typeof value.text === 'string') {
-                    const key = `${agentName}:${name}`;
-                    const previous = this.partialTextCursor.get(key) ?? '';
-                    const current = value.text;
-                    const delta = current.startsWith(previous) ? current.slice(previous.length) : current;
-                    this.partialTextCursor.set(key, current);
-                    (partialHandler as any)(name, { ...value, delta }, agentName);
-                    return;
-                }
                 (partialHandler as any)(name, value, agentName);
             });
         }
+        this.native.onMiddlewareEvent((eventJson: string) => this.handleMiddlewareEvent(eventJson));
 
-        // Register Sub-Engine Lifecycle Hooks
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
-            // Restore session if it exists in memory, otherwise use the fresh one.
-            let session = this.helperSessions.get(helperName) || (JSON.parse(emptySessionJson) as SessionState);
-
-            // Sync active stack from sub-engine's session
+            const session = this.helperSessions.get(helperName) || (JSON.parse(emptySessionJson) as SessionState);
             if (session.stack) {
                 this.agentStack = [...session.stack];
-            }
-
-            const ctx = this.getBuildContext();
-            ctx.systemPrompt = session.systemPrompt;
-
-            for (const m of this.getMiddleware(ctx)) {
-                if (m.onRunStart) {
-                    session = await (m as any).onRunStart(session, ctx);
-                }
             }
             return JSON.stringify(session);
         });
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
             const session = JSON.parse(completedSessionJson) as SessionState;
-            
-            // Persist the helper's session history in memory
             this.helperSessions.set(helperName, session);
-
-            const ctx = this.getBuildContext();
-            ctx.systemPrompt = session.systemPrompt;
-
-            for (const m of this.getMiddleware(ctx)) {
-                if (m.onRunComplete) {
-                    await (m as any).onRunComplete(session, ctx);
-                }
-            }
-
-            // Sync active stack from sub-engine's session
             if (session.stack) {
                 this.agentStack = [...session.stack];
-            }
-        });
-
-        // Register LLM Lifecycle Hooks
-        this.native.onLlmStart(async (promptJson: string, systemPrompt: string, contextJson: string) => {
-            const ctx = this.getBuildContext();
-            ctx.systemPrompt = systemPrompt;
-
-            // Sync stack from Rust context if provided
-            try {
-                const rustCtx = JSON.parse(contextJson);
-                if (rustCtx && rustCtx.stack) {
-                    ctx.stack = rustCtx.stack;
-                }
-            } catch (e) {
-                // Ignore parse errors
-            }
-
-            this.lastTurnIntentValue = null;
-            this.lastTurnIntentName = null;
-            let currentPrompt = promptJson;
-            for (const m of this.getMiddleware(ctx)) {
-                if (m.onLLMStart) {
-                    const modified = await (m as any).onLLMStart(currentPrompt, ctx);
-                    if (typeof modified === "string") {
-                        currentPrompt = modified;
-                    }
-                }
-            }
-            return {
-                prompt: currentPrompt,
-                stack: ctx.stack
-            };
-        });
-
-        this.native.onLlmEnd(async (responseString: string, systemPrompt: string) => {
-            const ctx = this.getBuildContext();
-            ctx.systemPrompt = systemPrompt;
-            // Trigger onLLMEnd for terminal intents
-            const isTerminal = this.lastTurnIntentName === 'response_text' || 
-                               this.lastTurnIntentName === 'response_schema' ||
-                               (this.lastTurnIntentName && !['tool_call', 'workflow_call', 'helper_call'].includes(this.lastTurnIntentName));
-
-            if (isTerminal) {
-                for (const m of this.getMiddleware(ctx)) {
-                    if (m.onLLMEnd) {
-                        await (m.onLLMEnd as any)(this.lastTurnIntentValue || {}, ctx);
-                    }
-                }
             }
         });
     }
@@ -434,74 +426,22 @@ export class TypedAuwgent<
     async run(input?: string): Promise<SessionState> {
         this.sharedContext = {}; // Clear context for new run
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
-        this.partialTextCursor.clear();
-        let currentSession = this.exportSession();
 
         // Activation / ThreadSafeFunction binding
         this.activateListeners();
 
-        const runtimeCtx = this.getBuildContext();
-
         try {
-            // onRunStart Interception — middleware can mutate ctx.stack here
-            // for Stack-Aware Resumption (Execution-Tunneling)
-            for (const m of this.getMiddleware(runtimeCtx)) {
-                if (m.onRunStart) {
-                    currentSession = await (m as any).onRunStart(currentSession, runtimeCtx);
-                }
-            }
-
-            // ── Stack-Aware Resumption ──────────────────────────────────
-            // Use the stack from the session if available, otherwise default to root.
-            if (currentSession.stack && currentSession.stack.length > 0) {
-                this.agentStack = [...currentSession.stack];
-            } else {
-                this.agentStack = [this.ir.name];
-                currentSession.stack = [...this.agentStack];
-            }
-
-            // After middleware runs, check if ctx.stack was mutated.
-            // If middleware set it (e.g. for teleportation), use that.
-            const injectedStack = runtimeCtx.stack.length > 1
-                ? runtimeCtx.stack
-                : (this.agentStack.length > 1 ? this.agentStack : null);
-
-            // Execute Native
-            this.importSession(currentSession);
             const json = await (this.native.run as any)(
                 input ?? null,
-                injectedStack ? JSON.stringify(injectedStack) : null
+                null
             );
-            currentSession = JSON.parse(json) as SessionState;
+            const currentSession = JSON.parse(json) as SessionState;
 
             // Sync the local stack back from the modified session
             if (currentSession.stack) {
                 this.agentStack = [...currentSession.stack];
             }
 
-            // onRunComplete Interception
-            for (const m of this.getMiddleware(runtimeCtx)) {
-                if (m.onRunComplete) {
-                    await (m as any).onRunComplete(currentSession, runtimeCtx);
-                }
-            }
-
-            return currentSession;
-
-        } catch (error) {
-            let handled = false;
-            for (const m of this.getMiddleware(runtimeCtx)) {
-                if (m.onError) {
-                    const shouldSwallow = await (m as any).onError(error as Error, currentSession, runtimeCtx);
-                    if (shouldSwallow) {
-                        handled = true;
-                        break;
-                    }
-                }
-            }
-            if (!handled) {
-                throw error;
-            }
             return currentSession;
         } finally {
             // Deactivate listeners after run to release the TSFN ref

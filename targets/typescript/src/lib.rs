@@ -90,7 +90,7 @@ impl Auwgent {
             })
         });
 
-        self.bridge.engine.register_tool(&name, tool_impl);
+        self.bridge.register_tool(&name, tool_impl);
 
         Ok(())
     }
@@ -143,7 +143,7 @@ impl Auwgent {
                 })
             });
 
-        self.bridge.engine.on_intent(handler);
+        self.bridge.on_intent(handler);
 
         Ok(())
     }
@@ -180,7 +180,7 @@ impl Auwgent {
                 tsfn.call((name, value, agent), ThreadsafeFunctionCallMode::NonBlocking);
             });
 
-        self.bridge.engine.on_intent_partial(handler);
+        self.bridge.on_intent_partial(handler);
 
         Ok(())
     }
@@ -211,7 +211,7 @@ impl Auwgent {
                 })
             });
 
-        self.bridge.engine.on_sub_engine_start(handler);
+        self.bridge.on_sub_engine_start(handler);
 
         Ok(())
     }
@@ -241,73 +241,28 @@ impl Auwgent {
                 })
             });
 
-        self.bridge.engine.on_sub_engine_complete(handler);
+        self.bridge.on_sub_engine_complete(handler);
 
         Ok(())
     }
 
-    /// Hook for TypeScript to receive the prompt before LLM generation
-    #[napi(
-        ts_args_type = "callback: (prompt: string, systemPrompt: string, contextJson: string) => Promise<{ prompt?: string, stack?: string[] } | undefined>"
-    )]
-    pub fn on_llm_start(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<(String, String, String), ErrorStrategy::Fatal> =
-            callback.create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String, String)>| {
-                let prompt = ctx.env.create_string(&ctx.value.0)?;
-                let sys = ctx.env.create_string(&ctx.value.1)?;
-                let context = ctx.env.create_string(&ctx.value.2)?;
-                Ok(vec![
-                    prompt.into_unknown(),
-                    sys.into_unknown(),
-                    context.into_unknown(),
-                ])
+    #[napi(ts_args_type = "callback: (eventJson: string) => Promise<string | undefined>")]
+    pub fn on_middleware_event(&self, callback: JsFunction) -> Result<()> {
+        let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> =
+            callback.create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
+                let event = ctx.env.create_string(&ctx.value)?;
+                Ok(vec![event.into_unknown()])
             })?;
-
-        let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            std::sync::Arc::new(move |prompt_str: String, sys_str: String, ctx_str: String| {
-                let tsfn = tsfn.clone();
-                Box::pin(async move {
-                    let result = tsfn
-                        .call_async::<Promise<Value>>((prompt_str, sys_str, ctx_str))
-                        .await;
-                    match result {
-                        Ok(promise) => promise.await.unwrap_or(Value::Null),
-                        Err(_) => Value::Null,
-                    }
-                })
-            });
-
-        self.bridge.engine.on_llm_start(handler);
-
-        Ok(())
-    }
-
-    /// Hook for TypeScript to receive the unparsed response after LLM generation
-    #[napi(
-        ts_args_type = "callback: (responseString: string, systemPrompt: string) => Promise<void>"
-    )]
-    pub fn on_llm_end(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
-                let response = ctx.env.create_string(&ctx.value.0)?;
-                let sys = ctx.env.create_string(&ctx.value.1)?;
-                Ok(vec![response.into_unknown(), sys.into_unknown()])
-            })?;
-
-        let handler: ir_runtime::runtime::engine::AsyncLlmEndCallback =
-            std::sync::Arc::new(move |response_string: String, sys_string: String| {
-                let tsfn = tsfn.clone();
-                Box::pin(async move {
-                    let result = tsfn
-                        .call_async::<Promise<()>>((response_string, sys_string))
-                        .await;
-                    if let Ok(promise) = result {
-                        let _ = promise.await;
-                    }
-                })
-            });
-
-        self.bridge.engine.on_llm_end(handler);
+        self.bridge.on_middleware_event(std::sync::Arc::new(move |event_json: String| {
+            let tsfn = tsfn.clone();
+            Box::pin(async move {
+                let result = tsfn.call_async::<Promise<Option<String>>>(event_json).await;
+                match result {
+                    Ok(promise) => promise.await.unwrap_or(None),
+                    Err(_) => None,
+                }
+            })
+        }));
 
         Ok(())
     }

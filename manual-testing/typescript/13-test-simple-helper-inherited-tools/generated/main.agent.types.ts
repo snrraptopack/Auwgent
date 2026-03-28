@@ -7,7 +7,7 @@ import _importedIR from './main.agent.json' with { type: 'json' };
 type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Main";
   workflows: undefined;
-  helpers: ({ name: "A" } | { name: "B" })[];
+  helpers: ({ name: "A"; input: null; output: null } | { name: "B"; input: null; output: null })[];
 };
 const agentIR = _importedIR as unknown as MainIR;
 export type MainInput = {

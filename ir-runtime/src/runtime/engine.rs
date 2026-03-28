@@ -69,6 +69,32 @@ pub type AsyncLlmStartCallback = Arc<
 pub type AsyncLlmEndCallback =
     Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
 
+/// Async callback fired before an engine run begins.
+/// Receives `(session_json, context_json)` and may return a replacement session JSON.
+pub type AsyncRunStartCallback = Arc<
+    dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, Option<String>>
+        + Send
+        + Sync,
+>;
+
+/// Async callback fired after an engine run completes successfully.
+/// Receives `(session_json, context_json)`.
+pub type AsyncRunCompleteCallback =
+    Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
+
+/// Async callback fired when an engine run errors.
+/// Receives `(error_json, session_json, context_json)` and returns `true` to swallow.
+pub type AsyncErrorCallback = Arc<
+    dyn Fn(String, Option<String>, String) -> futures_util::future::BoxFuture<'static, bool>
+        + Send
+        + Sync,
+>;
+
+/// Generic middleware event callback.
+/// Receives an event JSON payload and may return an optional response JSON payload.
+pub type AsyncMiddlewareEventCallback =
+    Arc<dyn Fn(String) -> futures_util::future::BoxFuture<'static, Option<String>> + Send + Sync>;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT ENGINE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -89,6 +115,8 @@ pub struct AuwgentEngine {
     pending_tool_results: Arc<Mutex<Vec<(String, Value, Value)>>>,
     /// Accumulated raw response for the current turn
     current_raw_response: Arc<Mutex<String>>,
+    /// Last terminal response payload produced during the current LLM cycle
+    last_turn_response_value: Arc<Mutex<Value>>,
     /// User-facing intent callback
     intent_handler: Arc<Mutex<Option<AsyncIntentCallback>>>,
     partial_intent_handler: Arc<Mutex<Option<Arc<dyn Fn(String, Value, String) + Send + Sync>>>>,
@@ -96,6 +124,10 @@ pub struct AuwgentEngine {
     session_save_handler: Arc<Mutex<Option<SessionSaveCallback>>>,
     llm_start_handler: Arc<Mutex<Option<AsyncLlmStartCallback>>>,
     llm_end_handler: Arc<Mutex<Option<AsyncLlmEndCallback>>>,
+    run_start_handler: Arc<Mutex<Option<AsyncRunStartCallback>>>,
+    run_complete_handler: Arc<Mutex<Option<AsyncRunCompleteCallback>>>,
+    error_handler: Arc<Mutex<Option<AsyncErrorCallback>>>,
+    middleware_event_handler: Arc<Mutex<Option<AsyncMiddlewareEventCallback>>>,
     fast_forward_stack: Arc<Mutex<Option<Vec<String>>>>,
     /// Tracking if a terminal response (text/schema) was emitted during the current run
     terminal_response_emitted: Arc<Mutex<bool>>,
@@ -181,12 +213,17 @@ impl AuwgentEngine {
             emitted_partial_intents,
             pending_tool_results: Arc::new(Mutex::new(Vec::new())),
             current_raw_response: Arc::new(Mutex::new(String::new())),
+            last_turn_response_value: Arc::new(Mutex::new(Value::Null)),
             intent_handler: Arc::new(Mutex::new(None)),
             partial_intent_handler: Arc::new(Mutex::new(None)),
             session_preload_handler: Arc::new(Mutex::new(None)),
             session_save_handler: Arc::new(Mutex::new(None)),
             llm_start_handler: Arc::new(Mutex::new(None)),
             llm_end_handler: Arc::new(Mutex::new(None)),
+            run_start_handler: Arc::new(Mutex::new(None)),
+            run_complete_handler: Arc::new(Mutex::new(None)),
+            error_handler: Arc::new(Mutex::new(None)),
+            middleware_event_handler: Arc::new(Mutex::new(None)),
             fast_forward_stack: Arc::new(Mutex::new(None)),
             terminal_response_emitted: Arc::new(Mutex::new(false)),
             final_response_emitted: Arc::new(Mutex::new(false)),
@@ -208,6 +245,22 @@ impl AuwgentEngine {
 
     pub fn on_llm_end(&self, handler: AsyncLlmEndCallback) {
         *self.llm_end_handler.lock().unwrap() = Some(handler);
+    }
+
+    pub fn on_run_start(&self, handler: AsyncRunStartCallback) {
+        *self.run_start_handler.lock().unwrap() = Some(handler);
+    }
+
+    pub fn on_run_complete(&self, handler: AsyncRunCompleteCallback) {
+        *self.run_complete_handler.lock().unwrap() = Some(handler);
+    }
+
+    pub fn on_error(&self, handler: AsyncErrorCallback) {
+        *self.error_handler.lock().unwrap() = Some(handler);
+    }
+
+    pub fn on_middleware_event(&self, handler: AsyncMiddlewareEventCallback) {
+        *self.middleware_event_handler.lock().unwrap() = Some(handler);
     }
 
     pub fn register_driver(&self, provider_type: &str, driver: Arc<dyn ModelDriver>) {
@@ -255,6 +308,7 @@ impl AuwgentEngine {
         let user_handler = handler.clone();
         let emitted_partials = Arc::clone(&self.emitted_partial_intents);
         let agent_name = self.ir.name.clone();
+        let partial_cursor: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
         self.orchestrator
             .lock()
@@ -267,6 +321,34 @@ impl AuwgentEngine {
                 if let Ok(mut partials) = emitted_partials.lock() {
                     partials.insert(partial_key);
                 }
+
+                let value = if name == "response_text" {
+                    if let Some(text) = value.get("text").and_then(Value::as_str) {
+                        let key = format!("{agent_name}:{name}");
+                        let previous = partial_cursor
+                            .lock()
+                            .ok()
+                            .and_then(|cursor| cursor.get(&key).cloned())
+                            .unwrap_or_default();
+                        let delta = if text.starts_with(&previous) {
+                            &text[previous.len()..]
+                        } else {
+                            text
+                        };
+                        if let Ok(mut cursor) = partial_cursor.lock() {
+                            cursor.insert(key, text.to_string());
+                        }
+                        let mut updated = value.clone();
+                        if let Value::Object(ref mut map) = updated {
+                            map.insert("delta".to_string(), Value::String(delta.to_string()));
+                        }
+                        updated
+                    } else {
+                        value
+                    }
+                } else {
+                    value
+                };
 
                 // Call user handler with current agent name
                 user_handler(name, value, agent_name.clone());
@@ -287,6 +369,16 @@ impl AuwgentEngine {
     pub fn clear_llm_handlers(&self) {
         *self.llm_start_handler.lock().unwrap() = None;
         *self.llm_end_handler.lock().unwrap() = None;
+    }
+
+    pub fn clear_run_handlers(&self) {
+        *self.run_start_handler.lock().unwrap() = None;
+        *self.run_complete_handler.lock().unwrap() = None;
+        *self.error_handler.lock().unwrap() = None;
+    }
+
+    pub fn clear_middleware_handler(&self) {
+        *self.middleware_event_handler.lock().unwrap() = None;
     }
 
     // ── Session export/import for host runtime hooks ──────────────────────
@@ -389,6 +481,101 @@ impl AuwgentEngine {
         Ok((driver, model_name.to_string(), config_params))
     }
 
+    fn build_event_context(
+        &self,
+        active_agent: &str,
+        raw_block: Option<String>,
+        system_prompt: Option<String>,
+    ) -> Value {
+        let session = self.session.lock().unwrap();
+        serde_json::json!({
+            "activeAgent": active_agent,
+            "stack": session.stack,
+            "rootAgent": session.stack.first().cloned().unwrap_or_else(|| self.ir.name.clone()),
+            "systemPrompt": system_prompt.or_else(|| session.system_prompt.clone()),
+            "rawBlock": raw_block,
+        })
+    }
+
+    async fn fire_middleware_event(&self, event: Value) -> Option<Value> {
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        let payload = serde_json::to_string(&event).ok()?;
+        let response = handler?.clone()(payload).await?;
+        serde_json::from_str(&response).ok()
+    }
+
+    async fn apply_intent_middleware(
+        &self,
+        name: &str,
+        value: &Value,
+        active_agent: &str,
+    ) -> Option<IntentControl> {
+        let raw_block = value
+            .get("_raw")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string());
+        let event = serde_json::json!({
+            "type": "intent",
+            "name": name,
+            "value": value,
+            "context": self.build_event_context(active_agent, raw_block, None),
+        });
+        let response = self.fire_middleware_event(event).await?;
+        Self::parse_intent_control_response(&response)
+    }
+
+    async fn apply_llm_start_middleware(
+        &self,
+        prompt: &str,
+        system_prompt: &str,
+        active_agent: &str,
+    ) -> Option<Value> {
+        self.fire_middleware_event(serde_json::json!({
+            "type": "llm_start",
+            "prompt": prompt,
+            "context": self.build_event_context(active_agent, None, Some(system_prompt.to_string())),
+        }))
+        .await
+    }
+
+    async fn notify_llm_end_middleware(
+        &self,
+        response: &Value,
+        system_prompt: &str,
+        active_agent: &str,
+    ) {
+        let _ = self
+            .fire_middleware_event(serde_json::json!({
+                "type": "llm_end",
+                "response": response,
+                "context": self.build_event_context(active_agent, None, Some(system_prompt.to_string())),
+            }))
+            .await;
+    }
+
+    fn strip_raw_field(&self, mut value: Value) -> Value {
+        if let Value::Object(ref mut map) = value {
+            map.remove("_raw");
+        }
+        value
+    }
+
+    fn parse_intent_control_response(response: &Value) -> Option<IntentControl> {
+        match response {
+            Value::Null => None,
+            Value::Object(obj) => {
+                if obj.get("skip").and_then(Value::as_bool) == Some(true) {
+                    Some(IntentControl::Skip)
+                } else {
+                    obj.get("result")
+                        .cloned()
+                        .map(|result| IntentControl::Override { result })
+                }
+            }
+            _ => None,
+        }
+    }
+
     // ── Agentic Loop ──────────────────────────────────────────────────────
 
     /// Execute the agentic loop.
@@ -479,6 +666,30 @@ impl AuwgentEngine {
             .unwrap()
             .set_system_prompt(&system_prompt);
 
+        if let Some(response) = self
+            .fire_middleware_event(serde_json::json!({
+                "type": "run_start",
+                "session": serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
+                "context": self.build_event_context(&self.ir.name, None, Some(system_prompt.clone())),
+            }))
+            .await
+        {
+            if let Some(updated_session) = response.get("session") {
+                self.import_session(&serde_json::to_string(updated_session).map_err(AuwgentError::Serialization)?)?;
+                self.sync_fast_forward_from_session();
+            }
+        }
+
+        let run_start_handler = self.run_start_handler.lock().unwrap().clone();
+        if let Some(h) = run_start_handler {
+            let session_json = self.export_session()?;
+            let context_json = self.serialize_host_context()?;
+            if let Some(updated_session_json) = h(session_json, context_json).await {
+                self.import_session(&updated_session_json)?;
+                self.sync_fast_forward_from_session();
+            }
+        }
+
         // 3. Build the initial user input
         let initial_user_input = match input.as_ref() {
             Some(Value::String(s)) => Some(s.clone()),
@@ -515,7 +726,8 @@ impl AuwgentEngine {
 
         let mut loop_count = 0;
 
-        loop {
+        let run_result = async {
+            loop {
             loop_count += 1;
             if loop_count > max_loops {
                 return Err(AuwgentError::MaxLoopsExceeded(max_loops));
@@ -526,6 +738,7 @@ impl AuwgentEngine {
             }
 
             self.current_raw_response.lock().unwrap().clear();
+            *self.last_turn_response_value.lock().unwrap() = Value::Null;
             self.pending_tool_results.lock().unwrap().clear();
             self.emitted_partial_intents.lock().unwrap().clear();
             self.orchestrator.lock().unwrap().reset();
@@ -615,7 +828,19 @@ impl AuwgentEngine {
                             .unwrap_or_default()
                     };
 
-                    let result = h(input_text, sys_prompt, context_json).await;
+                    let mut result = h(input_text.clone(), sys_prompt.clone(), context_json).await;
+
+                    if let Some(middleware_result) = self
+                        .apply_llm_start_middleware(&input_text, &sys_prompt, &self.ir.name)
+                        .await
+                    {
+                        if let Some(modified) = middleware_result.get("prompt").and_then(|v| v.as_str()) {
+                            result["prompt"] = Value::String(modified.to_string());
+                        }
+                        if let Some(new_stack) = middleware_result.get("stack").and_then(|v| v.as_array()) {
+                            result["stack"] = Value::Array(new_stack.clone());
+                        }
+                    }
 
                     if let Some(modified) = result.get("prompt").and_then(|v| v.as_str()) {
                         self.session.lock().unwrap().set_input(modified.to_string());
@@ -759,6 +984,20 @@ impl AuwgentEngine {
                 h(raw_resp, sys_prompt).await;
             }
 
+            let sys_prompt = self
+                .session
+                .lock()
+                .unwrap()
+                .system_prompt
+                .clone()
+                .unwrap_or_default();
+            self.notify_llm_end_middleware(
+                &(self.last_turn_response_value()),
+                &sys_prompt,
+                &self.ir.name,
+            )
+            .await;
+
             // Save the raw LLM output in the session history so the exact
             // textual response is visible in logs and follow-up turns.
             let raw_resp = self.current_raw_response.lock().unwrap().clone();
@@ -789,9 +1028,60 @@ impl AuwgentEngine {
             // Feed tool/workflow results back to the LLM as the next turn's input
             let results_payload = self.build_results_payload();
             self.session.lock().unwrap().start_turn(&results_payload);
-        }
+            }
 
-        Ok(())
+            Ok(())
+        }
+        .await;
+
+        match run_result {
+            Ok(()) => {
+                if let Some(_) = self
+                    .fire_middleware_event(serde_json::json!({
+                        "type": "run_complete",
+                        "session": serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
+                        "context": self.build_event_context(&self.ir.name, None, None),
+                    }))
+                    .await
+                {
+                }
+                let run_complete_handler = self.run_complete_handler.lock().unwrap().clone();
+                if let Some(h) = run_complete_handler {
+                    let session_json = self.export_session()?;
+                    let context_json = self.serialize_host_context()?;
+                    h(session_json, context_json).await;
+                }
+                Ok(())
+            }
+            Err(err) => {
+                let middleware_response = self
+                    .fire_middleware_event(serde_json::json!({
+                        "type": "error",
+                        "error": { "message": err.to_string() },
+                        "session": self.export_session().ok().and_then(|session| serde_json::from_str::<Value>(&session).ok()),
+                        "context": self.build_event_context(&self.ir.name, None, None),
+                    }))
+                    .await;
+                let error_handler = self.error_handler.lock().unwrap().clone();
+                if let Some(h) = error_handler {
+                    let error_json = serde_json::json!({ "message": err.to_string() }).to_string();
+                    let session_json = self.export_session().ok();
+                    let context_json = self.serialize_host_context()?;
+                    if h(error_json, session_json, context_json).await {
+                        return Ok(());
+                    }
+                }
+                if middleware_response
+                    .as_ref()
+                    .and_then(|response| response.get("swallow"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    return Ok(());
+                }
+                Err(err)
+            }
+        }
     }
 
     /// Build a structured payload of tool/workflow results to feed back to
@@ -851,11 +1141,15 @@ impl AuwgentEngine {
 
         for (name, mut value) in intents {
             // println!("[DEBUG] Processing intent: {} -> {}", name, serde_json::to_string(&value).unwrap_or_default());
-            // Fire the user callback BEFORE execution
-            // Note: _raw is intentionally kept in `value` here so that the host
-            // (TypeScript wrapper) can extract it for middleware logging/audit.
-            // The TS wrapper removes _raw from the value after extracting it.
-            let control = self.fire_intent(name.clone(), value.clone()).await;
+            let control = if let Some(control) = self
+                .apply_intent_middleware(&name, &value, &self.ir.name)
+                .await
+            {
+                Some(control)
+            } else {
+                self.fire_intent(name.clone(), self.strip_raw_field(value.clone()))
+                    .await
+            };
 
             // Strip _raw before internal processing (tool execution, etc.)
             if let Value::Object(ref mut map) = value {
@@ -971,6 +1265,7 @@ impl AuwgentEngine {
                 "response_schema" | "response_text" => {
                     // Terminal intents — already fired to user above
                     has_terminal = true;
+                    *self.last_turn_response_value.lock().unwrap() = value.clone();
                     *self.terminal_response_emitted.lock().unwrap() = true;
                     *self.final_response_emitted.lock().unwrap() = true;
                 }
@@ -978,6 +1273,7 @@ impl AuwgentEngine {
                     // Custom / unknown intents — already fired to user.
                     // We treat these as terminal (waiting for user input).
                     has_terminal = true;
+                    *self.last_turn_response_value.lock().unwrap() = value.clone();
                     *self.terminal_response_emitted.lock().unwrap() = true;
                 }
             }
@@ -1002,28 +1298,54 @@ impl AuwgentEngine {
                 Ok(val) => Ok((tool_name, args, val)),
                 Err(e) => {
                     // Fire a specific tool_error intent so the host can react
+                    let error_value = serde_json::json!({
+                        "tool": tool_name,
+                        "message": e,
+                    });
                     self.fire_intent(
                         "tool_error".to_string(),
-                        serde_json::json!({
-                            "tool": tool_name,
-                            "message": e,
-                        }),
+                        error_value.clone(),
                     )
                     .await;
+                    let _ = self
+                        .fire_middleware_event(serde_json::json!({
+                            "type": "error",
+                            "error": {
+                                "kind": "tool_error",
+                                "tool": tool_name,
+                                "message": e,
+                            },
+                            "session": Value::Null,
+                            "context": self.build_event_context(&self.ir.name, None, None),
+                        }))
+                        .await;
                     // Return the error as the result — the LLM will see it
                     // and can retry or adjust
                     Ok((tool_name, args, serde_json::json!({ "error": e })))
                 }
             }
         } else {
+            let message = format!("Tool not found: {}", tool_name);
             self.fire_intent(
                 "tool_error".to_string(),
                 serde_json::json!({
                     "tool": tool_name,
-                    "message": format!("Tool not found: {}", tool_name),
+                    "message": message,
                 }),
             )
             .await;
+            let _ = self
+                .fire_middleware_event(serde_json::json!({
+                    "type": "error",
+                    "error": {
+                        "kind": "tool_error",
+                        "tool": tool_name,
+                        "message": message,
+                    },
+                    "session": Value::Null,
+                    "context": self.build_event_context(&self.ir.name, None, None),
+                }))
+                .await;
             Ok((
                 tool_name.clone(),
                 args,
@@ -1306,6 +1628,24 @@ impl AuwgentEngine {
                     sub_engine.on_llm_end(handler);
                 }
             }
+            {
+                let h = self.run_start_handler.lock().unwrap().clone();
+                if let Some(handler) = h {
+                    sub_engine.on_run_start(handler);
+                }
+            }
+            {
+                let h = self.run_complete_handler.lock().unwrap().clone();
+                if let Some(handler) = h {
+                    sub_engine.on_run_complete(handler);
+                }
+            }
+            {
+                let h = self.error_handler.lock().unwrap().clone();
+                if let Some(handler) = h {
+                    sub_engine.on_error(handler);
+                }
+            }
 
             // Pre-generate system prompt
             if let Ok(system_prompt) = sub_engine.generate_prompt(None) {
@@ -1322,6 +1662,14 @@ impl AuwgentEngine {
                 let empty_session = sub_engine
                     .export_session()
                     .unwrap_or_else(|_| "{}".to_string());
+                let _ = self
+                    .fire_middleware_event(serde_json::json!({
+                        "type": "sub_engine_start",
+                        "helper": helper_name.clone(),
+                        "session": serde_json::from_str::<Value>(&empty_session).unwrap_or(Value::Null),
+                        "context": self.build_event_context(&helper_name, None, None),
+                    }))
+                    .await;
                 if let Some(loaded_json) = f(helper_name.clone(), empty_session).await {
                     let _ = sub_engine.import_session(&loaded_json);
                 }
@@ -1373,6 +1721,16 @@ impl AuwgentEngine {
                 if let Ok(completed_json) = sub_engine.export_session() {
                     f(helper_name.clone(), completed_json).await;
                 }
+            }
+            if let Ok(completed_json) = sub_engine.export_session() {
+                let _ = self
+                    .fire_middleware_event(serde_json::json!({
+                        "type": "sub_engine_complete",
+                        "helper": helper_name.clone(),
+                        "session": serde_json::from_str::<Value>(&completed_json).unwrap_or(Value::Null),
+                        "context": self.build_event_context(&helper_name, None, None),
+                    }))
+                    .await;
             }
 
             let final_resp = sub_engine
@@ -1479,6 +1837,29 @@ impl AuwgentEngine {
 
     pub fn end_llm_stream(&self) -> Value {
         self.orchestrator.lock().unwrap().end()
+    }
+
+    fn sync_fast_forward_from_session(&self) {
+        let session = self.session.lock().unwrap();
+        if session.stack.len() > 1 {
+            *self.fast_forward_stack.lock().unwrap() = Some(session.stack[1..].to_vec());
+        } else {
+            *self.fast_forward_stack.lock().unwrap() = None;
+        }
+    }
+
+    fn last_turn_response_value(&self) -> Value {
+        self.last_turn_response_value.lock().unwrap().clone()
+    }
+
+    fn serialize_host_context(&self) -> AuwgentResult<String> {
+        let session = self.session.lock().unwrap();
+        let context_json = serde_json::json!({
+            "activeAgent": self.ir.name,
+            "stack": session.stack,
+            "systemPrompt": session.system_prompt,
+        });
+        serde_json::to_string(&context_json).map_err(AuwgentError::Serialization)
     }
 
     pub fn generate_prompt(&self, helper_name: Option<String>) -> AuwgentResult<String> {

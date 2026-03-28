@@ -6,45 +6,45 @@ import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Main";
-  workflows: ({ flowName: "get_user_orders"; returns: string } | { flowName: "calculate_revenue"; returns: string } | { flowName: "process_bulk_order"; returns: string })[];
-  helpers: ({ name: "DataAnalyzer" } | { name: "ReportGenerator" })[];
+  workflows: ({ flowName: "get_user_orders"; flowParams: { target_user_id: string }; returns: string } | { flowName: "calculate_revenue"; flowParams: {  }; returns: string } | { flowName: "process_bulk_order"; flowParams: { target_user_id: string; product_ids: string; quantities: string }; returns: string })[];
+  helpers: ({ name: "DataAnalyzer"; input: { analysis_request: string }; output: unknown } | { name: "ReportGenerator"; input: { report_type: string; parameters: string }; output: { report_title: string; summary: string; sections: string[]; generated_at: string } })[];
 };
 const agentIR = _importedIR as unknown as MainIR;
 export type AnalysisReport = {
     total_products: number;
-    insights: string[];
     revenue: number;
-    total_users: number;
     total_orders: number;
-}
-
-export type Product = {
-    id: string;
-    price: number;
-    stock: number;
-    name: string;
-}
-
-export type Order = {
-    id: string;
-    user_id: string;
-    product_id: string;
-    quantity: number;
-    total: number;
-    status: "pending" | "completed" | "cancelled";
-}
-
-export type User = {
-    id: string;
-    name: string;
-    email: string;
-    created_at: string;
+    insights: string[];
+    total_users: number;
 }
 
 export type QueryResult = {
     data: string;
     message: string;
     success: boolean;
+}
+
+export type User = {
+    email: string;
+    id: string;
+    name: string;
+    created_at: string;
+}
+
+export type Product = {
+    name: string;
+    price: number;
+    stock: number;
+    id: string;
+}
+
+export type Order = {
+    id: string;
+    status: "pending" | "completed" | "cancelled";
+    product_id: string;
+    quantity: number;
+    user_id: string;
+    total: number;
 }
 export type MainInput = {
 

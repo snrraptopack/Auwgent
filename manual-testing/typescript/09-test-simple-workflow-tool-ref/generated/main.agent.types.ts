@@ -6,7 +6,7 @@ import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
 type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   name: "Main";
-  workflows: ({ flowName: "first"; returns: string })[];
+  workflows: ({ flowName: "first"; flowParams: { value: number }; returns: string })[];
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as MainIR;

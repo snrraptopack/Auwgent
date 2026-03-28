@@ -247,10 +247,9 @@ describe('TypedAuwgent', () => {
         let partialCallback: ((name: string, value: any, agentName: string) => void) | undefined;
 
         native.onIntent = () => {};
+        native.onMiddlewareEvent = () => {};
         native.onSubEngineStart = () => {};
         native.onSubEngineComplete = () => {};
-        native.onLlmStart = () => {};
-        native.onLlmEnd = () => {};
         native.onIntentPartial = (cb: (name: string, value: any, agentName: string) => void) => {
             partialCallback = cb;
         };
@@ -264,8 +263,8 @@ describe('TypedAuwgent', () => {
 
         (agent as any).activateListeners();
 
-        partialCallback?.('response_text', { text: 'Hello' }, 'Main');
-        partialCallback?.('response_text', { text: 'Hello there' }, 'Main');
+        partialCallback?.('response_text', { text: 'Hello', delta: 'Hello' }, 'Main');
+        partialCallback?.('response_text', { text: 'Hello there', delta: ' there' }, 'Main');
 
         expect(deltas).toEqual(['Hello', ' there']);
     });

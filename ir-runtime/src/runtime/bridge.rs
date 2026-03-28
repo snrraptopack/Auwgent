@@ -2,6 +2,10 @@ use crate::runtime::AuwgentEngine;
 use crate::runtime::drivers::ModelDriver;
 use crate::runtime::drivers::gemini::GeminiDriver;
 use crate::runtime::drivers::openai::OpenAIDriver;
+use crate::runtime::engine::{
+    AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
+    SessionSaveCallback, ToolImplementation,
+};
 use crate::types::AgentIR;
 use serde_json::Value;
 use std::sync::Arc;
@@ -60,6 +64,33 @@ impl EngineBridge {
         self.engine.set_context(context);
     }
 
+    pub fn register_tool(&self, name: &str, implementation: ToolImplementation) {
+        self.engine.register_tool(name, implementation);
+    }
+
+    pub fn on_intent(&self, handler: AsyncIntentCallback) {
+        self.engine.on_intent(handler);
+    }
+
+    pub fn on_intent_partial(
+        &self,
+        handler: Arc<dyn Fn(String, Value, String) + Send + Sync>,
+    ) {
+        self.engine.on_intent_partial(handler);
+    }
+
+    pub fn on_sub_engine_start(&self, handler: AsyncSessionPreloadCallback) {
+        self.engine.on_sub_engine_start(handler);
+    }
+
+    pub fn on_sub_engine_complete(&self, handler: SessionSaveCallback) {
+        self.engine.on_sub_engine_complete(handler);
+    }
+
+    pub fn on_middleware_event(&self, handler: AsyncMiddlewareEventCallback) {
+        self.engine.on_middleware_event(handler);
+    }
+
     pub fn export_session(&self) -> Result<String, String> {
         self.engine.export_session().map_err(|e| format!("{}", e))
     }
@@ -114,6 +145,8 @@ impl EngineBridge {
         self.engine.clear_intent_handlers();
         self.engine.clear_sub_engine_handlers();
         self.engine.clear_llm_handlers();
+        self.engine.clear_run_handlers();
+        self.engine.clear_middleware_handler();
     }
 
     pub async fn run_async(

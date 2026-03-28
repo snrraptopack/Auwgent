@@ -1,0 +1,303 @@
+// Comprehensive test: Agent with helpers, tools, workflows, handoffs, and in-memory DB
+
+import {User,Product,Order,QueryResult, AnalysisReport} from "./types"
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOM INTENTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+intent SpeakLoud {
+    description: "Use this to explain your thought step by step actions you are performing to the user"
+    fields {
+        explain: string
+    }
+} @example(explain = "I'm querying the database to find all users...")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MAIN AGENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+agent Main {
+    default config {
+        model:  custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
+        prompt: {
+            """
+            You are a helpful database assistant. You can:
+            - Query users, products, and orders from the in-memory database
+            - Create new records
+            - Analyze data and generate reports
+            - Hand off complex analysis to specialized helpers
+
+            When users ask for data analysis, use the DataAnalyzer helper.
+            When users ask for reports, use the ReportGenerator helper.
+            """
+        }
+    }
+
+    input: Text
+    output: QueryResult
+
+
+    intent: SpeakLoud
+
+    context {
+        is_vip: boolean
+        user_id: string
+        session_id: string
+    }
+
+    // ═══ DATABASE TOOLS ═══
+
+    tools {
+        db_query_users(filter: string): User[]
+            @desc "Query users from in-memory DB. Filter can be 'all', 'id:<id>', 'email:<email>'"
+            @example(filter = "all")
+
+        db_query_products(filter: string): Product[]
+            @desc "Query products from in-memory DB. Filter can be 'all', 'id:<id>', 'name:<name>'"
+            @example(filter = "id:10")
+
+        db_query_orders(filter: string): Order[]
+            @desc "Query orders from in-memory DB. Filter can be 'all', 'user_id:<id>', 'status:<status>'"
+            @example(filter = "all")
+
+        db_create_user(name: string, email: string): User
+            @desc "Create a new user in the database"
+            @example(name = "John Doe", email = "john@example.com")
+
+        db_create_product(name: string, price: number, stock: number): Product
+            @desc "Create a new product in the database"
+            @example(name = "Laptop", price = 999.99, stock = 50)
+
+        db_create_order(user_id: string, product_id: string, quantity: number): Order
+            @desc "Create a new order in the database"
+            @example(user_id = "user_1", product_id = "prod_1", quantity = 2)
+
+    }
+
+
+    // ═══ WORKFLOWS ═══
+
+    workflow get_user_orders(target_user_id: string): string {
+        description: "Get all orders for a specific user with product details"
+
+        // Query user to verify existence
+        let user_data = db_query_users("id:" + target_user_id)
+
+        // Query orders for this user
+        let orders_data = db_query_orders("user_id:" + target_user_id)
+
+        // For each order, we'd need to parse and get product details
+        // This is a simplified version - real implementation would loop
+        let products_data = db_query_products("all")
+
+        // Format and return results
+        return """
+            User: {{user_data}}
+            Orders: {{orders_data}}
+            Products: {{products_data}}
+        """
+    } @example(target_user_id = "user_1")
+
+    workflow calculate_revenue(): string {
+        description: "Calculate total revenue from all completed orders"
+
+        // Scoped tool for revenue calculation
+        tool sum_order_totals(orders_json: string): number @desc "Parse orders JSON and sum totals"
+
+        // Query all completed orders
+        let completed_orders = db_query_orders("status:completed")
+
+        // Calculate total using scoped tool
+        let total_revenue = sum_order_totals(completed_orders)
+
+        // Format result
+        if (total_revenue > 10000) {
+            return "Excellent! Total revenue: $" + total_revenue
+        }
+
+        return "Total revenue: $" + total_revenue
+    } @example()
+
+    workflow process_bulk_order(target_user_id: string, product_ids: string, quantities: string): string {
+        description: "Process multiple orders at once with validation"
+
+        // Scoped tools for this workflow
+        tool validate_stock(product_id: string, quantity: number): boolean @desc "Check if enough stock available"
+        tool parse_csv(csv_string: string): string @desc "Parse comma-separated values"
+
+        // Check if user is VIP (accessing context)
+        if (ctx.is_vip) {
+            // VIP users get priority processing
+            let products = parse_csv(product_ids)
+            let qtys = parse_csv(quantities)
+
+            // Create orders (simplified - would loop in real implementation)
+            let order1 = db_create_order(target_user_id, products, qtys)
+
+            return "VIP order processed: " + order1
+        }
+
+        // Regular user processing
+        return "Order queued for processing"
+    } @example(target_user_id = "user_1", product_ids = "prod_1,prod_2", quantities = "2,3")
+
+    helpers {
+        DataAnalyzer with all tools handoff user then continue
+        ReportGenerator with tools {db_query_users, db_query_products, db_query_orders} handoff user
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER: DATA ANALYZER
+// ═══════════════════════════════════════════════════════════════════════════
+
+helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
+        prompt: {
+            """
+            You are a data analyst expert. Analyze database records and provide:
+            - Statistical insights
+            - Trends and patterns
+            - Recommendations
+            - Anomaly detection
+
+            Use the available database tools to gather data, then provide detailed analysis.
+            """
+        }
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+
+    // Helper-specific tools
+    tool analyze_user_behavior(user_id: string): string
+        @desc "Analyze a specific user's purchasing behavior"
+        @example(user_id = "user_1")
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+        @example()
+
+    workflow comprehensive_analysis(): string {
+        description: "Run a comprehensive analysis across all database entities"
+
+        // Scoped tools for analysis
+        tool calculate_average(numbers: string): number @desc "Calculate average from comma-separated numbers"
+        tool find_outliers(data: string): string @desc "Identify outliers in dataset"
+        tool analyze_user_behavior(user_id: string): string @desc "Analyze a specific user's purchasing behavior"
+
+        // Get all data
+        let users = db_query_users("all")
+        let products = db_query_products("all")
+        let orders = db_query_orders("all")
+
+        // Analyze user behavior
+        let user_behavior = analyze_user_behavior(ctx.user_id)
+
+        // Check inventory
+        let low_stock_items = detect_low_stock()
+
+        // Generate insights
+        if (low_stock_items != "") {
+            return """
+                ALERT: Low stock detected!
+                {{low_stock_items}}
+                User Analysis: {{user_behavior}}
+            """
+        }
+
+        return """
+            Analysis complete.
+            Users: {{users}}
+            Products: {{products}}
+            Orders: {{orders}}
+        """
+    } @example()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER: REPORT GENERATOR
+// ═══════════════════════════════════════════════════════════════════════════
+
+helper ReportGenerator {
+    description: "Specialized helper for generating formatted reports and summaries"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "openai/gpt-oss-120b")
+        prompt: {
+            """
+            You are a report generation specialist. Create well-formatted, professional reports.
+
+            Your reports should include:
+            - Executive summary
+            - Key metrics
+            - Detailed breakdowns
+            - Visual data representations (as text)
+            - Actionable recommendations
+            """
+        }
+    }
+
+    input: {
+        report_type: string @desc "Type of report: 'sales', 'inventory', 'users', 'custom'"
+        parameters: string @desc "Additional parameters for the report"
+    }
+
+    output: {
+        report_title: string
+        summary: string
+        sections: string[]
+        generated_at: string
+    } @example(report_title = "Sales Report Q1", summary = "Strong performance", sections = ["Overview", "Details"], generated_at = "2026-03-22")
+
+    intent: SpeakLoud
+
+    // Helper-specific tools
+    tool format_table(data: string): string
+        @desc "Format data as a text table"
+        @example(data = "user1,John,john@example.com")
+
+    tool generate_chart_description(data: string, chart_type: string): string
+        @desc "Generate a textual description of a chart"
+        @example(data = "10,20,30,40", chart_type = "line")
+
+    workflow generate_sales_report(): string {
+        description: "Generate a comprehensive sales report"
+
+        // Scoped tools for report generation
+        tool aggregate_by_status(orders: string): string @desc "Group orders by status and count"
+        tool calculate_metrics(orders: string): string @desc "Calculate key sales metrics"
+
+        // Query all orders
+        let all_orders = db_query_orders("all")
+        let completed = db_query_orders("status:completed")
+        let pending = db_query_orders("status:pending")
+
+        // Calculate metrics
+        let metrics = calculate_metrics(completed)
+        let status_breakdown = aggregate_by_status(all_orders)
+
+        // Format as table
+        let formatted_metrics = format_table(metrics)
+        let chart_desc = generate_chart_description(metrics, "bar")
+
+        // Build report sections
+        let summary = "Sales Report for Session: " + ctx.session_id
+        let details = "Completed: " + completed + "\nPending: " + pending
+
+        return """
+            {{summary}}
+            {{formatted_metrics}}
+            {{chart_desc}}
+            {{details}}
+        """
+    } @example()
+}

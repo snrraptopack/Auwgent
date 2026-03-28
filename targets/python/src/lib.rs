@@ -154,7 +154,7 @@ impl AuwgentNative {
             })
         });
 
-        self.bridge.engine.register_tool(&name, tool_impl);
+        self.bridge.register_tool(&name, tool_impl);
 
         Ok(())
     }
@@ -190,7 +190,7 @@ impl AuwgentNative {
                 })
             });
 
-        self.bridge.engine.on_intent(handler);
+        self.bridge.on_intent(handler);
 
         Ok(())
     }
@@ -217,7 +217,7 @@ impl AuwgentNative {
                 })
             });
 
-        self.bridge.engine.on_sub_engine_start(handler);
+        self.bridge.on_sub_engine_start(handler);
         Ok(())
     }
 
@@ -238,55 +238,29 @@ impl AuwgentNative {
                 })
             });
 
-        self.bridge.engine.on_sub_engine_complete(handler);
+        self.bridge.on_sub_engine_complete(handler);
         Ok(())
     }
 
-    pub fn on_llm_start(&self, callback: PyObject) -> PyResult<()> {
-        let handler: ir_runtime::runtime::engine::AsyncLlmStartCallback =
-            std::sync::Arc::new(move |prompt: String, sys: String, ctx: String| {
-                let callback = callback.clone();
-                Box::pin(async move {
-                    let py_result = Python::with_gil(|py| {
-                        let p_py = pyo3::types::PyString::new(py, &prompt);
-                        let s_py = pyo3::types::PyString::new(py, &sys);
-                        let c_py = pyo3::types::PyString::new(py, &ctx);
-                        let res = callback.call1(py, (p_py, s_py, c_py))?;
-                        pyo3_asyncio::tokio::into_future(res.as_ref(py))
-                    });
-                    if let Ok(future) = py_result {
-                        if let Ok(obj) = future.await {
-                            return Python::with_gil(|py| {
-                                let s: String = obj.extract(py).unwrap_or_else(|_| "null".to_string());
-                                serde_json::from_str(&s).unwrap_or(Value::Null)
-                            });
-                        }
+    pub fn on_middleware_event(&self, callback: PyObject) -> PyResult<()> {
+        self.bridge.on_middleware_event(std::sync::Arc::new(move |event_json: String| {
+            let callback = callback.clone();
+            Box::pin(async move {
+                let py_result = Python::with_gil(|py| {
+                    let event_py = pyo3::types::PyString::new(py, &event_json);
+                    let res = callback.call1(py, (event_py,))?;
+                    pyo3_asyncio::tokio::into_future(res.as_ref(py))
+                });
+                if let Ok(future) = py_result {
+                    if let Ok(obj) = future.await {
+                        return Python::with_gil(|py| {
+                            obj.extract::<Option<String>>(py).unwrap_or(None)
+                        });
                     }
-                    Value::Null
-                })
-            });
-
-        self.bridge.engine.on_llm_start(handler);
-        Ok(())
-    }
-
-    pub fn on_llm_end(&self, callback: PyObject) -> PyResult<()> {
-        let handler: ir_runtime::runtime::engine::AsyncLlmEndCallback =
-            std::sync::Arc::new(move |res_str: String, sys: String| {
-                let callback = callback.clone();
-                Box::pin(async move {
-                    let py_result = Python::with_gil(|py| {
-                        let r_py = pyo3::types::PyString::new(py, &res_str);
-                        let s_py = pyo3::types::PyString::new(py, &sys);
-                        let res = callback.call1(py, (r_py, s_py))?;
-                        pyo3_asyncio::tokio::into_future(res.as_ref(py))
-                    });
-                    if let Ok(future) = py_result {
-                        let _ = future.await;
-                    }
-                })
-            });
-        self.bridge.engine.on_llm_end(handler);
+                }
+                None
+            })
+        }));
         Ok(())
     }
 
@@ -299,7 +273,7 @@ impl AuwgentNative {
                     let _ = callback.call1(py, (name, value_json, agent));
                 });
             });
-        self.bridge.engine.on_intent_partial(handler);
+        self.bridge.on_intent_partial(handler);
         Ok(())
     }
 }

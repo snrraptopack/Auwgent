@@ -107,10 +107,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         # Deferred handler storage — registered/deregistered around each run()
         self._stored_intent_handler: Optional[Callable] = None
         self._stored_partial_handler: Optional[Callable] = None
-        self._last_intent_val: Any = None
-        self._last_intent_name: Optional[str] = None
         self._last_raw_block: Optional[str] = None
-        self._partial_text_cursor: Dict[str, str] = {}
 
         # ── 1. Context ──
         if "context" in config:
@@ -263,6 +260,115 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             ctx[k] = v  # type: ignore
         return ctx
 
+    def _build_context_from_runtime_event(self, event: Dict[str, Any]) -> MiddlewareContext:
+        ctx = self._build_context()
+        runtime_ctx = event.get("context")
+
+        if isinstance(runtime_ctx, dict):
+            active_agent = runtime_ctx.get("activeAgent")
+            if isinstance(active_agent, str):
+                ctx["activeAgent"] = active_agent
+
+            stack = runtime_ctx.get("stack")
+            if isinstance(stack, list):
+                ctx["stack"] = list(stack)
+                self._agent_stack = list(stack)
+
+            root_agent = runtime_ctx.get("rootAgent")
+            if isinstance(root_agent, str):
+                ctx["rootAgent"] = root_agent
+
+            raw_block = runtime_ctx.get("rawBlock")
+            if isinstance(raw_block, str):
+                ctx["rawBlock"] = raw_block
+                self._last_raw_block = raw_block
+
+            system_prompt = runtime_ctx.get("systemPrompt")
+            if isinstance(system_prompt, str):
+                ctx["systemPrompt"] = system_prompt
+
+        return ctx
+
+    async def _handle_middleware_event(self, event_json: str) -> Optional[str]:
+        event = cast(Dict[str, Any], json.loads(event_json))
+        ctx = self._build_context_from_runtime_event(event)
+        event_type = event.get("type")
+
+        if event_type == "intent":
+            value = event.get("value")
+            if isinstance(value, dict):
+                value = dict(value)
+                value.pop("_raw", None)
+
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onIntent"):
+                    control = await middleware.onIntent(cast(str, event.get("name", "")), value, ctx)
+                    if control is not None:
+                        return json.dumps(control)
+            return None
+
+        if event_type == "llm_start":
+            current_prompt = event.get("prompt", "")
+            if not isinstance(current_prompt, str):
+                current_prompt = ""
+
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onLLMStart"):
+                    result = await middleware.onLLMStart(current_prompt, ctx)
+                    if isinstance(result, str):
+                        current_prompt = result
+
+            return json.dumps({
+                "prompt": current_prompt,
+                "stack": ctx.get("stack")
+            })
+
+        if event_type == "llm_end":
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onLLMEnd"):
+                    await middleware.onLLMEnd(event.get("response") or {}, ctx)
+            return None
+
+        if event_type == "run_start":
+            session = cast(SessionState, event.get("session", {}))
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onRunStart"):
+                    session = await middleware.onRunStart(session, ctx)
+
+            if "stack" in ctx and isinstance(ctx["stack"], list):
+                session["stack"] = list(ctx["stack"])
+                self._agent_stack = list(ctx["stack"])
+
+            return json.dumps({"session": session})
+
+        if event_type == "run_complete":
+            session = cast(SessionState, event.get("session", {}))
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onRunComplete"):
+                    await middleware.onRunComplete(session, ctx)
+            return None
+
+        if event_type == "error":
+            error_payload = event.get("error", {})
+            if isinstance(error_payload, dict) and error_payload.get("kind") == "tool_error":
+                error: Exception = AuwgentToolError(
+                    cast(str, error_payload.get("tool", "unknown")),
+                    cast(str, error_payload.get("message", "unknown")),
+                )
+            else:
+                message = error_payload.get("message", "Unknown runtime error") if isinstance(error_payload, dict) else "Unknown runtime error"
+                error = RuntimeError(message)
+
+            session = cast(Optional[SessionState], event.get("session"))
+            for middleware in self._get_middleware(ctx):
+                if hasattr(middleware, "onError"):
+                    swallow = await middleware.onError(error, session, ctx)
+                    if swallow:
+                        return json.dumps({"swallow": True})
+            return None
+
+        return None
+
     def _get_middleware(self, ctx: MiddlewareContext) -> List[Any]:
         valid: List[Any] = []
         for m in self.middleware:
@@ -278,7 +384,6 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     # ── Listener Lifecycle ────────────────────────────────────────────────
 
     def _activate_listeners(self) -> None:
-        # ── 1. Intent Interceptor ──
         user_handler = self._stored_intent_handler
 
         async def wrap_intent(name: str, value_json_str: str, agent_name: str) -> Optional[str]:
@@ -293,148 +398,41 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 self._last_raw_block = raw_block
                 val_dict.pop("_raw", None)
 
-            # Pipeline through middleware
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onIntent"):
-                    try:
-                        control = await m.onIntent(name, val_dict, ctx)
-                        if control is not None:
-                            return json.dumps(control)
-                    except Exception:
-                        raise
-
-            # Track last intent value for onLLMEnd
-            self._last_intent_name = name
-            self._last_intent_val = val_dict
-
-            # Forward to user handler
             if user_handler:
                 sig = inspect.signature(user_handler)
                 if len(sig.parameters) >= 3:
                     res = await user_handler(name, val_dict, agent_name)
                 else:
                     res = await user_handler(name, val_dict)
-
-                # Unified Error Hook Bridge
-                if name == "tool_error" and isinstance(val_dict, dict):
-                    tool_err = AuwgentToolError(
-                        val_dict.get("tool", "unknown"),
-                        val_dict.get("message", "unknown"),
-                    )
-                    for m in self._get_middleware(ctx):
-                        if hasattr(m, "onError"):
-                            await m.onError(tool_err, None, ctx)
-
                 return json.dumps(res) if res is not None else None
-
-            # Error hook bridge even without user handler
-            if name == "tool_error" and isinstance(val_dict, dict):
-                tool_err = AuwgentToolError(
-                    val_dict.get("tool", "unknown"),
-                    val_dict.get("message", "unknown"),
-                )
-                for m in self._get_middleware(ctx):
-                    if hasattr(m, "onError"):
-                        await m.onError(tool_err, None, ctx)
-
             return None
 
         self._native.on_intent(wrap_intent)
 
-        # ── 2. Partial Intent Interceptor ──
         partial_handler = self._stored_partial_handler
         def wrap_partial(name: str, value_json_str: str, agent_name: str) -> None:
             if partial_handler is not None:
                 value_dict = json.loads(value_json_str)
-                if (
-                    name == "response_text"
-                    and isinstance(value_dict, dict)
-                    and isinstance(value_dict.get("text"), str)
-                ):
-                    key = f"{agent_name}:{name}"
-                    previous = self._partial_text_cursor.get(key, "")
-                    current = cast(str, value_dict["text"])
-                    delta = current[len(previous):] if current.startswith(previous) else current
-                    self._partial_text_cursor[key] = current
-                    value_dict = {**value_dict, "delta": delta}
                 sig = inspect.signature(partial_handler)
                 if len(sig.parameters) >= 3:
                     partial_handler(name, value_dict, agent_name)
                 else:
                     partial_handler(name, value_dict)
         self._native.on_intent_partial(wrap_partial)
+        self._native.on_middleware_event(self._handle_middleware_event)
 
-        # ── 3. SubEngine Hooks ──
         async def wrap_sub_start(helper_name: str, session_json: str) -> Optional[str]:
-            session = json.loads(session_json)
-            # Sync stack from session
+            session = cast(SessionState, json.loads(session_json))
             if "stack" in session:
                 self._agent_stack = list(session["stack"])
-
-            ctx = self._build_context()
-            ctx["systemPrompt"] = session.get("systemPrompt")
-
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onRunStart"):
-                    session = await m.onRunStart(session, ctx)
             return json.dumps(session)
         self._native.on_sub_engine_start(wrap_sub_start)
 
         async def wrap_sub_complete(helper_name: str, session_json: str) -> None:
-            session = json.loads(session_json)
-            # Sync stack back from sub-engine
+            session = cast(SessionState, json.loads(session_json))
             if "stack" in session:
                 self._agent_stack = list(session["stack"])
-
-            ctx = self._build_context()
-            ctx["systemPrompt"] = session.get("systemPrompt")
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onRunComplete"):
-                    await m.onRunComplete(session, ctx)
         self._native.on_sub_engine_complete(wrap_sub_complete)
-
-        # ── 4. LLM Hooks ──
-        async def wrap_llm_start(prompt_json: str, system_prompt: str, context_json: str) -> str:
-            ctx = self._build_context()
-            ctx["systemPrompt"] = system_prompt
-
-            # Sync stack from Rust context if provided
-            try:
-                rust_ctx = json.loads(context_json)
-                if rust_ctx and "stack" in rust_ctx:
-                    ctx["stack"] = rust_ctx["stack"]
-            except:
-                pass
-
-            self._last_intent_name = None
-            self._last_intent_val = None
-
-            current_prompt = prompt_json
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onLLMStart"):
-                    result = await m.onLLMStart(current_prompt, ctx)
-                    if isinstance(result, str):
-                        current_prompt = result
-
-            return json.dumps({
-                "prompt": current_prompt,
-                "stack": ctx.get("stack")
-            })
-        self._native.on_llm_start(wrap_llm_start)
-
-        async def wrap_llm_end(response_str: str, system_prompt: str) -> None:
-            ctx = self._build_context()
-            ctx["systemPrompt"] = system_prompt
-
-            # Trigger onLLMEnd for terminal intents
-            is_terminal = self._last_intent_name in ("response_text", "response_schema") or \
-                          (self._last_intent_name and self._last_intent_name not in ("tool_call", "workflow_call", "helper_call"))
-
-            if is_terminal:
-                for m in self._get_middleware(ctx):
-                    if hasattr(m, "onLLMEnd"):
-                        await m.onLLMEnd(self._last_intent_val or {}, ctx)
-        self._native.on_llm_end(wrap_llm_end)
 
     def _deactivate_listeners(self) -> None:
         self._native.clear_listeners()
@@ -446,33 +444,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._shared_context = {}
         self._agent_stack = [self.ir.get("name", "agent")]
         self._last_raw_block = None
-        self._partial_text_cursor = {}
 
-        current_session = self.export_session()
         self._activate_listeners()
-        ctx = self._build_context()
 
         try:
-            # ── Stack Persistence ──
-            # Load stack from session if available
-            session_stack = current_session.get("stack", [])
-            if session_stack:
-                self._agent_stack = list(session_stack)
-            else:
-                self._agent_stack = [self.ir.get("name", "agent")]
-                current_session["stack"] = list(self._agent_stack)
-
-            # onRunStart Interception
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onRunStart"):
-                    current_session = await m.onRunStart(current_session, ctx)
-
-            self.import_session(current_session)
-
-            # ── Execution Tunneling ──
-            # If middleware set ctx["stack"], use it; otherwise use our sync'd stack
-            injected_stack = ctx["stack"] if len(ctx["stack"]) > 1 else (self._agent_stack if len(self._agent_stack) > 1 else None)
-
             # Pass raw strings directly; only JSON-encode non-string types
             if input_val is None:
                 input_str = None
@@ -483,7 +458,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
             res_json = await self._native.run(
                 input_str, 
-                json.dumps(injected_stack) if injected_stack else None
+                None
             )
             current_session = json.loads(res_json)
 
@@ -491,23 +466,6 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             if "stack" in current_session:
                 self._agent_stack = list(current_session["stack"])
 
-            # onRunComplete interception
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onRunComplete"):
-                    await m.onRunComplete(current_session, ctx)
-
-            return cast(SessionState, current_session)
-
-        except Exception as e:
-            handled = False
-            for m in self._get_middleware(ctx):
-                if hasattr(m, "onError"):
-                    swallow = await m.onError(e, current_session, ctx)
-                    if swallow:
-                        handled = True
-                        break
-            if not handled:
-                raise
             return cast(SessionState, current_session)
         finally:
             self._deactivate_listeners()
