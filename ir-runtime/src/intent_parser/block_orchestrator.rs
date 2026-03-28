@@ -159,11 +159,15 @@ impl BlockOrchestrator {
         let mut terminal_intents: std::collections::HashMap<String, Vec<Value>> =
             std::collections::HashMap::new();
 
-        for block in blocks.iter() {
+        for (block_index, block) in blocks.iter().enumerate() {
             match &block.block_type {
                 BlockType::Chat => {
                     if !block.content.is_empty() {
-                        let intent = serde_json::json!({ "text": block.content });
+                        let intent = if is_final {
+                            serde_json::json!({ "text": block.content })
+                        } else {
+                            build_partial_text_payload(&block.content, block_index)
+                        };
 
                         if terminal_types.contains("response_text") {
                             terminal_intents
@@ -178,77 +182,122 @@ impl BlockOrchestrator {
 
                 BlockType::Tool => {
                     if let Some(tool_name) = block.target_name.as_deref() {
-                        if let Some(fields) = parse_block_fields(&block.content) {
-                            let args_json =
-                                self.unflatten_tool_args(tool_name, ast_to_json_object(&fields));
-                            let intent = serde_json::json!({
-                                "type": tool_name,
-                                "args": args_json
-                            });
-                            self.emit_intent("tool_call", intent, is_final, false);
+                        let parsed = parse_partial_block_fields(&block.content)
+                            .map(|fields| self.unflatten_tool_args(tool_name, ast_to_json_object(&fields)));
+                        if is_final && parsed.is_none() {
+                            continue;
                         }
+                        let args_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+                        let intent = serde_json::json!({
+                            "type": tool_name,
+                            "args": args_json
+                        });
+                        let intent = if is_final {
+                            intent
+                        } else {
+                            build_partial_structured_payload(intent, &block.content, block_index)
+                        };
+                        self.emit_intent("tool_call", intent, is_final, false);
                     }
                 }
 
                 BlockType::Workflow => {
                     if let Some(workflow_name) = block.target_name.as_deref() {
-                        if let Some(fields) = parse_block_fields(&block.content) {
-                            let args_json = self.unflatten_workflow_args(
-                                workflow_name,
-                                ast_to_json_object(&fields),
-                            );
-                            let intent = serde_json::json!({
-                                "type": workflow_name,
-                                "args": args_json
-                            });
-                            self.emit_intent("workflow_call", intent, is_final, false);
+                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+                            self.unflatten_workflow_args(workflow_name, ast_to_json_object(&fields))
+                        });
+                        if is_final && parsed.is_none() {
+                            continue;
                         }
+                        let args_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+                        let intent = serde_json::json!({
+                            "type": workflow_name,
+                            "args": args_json
+                        });
+                        let intent = if is_final {
+                            intent
+                        } else {
+                            build_partial_structured_payload(intent, &block.content, block_index)
+                        };
+                        self.emit_intent("workflow_call", intent, is_final, false);
                     }
                 }
 
                 BlockType::Helper => {
                     if let Some(helper_name) = block.target_name.as_deref() {
-                        if let Some(fields) = parse_block_fields(&block.content) {
-                            let args_json = self
-                                .unflatten_helper_args(helper_name, ast_to_json_object(&fields));
-                            let intent = serde_json::json!({
-                                "type": helper_name,
-                                "args": args_json
-                            });
-                            self.emit_intent("helper_call", intent, is_final, false);
+                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+                            self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
+                        });
+                        if is_final && parsed.is_none() {
+                            continue;
                         }
+                        let args_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+                        let intent = serde_json::json!({
+                            "type": helper_name,
+                            "args": args_json
+                        });
+                        let intent = if is_final {
+                            intent
+                        } else {
+                            build_partial_structured_payload(intent, &block.content, block_index)
+                        };
+                        self.emit_intent("helper_call", intent, is_final, false);
                     }
                 }
 
                 BlockType::Out => {
-                    if let Ok(obj_ast) = parse_schema_content(&block.content) {
-                        let obj_json = self.unflatten_schema_response(
-                            block.target_name.as_deref().unwrap_or("Output"),
-                            ast_to_json(&obj_ast),
-                        );
-                        let intent = serde_json::json!({
-                            "type": block.target_name.as_ref().map(|s| s.as_str()).unwrap_or(""),
-                            "response": obj_json
-                        });
+                    let schema_name = block.target_name.as_deref().unwrap_or("Output");
+                    let parsed = parse_partial_schema_content(&block.content)
+                        .map(|obj_ast| self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast)));
+                    if is_final && parsed.is_none() {
+                        continue;
+                    }
+                    let obj_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+                    let intent = serde_json::json!({
+                        "type": block.target_name.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                        "response": obj_json
+                    });
+                    let intent = if is_final {
+                        intent
+                    } else {
+                        build_partial_structured_payload(intent, &block.content, block_index)
+                    };
 
-                        if terminal_types.contains("response_schema") {
-                            terminal_intents
-                                .entry("response_schema".to_string())
-                                .or_insert_with(Vec::new)
-                                .push(intent);
-                        } else {
-                            self.emit_intent("response_schema", intent, is_final, false);
-                        }
+                    if terminal_types.contains("response_schema") {
+                        terminal_intents
+                            .entry("response_schema".to_string())
+                            .or_insert_with(Vec::new)
+                            .push(intent);
+                    } else {
+                        self.emit_intent("response_schema", intent, is_final, false);
                     }
                 }
 
                 BlockType::Custom(intent_name) => {
-                    if let Some(fields) = parse_block_fields(&block.content) {
+                    if let Some(fields) = parse_partial_block_fields(&block.content) {
                         let args_json =
                             self.unflatten_custom_args(intent_name, ast_to_json_object(&fields));
-                        self.emit_intent(&intent_name, args_json, is_final, true);
+                        let intent = if is_final {
+                            args_json
+                        } else {
+                            build_partial_structured_payload(
+                                args_json,
+                                &block.content,
+                                block_index,
+                            )
+                        };
+                        self.emit_intent(&intent_name, intent, is_final, true);
                     } else {
-                        let intent = serde_json::json!({ "content": block.content });
+                        if is_final {
+                            let intent = serde_json::json!({ "content": block.content });
+                            self.emit_intent(&intent_name, intent, is_final, true);
+                            continue;
+                        }
+                        let intent = build_partial_structured_payload(
+                            Value::Object(Map::new()),
+                            &block.content,
+                            block_index,
+                        );
                         self.emit_intent(&intent_name, intent, is_final, true);
                     }
                 }
@@ -350,6 +399,23 @@ fn parse_block_fields(content: &str) -> Option<std::collections::HashMap<String,
     }
 }
 
+fn parse_partial_block_fields(content: &str) -> Option<std::collections::HashMap<String, ASTValue>> {
+    if let Some(parsed) = parse_block_fields(content) {
+        return Some(parsed);
+    }
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut best = None;
+    for line_count in 1..=lines.len() {
+        let candidate = lines[..line_count].join("\n");
+        if let Some(parsed) = parse_block_fields(&candidate) {
+            best = Some(parsed);
+        }
+    }
+
+    best
+}
+
 fn parse_schema_content(content: &str) -> Result<ASTValue, String> {
     let trimmed = content.trim();
     if trimmed.is_empty() {
@@ -363,12 +429,59 @@ fn parse_schema_content(content: &str) -> Result<ASTValue, String> {
     }
 }
 
+fn parse_partial_schema_content(content: &str) -> Option<ASTValue> {
+    if let Ok(parsed) = parse_schema_content(content) {
+        return Some(parsed);
+    }
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut best = None;
+    for line_count in 1..=lines.len() {
+        let candidate = lines[..line_count].join("\n");
+        if let Ok(parsed) = parse_schema_content(&candidate) {
+            best = Some(parsed);
+        }
+    }
+
+    best
+}
+
 fn is_incomplete_response_text_open(input: &str) -> bool {
     const OPEN_TAG: &str = "<response_text>";
     let trimmed = input.trim_start();
     !trimmed.is_empty()
         && trimmed.len() < OPEN_TAG.len()
         && OPEN_TAG.starts_with(trimmed)
+}
+
+fn build_partial_text_payload(text: &str, segment: usize) -> Value {
+    serde_json::json!({
+        "text": text,
+        "partial": true,
+        "complete": false,
+        "mode": "text",
+        "segment": segment,
+        "snapshot": {
+            "text": text
+        },
+        "raw": text
+    })
+}
+
+fn build_partial_structured_payload(mut base: Value, raw: &str, segment: usize) -> Value {
+    let snapshot = base.clone();
+    if let Value::Object(ref mut map) = base {
+        map.insert("partial".to_string(), Value::Bool(true));
+        map.insert("complete".to_string(), Value::Bool(false));
+        map.insert("mode".to_string(), Value::String("structured".to_string()));
+        map.insert(
+            "segment".to_string(),
+            Value::Number(serde_json::Number::from(segment)),
+        );
+        map.insert("raw".to_string(), Value::String(raw.to_string()));
+        map.insert("snapshot".to_string(), snapshot);
+    }
+    base
 }
 
 // Convert ASTValue to serde_json::Value

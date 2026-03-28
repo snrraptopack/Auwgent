@@ -324,7 +324,11 @@ impl AuwgentEngine {
 
                 let value = if name == "response_text" {
                     if let Some(text) = value.get("text").and_then(Value::as_str) {
-                        let key = format!("{agent_name}:{name}");
+                        let segment = value
+                            .get("segment")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0);
+                        let key = format!("{agent_name}:{name}:{segment}");
                         let previous = partial_cursor
                             .lock()
                             .ok()

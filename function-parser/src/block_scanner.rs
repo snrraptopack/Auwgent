@@ -75,15 +75,23 @@ impl BlockScanner {
         true
     }
 
-    fn check_incomplete_response_text_open(&self) -> bool {
-        const OPEN_TAG: &str = "<response_text>";
+    fn check_incomplete_literal_prefix(&self, literal: &str) -> bool {
+        let literal_len = literal.chars().count();
         let remaining_len = self.chars.len().saturating_sub(self.pos);
-        if remaining_len == 0 || remaining_len >= OPEN_TAG.chars().count() {
+        if remaining_len == 0 || remaining_len >= literal_len {
             return false;
         }
 
         let remaining: String = self.chars[self.pos..].iter().collect();
-        OPEN_TAG.starts_with(&remaining)
+        literal.starts_with(&remaining)
+    }
+
+    fn check_incomplete_response_text_open(&self) -> bool {
+        self.check_incomplete_literal_prefix("<response_text>")
+    }
+
+    fn check_incomplete_response_text_close(&self) -> bool {
+        self.check_incomplete_literal_prefix("</response_text>")
     }
 
     fn try_read_header(&self) -> Option<String> {
@@ -165,6 +173,10 @@ impl BlockScanner {
                 break;
             }
 
+            if self.check_incomplete_response_text_close() {
+                break;
+            }
+
             if let Some(header) = self.try_read_header() {
                 if self.parse_header(&header).is_some() || self.is_known_closing_header(&header) {
                     break;
@@ -203,6 +215,16 @@ impl BlockScanner {
                     target_name: None,
                 });
             } else if self.check_incomplete_response_text_open() {
+                if !implicit_chat.trim().is_empty() {
+                    blocks.push(Block {
+                        block_type: BlockType::Chat,
+                        content: implicit_chat.trim().to_string(),
+                        target_name: None,
+                    });
+                    implicit_chat.clear();
+                }
+                break;
+            } else if self.check_incomplete_response_text_close() {
                 if !implicit_chat.trim().is_empty() {
                     blocks.push(Block {
                         block_type: BlockType::Chat,
@@ -347,6 +369,17 @@ mod tests {
     #[test]
     fn test_incomplete_response_text_open_flushes_prior_chat_only() {
         let input = "Hello<response_text";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_incomplete_response_text_close_is_not_emitted_as_chat() {
+        let input = "<response_text>Hello</response_text";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 

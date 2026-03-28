@@ -447,3 +447,50 @@ fn test_partial_response_text_does_not_emit_incomplete_open_tag() {
     assert_eq!(partials[0].0, "response_text");
     assert_eq!(partials[0].1["text"], "Hello");
 }
+
+#[test]
+fn test_partial_tool_call_emits_structured_snapshot() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+
+    let partials = Arc::new(Mutex::new(Vec::new()));
+    let partials_clone = Arc::clone(&partials);
+
+    orch.on_intent_partial(Arc::new(move |name, value| {
+        partials_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[tool_call: create_user]\nname: \"Ama\"\nemail:");
+
+    let partials = partials.lock().unwrap();
+    assert_eq!(partials.len(), 1);
+    assert_eq!(partials[0].0, "tool_call");
+    assert_eq!(partials[0].1["partial"], true);
+    assert_eq!(partials[0].1["mode"], "structured");
+    assert_eq!(partials[0].1["type"], "create_user");
+    assert_eq!(partials[0].1["args"]["name"], "Ama");
+    assert_eq!(partials[0].1["snapshot"]["args"]["name"], "Ama");
+}
+
+#[test]
+fn test_partial_response_schema_emits_structured_snapshot() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("response_schema");
+
+    let partials = Arc::new(Mutex::new(Vec::new()));
+    let partials_clone = Arc::clone(&partials);
+
+    orch.on_intent_partial(Arc::new(move |name, value| {
+        partials_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[schema: Output]\nstatus: \"draft\"\nsummary:");
+
+    let partials = partials.lock().unwrap();
+    assert_eq!(partials.len(), 1);
+    assert_eq!(partials[0].0, "response_schema");
+    assert_eq!(partials[0].1["partial"], true);
+    assert_eq!(partials[0].1["mode"], "structured");
+    assert_eq!(partials[0].1["response"]["status"], "draft");
+    assert_eq!(partials[0].1["snapshot"]["response"]["status"], "draft");
+}
