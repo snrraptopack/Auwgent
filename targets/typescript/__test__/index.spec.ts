@@ -263,8 +263,24 @@ describe('TypedAuwgent', () => {
 
         (agent as any).activateListeners();
 
-        partialCallback?.('response_text', { text: 'Hello', delta: 'Hello' }, 'Main');
-        partialCallback?.('response_text', { text: 'Hello there', delta: ' there' }, 'Main');
+        partialCallback?.('response_text', {
+            partial: true,
+            complete: false,
+            mode: 'text',
+            segment: 0,
+            snapshot: { text: 'Hello' },
+            raw: 'Hello',
+            delta: 'Hello',
+        }, 'Main');
+        partialCallback?.('response_text', {
+            partial: true,
+            complete: false,
+            mode: 'text',
+            segment: 0,
+            snapshot: { text: 'Hello there' },
+            raw: 'Hello there',
+            delta: ' there',
+        }, 'Main');
 
         expect(deltas).toEqual(['Hello', ' there']);
     });
@@ -298,8 +314,6 @@ describe('TypedAuwgent', () => {
         (agent as any).activateListeners();
 
         partialCallback?.('tool_call', {
-            type: 'search',
-            args: { query: 'Accra' },
             partial: true,
             complete: false,
             mode: 'structured',
@@ -312,8 +326,6 @@ describe('TypedAuwgent', () => {
         }, 'Main');
 
         expect(partials).toEqual([{
-            type: 'search',
-            args: { query: 'Accra' },
             partial: true,
             complete: false,
             mode: 'structured',

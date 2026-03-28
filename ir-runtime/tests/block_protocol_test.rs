@@ -445,7 +445,7 @@ fn test_partial_response_text_does_not_emit_incomplete_open_tag() {
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "response_text");
-    assert_eq!(partials[0].1["text"], "Hello");
+    assert_eq!(partials[0].1["snapshot"]["text"], "Hello");
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn test_partial_response_text_does_not_reemit_same_snapshot_on_close() {
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "response_text");
-    assert_eq!(partials[0].1["text"], "Hello");
+    assert_eq!(partials[0].1["snapshot"]["text"], "Hello");
 }
 
 #[test]
@@ -488,9 +488,12 @@ fn test_partial_tool_call_emits_structured_snapshot() {
     assert_eq!(partials[0].0, "tool_call");
     assert_eq!(partials[0].1["partial"], true);
     assert_eq!(partials[0].1["mode"], "structured");
-    assert_eq!(partials[0].1["type"], "create_user");
-    assert_eq!(partials[0].1["args"]["name"], "Ama");
+    assert_eq!(partials[0].1["snapshot"]["type"], "create_user");
     assert_eq!(partials[0].1["snapshot"]["args"]["name"], "Ama");
+    assert_eq!(
+        partials[0].1["snapshot"]["args"]["email"]["$state"],
+        "pending"
+    );
 }
 
 #[test]
@@ -511,8 +514,8 @@ fn test_partial_tool_call_does_not_reemit_same_snapshot_on_close() {
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "tool_call");
-    assert_eq!(partials[0].1["type"], "create_user");
-    assert_eq!(partials[0].1["args"]["name"], "Ama");
+    assert_eq!(partials[0].1["snapshot"]["type"], "create_user");
+    assert_eq!(partials[0].1["snapshot"]["args"]["name"], "Ama");
 }
 
 #[test]
@@ -534,6 +537,9 @@ fn test_partial_response_schema_emits_structured_snapshot() {
     assert_eq!(partials[0].0, "response_schema");
     assert_eq!(partials[0].1["partial"], true);
     assert_eq!(partials[0].1["mode"], "structured");
-    assert_eq!(partials[0].1["response"]["status"], "draft");
     assert_eq!(partials[0].1["snapshot"]["response"]["status"], "draft");
+    assert_eq!(
+        partials[0].1["snapshot"]["response"]["summary"]["$state"],
+        "pending"
+    );
 }

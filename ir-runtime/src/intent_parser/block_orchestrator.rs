@@ -22,10 +22,15 @@ pub struct BlockOrchestrator {
     emitted_identities: HashSet<String>,
     last_partial_payloads: HashMap<String, String>,
     tool_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    tool_arg_templates: HashMap<String, Value>,
     workflow_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    workflow_arg_templates: HashMap<String, Value>,
     helper_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    helper_arg_templates: HashMap<String, Value>,
     custom_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    custom_templates: HashMap<String, Value>,
     output_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    output_response_templates: HashMap<String, Value>,
 }
 
 impl BlockOrchestrator {
@@ -38,10 +43,15 @@ impl BlockOrchestrator {
             emitted_identities: HashSet::new(),
             last_partial_payloads: HashMap::new(),
             tool_alias_maps: HashMap::new(),
+            tool_arg_templates: HashMap::new(),
             workflow_alias_maps: HashMap::new(),
+            workflow_arg_templates: HashMap::new(),
             helper_alias_maps: HashMap::new(),
+            helper_arg_templates: HashMap::new(),
             custom_alias_maps: HashMap::new(),
+            custom_templates: HashMap::new(),
             output_alias_maps: HashMap::new(),
+            output_response_templates: HashMap::new(),
         }
     }
 
@@ -68,6 +78,10 @@ impl BlockOrchestrator {
             self.tool_alias_maps
                 .insert(tool_name.to_string(), alias_map_from_specs(&specs));
         }
+        self.tool_arg_templates.insert(
+            tool_name.to_string(),
+            build_named_field_template(params, types),
+        );
     }
 
     pub fn register_workflow_shape(
@@ -81,6 +95,10 @@ impl BlockOrchestrator {
             self.workflow_alias_maps
                 .insert(workflow_name.to_string(), alias_map_from_specs(&specs));
         }
+        self.workflow_arg_templates.insert(
+            workflow_name.to_string(),
+            build_named_field_template(params, types),
+        );
     }
 
     pub fn register_helper_shape(
@@ -94,6 +112,10 @@ impl BlockOrchestrator {
             self.helper_alias_maps
                 .insert(helper_name.to_string(), alias_map_from_specs(&specs));
         }
+        self.helper_arg_templates.insert(
+            helper_name.to_string(),
+            build_helper_input_template(input_ir, types),
+        );
     }
 
     pub fn register_custom_intent_shape(
@@ -107,6 +129,10 @@ impl BlockOrchestrator {
             self.custom_alias_maps
                 .insert(intent_name.to_string(), alias_map_from_specs(&specs));
         }
+        self.custom_templates.insert(
+            intent_name.to_string(),
+            build_named_field_template(fields, types),
+        );
     }
 
     pub fn register_output_shape(
@@ -120,6 +146,8 @@ impl BlockOrchestrator {
                     .insert(schema_name, alias_map_from_specs(&specs));
             }
         }
+        self.output_response_templates
+            .extend(build_output_templates(output, types));
     }
 
     pub fn write(&mut self, chunk: &str) {
@@ -198,7 +226,11 @@ impl BlockOrchestrator {
                         let intent = if is_final {
                             intent
                         } else {
-                            build_partial_structured_payload(intent, &block.content, block_index)
+                            let snapshot = serde_json::json!({
+                                "type": tool_name,
+                                "args": self.merge_tool_args(tool_name, &intent["args"]),
+                            });
+                            build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
                         self.emit_intent("tool_call", intent, is_final, false);
                     }
@@ -220,7 +252,11 @@ impl BlockOrchestrator {
                         let intent = if is_final {
                             intent
                         } else {
-                            build_partial_structured_payload(intent, &block.content, block_index)
+                            let snapshot = serde_json::json!({
+                                "type": workflow_name,
+                                "args": self.merge_workflow_args(workflow_name, &intent["args"]),
+                            });
+                            build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
                         self.emit_intent("workflow_call", intent, is_final, false);
                     }
@@ -242,7 +278,11 @@ impl BlockOrchestrator {
                         let intent = if is_final {
                             intent
                         } else {
-                            build_partial_structured_payload(intent, &block.content, block_index)
+                            let snapshot = serde_json::json!({
+                                "type": helper_name,
+                                "args": self.merge_helper_args(helper_name, &intent["args"]),
+                            });
+                            build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
                         self.emit_intent("helper_call", intent, is_final, false);
                     }
@@ -263,7 +303,11 @@ impl BlockOrchestrator {
                     let intent = if is_final {
                         intent
                     } else {
-                        build_partial_structured_payload(intent, &block.content, block_index)
+                        let snapshot = serde_json::json!({
+                            "type": block.target_name.as_ref().map(|s| s.as_str()).unwrap_or(""),
+                            "response": self.merge_schema_response(schema_name, &intent["response"]),
+                        });
+                        build_partial_structured_payload(snapshot, &block.content, block_index)
                     };
 
                     if terminal_types.contains("response_schema") {
@@ -283,8 +327,9 @@ impl BlockOrchestrator {
                         let intent = if is_final {
                             args_json
                         } else {
+                            let snapshot = self.merge_custom_args(intent_name, &args_json);
                             build_partial_structured_payload(
-                                args_json,
+                                snapshot,
                                 &block.content,
                                 block_index,
                             )
@@ -297,7 +342,7 @@ impl BlockOrchestrator {
                             continue;
                         }
                         let intent = build_partial_structured_payload(
-                            Value::Object(Map::new()),
+                            self.merge_custom_args(intent_name, &Value::Object(Map::new())),
                             &block.content,
                             block_index,
                         );
@@ -394,6 +439,52 @@ impl BlockOrchestrator {
             .map(|aliases| unflatten_object(&response, aliases))
             .unwrap_or(response)
     }
+
+    fn merge_tool_args(&self, tool_name: &str, args: &Value) -> Value {
+        merge_template(
+            self.tool_arg_templates
+                .get(tool_name)
+                .unwrap_or(&Value::Object(Map::new())),
+            args,
+        )
+    }
+
+    fn merge_workflow_args(&self, workflow_name: &str, args: &Value) -> Value {
+        merge_template(
+            self.workflow_arg_templates
+                .get(workflow_name)
+                .unwrap_or(&Value::Object(Map::new())),
+            args,
+        )
+    }
+
+    fn merge_helper_args(&self, helper_name: &str, args: &Value) -> Value {
+        merge_template(
+            self.helper_arg_templates
+                .get(helper_name)
+                .unwrap_or(&Value::Object(Map::new())),
+            args,
+        )
+    }
+
+    fn merge_custom_args(&self, intent_name: &str, args: &Value) -> Value {
+        merge_template(
+            self.custom_templates
+                .get(intent_name)
+                .unwrap_or(&Value::Object(Map::new())),
+            args,
+        )
+    }
+
+    fn merge_schema_response(&self, schema_name: &str, response: &Value) -> Value {
+        merge_template(
+            self.output_response_templates
+                .get(schema_name)
+                .or_else(|| self.output_response_templates.get("Output"))
+                .unwrap_or(&Value::Object(Map::new())),
+            response,
+        )
+    }
 }
 
 fn parse_block_fields(content: &str) -> Option<std::collections::HashMap<String, ASTValue>> {
@@ -469,7 +560,6 @@ fn is_incomplete_response_text_open(input: &str) -> bool {
 
 fn build_partial_text_payload(text: &str, segment: usize) -> Value {
     serde_json::json!({
-        "text": text,
         "partial": true,
         "complete": false,
         "mode": "text",
@@ -481,20 +571,15 @@ fn build_partial_text_payload(text: &str, segment: usize) -> Value {
     })
 }
 
-fn build_partial_structured_payload(mut base: Value, raw: &str, segment: usize) -> Value {
-    let snapshot = base.clone();
-    if let Value::Object(ref mut map) = base {
-        map.insert("partial".to_string(), Value::Bool(true));
-        map.insert("complete".to_string(), Value::Bool(false));
-        map.insert("mode".to_string(), Value::String("structured".to_string()));
-        map.insert(
-            "segment".to_string(),
-            Value::Number(serde_json::Number::from(segment)),
-        );
-        map.insert("raw".to_string(), Value::String(raw.to_string()));
-        map.insert("snapshot".to_string(), snapshot);
-    }
-    base
+fn build_partial_structured_payload(snapshot: Value, raw: &str, segment: usize) -> Value {
+    serde_json::json!({
+        "partial": true,
+        "complete": false,
+        "mode": "structured",
+        "segment": segment,
+        "snapshot": snapshot,
+        "raw": raw,
+    })
 }
 
 fn partial_payload_key(name: &str, value: &Value) -> String {
@@ -504,6 +589,200 @@ fn partial_payload_key(name: &str, value: &Value) -> String {
         .map(|segment| segment.to_string())
         .unwrap_or_else(|| "default".to_string());
     format!("{name}:{segment}")
+}
+
+fn merge_template(template: &Value, actual: &Value) -> Value {
+    match (template, actual) {
+        (Value::Object(template_obj), Value::Object(actual_obj)) => {
+            let mut merged = template_obj.clone();
+            for (key, actual_value) in actual_obj {
+                let next_value = merged
+                    .get(key)
+                    .map(|template_value| merge_template(template_value, actual_value))
+                    .unwrap_or_else(|| actual_value.clone());
+                merged.insert(key.clone(), next_value);
+            }
+            Value::Object(merged)
+        }
+        (Value::Array(_), Value::Array(_)) => actual.clone(),
+        (_, _) => actual.clone(),
+    }
+}
+
+fn build_named_field_template(
+    schema_value: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Value {
+    Value::Object(build_template_fields(schema_value, types))
+}
+
+fn build_helper_input_template(
+    input_ir: Option<&Value>,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Value {
+    let Some(input) = input_ir else {
+        return Value::Object(Map::new());
+    };
+
+    if input.get("kind").and_then(|v| v.as_str()) == Some("properties") {
+        if let Some(fields) = input.get("fields") {
+            return build_named_field_template(fields, types);
+        }
+    }
+
+    if input.get("kind").and_then(|v| v.as_str()) == Some("direct") {
+        if let Some(ty) = input.get("type") {
+            if let Some(props) = resolve_template_properties(ty, types) {
+                return build_named_field_template(&Value::Object(props), types);
+            }
+            let mut map = Map::new();
+            map.insert("input".to_string(), pending_value());
+            return Value::Object(map);
+        }
+    }
+
+    if let Some(props) = resolve_template_properties(input, types) {
+        return build_named_field_template(&Value::Object(props), types);
+    }
+
+    if input.as_object().is_some() {
+        let filtered: Map<String, Value> = input
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(key, _)| !key.starts_with('@') && !key.starts_with("__") && *key != "kind")
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+
+        if !filtered.is_empty() {
+            return build_named_field_template(&Value::Object(filtered), types);
+        }
+    }
+
+    Value::Object(Map::new())
+}
+
+fn build_output_templates(
+    output: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> HashMap<String, Value> {
+    let mut templates = HashMap::new();
+
+    if let Some(variants) = output.get("__variants").and_then(|v| v.as_object()) {
+        for (schema_name, schema_value) in variants {
+            templates.insert(
+                schema_name.clone(),
+                Value::Object(build_template_fields(schema_value, types)),
+            );
+        }
+        return templates;
+    }
+
+    templates.insert(
+        "Output".to_string(),
+        Value::Object(build_template_fields(output, types)),
+    );
+    templates
+}
+
+fn build_template_fields(
+    schema_value: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Map<String, Value> {
+    if let Some(obj) = schema_value.as_object() {
+        if let Some(properties) = obj.get("properties").and_then(|v| v.as_object()) {
+            return properties
+                .iter()
+                .map(|(key, value)| (key.clone(), build_template_value(value, types)))
+                .collect();
+        }
+
+        if let Some(type_value) = obj.get("type") {
+            if let Some(properties) = resolve_template_properties(type_value, types) {
+                return properties
+                    .iter()
+                    .map(|(key, value)| (key.clone(), build_template_value(value, types)))
+                    .collect();
+            }
+        }
+
+        return obj
+            .iter()
+            .filter(|(key, _)| !key.starts_with('@') && !key.starts_with("__"))
+            .map(|(key, value)| (key.clone(), build_template_value(value, types)))
+            .collect();
+    }
+
+    Map::new()
+}
+
+fn build_template_value(
+    def: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Value {
+    if let Some(properties) = resolve_template_properties(def, types) {
+        let nested = properties
+            .iter()
+            .map(|(key, value)| (key.clone(), build_template_value(value, types)))
+            .collect();
+        return Value::Object(nested);
+    }
+
+    if is_array_definition(def) {
+        return Value::Array(Vec::new());
+    }
+
+    pending_value()
+}
+
+fn resolve_template_properties(
+    def: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Option<Map<String, Value>> {
+    if def.get("type").and_then(|v| v.as_str()) == Some("object") {
+        return def.get("properties").and_then(|v| v.as_object()).cloned();
+    }
+
+    if let Some(type_obj) = def.get("type").and_then(|v| v.as_object()) {
+        if type_obj.get("type").and_then(|v| v.as_str()) == Some("object") {
+            return type_obj
+                .get("properties")
+                .and_then(|v| v.as_object())
+                .cloned();
+        }
+
+        if type_obj.get("type").and_then(|v| v.as_str()) == Some("typeRef") {
+            let ref_name = type_obj.get("name").and_then(|v| v.as_str())?;
+            let custom_type = types?.get(ref_name)?;
+            let props_value = serde_json::to_value(&custom_type.properties).ok()?;
+            return props_value.as_object().cloned();
+        }
+    }
+
+    if def.get("type").and_then(|v| v.as_str()) == Some("typeRef") {
+        let ref_name = def.get("name").and_then(|v| v.as_str())?;
+        let custom_type = types?.get(ref_name)?;
+        let props_value = serde_json::to_value(&custom_type.properties).ok()?;
+        return props_value.as_object().cloned();
+    }
+
+    None
+}
+
+fn is_array_definition(def: &Value) -> bool {
+    if def.get("type").and_then(|v| v.as_str()) == Some("array") {
+        return true;
+    }
+
+    def.get("type")
+        .and_then(|v| v.as_object())
+        .and_then(|inner| inner.get("type"))
+        .and_then(Value::as_str)
+        == Some("array")
+}
+
+fn pending_value() -> Value {
+    serde_json::json!({ "$state": "pending" })
 }
 
 // Convert ASTValue to serde_json::Value

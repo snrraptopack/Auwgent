@@ -323,7 +323,11 @@ impl AuwgentEngine {
                 }
 
                 let value = if name == "response_text" {
-                    if let Some(text) = value.get("text").and_then(Value::as_str) {
+                    if let Some(text) = value
+                        .get("snapshot")
+                        .and_then(|snapshot| snapshot.get("text"))
+                        .and_then(Value::as_str)
+                    {
                         let segment = value
                             .get("segment")
                             .and_then(Value::as_u64)

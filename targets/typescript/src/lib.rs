@@ -157,7 +157,7 @@ impl Auwgent {
     /// ```js
     /// agent.onIntentPartial((name, value) => {
     ///   if (name === 'response_text') {
-    ///     process.stdout.write(value.text ?? '');
+    ///     process.stdout.write(value.delta ?? '');
     ///   }
     /// });
     /// ```

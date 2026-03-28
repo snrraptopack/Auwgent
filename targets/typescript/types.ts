@@ -272,6 +272,7 @@ export interface HelperResultIntent<K = string, R = any> { name: 'helper_result'
 
 export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
 export interface ResponseSchemaIntent<Output = any> { name: 'response_schema'; value: Output }
+export interface PendingStreamValue { $state: 'pending' }
 export interface PartialIntentEnvelope<Snapshot = unknown> {
     partial: true
     complete: false
@@ -280,11 +281,11 @@ export interface PartialIntentEnvelope<Snapshot = unknown> {
     snapshot: Snapshot
     raw: string
 }
-export type PartialTextIntentValue = ResponseTextIntent['value'] & PartialIntentEnvelope<{ text: string }> & {
+export type PartialTextIntentValue = PartialIntentEnvelope<{ text: string }> & {
     mode: 'text'
     delta?: string
 }
-export type PartialStructuredIntentValue<T> = T & PartialIntentEnvelope<T> & {
+export type PartialStructuredIntentValue<T> = PartialIntentEnvelope<T> & {
     mode: 'structured'
 }
 
