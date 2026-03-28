@@ -25,6 +25,11 @@ agent.onIntentPartial((name, value, agentName) => {
     process.stdout.write(value.delta ?? "")
   }
 
+  if (name === "tool_call" && value.type === "db_query_users") {
+  value.args.studentId
+  value.snapshot.args.studentId
+}
+
 
 })
 

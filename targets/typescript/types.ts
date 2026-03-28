@@ -272,6 +272,21 @@ export interface HelperResultIntent<K = string, R = any> { name: 'helper_result'
 
 export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
 export interface ResponseSchemaIntent<Output = any> { name: 'response_schema'; value: Output }
+export interface PartialIntentEnvelope<Snapshot = unknown> {
+    partial: true
+    complete: false
+    mode: 'text' | 'structured'
+    segment: number
+    snapshot: Snapshot
+    raw: string
+}
+export type PartialTextIntentValue = ResponseTextIntent['value'] & PartialIntentEnvelope<{ text: string }> & {
+    mode: 'text'
+    delta?: string
+}
+export type PartialStructuredIntentValue<T> = T & PartialIntentEnvelope<T> & {
+    mode: 'structured'
+}
 
 export interface ErrorIntent { name: 'error'; value: { message: string } }
 
@@ -411,8 +426,8 @@ export type PartialIntentHandlers<
 > = {
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]?: (
             value: K extends 'response_text'
-                ? Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'] & { delta?: string }
-                : Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+                ? PartialTextIntentValue
+                : PartialStructuredIntentValue<Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']>,
             agentName: string
         ) => void;
     };
@@ -427,8 +442,8 @@ export type PartialIntentHandler<
         [K in AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]: [
             name: K,
             value: K extends 'response_text'
-                ? Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'] & { delta?: string }
-                : Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value'],
+                ? PartialTextIntentValue
+                : PartialStructuredIntentValue<Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']>,
             agentName: string,
         ];
     }[AuwgentIntent<IR, Custom, Output, Tools>['name']]

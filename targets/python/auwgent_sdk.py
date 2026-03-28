@@ -42,6 +42,25 @@ class SessionState(TypedDict, total=False):
     stack: List[str]
     initialInput: Optional[Any]
 
+class PartialIntentEnvelope(TypedDict, total=False):
+    partial: bool
+    complete: bool
+    mode: str
+    segment: int
+    snapshot: Any
+    raw: str
+
+class PartialTextIntentValue(PartialIntentEnvelope, total=False):
+    text: str
+    delta: str
+
+class PartialStructuredIntentValue(PartialIntentEnvelope, total=False):
+    type: str
+    args: Dict[str, Any]
+    response: Dict[str, Any]
+
+PartialIntentValue = Union[PartialTextIntentValue, PartialStructuredIntentValue, Dict[str, Any]]
+
 # ── Error Types ───────────────────────────────────────────────────────────
 
 class AuwgentToolError(Exception):
@@ -216,7 +235,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         """
         self._stored_intent_handler = callback
 
-    def on_intent_partial(self, callback: Callable[[str, Dict[str, Any]], None]) -> None:
+    def on_intent_partial(self, callback: Callable[[str, PartialIntentValue], None]) -> None:
         """
         Register a partial intent callback for streaming updates.
         """
@@ -233,11 +252,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             return None
         self._stored_intent_handler = dispatch
 
-    def on_handlers_partial(self, handlers: Dict[str, Callable[[Dict[str, Any]], None]]) -> None:
+    def on_handlers_partial(self, handlers: Dict[str, Callable[[PartialIntentValue], None]]) -> None:
         """
         Register multiple partial intent handlers using an object-style API.
         """
-        def dispatch(name: str, value: Dict[str, Any]) -> None:
+        def dispatch(name: str, value: PartialIntentValue) -> None:
             handler = handlers.get(name)
             if handler:
                 handler(value)

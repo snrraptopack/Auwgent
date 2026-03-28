@@ -269,6 +269,63 @@ describe('TypedAuwgent', () => {
         expect(deltas).toEqual(['Hello', ' there']);
     });
 
+    it('forwards structured partial payloads through onIntentPartial', () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        let partialCallback: ((name: string, value: any, agentName: string) => void) | undefined;
+
+        native.onIntent = () => {};
+        native.onMiddlewareEvent = () => {};
+        native.onSubEngineStart = () => {};
+        native.onSubEngineComplete = () => {};
+        native.onIntentPartial = (cb: (name: string, value: any, agentName: string) => void) => {
+            partialCallback = cb;
+        };
+
+        const partials: any[] = [];
+        agent.onIntentPartial((name, value) => {
+            if (name === 'tool_call') {
+                partials.push(value);
+            }
+        });
+
+        (agent as any).activateListeners();
+
+        partialCallback?.('tool_call', {
+            type: 'search',
+            args: { query: 'Accra' },
+            partial: true,
+            complete: false,
+            mode: 'structured',
+            segment: 1,
+            snapshot: {
+                type: 'search',
+                args: { query: 'Accra' },
+            },
+            raw: 'query: "Accra"',
+        }, 'Main');
+
+        expect(partials).toEqual([{
+            type: 'search',
+            args: { query: 'Accra' },
+            partial: true,
+            complete: false,
+            mode: 'structured',
+            segment: 1,
+            snapshot: {
+                type: 'search',
+                args: { query: 'Accra' },
+            },
+            raw: 'query: "Accra"',
+        }]);
+    });
+
     it('parseIR returns typed IR', () => {
         const ir = parseIR(IR_JSON);
         expect(ir.name).toBe('test-agent');

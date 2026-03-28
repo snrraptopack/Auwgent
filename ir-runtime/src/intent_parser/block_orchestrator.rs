@@ -20,6 +20,7 @@ pub struct BlockOrchestrator {
     intent_handler: Option<IntentHandler>,
     partial_handler: Option<IntentHandler>,
     emitted_identities: HashSet<String>,
+    last_partial_payloads: HashMap<String, String>,
     tool_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
     workflow_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
     helper_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
@@ -35,6 +36,7 @@ impl BlockOrchestrator {
             intent_handler: None,
             partial_handler: None,
             emitted_identities: HashSet::new(),
+            last_partial_payloads: HashMap::new(),
             tool_alias_maps: HashMap::new(),
             workflow_alias_maps: HashMap::new(),
             helper_alias_maps: HashMap::new(),
@@ -133,6 +135,7 @@ impl BlockOrchestrator {
     pub fn reset(&mut self) {
         self.buffer.clear();
         self.emitted_identities.clear();
+        self.last_partial_payloads.clear();
     }
 
     fn check_blocks(&mut self, is_final: bool) {
@@ -340,6 +343,16 @@ impl BlockOrchestrator {
 
         // Always fire partial handler during streaming (for UI updates)
         if !is_final {
+            let partial_key = partial_payload_key(name, &value);
+            let payload_json = serde_json::to_string(&value).unwrap_or_default();
+            if self
+                .last_partial_payloads
+                .get(&partial_key)
+                .is_some_and(|previous| previous == &payload_json)
+            {
+                return;
+            }
+            self.last_partial_payloads.insert(partial_key, payload_json);
             if let Some(handler) = &self.partial_handler {
                 handler(name.to_string(), value);
             }
@@ -482,6 +495,15 @@ fn build_partial_structured_payload(mut base: Value, raw: &str, segment: usize) 
         map.insert("snapshot".to_string(), snapshot);
     }
     base
+}
+
+fn partial_payload_key(name: &str, value: &Value) -> String {
+    let segment = value
+        .get("segment")
+        .and_then(Value::as_u64)
+        .map(|segment| segment.to_string())
+        .unwrap_or_else(|| "default".to_string());
+    format!("{name}:{segment}")
 }
 
 // Convert ASTValue to serde_json::Value
