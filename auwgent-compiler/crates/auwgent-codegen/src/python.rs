@@ -23,7 +23,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     let imports = [
         "import os",
         "import json",
-        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, Literal",
+        "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, Literal, overload",
         "",
         "# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10",
         "try:",
@@ -362,72 +362,105 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         "{agent_name}IntentValue = Union[\n    {},\n]",
         value_types.join(",\n    ")
     ));
+    let mut intent_names = vec!["response_text".to_string(), "response_schema".to_string(), "error".to_string()];
+    if !workflow_call_types.is_empty() {
+        blocks.push(format!(
+            "{agent_name}WorkflowCallIntentValue = Union[{}]",
+            workflow_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "{agent_name}WorkflowResultIntentValue = Union[{}]",
+            workflow_result_types.join(", ")
+        ));
+        intent_names.push("workflow_call".to_string());
+        intent_names.push("workflow_result".to_string());
+    }
+    if !helper_call_types.is_empty() {
+        blocks.push(format!(
+            "{agent_name}HelperCallIntentValue = Union[{}]",
+            helper_call_types.join(", ")
+        ));
+        blocks.push(format!(
+            "{agent_name}HelperResultIntentValue = Union[{}]",
+            helper_result_types.join(", ")
+        ));
+        intent_names.push("helper_call".to_string());
+        intent_names.push("helper_result".to_string());
+    }
+    blocks.push(format!(
+        "{agent_name}IntentName = Literal[{}]",
+        intent_names
+            .iter()
+            .map(|name| format!("\"{name}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     blocks.push(String::new());
     blocks.push(format!(
-        "{agent_name}IntentHandler = Callable[[str, {agent_name}IntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"
+        "{agent_name}IntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"
     ));
     blocks.push(format!(
-        "{agent_name}PartialIntentHandler = Callable[[str, {agent_name}IntentValue, str], None]"
+        "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], None]"
     ));
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}IntentHandlers(TypedDict, total=False):"));
     blocks.push(format!(
-        "    response_text: Callable[[{agent_name}ResponseTextIntent, str], Awaitable[Any]]"
+        "    response_text: Callable[[{agent_name}ResponseTextIntent], Awaitable[Any]]"
     ));
     blocks.push(format!(
-        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent, str], Awaitable[Any]]"
+        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent], Awaitable[Any]]"
     ));
     blocks.push(format!(
-        "    error: Callable[[{agent_name}ErrorIntent, str], Awaitable[Any]]"
+        "    error: Callable[[{agent_name}ErrorIntent], Awaitable[Any]]"
     ));
     if !workflow_call_types.is_empty() {
         blocks.push(format!(
-            "    workflow_call: Callable[[Union[{}], str], Awaitable[Any]]",
+            "    workflow_call: Callable[[Union[{}]], Awaitable[Any]]",
             workflow_call_types.join(", ")
         ));
         blocks.push(format!(
-            "    workflow_result: Callable[[Union[{}], str], Awaitable[Any]]",
+            "    workflow_result: Callable[[Union[{}]], Awaitable[Any]]",
             workflow_result_types.join(", ")
         ));
     }
     if !helper_call_types.is_empty() {
         blocks.push(format!(
-            "    helper_call: Callable[[Union[{}], str], Awaitable[Any]]",
+            "    helper_call: Callable[[Union[{}]], Awaitable[Any]]",
             helper_call_types.join(", ")
         ));
         blocks.push(format!(
-            "    helper_result: Callable[[Union[{}], str], Awaitable[Any]]",
+            "    helper_result: Callable[[Union[{}]], Awaitable[Any]]",
             helper_result_types.join(", ")
         ));
     }
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}PartialIntentHandlers(TypedDict, total=False):"));
     blocks.push(format!(
-        "    response_text: Callable[[{agent_name}ResponseTextIntent, str], None]"
+        "    response_text: Callable[[{agent_name}ResponseTextIntent], None]"
     ));
     blocks.push(format!(
-        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent, str], None]"
+        "    response_schema: Callable[[{agent_name}ResponseSchemaIntent], None]"
     ));
     blocks.push(format!(
-        "    error: Callable[[{agent_name}ErrorIntent, str], None]"
+        "    error: Callable[[{agent_name}ErrorIntent], None]"
     ));
     if !workflow_call_types.is_empty() {
         blocks.push(format!(
-            "    workflow_call: Callable[[Union[{}], str], None]",
+            "    workflow_call: Callable[[Union[{}]], None]",
             workflow_call_types.join(", ")
         ));
         blocks.push(format!(
-            "    workflow_result: Callable[[Union[{}], str], None]",
+            "    workflow_result: Callable[[Union[{}]], None]",
             workflow_result_types.join(", ")
         ));
     }
     if !helper_call_types.is_empty() {
         blocks.push(format!(
-            "    helper_call: Callable[[Union[{}], str], None]",
+            "    helper_call: Callable[[Union[{}]], None]",
             helper_call_types.join(", ")
         ));
         blocks.push(format!(
-            "    helper_result: Callable[[Union[{}], str], None]",
+            "    helper_result: Callable[[Union[{}]], None]",
             helper_result_types.join(", ")
         ));
     }
@@ -531,8 +564,78 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
         config_keys.push(format!("    apiKeys: NotRequired['{agent_name}ApiKeys']"));
     }
 
+    let mut on_intent_overloads = vec![
+        format!("    @overload"),
+        format!("    def on_intent(self, callback: Callable[[Literal[\"response_text\"], {agent_name}ResponseTextIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+        format!("    @overload"),
+        format!("    def on_intent(self, callback: Callable[[Literal[\"response_schema\"], {agent_name}ResponseSchemaIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+        format!("    @overload"),
+        format!("    def on_intent(self, callback: Callable[[Literal[\"error\"], {agent_name}ErrorIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+    ];
+    let mut on_partial_overloads = vec![
+        format!("    @overload"),
+        format!("    def on_intent_partial(self, callback: Callable[[Literal[\"response_text\"], {agent_name}ResponseTextIntent, str], None]) -> None: ..."),
+        format!("    @overload"),
+        format!("    def on_intent_partial(self, callback: Callable[[Literal[\"response_schema\"], {agent_name}ResponseSchemaIntent, str], None]) -> None: ..."),
+        format!("    @overload"),
+        format!("    def on_intent_partial(self, callback: Callable[[Literal[\"error\"], {agent_name}ErrorIntent, str], None]) -> None: ..."),
+    ];
+
+    if ir
+        .get("workflows")
+        .and_then(Value::as_array)
+        .map(|workflows| !workflows.is_empty())
+        .unwrap_or(false)
+    {
+        on_intent_overloads.extend([
+            "    @overload".to_string(),
+            format!("    def on_intent(self, callback: Callable[[Literal[\"workflow_call\"], {agent_name}WorkflowCallIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+            "    @overload".to_string(),
+            format!("    def on_intent(self, callback: Callable[[Literal[\"workflow_result\"], {agent_name}WorkflowResultIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+        ]);
+        on_partial_overloads.extend([
+            "    @overload".to_string(),
+            format!("    def on_intent_partial(self, callback: Callable[[Literal[\"workflow_call\"], {agent_name}WorkflowCallIntentValue, str], None]) -> None: ..."),
+            "    @overload".to_string(),
+            format!("    def on_intent_partial(self, callback: Callable[[Literal[\"workflow_result\"], {agent_name}WorkflowResultIntentValue, str], None]) -> None: ..."),
+        ]);
+    }
+
+    if ir
+        .get("helpers")
+        .and_then(Value::as_array)
+        .map(|helpers| !helpers.is_empty())
+        .unwrap_or(false)
+    {
+        on_intent_overloads.extend([
+            "    @overload".to_string(),
+            format!("    def on_intent(self, callback: Callable[[Literal[\"helper_call\"], {agent_name}HelperCallIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+            "    @overload".to_string(),
+            format!("    def on_intent(self, callback: Callable[[Literal[\"helper_result\"], {agent_name}HelperResultIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."),
+        ]);
+        on_partial_overloads.extend([
+            "    @overload".to_string(),
+            format!("    def on_intent_partial(self, callback: Callable[[Literal[\"helper_call\"], {agent_name}HelperCallIntentValue, str], None]) -> None: ..."),
+            "    @overload".to_string(),
+            format!("    def on_intent_partial(self, callback: Callable[[Literal[\"helper_result\"], {agent_name}HelperResultIntentValue, str], None]) -> None: ..."),
+        ]);
+    }
+
     [
-        format!("{agent_name}Agent = TypedAuwgent"),
+        format!("class {agent_name}Agent(TypedAuwgent[Any, {agent_name}Context, {agent_name}Output, {agent_name}Tools]):"),
+        on_intent_overloads.join("\n"),
+        format!("    def on_intent(self, callback: {agent_name}IntentHandler) -> None:"),
+        "        return super().on_intent(callback)".to_string(),
+        String::new(),
+        on_partial_overloads.join("\n"),
+        format!("    def on_intent_partial(self, callback: {agent_name}PartialIntentHandler) -> None:"),
+        "        return super().on_intent_partial(callback)".to_string(),
+        String::new(),
+        format!("    def on_handlers(self, handlers: {agent_name}IntentHandlers) -> None:"),
+        "        return super().on_handlers(handlers)".to_string(),
+        String::new(),
+        format!("    def on_handlers_partial(self, handlers: {agent_name}PartialIntentHandlers) -> None:"),
+        "        return super().on_handlers_partial(handlers)".to_string(),
         String::new(),
         format!("{agent_name}Middleware = Middleware"),
         String::new(),
@@ -552,6 +655,7 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
         format!("AuwgentAgent = {agent_name}Agent"),
         format!("AuwgentMiddleware = {agent_name}Middleware"),
         format!("AuwgentContext = {agent_name}Context"),
+        format!("AuwgentIntentName = {agent_name}IntentName"),
         format!("AuwgentIntentValue = {agent_name}IntentValue"),
         format!("AuwgentIntentHandler = {agent_name}IntentHandler"),
         format!("AuwgentPartialIntentHandler = {agent_name}PartialIntentHandler"),
@@ -740,7 +844,8 @@ mod tests {
         let output = generate(&ir, "main");
         assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
         assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
-        assert!(output.contains("ManagerIntentHandler = Callable[[str, ManagerIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"));
+        assert!(output.contains("ManagerIntentHandler = Callable[[ManagerIntentName, ManagerIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]"));
+        assert!(output.contains("def on_intent(self, callback: Callable[[Literal[\"workflow_call\"], ManagerWorkflowCallIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ..."));
         assert!(output.contains("class ManagerIntentHandlers(TypedDict, total=False):"));
     }
 }
