@@ -7,9 +7,6 @@ from generated.main_types import (
     AuwgentMiddleware
 )
 
-logger:AuwgentMiddleware = {
-    'name': "anything"
-}
 
 
 context:AuwgentContext = {
