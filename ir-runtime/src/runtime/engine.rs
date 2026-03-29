@@ -296,7 +296,7 @@ impl AuwgentEngine {
 
     /// Register a partial intent callback.
     ///
-    /// This fires as YAML data streams in, BEFORE the intent block is
+    /// This fires as <reponse_text> or [block] data streams in, BEFORE the intent block is
     /// complete. Useful for:
     /// - Streaming partial `response_text` to the UI as tokens arrive
     /// - Showing tool call args as they're being typed by the LLM
@@ -367,6 +367,7 @@ impl AuwgentEngine {
     pub fn clear_intent_handlers(&self) {
         *self.intent_handler.lock().unwrap() = None;
         *self.partial_intent_handler.lock().unwrap() = None;
+        self.orchestrator.lock().unwrap().on_intent_partial(Arc::new(|_, _| {}));
     }
 
     pub fn clear_sub_engine_handlers(&self) {
@@ -1788,7 +1789,7 @@ impl AuwgentEngine {
                             "status": "complete",
                             "note": format!("{} has responded to the user directly. No further action needed.
                             unless you have distinct that is differ from what we have completed entirely.
-                            you can end by providing a useful commet to the user 
+                            you can end by providing a useful commet to the user
                             ", &helper_name)
                         });
                         Ok((helper_name, args, msg))

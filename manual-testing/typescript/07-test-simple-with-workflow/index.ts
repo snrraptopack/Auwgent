@@ -1,7 +1,8 @@
-import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+import { auwgent, AuwgentConfig, AuwgentMiddleware } from "./generated/main.agent.types"
 import { GEMINI_API_KEY, GROQ_API_KEY, KIMI_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
 import { startRepl } from "../loop"
 import { tools } from "./tools"
+
 
 const config: AuwgentConfig = {
   tools,
@@ -13,7 +14,7 @@ const config: AuwgentConfig = {
   apiKeys: {
     //geminiApiKey:GEMINI_API_KEY,
     my_groq_apiApiKey: GROQ_API_KEY
-  }
+  },
 }
 
 const agent = auwgent(config)
@@ -25,16 +26,19 @@ agent.onIntentPartial((name, value, agentName) => {
     process.stdout.write(value.delta ?? "")
   }
 
-  if (name === "tool_call" && value.snapshot.type === "db_query_users") {
-    value.snapshot.args.filter
+})
+
+agent.onIntent((intent, value, name) => {
+  if (intent === "response_schema") {
+    console.log(JSON.stringify(value, null, 2),"agent",name)
   }
-
-
 })
 
 // agent.onIntent((name, value, agentName) => {
 
 //   console.log("This block has to fire")
+
+
 
 //   if (name === "response_schema") {
 //     console.log("response_schema", value,"responding",agentName)
@@ -68,8 +72,13 @@ agent.onIntentPartial((name, value, agentName) => {
 //     console.log("helper result", value)
 //   }
 
-
 // })
+
+//const session = await agent.run("hello please get me a deatailed analysis")
+
+
+//console.log(JSON.stringify(session, null, 2))
+// Check active handles
 
 
 startRepl(agent)

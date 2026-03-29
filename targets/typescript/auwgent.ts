@@ -477,7 +477,7 @@ export class TypedAuwgent<
         this.helperSessions.clear();
     }
 
-    /** 
+    /**
      * Generate a system prompt.
      * @param helperName - Optional name of a helper to generate the prompt for. If omitted, generates the main agent prompt.
      */
