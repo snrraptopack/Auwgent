@@ -28,6 +28,8 @@ agent.onIntentPartial((name, value, agentName) => {
 
 })
 
+
+
 agent.onIntent((intent, value, name) => {
   if (intent === "response_schema") {
     console.log(JSON.stringify(value, null, 2),"agent",name)

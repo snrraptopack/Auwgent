@@ -7,8 +7,6 @@ from generated.main_types import (
     AuwgentMiddleware
 )
 
-
-
 context:AuwgentContext = {
     'user_id':"",
     'is_vip':True,
