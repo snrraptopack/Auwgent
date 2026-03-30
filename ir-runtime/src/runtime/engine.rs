@@ -631,9 +631,14 @@ impl AuwgentEngine {
         // };
 
         let mut scope = HashMap::new();
-        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
-            scope.insert("context".to_string(), ctx.clone());
-            scope.insert("ctx".to_string(), ctx.clone());
+        {
+            // Always insert context into scope — use the actual value if set, otherwise
+            // an empty object so context.* references evaluate to null instead of crashing.
+            let ctx_val = self.context.lock().unwrap()
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}));
+            scope.insert("context".to_string(), ctx_val.clone());
+            scope.insert("ctx".to_string(), ctx_val);
         }
 
         let evaluator = Evaluator::new(&self.ir);
@@ -1900,10 +1905,14 @@ impl AuwgentEngine {
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
 
-        // Context is the only thing we explicitly inject into the prompt scope for now
-        if let Some(ctx) = self.context.lock().unwrap().as_ref() {
-            scope.insert("context".to_string(), ctx.clone());
-            scope.insert("ctx".to_string(), ctx.clone());
+        // Always inject context into scope — use the actual value if set, otherwise
+        // an empty object so context.* references evaluate gracefully instead of crashing.
+        {
+            let ctx_val = self.context.lock().unwrap()
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}));
+            scope.insert("context".to_string(), ctx_val.clone());
+            scope.insert("ctx".to_string(), ctx_val);
         }
 
         let entry = self

@@ -1,7 +1,7 @@
 #![deny(clippy::all)]
 
 use napi::bindgen_prelude::*;
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction};
+use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
 use ir_runtime::runtime::bridge::EngineBridge;
@@ -163,21 +163,28 @@ impl Auwgent {
     /// ```
     #[napi(ts_args_type = "callback: (name: string, value: any, agentName: string) => void")]
     pub fn on_intent_partial(&self, callback: JsFunction) -> Result<()> {
-        use napi::threadsafe_function::ThreadsafeFunctionCallMode;
+        // Use a bounded queue (128) with CalleeHandled so that when the JS event loop
+        // is busy (e.g. awaiting a tool Promise), streaming token events are simply
+        // dropped rather than flooding the queue and starving the tool resolution.
+        // This prevents the livelock / hang seen during concurrent streaming + tools.
+        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::CalleeHandled> =
+            callback.create_threadsafe_function(
+                128,
+                |ctx: ThreadSafeCallContext<(String, Value, String)>| {
+                    let name = ctx.env.create_string(&ctx.value.0)?;
+                    let value = ctx.env.to_js_value(&ctx.value.1)?;
+                    let agent = ctx.env.create_string(&ctx.value.2)?;
+                    Ok(vec![name.into_unknown(), value, agent.into_unknown()])
+                },
+            )?;
 
-        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value, String)>| {
-                let name = ctx.env.create_string(&ctx.value.0)?;
-                let value = ctx.env.to_js_value(&ctx.value.1)?;
-                let agent = ctx.env.create_string(&ctx.value.2)?;
-                Ok(vec![name.into_unknown(), value, agent.into_unknown()])
-            })?;
-
-        // Wrap into a sync callback (partials are fire-and-forget, no await)
+        // Fire-and-forget — partials are observational only, no await needed
         let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
-                // Non-blocking call — don't await, just fire
-                tsfn.call((name, value, agent), ThreadsafeFunctionCallMode::NonBlocking);
+                tsfn.call(
+                    Ok((name, value, agent)),
+                    ThreadsafeFunctionCallMode::NonBlocking,
+                );
             });
 
         self.bridge.on_intent_partial(handler);

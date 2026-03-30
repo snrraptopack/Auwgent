@@ -4,6 +4,15 @@ import { startRepl } from "../loop"
 import { tools } from "./tools"
 
 
+const logger: AuwgentMiddleware = {
+  name: "logger",
+  onRunStart: (session, ctx) => {
+    ctx.setContext({ age: 10 })
+    return session
+  }
+}
+
+
 const config: AuwgentConfig = {
   tools,
   context: {
@@ -15,6 +24,7 @@ const config: AuwgentConfig = {
     //geminiApiKey:GEMINI_API_KEY,
     my_groq_apiApiKey: GROQ_API_KEY
   },
+  middleware: [logger]
 }
 
 const agent = auwgent(config)
@@ -32,7 +42,7 @@ agent.onIntentPartial((name, value, agentName) => {
 
 agent.onIntent((intent, value, name) => {
   if (intent === "response_schema") {
-    console.log(JSON.stringify(value, null, 2),"agent",name)
+    console.log(JSON.stringify(value, null, 2), "agent", name)
   }
 })
 
