@@ -41,7 +41,7 @@ agent.onIntentPartial((name, value, agentName) => {
 
 
 agent.onIntent((intent, value, name) => {
-  if (intent === "response_schema") {
+  if (intent !== "response_text") {
     console.log(JSON.stringify(value, null, 2), "agent", name)
   }
 })
