@@ -8,6 +8,7 @@ use ir_runtime::runtime::bridge::EngineBridge;
 use ir_runtime::runtime::engine::IntentControl;
 
 use serde_json::Value;
+use std::sync::Arc;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT — PyO3 FFI class
@@ -92,7 +93,12 @@ impl AuwgentNative {
     // ASYNC AND CALLBACK METHODS
     // ==========================================
 
-    pub fn run<'p>(&self, py: Python<'p>, input: Option<String>, initial_stack_json: Option<String>) -> PyResult<&'p PyAny> {
+    pub fn run<'py>(
+        &self,
+        py: Python<'py>,
+        input: Option<String>,
+        initial_stack_json: Option<String>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let input_val =
             input.map(|s| serde_json::from_str::<Value>(&s).unwrap_or(Value::String(s)));
 
@@ -100,83 +106,91 @@ impl AuwgentNative {
             .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok());
 
         let bridge = self.bridge.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let res: Result<String, String> = bridge.run_async(input_val, initial_stack).await;
             res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
-    pub fn process_intents<'p>(&self, py: Python<'p>) -> PyResult<&'p PyAny> {
+    pub fn process_intents<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let bridge = self.bridge.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let res: Result<String, String> = bridge.process_intents_async().await;
             res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
-    pub fn embed<'p>(&self, py: Python<'p>, text: String) -> PyResult<&'p PyAny> {
+    pub fn embed<'py>(&self, py: Python<'py>, text: String) -> PyResult<Bound<'py, PyAny>> {
         let bridge = self.bridge.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let res: Result<Vec<f32>, String> = bridge.embed(text).await;
             res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
-    pub fn embed_batch<'p>(&self, py: Python<'p>, texts: Vec<String>) -> PyResult<&'p PyAny> {
+    pub fn embed_batch<'py>(&self, py: Python<'py>, texts: Vec<String>) -> PyResult<Bound<'py, PyAny>> {
         let bridge = self.bridge.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let res: Result<Vec<Vec<f32>>, String> = bridge.embed_batch(texts).await;
             res.map_err(|e| PyRuntimeError::new_err(format!("{}", e)))
         })
     }
 
-    pub fn register_tool(&self, name: String, callback: PyObject) -> PyResult<()> {
-        let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
-            let callback = callback.clone();
-            let args_json = serde_json::to_string(&args).unwrap_or_default();
+    pub fn register_tool(&self, name: String, callback: Py<PyAny>) -> PyResult<()> {
+        // Wrap in Arc so it can be cheaply cloned across async boundaries
+        let callback = Arc::new(callback);
 
-            Box::pin(async move {
-                let future = Python::with_gil(|py| {
-                    let args_py = pyo3::types::PyString::new(py, &args_json);
-                    let res = callback.call1(py, (args_py,))?;
-                    pyo3_asyncio::tokio::into_future(res.as_ref(py))
+        let tool_impl: ir_runtime::runtime::engine::ToolImplementation =
+            std::sync::Arc::new(move |args: Value| {
+                let callback = Arc::clone(&callback);
+                let args_json = serde_json::to_string(&args).unwrap_or_default();
+
+                Box::pin(async move {
+                    let future = Python::attach(|py| {
+                        let cb = callback.clone_ref(py);
+                        let args_py = pyo3::types::PyString::new(py, &args_json);
+                        let res = cb.call1(py, (args_py,))?;
+                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
+                    })
+                    .map_err(|e: PyErr| e.to_string())?;
+
+                    let awaited_result = future.await.map_err(|e| e.to_string())?;
+
+                    let result_str: String =
+                        Python::attach(|py| awaited_result.extract::<String>(py))
+                            .map_err(|e: PyErr| e.to_string())?;
+
+                    let val: Value =
+                        serde_json::from_str(&result_str).map_err(|e| e.to_string())?;
+                    Ok(val)
                 })
-                .map_err(|e| e.to_string())?;
-
-                let awaited_result = future.await.map_err(|e| e.to_string())?;
-
-                let result_str: String =
-                    Python::with_gil(|py| awaited_result.extract::<String>(py))
-                        .map_err(|e| e.to_string())?;
-
-                let val: Value = serde_json::from_str(&result_str).map_err(|e| e.to_string())?;
-                Ok(val)
-            })
-        });
+            });
 
         self.bridge.register_tool(&name, tool_impl);
-
         Ok(())
     }
 
-    pub fn on_intent(&self, callback: PyObject) -> PyResult<()> {
+    pub fn on_intent(&self, callback: Py<PyAny>) -> PyResult<()> {
+        let callback = Arc::new(callback);
+
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
-                let callback = callback.clone();
+                let callback = Arc::clone(&callback);
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
 
                 Box::pin(async move {
-                    let py_result = Python::with_gil(|py| {
+                    let py_result = Python::attach(|py| {
+                        let cb = callback.clone_ref(py);
                         let name_py = pyo3::types::PyString::new(py, &name);
                         let val_py = pyo3::types::PyString::new(py, &value_json);
                         let agent_py = pyo3::types::PyString::new(py, &agent);
-                        let res = callback.call1(py, (name_py, val_py, agent_py))?;
-                        pyo3_asyncio::tokio::into_future(res.as_ref(py))
+                        let res = cb.call1(py, (name_py, val_py, agent_py))?;
+                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
                     });
 
                     if let Ok(future) = py_result {
                         if let Ok(py_obj) = future.await {
-                            let result_str: Option<String> = Python::with_gil(|py| {
+                            let result_str: Option<String> = Python::attach(|py| {
                                 py_obj.extract::<Option<String>>(py).unwrap_or(None)
                             });
                             if let Some(s) = result_str {
@@ -191,24 +205,26 @@ impl AuwgentNative {
             });
 
         self.bridge.on_intent(handler);
-
         Ok(())
     }
 
-    pub fn on_sub_engine_start(&self, callback: PyObject) -> PyResult<()> {
+    pub fn on_sub_engine_start(&self, callback: Py<PyAny>) -> PyResult<()> {
+        let callback = Arc::new(callback);
+
         let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
             std::sync::Arc::new(move |name: String, session: String| {
-                let callback = callback.clone();
+                let callback = Arc::clone(&callback);
                 Box::pin(async move {
-                    let py_result = Python::with_gil(|py| {
+                    let py_result = Python::attach(|py| {
+                        let cb = callback.clone_ref(py);
                         let name_py = pyo3::types::PyString::new(py, &name);
                         let val_py = pyo3::types::PyString::new(py, &session);
-                        let res = callback.call1(py, (name_py, val_py))?;
-                        pyo3_asyncio::tokio::into_future(res.as_ref(py))
+                        let res = cb.call1(py, (name_py, val_py))?;
+                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
                     });
                     if let Ok(future) = py_result {
                         if let Ok(obj) = future.await {
-                            return Python::with_gil(|py| {
+                            return Python::attach(|py| {
                                 obj.extract::<Option<String>>(py).unwrap_or(None)
                             });
                         }
@@ -221,16 +237,19 @@ impl AuwgentNative {
         Ok(())
     }
 
-    pub fn on_sub_engine_complete(&self, callback: PyObject) -> PyResult<()> {
+    pub fn on_sub_engine_complete(&self, callback: Py<PyAny>) -> PyResult<()> {
+        let callback = Arc::new(callback);
+
         let handler: ir_runtime::runtime::engine::SessionSaveCallback =
             std::sync::Arc::new(move |name: String, session: String| {
-                let callback = callback.clone();
+                let callback = Arc::clone(&callback);
                 Box::pin(async move {
-                    let py_result = Python::with_gil(|py| {
+                    let py_result = Python::attach(|py| {
+                        let cb = callback.clone_ref(py);
                         let name_py = pyo3::types::PyString::new(py, &name);
                         let val_py = pyo3::types::PyString::new(py, &session);
-                        let res = callback.call1(py, (name_py, val_py))?;
-                        pyo3_asyncio::tokio::into_future(res.as_ref(py))
+                        let res = cb.call1(py, (name_py, val_py))?;
+                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
                     });
                     if let Ok(future) = py_result {
                         let _ = future.await;
@@ -242,35 +261,42 @@ impl AuwgentNative {
         Ok(())
     }
 
-    pub fn on_middleware_event(&self, callback: PyObject) -> PyResult<()> {
-        self.bridge.on_middleware_event(std::sync::Arc::new(move |event_json: String| {
-            let callback = callback.clone();
-            Box::pin(async move {
-                let py_result = Python::with_gil(|py| {
-                    let event_py = pyo3::types::PyString::new(py, &event_json);
-                    let res = callback.call1(py, (event_py,))?;
-                    pyo3_asyncio::tokio::into_future(res.as_ref(py))
-                });
-                if let Ok(future) = py_result {
-                    if let Ok(obj) = future.await {
-                        return Python::with_gil(|py| {
-                            obj.extract::<Option<String>>(py).unwrap_or(None)
-                        });
+    pub fn on_middleware_event(&self, callback: Py<PyAny>) -> PyResult<()> {
+        let callback = Arc::new(callback);
+
+        self.bridge
+            .on_middleware_event(std::sync::Arc::new(move |event_json: String| {
+                let callback = Arc::clone(&callback);
+                Box::pin(async move {
+                    let py_result = Python::attach(|py| {
+                        let cb = callback.clone_ref(py);
+                        let event_py = pyo3::types::PyString::new(py, &event_json);
+                        let res = cb.call1(py, (event_py,))?;
+                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
+                    });
+                    if let Ok(future) = py_result {
+                        if let Ok(obj) = future.await {
+                            return Python::attach(|py| {
+                                obj.extract::<Option<String>>(py).unwrap_or(None)
+                            });
+                        }
                     }
-                }
-                None
-            })
-        }));
+                    None
+                })
+            }));
         Ok(())
     }
 
-    pub fn on_intent_partial(&self, callback: PyObject) -> PyResult<()> {
+    pub fn on_intent_partial(&self, callback: Py<PyAny>) -> PyResult<()> {
+        let callback = Arc::new(callback);
+
         let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
-                let callback = callback.clone();
+                let callback = Arc::clone(&callback);
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
-                Python::with_gil(|py| {
-                    let _ = callback.call1(py, (name, value_json, agent));
+                Python::attach(|py| {
+                    let cb = callback.clone_ref(py);
+                    let _ = cb.call1(py, (name, value_json, agent));
                 });
             });
         self.bridge.on_intent_partial(handler);
@@ -301,7 +327,7 @@ fn parse_intent_control(val: &Value) -> Option<IntentControl> {
 }
 
 #[pymodule]
-fn _auwgent_sdk(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _auwgent_sdk(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AuwgentNative>()?;
     Ok(())
 }
