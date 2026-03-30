@@ -68,14 +68,18 @@ impl Auwgent {
     /// });
     /// ```
     #[napi(ts_args_type = "name: string, callback: (args: any) => Promise<any>")]
-    pub fn register_tool(&self, name: String, callback: JsFunction) -> Result<()> {
+    pub fn register_tool(&self, env: Env, name: String, callback: JsFunction) -> Result<()> {
         // Create a ThreadsafeFunction that can be called from any thread
-        let tsfn: ThreadsafeFunction<Value, ErrorStrategy::Fatal> = callback
+        let mut tsfn: ThreadsafeFunction<Value, ErrorStrategy::Fatal> = callback
             .create_threadsafe_function(0, |ctx| {
                 // Convert serde_json::Value -> napi JsValue via serde
                 let js_val = ctx.env.to_js_value(&ctx.value)?;
                 Ok(vec![js_val])
             })?;
+        
+        // Unref the Tool TSFN so it doesn't hold the Node.js event loop open infinitely.
+        // It will only activate when explicitly called by the rust async runtime during run().
+        let _ = tsfn.unref(&env);
 
         // Wrap the TSFN into a ToolImplementation closure
         let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
@@ -167,9 +171,9 @@ impl Auwgent {
         // is busy (e.g. awaiting a tool Promise), streaming token events are simply
         // dropped rather than flooding the queue and starving the tool resolution.
         // This prevents the livelock / hang seen during concurrent streaming + tools.
-        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::CalleeHandled> =
+        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> =
             callback.create_threadsafe_function(
-                128,
+                1024,
                 |ctx: ThreadSafeCallContext<(String, Value, String)>| {
                     let name = ctx.env.create_string(&ctx.value.0)?;
                     let value = ctx.env.to_js_value(&ctx.value.1)?;
@@ -182,7 +186,7 @@ impl Auwgent {
         let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 tsfn.call(
-                    Ok((name, value, agent)),
+                    (name, value, agent),
                     ThreadsafeFunctionCallMode::NonBlocking,
                 );
             });

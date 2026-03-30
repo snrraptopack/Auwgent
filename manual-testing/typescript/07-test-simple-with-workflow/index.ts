@@ -7,7 +7,7 @@ import { tools } from "./tools"
 const logger: AuwgentMiddleware = {
   name: "logger",
   onRunStart: (session, ctx) => {
-    ctx.setContext({ age: 10 })
+    ctx.setContext({ age: Math.floor((Math.random() * 10)) })
     return session
   }
 }
