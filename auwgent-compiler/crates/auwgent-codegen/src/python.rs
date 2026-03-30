@@ -555,7 +555,8 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
     if has_tools {
         config_keys.push(format!("    tools: NotRequired['{agent_name}Tools']"));
     }
-    config_keys.push(format!("    middleware: NotRequired[List['{agent_name}Middleware']]"));
+    config_keys.push(format!("    middleware: NotRequired[List[Union['{agent_name}Middleware', 'type[{agent_name}Middleware]']]]"));
+
 
     if matches!(ir.get("context"), Some(context) if !context.is_null()) {
         config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));

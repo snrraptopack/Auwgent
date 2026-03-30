@@ -900,14 +900,19 @@ fn lower_template_condition(condition: &str) -> Value {
     for operator in ["==", "!=", ">=", "<=", ">", "<"] {
         if let Some((left, right)) = condition.split_once(operator) {
             return json!({
-                "left": lower_template_condition_operand(left.trim()),
+                "type": "comparison",
                 "operator": operator,
+                "left": lower_template_condition_operand(left.trim()),
                 "right": lower_template_condition_operand(right.trim())
             });
         }
     }
 
-    lower_template_condition_operand(condition.trim())
+    // No comparison operator: treat the whole thing as a boolean expression check
+    json!({
+        "type": "boolean",
+        "value": lower_template_condition_operand(condition.trim())
+    })
 }
 
 fn lower_template_condition_operand(operand: &str) -> Value {
@@ -1072,7 +1077,10 @@ fn lower_condition(cond: &Condition) -> Value {
                 "right": lower_condition(right)
             })
         }
-        Condition::Boolean { value, .. } => lower_expression(value),
+        Condition::Boolean { value, .. } => json!({
+            "type": "boolean",
+            "value": lower_expression(value)
+        }),
     }
 }
 

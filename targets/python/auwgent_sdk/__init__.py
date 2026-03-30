@@ -13,8 +13,9 @@ import typing
 from typing import (
     Any, Callable, Awaitable, Dict, List, Optional,
     TypeVar, Generic, Protocol, Union, TypedDict,
-    cast
+    Type, ClassVar, cast, runtime_checkable
 )
+
 
 # ── Native Binding Import ────────────────────────────────────────────────
 try:
@@ -83,9 +84,10 @@ class MiddlewareContext(TypedDict, total=False):
     embedBatch: Callable[[List[str]], Awaitable[List[List[float]]]]
     set_context: Callable[[Dict[str, Any]], None]
 
+@runtime_checkable
 class Middleware(Protocol):
-    name: str
-    target: Optional[Union[str, List[str]]] = None
+    name: ClassVar[str]
+    target: ClassVar[Optional[Union[str, List[str]]]]
 
     async def onRunStart(self, session: Dict[str, Any], ctx: MiddlewareContext) -> Dict[str, Any]: ...
     async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]: ...
@@ -94,13 +96,18 @@ class Middleware(Protocol):
     async def onRunComplete(self, finalSession: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
     async def onError(self, error: Exception, session: Optional[Dict[str, Any]], ctx: MiddlewareContext) -> bool: ...
 
+# Accept both instances and class types in middleware lists
+MiddlewareEntry = Union[Middleware, Type[Any]]
+
+
 # ── Configuration ────────────────────────────────────────────────────────
 
 class AuwgentConfig(TypedDict, total=False):
     tools: Union[Dict[str, Callable[..., Awaitable[Any]]], Any]
-    middleware: List[Any]
+    middleware: List[MiddlewareEntry]
     context: Dict[str, Any]
     apiKeys: Dict[str, str]
+
 
 # ── Type-Safe Auwgent Wrapper ─────────────────────────────────────────────
 
@@ -119,9 +126,15 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         ir_json = json.dumps(ir) if isinstance(ir, dict) else ir
         self._native = _native.AuwgentNative(ir_json)
         self.ir: Dict[str, Any] = ir if isinstance(ir, dict) else json.loads(ir_json)
-        self.middleware: List[Any] = [*cast(list, config.get("middleware", []))]
+        # Auto-instantiate class-type middleware entries
+        raw_middleware = cast(list, config.get("middleware", []))
+        self.middleware: List[Any] = [
+            m() if isinstance(m, type) else m
+            for m in raw_middleware
+        ]
         self._shared_context: Dict[str, Any] = {}
         self._agent_stack: List[str] = []
+
 
         # Deferred handler storage — registered/deregistered around each run()
         self._stored_intent_handler: Optional[Callable] = None

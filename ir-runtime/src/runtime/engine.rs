@@ -699,6 +699,15 @@ impl AuwgentEngine {
             }
         }
 
+        // Regenerate the system prompt now that run_start middleware has had a chance
+        // to call setContext(). This ensures any context injected during onRunStart
+        // is reflected in the current run's system prompt, not just the next one.
+        let system_prompt = self.generate_prompt(None)?;
+        self.session
+            .lock()
+            .unwrap()
+            .set_system_prompt(&system_prompt);
+
         // 3. Build the initial user input
         let initial_user_input = match input.as_ref() {
             Some(Value::String(s)) => Some(s.clone()),
