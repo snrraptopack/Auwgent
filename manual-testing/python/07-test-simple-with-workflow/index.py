@@ -17,7 +17,7 @@ context:AuwgentContext = {
 
 config:AuwgentConfig = {
     'apiKeys':{
-        'my_groq_apiApiKey':"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"
+        'my_groq_apiApiKey':""
     },
     'context':context
 }
