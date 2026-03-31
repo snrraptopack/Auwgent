@@ -18,37 +18,37 @@ except ImportError:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
 
-class Product(TypedDict, total=False):
-    price: float
-    stock: float
-    name: str
+class Order(TypedDict, total=False):
+    user_id: str
+    quantity: float
+    product_id: str
+    status: str
+    total: float
     id: str
-
-class User(TypedDict, total=False):
-    email: str
-    id: str
-    created_at: str
-    name: str
 
 class QueryResult(TypedDict, total=False):
     data: str
-    success: bool
     message: str
+    success: bool
 
-class Order(TypedDict, total=False):
-    quantity: float
-    user_id: str
-    total: float
-    product_id: str
+class User(TypedDict, total=False):
+    name: str
+    created_at: str
     id: str
-    status: str
+    email: str
 
 class AnalysisReport(TypedDict, total=False):
     total_users: float
-    insights: List[str]
     total_products: float
     total_orders: float
+    insights: List[str]
     revenue: float
+
+class Product(TypedDict, total=False):
+    name: str
+    stock: float
+    id: str
+    price: float
 class MainInput(TypedDict, total=False):
     pass
 
@@ -295,7 +295,7 @@ MainMiddleware = Middleware
 
 class MainConfig(TypedDict, total=False):
     tools: NotRequired['MainTools']
-    middleware: NotRequired[List['MainMiddleware']]
+    middleware: NotRequired[List[Union['MainMiddleware', 'type[MainMiddleware]']]]
     context: NotRequired['MainContext']
     apiKeys: NotRequired['MainApiKeys']
 

@@ -3,4 +3,3 @@ source: "main.agent"
 output: "generated"
 targets:
   - py
-development: true

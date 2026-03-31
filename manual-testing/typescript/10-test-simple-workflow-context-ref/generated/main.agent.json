@@ -41,8 +41,11 @@
         {
           "type": "if",
           "condition": {
-            "type": "contextRef",
-            "property": "is_vip"
+            "type": "boolean",
+            "value": {
+              "type": "contextRef",
+              "property": "is_vip"
+            }
           },
           "then": [
             {

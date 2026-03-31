@@ -29,7 +29,9 @@ import type {
     PartialIntentHandlers,
     SessionState,
     ExtractHelperNames,
-    CollectAllOutputs
+    CollectAllOutputs,
+    RunMetadata,
+    TurnMetadata
 } from './types.js';
 
 import type { Middleware, MiddlewareContext } from './middleware.js';
@@ -448,6 +450,13 @@ export class TypedAuwgent<
             // and allow the Node.js process to exit gracefully.
             this.deactivateListeners();
         }
+    }
+
+    /**
+     * Get the exact token usage and prompt/response telemetry from the last full run().
+     */
+    getMetadata(): RunMetadata {
+        return JSON.parse(this.native.getMetadata());
     }
 
     /**

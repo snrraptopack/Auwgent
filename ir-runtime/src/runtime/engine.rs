@@ -1,13 +1,35 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
 use crate::intent_parser::block_orchestrator::BlockOrchestrator as Orchestrator;
-use crate::runtime::drivers::ModelDriver;
+use crate::runtime::drivers::{ModelDriver, ModelEvent, TokenUsage, FinishReason, ModelMetadata};
 use crate::runtime::session::SessionState;
 use crate::types::*;
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AggregateUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnMetadata {
+    pub turn_index: usize,
+    pub usage: TokenUsage,
+    pub finish_reason: Option<FinishReason>,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct RunMetadata {
+    pub aggregate: AggregateUsage,
+    pub turns: Vec<TurnMetadata>,
+}
 
 pub type ToolImplementation = Arc<
     dyn Fn(Value) -> futures_util::future::BoxFuture<'static, Result<Value, String>> + Send + Sync,
@@ -136,6 +158,8 @@ pub struct AuwgentEngine {
     final_response_emitted: Arc<Mutex<bool>>,
     /// Original user input for the current run cycle (used for teleportation follow-ups)
     user_input: Arc<Mutex<Option<serde_json::Value>>>,
+    /// Accumulated run metadata across turns
+    pub last_run_metadata: Arc<Mutex<RunMetadata>>,
 }
 
 impl AuwgentEngine {
@@ -228,6 +252,7 @@ impl AuwgentEngine {
             terminal_response_emitted: Arc::new(Mutex::new(false)),
             final_response_emitted: Arc::new(Mutex::new(false)),
             user_input: Arc::new(Mutex::new(None)),
+            last_run_metadata: Arc::new(Mutex::new(RunMetadata::default())),
         }
     }
 
@@ -552,11 +577,27 @@ impl AuwgentEngine {
         response: &Value,
         system_prompt: &str,
         active_agent: &str,
+        turn_metadata: &TurnMetadata,
     ) {
+        let mut response_with_metadata = response.clone();
+        if let Some(obj) = response_with_metadata.as_object_mut() {
+            obj.insert("metadata".to_string(), serde_json::to_value(turn_metadata).unwrap_or(Value::Null));
+        } else if let Value::String(s) = response {
+            response_with_metadata = serde_json::json!({
+                "text": s,
+                "metadata": turn_metadata
+            });
+        } else {
+            response_with_metadata = serde_json::json!({
+                "value": response,
+                "metadata": turn_metadata
+            });
+        }
+
         let _ = self
             .fire_middleware_event(serde_json::json!({
                 "type": "llm_end",
-                "response": response,
+                "response": response_with_metadata,
                 "context": self.build_event_context(active_agent, None, Some(system_prompt.to_string())),
             }))
             .await;
@@ -747,6 +788,8 @@ impl AuwgentEngine {
             .map(|v| v as usize)
             .unwrap_or(12);
 
+        *self.last_run_metadata.lock().unwrap() = RunMetadata::default();
+
         let mut loop_count = 0;
 
         let run_result = async {
@@ -925,10 +968,12 @@ impl AuwgentEngine {
             };
 
             let mut actions_performed = false;
+            let mut turn_usage = TokenUsage::default();
+            let mut turn_finish_reason = None;
 
             while let Some(chunk_res) = stream.next().await {
                 match chunk_res {
-                    Ok(text) => {
+                    Ok(ModelEvent::ContentChunk(text)) => {
                         if !text.is_empty() {
                             self.current_raw_response.lock().unwrap().push_str(&text);
                         }
@@ -955,6 +1000,16 @@ impl AuwgentEngine {
                             break;
                         }
                     }
+                    Ok(ModelEvent::Usage(usage)) => {
+                        turn_usage = usage;
+                    }
+                    Ok(ModelEvent::FinishReason(fr)) => {
+                        turn_finish_reason = Some(fr);
+                    }
+                    Ok(ModelEvent::Metadata(meta)) => {
+                        turn_usage = meta.usage;
+                        turn_finish_reason = meta.finish_reason;
+                    }
                     Err(e) => {
                         // Fire error as intent if handler exists
                         self.fire_intent(
@@ -973,6 +1028,21 @@ impl AuwgentEngine {
                         return Err(AuwgentError::StreamError(e));
                     }
                 }
+            }
+
+            let turn_metadata = TurnMetadata {
+                turn_index: loop_count - 1,
+                usage: turn_usage.clone(),
+                finish_reason: turn_finish_reason.clone(),
+                model: model_name.to_string(),
+            };
+
+            {
+                let mut meta_lock = self.last_run_metadata.lock().unwrap();
+                meta_lock.aggregate.prompt_tokens += turn_usage.prompt_tokens;
+                meta_lock.aggregate.completion_tokens += turn_usage.completion_tokens;
+                meta_lock.aggregate.total_tokens += turn_usage.total_tokens;
+                meta_lock.turns.push(turn_metadata.clone());
             }
 
             // Finalize parsing
@@ -1018,6 +1088,7 @@ impl AuwgentEngine {
                 &(self.last_turn_response_value()),
                 &sys_prompt,
                 &self.ir.name,
+                &turn_metadata,
             )
             .await;
 

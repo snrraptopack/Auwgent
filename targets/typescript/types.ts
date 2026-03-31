@@ -470,3 +470,34 @@ export interface SessionState {
     stack: string[];
     initialInput?: any;
 }
+
+export interface TokenUsage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+}
+
+export type FinishReason = 
+    | 'stop' 
+    | 'length' 
+    | 'tool_calls' 
+    | 'content_filter' 
+    | { other: string };
+
+export interface TurnMetadata {
+    turn_index: number;
+    usage: TokenUsage;
+    finish_reason: FinishReason | null;
+    model: string;
+}
+
+export interface AggregateUsage {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+}
+
+export interface RunMetadata {
+    aggregate: AggregateUsage;
+    turns: TurnMetadata[];
+}

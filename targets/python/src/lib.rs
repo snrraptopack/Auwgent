@@ -58,6 +58,10 @@ impl AuwgentNative {
         self.bridge.get_tool_schemas().map_err(PyRuntimeError::new_err)
     }
 
+    pub fn get_metadata(&self) -> PyResult<String> {
+        self.bridge.get_metadata().map_err(PyRuntimeError::new_err)
+    }
+
     pub fn export_session(&self) -> PyResult<String> {
         self.bridge.export_session().map_err(PyRuntimeError::new_err)
     }

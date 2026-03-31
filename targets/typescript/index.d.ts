@@ -97,6 +97,8 @@ export declare class Auwgent {
   exportSession(): string
   /** Import a previously exported session state. */
   importSession(json: string): void
+  /** Extracted metadata from the last full run */
+  getMetadata(): string
   /** Clear the session (start a fresh conversation). */
   clearSession(): void
   /** Generate the system prompt (useful for debugging). */

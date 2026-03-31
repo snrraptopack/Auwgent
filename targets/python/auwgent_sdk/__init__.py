@@ -62,6 +62,26 @@ class PartialStructuredIntentValue(PartialIntentEnvelope, total=False):
 
 PartialIntentValue = Union[PartialTextIntentValue, PartialStructuredIntentValue, Dict[str, Any]]
 
+class TokenUsage(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class TurnMetadata(TypedDict):
+    turn_index: int
+    usage: TokenUsage
+    finish_reason: Optional[Union[str, Dict[str, str]]]
+    model: str
+
+class AggregateUsage(TypedDict):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+class RunMetadata(TypedDict):
+    aggregate: AggregateUsage
+    turns: List[TurnMetadata]
+
 # ── Error Types ───────────────────────────────────────────────────────────
 
 class AuwgentToolError(Exception):
@@ -532,6 +552,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         """Get tool schemas (for introspection)."""
         return json.loads(self._native.get_tool_schemas())
+
+    def get_metadata(self) -> RunMetadata:
+        """Get the exact token usage and prompt/response telemetry from the last full run()."""
+        return cast(RunMetadata, json.loads(self._native.get_metadata()))
 
     @property
     def raw(self) -> Any:

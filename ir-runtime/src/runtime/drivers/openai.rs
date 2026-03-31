@@ -31,7 +31,7 @@ impl ModelDriver for OpenAIDriver {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String, String>> + Send>>, String> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/chat/completions") {
             base.to_string()
@@ -67,6 +67,7 @@ impl ModelDriver for OpenAIDriver {
             "model": model,
             "messages": openai_messages,
             "stream": true,
+            "stream_options": { "include_usage": true }
         });
 
         // Apply generation config params if provided
@@ -109,7 +110,7 @@ impl ModelDriver for OpenAIDriver {
                 let chunk = String::from_utf8_lossy(&bytes);
                 buffer.push_str(&chunk);
 
-                let mut result_text = String::new();
+                let mut result_events = Vec::new();
                 while let Some(index) = buffer.find('\n') {
                     let line = buffer.drain(..=index).collect::<String>();
                     let trimmed = line.trim();
@@ -120,17 +121,47 @@ impl ModelDriver for OpenAIDriver {
 
                     if let Some(data) = trimmed.strip_prefix("data: ") {
                         if let Ok(json_val) = serde_json::from_str::<Value>(data) {
-                            if let Some(content) =
-                                json_val["choices"][0]["delta"]["content"].as_str()
-                            {
-                                result_text.push_str(content);
+                            if let Some(choices) = json_val.get("choices").and_then(|v| v.as_array()) {
+                                if !choices.is_empty() {
+                                    if let Some(content) = choices[0].get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
+                                        result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(content.to_string()));
+                                    }
+                                    
+                                    if let Some(finish_reason_str) = choices[0].get("finish_reason").and_then(|f| f.as_str()) {
+                                        let finish_reason = match finish_reason_str {
+                                            "stop" => crate::runtime::drivers::FinishReason::Stop,
+                                            "length" => crate::runtime::drivers::FinishReason::Length,
+                                            "tool_calls" => crate::runtime::drivers::FinishReason::ToolCalls,
+                                            "content_filter" => crate::runtime::drivers::FinishReason::ContentFilter,
+                                            _ => crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string()),
+                                        };
+                                        result_events.push(crate::runtime::drivers::ModelEvent::FinishReason(finish_reason));
+                                    }
+                                }
+                            }
+                            
+                            // Extract usage if available
+                            if let Some(usage) = json_val.get("usage") {
+                                let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                
+                                result_events.push(crate::runtime::drivers::ModelEvent::Usage(crate::runtime::drivers::TokenUsage {
+                                    prompt_tokens,
+                                    completion_tokens,
+                                    total_tokens,
+                                }));
                             }
                         }
                     }
                 }
-                Ok(result_text)
+                Ok(result_events)
             }
             Err(e) => Err(format!("Stream error: {}", e)),
+        })
+        .flat_map(|res| match res {
+            Ok(events) => futures_util::stream::iter(events.into_iter().map(Ok)).left_stream(),
+            Err(e) => futures_util::stream::iter(vec![Err(e)]).right_stream(),
         });
 
         Ok(Box::pin(stream))

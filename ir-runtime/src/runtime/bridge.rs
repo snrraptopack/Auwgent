@@ -91,6 +91,11 @@ impl EngineBridge {
         self.engine.on_middleware_event(handler);
     }
 
+    pub fn get_metadata(&self) -> Result<String, String> {
+        let meta = self.engine.last_run_metadata.lock().unwrap();
+        serde_json::to_string(&*meta).map_err(|e| format!("{}", e))
+    }
+
     pub fn export_session(&self) -> Result<String, String> {
         self.engine.export_session().map_err(|e| format!("{}", e))
     }

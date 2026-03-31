@@ -62,9 +62,6 @@ agent MainAgent{
         prompt: {
             """
                 You are a helpful assistant please your response should accurately be in this strcuture
-                {{@schema(output)}}
-
-                please [schema:Name] the name should match the schema we are using this case we have Organization
             """
         }
     }

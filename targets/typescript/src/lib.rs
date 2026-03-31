@@ -320,6 +320,12 @@ impl Auwgent {
         self.bridge.import_session(json).map_err(Error::from_reason)
     }
 
+    /// Extracted metadata from the last full run
+    #[napi]
+    pub fn get_metadata(&self) -> Result<String> {
+        self.bridge.get_metadata().map_err(Error::from_reason)
+    }
+
     /// Clear the session (start a fresh conversation).
     #[napi]
     pub fn clear_session(&self) -> Result<()> {
