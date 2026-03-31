@@ -1,31 +1,298 @@
 {
-  "name": "Main",
+  "name": "MainAgent",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "custom",
-          "id": "kimi",
-          "url": "https://api.moonshot.ai/v1/chat/completions",
-          "modelName": "kimi-k2-0905-preview",
-          "config": null
+          "id": "my-groq-api",
+          "url": "https://api.groq.com/openai/v1/chat/completions",
+          "modelName": "llama-3.3-70b-versatile",
+          "config": {
+            "type": "object",
+            "value": {
+              "enable_thinking": {
+                "type": "literal",
+                "value": false
+              },
+              "temperature": {
+                "type": "literal",
+                "value": 0.7
+              }
+            }
+          }
         },
         "embedding": null,
         "prompt": {
-          "value": "You are a helper be polite",
-          "type": "literal"
+          "type": "inlinePrompt",
+          "parts": [
+            {
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n                You are a helpful assistant please your response should accurately be in this strcuture\r\n                "
+                },
+                {
+                  "type": "schemaDirective",
+                  "path": "output"
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n\r\n                please [schema:Name] the name should match the schema we are using this case we have Organization\r\n            "
+                }
+              ]
+            }
+          ]
         }
       },
       "namedConfig": []
     }
   ],
   "input": null,
-  "output": null,
+  "output": {
+    "id": {
+      "type": "string",
+      "optional": false
+    },
+    "name": {
+      "type": "string",
+      "optional": false
+    },
+    "contact": {
+      "type": {
+        "type": "typeRef",
+        "name": "ContactInfo"
+      },
+      "optional": false
+    },
+    "subscription": {
+      "type": {
+        "type": "typeRef",
+        "name": "Subscription"
+      },
+      "optional": false
+    },
+    "member_count": {
+      "type": "number",
+      "optional": false
+    },
+    "tags": {
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "optional": false
+    }
+  },
   "context": null,
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "types": null,
+  "types": {
+    "PricingTier": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "annual_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "max_seats": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "monthly_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Subscription": {
+      "isOutput": false,
+      "properties": {
+        "tier": {
+          "type": {
+            "type": "typeRef",
+            "name": "PricingTier"
+          },
+          "optional": false,
+          "description": null
+        },
+        "is_active": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        },
+        "features": {
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "typeRef",
+              "name": "Feature"
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "started_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "renews_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Organization": {
+      "isOutput": false,
+      "properties": {
+        "subscription": {
+          "type": {
+            "type": "typeRef",
+            "name": "Subscription"
+          },
+          "optional": false,
+          "description": null
+        },
+        "contact": {
+          "type": {
+            "type": "typeRef",
+            "name": "ContactInfo"
+          },
+          "optional": false,
+          "description": null
+        },
+        "member_count": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "tags": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Address": {
+      "isOutput": false,
+      "properties": {
+        "city": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "zip": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "street": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "country": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Feature": {
+      "isOutput": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "config": {
+          "type": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "number",
+                "optional": false
+              },
+              "unit": {
+                "type": "string",
+                "optional": false
+              },
+              "overage_rate": {
+                "type": "number",
+                "optional": false
+              }
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "enabled": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "ContactInfo": {
+      "isOutput": false,
+      "properties": {
+        "phone": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "address": {
+          "type": {
+            "type": "typeRef",
+            "name": "Address"
+          },
+          "optional": false,
+          "description": null
+        }
+      }
+    }
+  },
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],

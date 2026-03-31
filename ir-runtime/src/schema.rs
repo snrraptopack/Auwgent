@@ -176,6 +176,15 @@ pub fn format_type_value(def: &Value, types: Option<&HashMap<String, TypeDefinit
 }
 
 fn format_type(type_val: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
+    let mut visited = std::collections::HashSet::new();
+    format_type_internal(type_val, types, &mut visited)
+}
+
+fn format_type_internal(
+    type_val: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+    visited: &mut std::collections::HashSet<String>,
+) -> String {
     if let Some(s) = type_val.as_str() {
         return normalize_type_name(s);
     }
@@ -185,13 +194,15 @@ fn format_type(type_val: &Value, types: Option<&HashMap<String, TypeDefinition>>
             match type_tag {
                 "array" => {
                     if let Some(items) = obj.get("items") {
-                        return format!("{}[]", format_type(items, types));
+                        return format!("{}[]", format_type_internal(items, types, visited));
                     }
                 }
                 "union" => {
                     if let Some(options) = obj.get("options").and_then(|v| v.as_array()) {
-                        let rendered: Vec<String> =
-                            options.iter().map(|v| format_type(v, types)).collect();
+                        let rendered: Vec<String> = options
+                            .iter()
+                            .map(|v| format_type_internal(v, types, visited))
+                            .collect();
                         return rendered.join(" | ");
                     }
                 }
@@ -199,15 +210,31 @@ fn format_type(type_val: &Value, types: Option<&HashMap<String, TypeDefinition>>
                     if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
                         let rendered: Vec<String> = props
                             .iter()
-                            .map(|(k, v)| format!("{}: {}", k, format_type(v, types)))
+                            .map(|(k, v)| format!("{}: {}", k, format_type_internal(v, types, visited)))
                             .collect();
                         return format!("{{ {} }}", rendered.join(", "));
                     }
                 }
                 "typeRef" => {
                     if let Some(name) = obj.get("name").and_then(|v| v.as_str()) {
-                        // For pure string formatting (like in array[] signatures) we just put the name.
-                        // Full object expansion happens in format_schema_yaml where we can indent.
+                        // Expand the object directly to reveal array item schemas
+                        if visited.insert(name.to_string()) {
+                            if let Some(types_map) = types {
+                                if let Some(custom_type) = types_map.get(name) {
+                                    if let Ok(props_val) = serde_json::to_value(&custom_type.properties) {
+                                        if let Some(props) = props_val.as_object() {
+                                            let rendered: Vec<String> = props
+                                                .iter()
+                                                .map(|(k, v)| format!("{}: {}", k, format_type_internal(v, types, visited)))
+                                                .collect();
+                                            visited.remove(name);
+                                            return format!("{{ {} }}", rendered.join(", "));
+                                        }
+                                    }
+                                }
+                            }
+                            visited.remove(name);
+                        }
                         return name.to_string();
                     }
                 }
@@ -216,7 +243,7 @@ fn format_type(type_val: &Value, types: Option<&HashMap<String, TypeDefinition>>
         }
 
         if let Some(inner) = obj.get("type") {
-            return format_type(inner, types);
+            return format_type_internal(inner, types, visited);
         }
     }
 

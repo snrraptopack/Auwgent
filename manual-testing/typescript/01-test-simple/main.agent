@@ -1,73 +1,72 @@
-// This manual test is for basic input and out
-//
-// in the sdk the intent that would should be generated is response_text
-// Text is made to compiled to null where the  engine takes over
 
-
-model MyGemini{
-    provider: gemini("gemini-2.5-flash",{
-
-        // here every provider configuration can be set
-        // like top_k and co and they must match the http equivalent
-    })
+export type Address {
+    street: string
+    city: string
+    zip: string
+    country: string
 }
 
+export type ContactInfo{
+    email: string
+    phone: string
+    address: Address
+}
 
-prompt ParamPrompt(name:string, is_vip:boolean){
-    """
-    The helps us to dynamically inject things into the prompt
-    ie {{name}}
+export type PricingTier {
+    name: string
+    monthly_cost: number
+    annual_cost: number
+    max_seats: number
+}
 
-    or {{@schema(output)}} this will refrence the schema output the we define
-    or {{@schema(input)}} this will refrence the schema input the we define
-
-
-    {{#if is_vip == true}}
-        the true prompt
-    {{else}}
-        the false prompt
-    {{/if}}
-
-    """
-
-    Example {
-        user: "Hello, I need help with my account."
-        assistant: "I'd be happy to help! Could you please provide your name?"
-    }
-
-    Example{
-       user: "Hey what is today's date",
-       assistant: "I dont know"
-    }
-    // or we can have something like
-
-    if (is_vip){
-       return  the true prompt
-    }else {
-        return the false prompt
+export type Feature {
+    id: string
+    label: string
+    enabled: boolean
+    config: {
+        limit: number
+        unit: string
+        overage_rate: number
     }
 }
 
+export type Subscription{
+    id: string
+    tier: PricingTier
+    features: Feature[]
+    started_at: string
+    renews_at: string
+    is_active: boolean
+}
 
+export type Organization {
+    id: string
+    name: string
+    contact: ContactInfo
+    subscription: Subscription
+    member_count: number
+    tags: string[]
+}@example(
+    id = "abc",
+    name = "any name",
+    contact = '.... and so on'
+)
 
-agent Main{
-    default config {
-        model: MyGemini
-        prompt: ParamPrompt(name, is_vip) + NonParamPrompt + "normal prompt" + {
-            "this type the compositon mixig goes on."
+agent MainAgent{
+
+    default config{
+        model:custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile",{
+            enable_thinking: false,
+            temperature: 0.7
+            })
+        prompt: {
+            """
+                You are a helpful assistant please your response should accurately be in this strcuture
+                {{@schema(output)}}
+
+                please [schema:Name] the name should match the schema we are using this case we have Organization
+            """
         }
     }
-
-    context {
-        is_vip:boolean
-        name:string
-    }
-
-    tool get_weather():string @desc "Gets the current weather"
-
-    tools {
-        get_details():string @desc "Gets the weather details"
-        get_forecast():string
-    }
-
+    output:Organization
 }

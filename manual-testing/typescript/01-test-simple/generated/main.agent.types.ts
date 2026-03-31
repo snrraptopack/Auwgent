@@ -1,65 +1,114 @@
-// Auto-generated types for Main
+// Auto-generated types for MainAgent
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "Main";
+type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "MainAgent";
   workflows: undefined;
   helpers: undefined;
 };
-const agentIR = _importedIR as unknown as MainIR;
-export type MainInput = {
+const agentIR = _importedIR as unknown as MainAgentIR;
+export type PricingTier = {
+    name: string;
+    annual_cost: number;
+    max_seats: number;
+    monthly_cost: number;
+}
+
+export type Subscription = {
+    tier: PricingTier;
+    is_active: boolean;
+    features: Feature[];
+    started_at: string;
+    renews_at: string;
+    id: string;
+}
+
+export type Organization = {
+    subscription: Subscription;
+    contact: ContactInfo;
+    member_count: number;
+    tags: string[];
+    id: string;
+    name: string;
+}
+
+export type Address = {
+    city: string;
+    zip: string;
+    street: string;
+    country: string;
+}
+
+export type Feature = {
+    label: string;
+    id: string;
+    config: { limit: number; unit: string; overage_rate: number };
+    enabled: boolean;
+}
+
+export type ContactInfo = {
+    phone: string;
+    email: string;
+    address: Address;
+}
+export type MainAgentInput = {
 
 }
 
-export type MainOutput = {
-
+export type MainAgentOutput = {
+    id: string;
+    name: string;
+    contact: ContactInfo;
+    subscription: Subscription;
+    member_count: number;
+    tags: string[];
 }
 
-export type MainContext = {
+export type MainAgentContext = {
 
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type MainCustomIntents =
+export type MainAgentCustomIntents =
     | never;
 
 /**
- * API keys required for Main
+ * API keys required for MainAgent
  */
-export type MainApiKeys = {
-    kimiApiKey: string;  // API key for custom provider 'kimi'
+export type MainAgentApiKeys = {
+    my_groq_apiApiKey: string;  // API key for custom provider 'my-groq-api'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type MainAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
+export type MainAgentAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
-    MainCustomIntents,
-    MainOutput,
+    MainAgentCustomIntents,
+    MainAgentOutput,
     Record<string, never>
 >;
 
-/** Middleware object type — consistent with `MainAgent.onIntent` intent narrowing */
-export type MainMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
+/** Middleware object type — consistent with `MainAgentAgent.onIntent` intent narrowing */
+export type MainAgentMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
-    MainCustomIntents,
-    MainOutput,
+    MainAgentCustomIntents,
+    MainAgentOutput,
     Record<string, never>,
     T
 >;
 
-export type MainConfig = {
-    middleware?: MainMiddleware[];
-    apiKeys: MainApiKeys;
+export type MainAgentConfig = {
+    middleware?: MainAgentMiddleware[];
+    apiKeys: MainAgentApiKeys;
 }
 
-export function createMain(config: MainConfig): MainAgent {
+export function createMainAgent(config: MainAgentConfig): MainAgentAgent {
     return createAuwgent<
         typeof agentIR,
-        MainCustomIntents,
-        MainOutput,
+        MainAgentCustomIntents,
+        MainAgentOutput,
         Record<string, never>
     >(agentIR, {
         tools: {} as Record<string, never>,
@@ -68,9 +117,9 @@ export function createMain(config: MainConfig): MainAgent {
     });
 }
 
-export const auwgent = createMain;
+export const auwgent = createMainAgent;
 export type AuwgentTools = Record<string, never>;
-export type AuwgentConfig = MainConfig;
-export type AuwgentAgent = MainAgent;
-export type AuwgentMiddleware = MainMiddleware;
-export type AuwgentContext = MainContext;
+export type AuwgentConfig = MainAgentConfig;
+export type AuwgentAgent = MainAgentAgent;
+export type AuwgentMiddleware = MainAgentMiddleware;
+export type AuwgentContext = MainAgentContext;

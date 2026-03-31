@@ -3,4 +3,4 @@ source: "main.agent"
 output: "generated"
 targets:
   - ts
-development: true
+
