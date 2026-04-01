@@ -18,37 +18,37 @@ except ImportError:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError
 
-class Order(TypedDict, total=False):
-    user_id: str
-    product_id: str
-    total: float
-    id: str
-    quantity: float
-    status: str
-
-class User(TypedDict, total=False):
-    created_at: str
-    id: str
-    name: str
-    email: str
+class AnalysisReport(TypedDict, total=False):
+    total_products: float
+    total_orders: float
+    total_users: float
+    revenue: float
+    insights: List[str]
 
 class QueryResult(TypedDict, total=False):
-    success: bool
     message: str
+    success: bool
     data: str
 
-class Product(TypedDict, total=False):
-    stock: float
-    name: str
-    price: float
+class Order(TypedDict, total=False):
+    quantity: float
+    product_id: str
+    total: float
+    status: str
+    user_id: str
     id: str
 
-class AnalysisReport(TypedDict, total=False):
-    total_orders: float
-    insights: List[str]
-    revenue: float
-    total_products: float
-    total_users: float
+class User(TypedDict, total=False):
+    name: str
+    email: str
+    created_at: str
+    id: str
+
+class Product(TypedDict, total=False):
+    price: float
+    id: str
+    name: str
+    stock: float
 class MainInput(TypedDict, total=False):
     pass
 

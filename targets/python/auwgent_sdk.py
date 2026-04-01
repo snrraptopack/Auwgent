@@ -71,7 +71,7 @@ class AuwgentToolError(Exception):
 
 # ── Middleware Types ──────────────────────────────────────────────────────
 
-class MiddlewareContext(TypedDict, total=False):
+class MiddlewareContext(TypedDict):
     activeAgent: str
     stack: List[str]
     rootAgent: str
@@ -269,6 +269,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             stack=list(self._agent_stack),
             rootAgent=self.ir.get("name", "agent"),
             rawBlock=self._last_raw_block,
+            systemPrompt=None,
             embed=self.embed,
             embedBatch=self.embed_batch,
             set_context=self.set_context
