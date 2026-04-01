@@ -79,6 +79,7 @@ export interface AgentIRShape {
     tools: readonly IRToolDef[];
     workflows?: readonly IRWorkflowDef[];
     helpers?: readonly IRHelperDef[];
+    types?: Record<string, any>;
     output?: any;
     modelConfig?: IRModelConfigEntry[];
     customIntents?: readonly IRCustomIntentDef[];
@@ -278,10 +279,10 @@ export type GetToolArgs<T> = T extends (args: infer A) => any ? A : Record<strin
 export type IsAny<T> = 0 extends (1 & T) ? true : false;
 export type GetToolResult<T> = T extends (args: any) => Promise<infer R> ? R : any;
 
-export interface ToolCallIntent<K = string, A = any> { name: 'tool_call'; value: { type: K; args: A } }
-export interface ToolResultIntent<K = string, R = any> { name: 'tool_result'; value: { name: K; result: R; overridden?: boolean } }
-export interface ToolErrorIntent<K = string> { name: 'tool_error'; value: { tool: K; message: string } }
-export interface ToolSkippedIntent<K = string, A = any> { name: 'tool_skipped'; value: { type: K; args: A } }
+export interface ToolCallIntent<K extends string = string, A = any> { name: 'tool_call'; value: { type: K; args: A } }
+export interface ToolResultIntent<K extends string = string, R = any> { name: 'tool_result'; value: { name: K; result: R; overridden?: boolean } }
+export interface ToolErrorIntent<K extends string = string> { name: 'tool_error'; value: { tool: K; message: string } }
+export interface ToolSkippedIntent<K extends string = string, A = any> { name: 'tool_skipped'; value: { type: K; args: A } }
 
 export interface WorkflowCallIntent<K = string, A = any> { name: 'workflow_call'; value: { type: K; args: A } }
 export interface WorkflowResultIntent<K = string, R = any> { name: 'workflow_result'; value: { name: K; result: R } }
@@ -290,7 +291,34 @@ export interface HelperCallIntent<K = string, A = any> { name: 'helper_call'; va
 export interface HelperResultIntent<K = string, R = any> { name: 'helper_result'; value: { name: K; result: R } }
 
 export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
-export interface ResponseSchemaIntent<Output = any> { name: 'response_schema'; value: Output }
+
+type RootOutputSchemaName<IR extends AgentIRShape> =
+    string extends IR['name'] ? never : `${IR['name']}Output`;
+
+type HelperOutputSchemaNames<IR extends AgentIRShape> =
+    IR['helpers'] extends readonly any[]
+    ? IR['helpers'][number] extends { name: infer N extends string }
+        ? `${N}Output`
+        : never
+    : never;
+
+type DeclaredSchemaNames<IR extends AgentIRShape> =
+    IR['types'] extends Record<string, any>
+    ? keyof IR['types'] & string
+    : never;
+
+type ResponseSchemaTypeName<IR extends AgentIRShape> =
+    string extends IR['name']
+    ? string
+    : RootOutputSchemaName<IR> | HelperOutputSchemaNames<IR> | DeclaredSchemaNames<IR>;
+
+export interface ResponseSchemaIntent<Output = any, SchemaType extends string = string> {
+    name: 'response_schema';
+    value: {
+        type: SchemaType;
+        response: Output;
+    };
+}
 export interface PendingStreamValue { $state: 'pending' }
 export interface PartialIntentEnvelope<Snapshot = unknown> {
     partial: true
@@ -317,12 +345,12 @@ export type ToolIntents<Tools> =
     string extends keyof Tools
     ? (ToolCallIntent | ToolResultIntent | ToolErrorIntent | ToolSkippedIntent)
     : {
-        [K in keyof Tools]:
+        [K in keyof Tools & string]:
         | ToolCallIntent<K, GetToolArgs<Tools[K]>>
         | ToolResultIntent<K, GetToolResult<Tools[K]>>
         | ToolErrorIntent<K>
         | ToolSkippedIntent<K, GetToolArgs<Tools[K]>>
-    }[keyof Tools];
+    }[keyof Tools & string];
 
 export type WorkflowIntents<IR extends AgentIRShape> =
     IR['workflows'] extends readonly any[]
@@ -350,8 +378,8 @@ export type CoreIntents<IR extends AgentIRShape, Output = any, Tools = any> = (
     | ToolIntents<Tools>
     | WorkflowIntents<IR>
     | HelperIntents<IR>
-    | (IsAny<Output> extends true ? (ResponseTextIntent | ResponseSchemaIntent) :
-        [Output] extends [never] ? ResponseTextIntent : (ResponseTextIntent | ResponseSchemaIntent<Output>))
+    | (IsAny<Output> extends true ? (ResponseTextIntent | ResponseSchemaIntent<any, ResponseSchemaTypeName<IR>>) :
+        [Output] extends [never] ? ResponseTextIntent : (ResponseTextIntent | ResponseSchemaIntent<Output, ResponseSchemaTypeName<IR>>))
     | ErrorIntent
 );
 
@@ -466,7 +494,7 @@ export type PartialIntentHandler<
                 : PartialStructuredIntentValue<Extract<AuwgentIntent<IR, Custom, Output, Tools>, { name: K }>['value']>,
             agentName: string,
         ];
-    }[AuwgentIntent<IR, Custom, Output, Tools>['name']]
+    }[AuwgentIntent<IR, Custom, Output, Tools>['name'] & string]
 ) => void;
 
 // ── Session Types ────────────────────────────────────────────────────────

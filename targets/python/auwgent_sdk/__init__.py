@@ -9,6 +9,7 @@ object-style intent handlers, and proper session lifecycle management.
 import json
 import inspect
 import sys
+import asyncio
 import typing
 from datetime import datetime
 from typing import (
@@ -122,6 +123,7 @@ class Middleware(Protocol):
     async def onRunStart(self, session: Dict[str, Any], ctx: MiddlewareContext) -> Dict[str, Any]: ...
     async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]: ...
     async def onIntent(self, name: str, value: Dict[str, Any], ctx: MiddlewareContext) -> Optional[Dict[str, Any]]: ...
+    async def onIntentPartial(self, name: str, value: PartialIntentValue, ctx: MiddlewareContext) -> None: ...
     async def onLLMEnd(self, response: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
     async def onRunComplete(self, finalSession: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
     async def onError(self, error: Exception, session: Optional[Dict[str, Any]], ctx: MiddlewareContext) -> bool: ...
@@ -148,7 +150,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     Mirrors the TypeScript SDK's full feature set:
     - Deferred listener registration (activate/deactivate around each run)
     - Middleware pipeline with onIntent, onLLMStart/End, onRunStart/Complete
-    - Object-style intent handlers via on_handlers() / on_handlers_partial()
+    - Class-based intent handlers via on_intent() / on_intent_partial()
     - Session import/export for persistence
     """
 
@@ -167,11 +169,12 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._helper_sessions: Dict[str, SessionState] = {}
         self._warnings: List[AuwgentWarning] = []
         self._warning_handler: Optional[WarningCallback] = None
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
 
         # Deferred handler storage — registered/deregistered around each run()
-        self._stored_intent_handler: Optional[Callable] = None
-        self._stored_partial_handler: Optional[Callable] = None
+        self._stored_intent_handler: Optional[Any] = None
+        self._stored_partial_handler: Optional[Any] = None
         self._last_raw_block: Optional[str] = None
 
         # ── 1. Context ──
@@ -275,38 +278,99 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     # ── Intent Handlers ───────────────────────────────────────────────────
 
-    def on_intent(self, callback: Callable[[str, Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]) -> None:
+    def on_intent(self, handler: Any) -> None:
         """
-        Register an intent callback for real-time streaming events.
-        """
-        self._stored_intent_handler = callback
+        Register a class/object intent handler.
 
-    def on_intent_partial(self, callback: Callable[[str, PartialIntentValue], None]) -> None:
+        Handler methods are resolved by intent name (exact then sanitized), e.g.
+        response_text, tool_call, workflow_result.
+        Method signature must be: (value, agent_name)
         """
-        Register a partial intent callback for streaming updates.
-        """
-        self._stored_partial_handler = callback
+        if callable(handler):
+            raise TypeError("on_intent expects a class/object handler, not a function callback")
+        self._stored_intent_handler = handler
 
-    def on_handlers(self, handlers: Dict[str, Callable[[Dict[str, Any]], Awaitable[Any]]]) -> None:
+    def on_intent_partial(self, handler: Any) -> None:
         """
-        Register multiple intent handlers using an object-style API.
+        Register a class/object partial-intent handler.
+
+        Method signature must be: (value, agent_name)
         """
-        async def dispatch(name: str, value: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-            handler = handlers.get(name)
-            if handler:
-                return await handler(value)
+        if callable(handler):
+            raise TypeError("on_intent_partial expects a class/object handler, not a function callback")
+        self._stored_partial_handler = handler
+
+    def _intent_method_name(self, name: str) -> str:
+        sanitized = "".join(c if (c.isalnum() or c == "_") else "_" for c in name)
+        if sanitized and sanitized[0].isdigit():
+            sanitized = f"_{sanitized}"
+        return (sanitized or "intent").lower()
+
+    async def _dispatch_intent_handler(
+        self,
+        handler: Any,
+        name: str,
+        value: Dict[str, Any],
+        agent_name: str,
+    ) -> Optional[Dict[str, Any]]:
+        method = getattr(handler, name, None)
+        if method is None:
+            method = getattr(handler, self._intent_method_name(name), None)
+        if method is None or not callable(method):
             return None
-        self._stored_intent_handler = dispatch
 
-    def on_handlers_partial(self, handlers: Dict[str, Callable[[PartialIntentValue], None]]) -> None:
-        """
-        Register multiple partial intent handlers using an object-style API.
-        """
-        def dispatch(name: str, value: PartialIntentValue) -> None:
-            handler = handlers.get(name)
-            if handler:
-                handler(value)
-        self._stored_partial_handler = dispatch
+        result = method(value, agent_name)
+
+        if inspect.isawaitable(result):
+            result = await result
+        return cast(Optional[Dict[str, Any]], result)
+
+    def _dispatch_partial_handler(
+        self,
+        handler: Any,
+        name: str,
+        value: PartialIntentValue,
+        agent_name: str,
+    ) -> None:
+        method = getattr(handler, name, None)
+        if method is None:
+            method = getattr(handler, self._intent_method_name(name), None)
+        if method is None or not callable(method):
+            return
+
+        result = method(value, agent_name)
+        if inspect.isawaitable(result):
+            self._schedule_background_awaitable(
+                cast(Awaitable[Any], result),
+                source="onIntentPartial",
+                message="partial intent async handler failed",
+                agent_name=agent_name,
+            )
+
+    def _schedule_background_awaitable(
+        self,
+        awaitable: Awaitable[Any],
+        source: str,
+        message: str,
+        agent_name: str,
+    ) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._report_warning(source, "no running event loop for async handler", agent_name=agent_name)
+            return
+
+        task = loop.create_task(awaitable)
+        self._background_tasks.add(task)
+
+        def _on_done(done_task: asyncio.Task[Any]) -> None:
+            self._background_tasks.discard(done_task)
+            try:
+                done_task.result()
+            except Exception as error:
+                self._report_warning(source, message, error, agent_name)
+
+        task.add_done_callback(_on_done)
 
     def on_warning(self, callback: WarningCallback) -> None:
         """Register a callback for non-fatal SDK/runtime integration warnings."""
@@ -523,11 +587,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     val_dict.pop("_raw", None)
 
                 if user_handler:
-                    sig = inspect.signature(user_handler)
-                    if len(sig.parameters) >= 3:
-                        res = await user_handler(name, val_dict, agent_name)
-                    else:
-                        res = await user_handler(name, val_dict)
+                    res = await self._dispatch_intent_handler(user_handler, name, val_dict, agent_name)
                     return json.dumps(res) if res is not None else None
                 return None
             except Exception as error:
@@ -541,13 +601,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             if partial_handler is not None:
                 try:
                     value_dict = json.loads(value_json_str)
-                    sig = inspect.signature(partial_handler)
-                    if len(sig.parameters) >= 3:
-                        result = partial_handler(name, value_dict, agent_name)
-                    else:
-                        result = partial_handler(name, value_dict)
-                    if inspect.isawaitable(result):
-                        self._report_warning("onIntentPartial", "partial intent handlers must be sync; awaitable result ignored", agent_name=agent_name)
+                    self._dispatch_partial_handler(partial_handler, name, value_dict, agent_name)
                 except Exception as error:
                     self._report_warning("onIntentPartial", "partial intent callback failed", error, agent_name)
         self._native.on_intent_partial(wrap_partial)

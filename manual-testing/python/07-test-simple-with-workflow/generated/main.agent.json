@@ -1329,17 +1329,17 @@
     "Order": {
       "isOutput": false,
       "properties": {
-        "user_id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "quantity": {
+        "total": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "product_id": {
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "user_id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1356,12 +1356,12 @@
           "optional": false,
           "description": null
         },
-        "total": {
+        "quantity": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "id": {
+        "product_id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1371,11 +1371,6 @@
     "QueryResult": {
       "isOutput": false,
       "properties": {
-        "data": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "message": {
           "type": "string",
           "optional": false,
@@ -1385,28 +1380,8 @@
           "type": "boolean",
           "optional": false,
           "description": null
-        }
-      }
-    },
-    "User": {
-      "isOutput": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
         },
-        "created_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "email": {
+        "data": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1416,12 +1391,12 @@
     "AnalysisReport": {
       "isOutput": false,
       "properties": {
-        "total_users": {
+        "revenue": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "total_products": {
+        "total_users": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1439,7 +1414,7 @@
           "optional": false,
           "description": null
         },
-        "revenue": {
+        "total_products": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1449,12 +1424,7 @@
     "Product": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "stock": {
+        "price": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1464,8 +1434,38 @@
           "optional": false,
           "description": null
         },
-        "price": {
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "stock": {
           "type": "number",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "User": {
+      "isOutput": false,
+      "properties": {
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "created_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         }
@@ -1473,12 +1473,12 @@
     }
   },
   "helperToolGrants": {
+    "DataAnalyzer": "all",
     "ReportGenerator": [
       "db_query_users",
       "db_query_products",
       "db_query_orders"
-    ],
-    "DataAnalyzer": "all"
+    ]
   },
   "helperHandoff": {
     "DataAnalyzer": "thenContinue",

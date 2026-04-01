@@ -1,4 +1,4 @@
-import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentModelIntent, AuwgentModelValue, AuwgentResponseValue, AuwgentTargetedResponseValue } from './types.js';
+import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentModelIntent, AuwgentModelValue, AuwgentResponseValue, AuwgentTargetedResponseValue, PartialTextIntentValue, PartialStructuredIntentValue } from './types.js';
 
 // ── Middleware Types ───────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
  */
 interface _MiddlewareHooks<
     IR extends AgentIRShape = any,
-    CustomIntents = never,
+    CustomIntents extends { name: string; value: any } = never,
     Output = any,
     Tools = any,
     T extends MiddlewareContext<IR>['activeAgent'] = any
@@ -61,13 +61,30 @@ interface _MiddlewareHooks<
      */
     onIntent?: (
         ...args: {
-            [K in AuwgentIntent<IR, CustomIntents, Output, Tools>['name']]: [
+            [K in AuwgentIntent<IR, CustomIntents, Output, Tools>['name'] & string]: [
                 name: K,
                 value: Extract<AuwgentIntent<IR, CustomIntents, Output, Tools>, { name: K }>['value'],
                 ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
             ];
-        }[AuwgentIntent<IR, CustomIntents, Output, Tools>['name']]
+        }[AuwgentIntent<IR, CustomIntents, Output, Tools>['name'] & string]
     ) => IntentControl | Promise<IntentControl>;
+
+    /**
+     * Fired for streaming partial intent updates.
+     * Observational only; cannot return control signals.
+     */
+    onIntentPartial?: (
+        ...args: {
+            [K in AuwgentIntent<IR, CustomIntents, Output, Tools>['name'] & string]: [
+                name: K,
+                value:
+                    | Extract<AuwgentIntent<IR, CustomIntents, Output, Tools>, { name: K }>['value']
+                    | PartialTextIntentValue
+                    | PartialStructuredIntentValue<any>,
+                ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
+            ];
+        }[AuwgentIntent<IR, CustomIntents, Output, Tools>['name'] & string]
+    ) => void | Promise<void>;
 
     /**
      * Fired when the model emits a terminal response (text or schema).
@@ -105,7 +122,7 @@ interface _MiddlewareHooks<
  */
 export type Middleware<
     IR extends AgentIRShape = any,
-    CustomIntents = never,
+    CustomIntents extends { name: string; value: any } = never,
     Output = any,
     Tools = any,
     Target extends MiddlewareContext<IR>['activeAgent'] = MiddlewareContext<IR>['activeAgent']

@@ -1,10 +1,8 @@
 import asyncio
 from generated.main_types import (
-    AuwgentMiddleware,
-    MainIntentValue,
+    AuwgentBasePartialIntentHandler,
     auwgent,
     AuwgentConfig,
-    AuwgentTools,
     AuwgentContext,
     AuwgentMiddleware,
     MainIntentName,
@@ -26,11 +24,16 @@ config:AuwgentConfig = {
 
 agent = auwgent(config)
 
-def handle_partial(intent:MainIntentName, data:MainIntentValue, session_id):
-    if intent == "response_text":
-        print(data.get("delta",""), end="")
+class PartialHander(AuwgentBasePartialIntentHandler):
+    def response_text(self, intent, agent_name: str):
+        print(intent.get('text'))
 
-agent.on_intent_partial(handle_partial)
+
+
+
+
+
+agent.on_intent_partial(PartialHander())
 
 print(agent.generate_prompt())
 

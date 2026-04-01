@@ -78,117 +78,46 @@
     }
   },
   "context": null,
-  "tools": [],
+  "tools": [
+    {
+      "name": "user_name",
+      "description": "for getting the user name",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    }
+  ],
   "workflows": [],
   "helpers": [],
   "types": {
-    "Address": {
-      "isOutput": false,
-      "properties": {
-        "street": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "zip": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "city": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "country": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "ContactInfo": {
-      "isOutput": false,
-      "properties": {
-        "phone": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
-          "optional": false,
-          "description": null
-        },
-        "email": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "Feature": {
-      "isOutput": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "label": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "config": {
-          "type": {
-            "type": "object",
-            "properties": {
-              "limit": {
-                "type": "number",
-                "optional": false
-              },
-              "unit": {
-                "type": "string",
-                "optional": false
-              },
-              "overage_rate": {
-                "type": "number",
-                "optional": false
-              }
-            }
-          },
-          "optional": false,
-          "description": null
-        }
-      }
-    },
     "Subscription": {
       "isOutput": false,
       "properties": {
-        "renews_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "tier": {
           "type": {
             "type": "typeRef",
             "name": "PricingTier"
           },
+          "optional": false,
+          "description": null
+        },
+        "renews_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "is_active": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "started_at": {
+          "type": "string",
           "optional": false,
           "description": null
         },
@@ -202,14 +131,54 @@
           },
           "optional": false,
           "description": null
-        },
-        "is_active": {
-          "type": "boolean",
+        }
+      }
+    },
+    "Address": {
+      "isOutput": false,
+      "properties": {
+        "country": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "started_at": {
+        "street": {
           "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "city": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "zip": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "PricingTier": {
+      "isOutput": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "monthly_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "annual_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "max_seats": {
+          "type": "number",
           "optional": false,
           "description": null
         }
@@ -218,17 +187,12 @@
     "Organization": {
       "isOutput": false,
       "properties": {
-        "id": {
+        "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "member_count": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "name": {
+        "id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -238,6 +202,11 @@
             "type": "typeRef",
             "name": "Subscription"
           },
+          "optional": false,
+          "description": null
+        },
+        "member_count": {
+          "type": "number",
           "optional": false,
           "description": null
         },
@@ -259,26 +228,65 @@
         }
       }
     },
-    "PricingTier": {
+    "ContactInfo": {
       "isOutput": false,
       "properties": {
-        "name": {
+        "email": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "monthly_cost": {
-          "type": "number",
+        "address": {
+          "type": {
+            "type": "typeRef",
+            "name": "Address"
+          },
           "optional": false,
           "description": null
         },
-        "max_seats": {
-          "type": "number",
+        "phone": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Feature": {
+      "isOutput": false,
+      "properties": {
+        "config": {
+          "type": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "number",
+                "optional": false
+              },
+              "unit": {
+                "type": "string",
+                "optional": false
+              },
+              "overage_rate": {
+                "type": "number",
+                "optional": false
+              }
+            }
+          },
           "optional": false,
           "description": null
         },
-        "annual_cost": {
-          "type": "number",
+        "label": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "enabled": {
+          "type": "boolean",
           "optional": false,
           "description": null
         }

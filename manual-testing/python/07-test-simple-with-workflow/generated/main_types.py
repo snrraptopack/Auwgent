@@ -19,36 +19,36 @@ except ImportError:
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
 
 class Order(TypedDict, total=False):
-    user_id: str
-    quantity: float
-    product_id: str
-    status: str
     total: float
     id: str
+    user_id: str
+    status: str
+    quantity: float
+    product_id: str
 
 class QueryResult(TypedDict, total=False):
-    data: str
     message: str
     success: bool
+    data: str
+
+class AnalysisReport(TypedDict, total=False):
+    revenue: float
+    total_users: float
+    total_orders: float
+    insights: List[str]
+    total_products: float
+
+class Product(TypedDict, total=False):
+    price: float
+    id: str
+    name: str
+    stock: float
 
 class User(TypedDict, total=False):
+    email: str
     name: str
     created_at: str
     id: str
-    email: str
-
-class AnalysisReport(TypedDict, total=False):
-    total_users: float
-    total_products: float
-    total_orders: float
-    insights: List[str]
-    revenue: float
-
-class Product(TypedDict, total=False):
-    name: str
-    stock: float
-    id: str
-    price: float
 class MainInput(TypedDict, total=False):
     pass
 
@@ -74,77 +74,257 @@ class MainContext(TypedDict, total=False):
     user_id: str
     session_id: str
 
-class MainTools(TypedDict, total=False):
+class MainTools(Protocol):
     # Query users from in-memory DB. Filter can be 'all', 'id:<id>', 'email:<email>'
-    db_query_users: Callable[[str], Awaitable[List["User"]]]
+    async def db_query_users(self, *, filter: str) -> List["User"]: ...
 
     # Query products from in-memory DB. Filter can be 'all', 'id:<id>', 'name:<name>'
-    db_query_products: Callable[[str], Awaitable[List["Product"]]]
+    async def db_query_products(self, *, filter: str) -> List["Product"]: ...
 
     # Query orders from in-memory DB. Filter can be 'all', 'user_id:<id>', 'status:<status>'
-    db_query_orders: Callable[[str], Awaitable[List["Order"]]]
+    async def db_query_orders(self, *, filter: str) -> List["Order"]: ...
 
     # Create a new user in the database
-    db_create_user: Callable[[str, str], Awaitable["User"]]
+    async def db_create_user(self, *, name: str, email: str) -> "User": ...
 
     # Create a new product in the database
-    db_create_product: Callable[[str, float, float], Awaitable["Product"]]
+    async def db_create_product(self, *, name: str, price: float, stock: float) -> "Product": ...
 
     # Create a new order in the database
-    db_create_order: Callable[[str, str, float], Awaitable["Order"]]
+    async def db_create_order(self, *, user_id: str, product_id: str, quantity: float) -> "Order": ...
 
     # Parse orders JSON and sum totals
-    sum_order_totals: Callable[[str], Awaitable[float]]
+    async def sum_order_totals(self, *, orders_json: str) -> float: ...
 
     # Check if enough stock available
-    validate_stock: Callable[[str, float], Awaitable[bool]]
+    async def validate_stock(self, *, product_id: str, quantity: float) -> bool: ...
 
     # Parse comma-separated values
-    parse_csv: Callable[[str], Awaitable[str]]
+    async def parse_csv(self, *, csv_string: str) -> str: ...
 
     # Analyze a specific user's purchasing behavior
-    analyze_user_behavior: Callable[[str], Awaitable[str]]
+    async def analyze_user_behavior(self, *, user_id: str) -> str: ...
 
     # Find products with low stock levels
-    detect_low_stock: Callable[[], Awaitable[str]]
+    async def detect_low_stock(self) -> str: ...
 
     # Calculate average from comma-separated numbers
-    calculate_average: Callable[[str], Awaitable[float]]
+    async def calculate_average(self, *, numbers: str) -> float: ...
 
     # Identify outliers in dataset
-    find_outliers: Callable[[str], Awaitable[str]]
+    async def find_outliers(self, *, data: str) -> str: ...
 
     # Format data as a text table
-    format_table: Callable[[str], Awaitable[str]]
+    async def format_table(self, *, data: str) -> str: ...
 
     # Generate a textual description of a chart
-    generate_chart_description: Callable[[str, str], Awaitable[str]]
+    async def generate_chart_description(self, *, data: str, chart_type: str) -> str: ...
 
     # Group orders by status and count
-    aggregate_by_status: Callable[[str], Awaitable[str]]
+    async def aggregate_by_status(self, *, orders: str) -> str: ...
 
     # Calculate key sales metrics
-    calculate_metrics: Callable[[str], Awaitable[str]]
+    async def calculate_metrics(self, *, orders: str) -> str: ...
+
+MainToolsDict = Dict[str, Callable[..., Awaitable[Any]]]
 
 MainCustomIntents = TypedDict('_SpeakLoudCustomIntent', {"name": Literal["SpeakLoud"], "value": {"explain": str}}, total=False)
 
-class MainResponseTextIntent(TypedDict, total=False):
+class Maindb_query_usersToolArgs(TypedDict, total=False):
+    filter: str
+
+Maindb_query_usersToolResultValue = List["User"]
+
+class Maindb_query_usersToolCallIntent(TypedDict):
+    type: Literal["db_query_users"]
+    args: Maindb_query_usersToolArgs
+
+class Maindb_query_usersToolResultIntent(TypedDict):
+    name: Literal["db_query_users"]
+    result: Maindb_query_usersToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_query_usersToolErrorIntent(TypedDict):
+    tool: Literal["db_query_users"]
+    message: str
+
+class Maindb_query_usersToolSkippedIntent(TypedDict):
+    type: Literal["db_query_users"]
+    args: Maindb_query_usersToolArgs
+
+class Maindb_query_productsToolArgs(TypedDict, total=False):
+    filter: str
+
+Maindb_query_productsToolResultValue = List["Product"]
+
+class Maindb_query_productsToolCallIntent(TypedDict):
+    type: Literal["db_query_products"]
+    args: Maindb_query_productsToolArgs
+
+class Maindb_query_productsToolResultIntent(TypedDict):
+    name: Literal["db_query_products"]
+    result: Maindb_query_productsToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_query_productsToolErrorIntent(TypedDict):
+    tool: Literal["db_query_products"]
+    message: str
+
+class Maindb_query_productsToolSkippedIntent(TypedDict):
+    type: Literal["db_query_products"]
+    args: Maindb_query_productsToolArgs
+
+class Maindb_query_ordersToolArgs(TypedDict, total=False):
+    filter: str
+
+Maindb_query_ordersToolResultValue = List["Order"]
+
+class Maindb_query_ordersToolCallIntent(TypedDict):
+    type: Literal["db_query_orders"]
+    args: Maindb_query_ordersToolArgs
+
+class Maindb_query_ordersToolResultIntent(TypedDict):
+    name: Literal["db_query_orders"]
+    result: Maindb_query_ordersToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_query_ordersToolErrorIntent(TypedDict):
+    tool: Literal["db_query_orders"]
+    message: str
+
+class Maindb_query_ordersToolSkippedIntent(TypedDict):
+    type: Literal["db_query_orders"]
+    args: Maindb_query_ordersToolArgs
+
+class Maindb_create_userToolArgs(TypedDict, total=False):
+    name: str
+    email: str
+
+Maindb_create_userToolResultValue = "User"
+
+class Maindb_create_userToolCallIntent(TypedDict):
+    type: Literal["db_create_user"]
+    args: Maindb_create_userToolArgs
+
+class Maindb_create_userToolResultIntent(TypedDict):
+    name: Literal["db_create_user"]
+    result: Maindb_create_userToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_create_userToolErrorIntent(TypedDict):
+    tool: Literal["db_create_user"]
+    message: str
+
+class Maindb_create_userToolSkippedIntent(TypedDict):
+    type: Literal["db_create_user"]
+    args: Maindb_create_userToolArgs
+
+class Maindb_create_productToolArgs(TypedDict, total=False):
+    name: str
+    price: float
+    stock: float
+
+Maindb_create_productToolResultValue = "Product"
+
+class Maindb_create_productToolCallIntent(TypedDict):
+    type: Literal["db_create_product"]
+    args: Maindb_create_productToolArgs
+
+class Maindb_create_productToolResultIntent(TypedDict):
+    name: Literal["db_create_product"]
+    result: Maindb_create_productToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_create_productToolErrorIntent(TypedDict):
+    tool: Literal["db_create_product"]
+    message: str
+
+class Maindb_create_productToolSkippedIntent(TypedDict):
+    type: Literal["db_create_product"]
+    args: Maindb_create_productToolArgs
+
+class Maindb_create_orderToolArgs(TypedDict, total=False):
+    user_id: str
+    product_id: str
+    quantity: float
+
+Maindb_create_orderToolResultValue = "Order"
+
+class Maindb_create_orderToolCallIntent(TypedDict):
+    type: Literal["db_create_order"]
+    args: Maindb_create_orderToolArgs
+
+class Maindb_create_orderToolResultIntent(TypedDict):
+    name: Literal["db_create_order"]
+    result: Maindb_create_orderToolResultValue
+    overridden: NotRequired[bool]
+
+class Maindb_create_orderToolErrorIntent(TypedDict):
+    tool: Literal["db_create_order"]
+    message: str
+
+class Maindb_create_orderToolSkippedIntent(TypedDict):
+    type: Literal["db_create_order"]
+    args: Maindb_create_orderToolArgs
+
+MainToolCallIntent = Union[Maindb_query_usersToolCallIntent, Maindb_query_productsToolCallIntent, Maindb_query_ordersToolCallIntent, Maindb_create_userToolCallIntent, Maindb_create_productToolCallIntent, Maindb_create_orderToolCallIntent]
+MainToolResultIntent = Union[Maindb_query_usersToolResultIntent, Maindb_query_productsToolResultIntent, Maindb_query_ordersToolResultIntent, Maindb_create_userToolResultIntent, Maindb_create_productToolResultIntent, Maindb_create_orderToolResultIntent]
+MainToolErrorIntent = Union[Maindb_query_usersToolErrorIntent, Maindb_query_productsToolErrorIntent, Maindb_query_ordersToolErrorIntent, Maindb_create_userToolErrorIntent, Maindb_create_productToolErrorIntent, Maindb_create_orderToolErrorIntent]
+MainToolSkippedIntent = Union[Maindb_query_usersToolSkippedIntent, Maindb_query_productsToolSkippedIntent, Maindb_query_ordersToolSkippedIntent, Maindb_create_userToolSkippedIntent, Maindb_create_productToolSkippedIntent, Maindb_create_orderToolSkippedIntent]
+
+class MainAnalysisReportResponseSchemaIntent(TypedDict):
+    type: Literal["AnalysisReport"]
+    response: AnalysisReport
+
+class MainDataAnalyzerOutputResponseSchemaIntent(TypedDict):
+    type: Literal["DataAnalyzerOutput"]
+    response: DataAnalyzerOutput
+
+class MainMainOutputResponseSchemaIntent(TypedDict):
+    type: Literal["MainOutput"]
+    response: MainOutput
+
+class MainOrderResponseSchemaIntent(TypedDict):
+    type: Literal["Order"]
+    response: Order
+
+class MainProductResponseSchemaIntent(TypedDict):
+    type: Literal["Product"]
+    response: Product
+
+class MainQueryResultResponseSchemaIntent(TypedDict):
+    type: Literal["QueryResult"]
+    response: QueryResult
+
+class MainReportGeneratorOutputResponseSchemaIntent(TypedDict):
+    type: Literal["ReportGeneratorOutput"]
+    response: ReportGeneratorOutput
+
+class MainUserResponseSchemaIntent(TypedDict):
+    type: Literal["User"]
+    response: User
+
+MainResponseSchemaIntent = Union[MainAnalysisReportResponseSchemaIntent, MainDataAnalyzerOutputResponseSchemaIntent, MainMainOutputResponseSchemaIntent, MainOrderResponseSchemaIntent, MainProductResponseSchemaIntent, MainQueryResultResponseSchemaIntent, MainReportGeneratorOutputResponseSchemaIntent, MainUserResponseSchemaIntent]
+
+class MainResponseTextIntent(TypedDict):
     text: str
 
-MainResponseSchemaIntent = MainOutput
-
-class MainErrorIntent(TypedDict, total=False):
+class MainErrorIntent(TypedDict):
     message: str
+class MainSpeakLoudCustomIntent(TypedDict):
+    name: Literal["SpeakLoud"]
+    value: {"explain": str}
+
 class Mainget_user_ordersWorkflowArgs(TypedDict, total=False):
     target_user_id: str
 
 Mainget_user_ordersWorkflowResultValue = str
 
-class Mainget_user_ordersWorkflowCall(TypedDict, total=False):
+class Mainget_user_ordersWorkflowCall(TypedDict):
     type: Literal["get_user_orders"]
     args: Mainget_user_ordersWorkflowArgs
 
-class Mainget_user_ordersWorkflowResult(TypedDict, total=False):
+class Mainget_user_ordersWorkflowResult(TypedDict):
     name: Literal["get_user_orders"]
     result: Mainget_user_ordersWorkflowResultValue
 
@@ -153,11 +333,11 @@ class Maincalculate_revenueWorkflowArgs(TypedDict, total=False):
 
 Maincalculate_revenueWorkflowResultValue = str
 
-class Maincalculate_revenueWorkflowCall(TypedDict, total=False):
+class Maincalculate_revenueWorkflowCall(TypedDict):
     type: Literal["calculate_revenue"]
     args: Maincalculate_revenueWorkflowArgs
 
-class Maincalculate_revenueWorkflowResult(TypedDict, total=False):
+class Maincalculate_revenueWorkflowResult(TypedDict):
     name: Literal["calculate_revenue"]
     result: Maincalculate_revenueWorkflowResultValue
 
@@ -168,11 +348,11 @@ class Mainprocess_bulk_orderWorkflowArgs(TypedDict, total=False):
 
 Mainprocess_bulk_orderWorkflowResultValue = str
 
-class Mainprocess_bulk_orderWorkflowCall(TypedDict, total=False):
+class Mainprocess_bulk_orderWorkflowCall(TypedDict):
     type: Literal["process_bulk_order"]
     args: Mainprocess_bulk_orderWorkflowArgs
 
-class Mainprocess_bulk_orderWorkflowResult(TypedDict, total=False):
+class Mainprocess_bulk_orderWorkflowResult(TypedDict):
     name: Literal["process_bulk_order"]
     result: Mainprocess_bulk_orderWorkflowResultValue
 
@@ -185,11 +365,11 @@ class MainDataAnalyzerHelperResultValue(TypedDict, total=False):
     revenue: float
     insights: List[str]
 
-class MainDataAnalyzerHelperCall(TypedDict, total=False):
+class MainDataAnalyzerHelperCall(TypedDict):
     type: Literal["DataAnalyzer"]
     args: MainDataAnalyzerHelperArgs
 
-class MainDataAnalyzerHelperResult(TypedDict, total=False):
+class MainDataAnalyzerHelperResult(TypedDict):
     name: Literal["DataAnalyzer"]
     result: MainDataAnalyzerHelperResultValue
 
@@ -197,18 +377,23 @@ MainReportGeneratorHelperArgs = Dict[str, Any]
 
 MainReportGeneratorHelperResultValue = Dict[str, Any]
 
-class MainReportGeneratorHelperCall(TypedDict, total=False):
+class MainReportGeneratorHelperCall(TypedDict):
     type: Literal["ReportGenerator"]
     args: MainReportGeneratorHelperArgs
 
-class MainReportGeneratorHelperResult(TypedDict, total=False):
+class MainReportGeneratorHelperResult(TypedDict):
     name: Literal["ReportGenerator"]
     result: MainReportGeneratorHelperResultValue
 
 MainIntentValue = Union[
+    MainToolCallIntent,
+    MainToolResultIntent,
+    MainToolErrorIntent,
+    MainToolSkippedIntent,
     MainResponseTextIntent,
     MainResponseSchemaIntent,
     MainErrorIntent,
+    MainSpeakLoudCustomIntent,
     Mainget_user_ordersWorkflowCall,
     Mainget_user_ordersWorkflowResult,
     Maincalculate_revenueWorkflowCall,
@@ -224,77 +409,77 @@ MainWorkflowCallIntentValue = Union[Mainget_user_ordersWorkflowCall, Maincalcula
 MainWorkflowResultIntentValue = Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult]
 MainHelperCallIntentValue = Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall]
 MainHelperResultIntentValue = Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult]
-MainIntentName = Literal["response_text", "response_schema", "error", "workflow_call", "workflow_result", "helper_call", "helper_result"]
+MainIntentName = Literal["tool_call", "tool_result", "tool_error", "tool_skipped", "response_text", "response_schema", "error", "SpeakLoud", "workflow_call", "workflow_result", "helper_call", "helper_result"]
 
 MainIntentHandler = Callable[[MainIntentName, MainIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]
 MainPartialIntentHandler = Callable[[MainIntentName, MainIntentValue, str], None]
 
-class MainIntentHandlers(TypedDict, total=False):
-    response_text: Callable[[MainResponseTextIntent], Awaitable[Any]]
-    response_schema: Callable[[MainResponseSchemaIntent], Awaitable[Any]]
-    error: Callable[[MainErrorIntent], Awaitable[Any]]
-    workflow_call: Callable[[Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall]], Awaitable[Any]]
-    workflow_result: Callable[[Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult]], Awaitable[Any]]
-    helper_call: Callable[[Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall]], Awaitable[Any]]
-    helper_result: Callable[[Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult]], Awaitable[Any]]
+class MainBaseIntentHandler:
+    def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def tool_result(self, intent: MainToolResultIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def tool_error(self, intent: MainToolErrorIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def tool_skipped(self, intent: MainToolSkippedIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def response_text(self, intent: MainResponseTextIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def response_schema(self, intent: MainResponseSchemaIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def error(self, intent: MainErrorIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def speakloud(self, intent: MainSpeakLoudCustomIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def workflow_call(self, intent: Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def workflow_result(self, intent: Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def helper_call(self, intent: Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
+    def helper_result(self, intent: Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+        pass
 
-class MainPartialIntentHandlers(TypedDict, total=False):
-    response_text: Callable[[MainResponseTextIntent], None]
-    response_schema: Callable[[MainResponseSchemaIntent], None]
-    error: Callable[[MainErrorIntent], None]
-    workflow_call: Callable[[Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall]], None]
-    workflow_result: Callable[[Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult]], None]
-    helper_call: Callable[[Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall]], None]
-    helper_result: Callable[[Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult]], None]
+class MainBasePartialIntentHandler:
+    def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_result(self, intent: MainToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_error(self, intent: MainToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_skipped(self, intent: MainToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def response_text(self, intent: MainResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def response_schema(self, intent: MainResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def error(self, intent: MainErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def speakloud(self, intent: MainSpeakLoudCustomIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def workflow_call(self, intent: Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall], agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def workflow_result(self, intent: Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult], agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def helper_call(self, intent: Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall], agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def helper_result(self, intent: Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult], agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
 
 class MainApiKeys(TypedDict, total=False):
     my_groq_apiApiKey: str  # API key for custom provider 'my-groq-api'
 
 class MainAgent(TypedAuwgent[Any, MainContext, MainOutput, MainTools]):
-    @overload
-    def on_intent(self, callback: Callable[[Literal["response_text"], MainResponseTextIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["response_schema"], MainResponseSchemaIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["error"], MainErrorIntent, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["workflow_call"], MainWorkflowCallIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["workflow_result"], MainWorkflowResultIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["helper_call"], MainHelperCallIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    @overload
-    def on_intent(self, callback: Callable[[Literal["helper_result"], MainHelperResultIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]) -> None: ...
-    def on_intent(self, callback: MainIntentHandler) -> None:
-        return super().on_intent(callback)
+    def on_intent(self, handler: MainBaseIntentHandler) -> None:
+        return super().on_intent(handler)
 
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["response_text"], MainResponseTextIntent, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["response_schema"], MainResponseSchemaIntent, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["error"], MainErrorIntent, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["workflow_call"], MainWorkflowCallIntentValue, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["workflow_result"], MainWorkflowResultIntentValue, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["helper_call"], MainHelperCallIntentValue, str], None]) -> None: ...
-    @overload
-    def on_intent_partial(self, callback: Callable[[Literal["helper_result"], MainHelperResultIntentValue, str], None]) -> None: ...
-    def on_intent_partial(self, callback: MainPartialIntentHandler) -> None:
-        return super().on_intent_partial(callback)
-
-    def on_handlers(self, handlers: MainIntentHandlers) -> None:
-        return super().on_handlers(handlers)
-
-    def on_handlers_partial(self, handlers: MainPartialIntentHandlers) -> None:
-        return super().on_handlers_partial(handlers)
+    def on_intent_partial(self, handler: MainBasePartialIntentHandler) -> None:
+        return super().on_intent_partial(handler)
 
 MainMiddleware = Middleware
 
 class MainConfig(TypedDict, total=False):
-    tools: NotRequired['MainTools']
+    tools: NotRequired[Union['MainTools', MainToolsDict]]
     middleware: NotRequired[List[Union['MainMiddleware', 'type[MainMiddleware]']]]
     context: NotRequired['MainContext']
     apiKeys: NotRequired['MainApiKeys']
@@ -316,5 +501,5 @@ AuwgentIntentName = MainIntentName
 AuwgentIntentValue = MainIntentValue
 AuwgentIntentHandler = MainIntentHandler
 AuwgentPartialIntentHandler = MainPartialIntentHandler
-AuwgentIntentHandlers = MainIntentHandlers
-AuwgentPartialIntentHandlers = MainPartialIntentHandlers
+AuwgentBaseIntentHandler = MainBaseIntentHandler
+AuwgentBasePartialIntentHandler = MainBasePartialIntentHandler

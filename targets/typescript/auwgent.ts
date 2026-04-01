@@ -465,21 +465,39 @@ export class TypedAuwgent<
             }
         });
 
-        if (this.storedPartialHandler) {
-            const partialHandler = this.storedPartialHandler;
-            this.native.onIntentPartial((name: string, value: any, agentName: string) => {
-                try {
-                    const maybePromise = (partialHandler as any)(name, value, agentName);
-                    if (maybePromise && typeof maybePromise.then === 'function') {
-                        (maybePromise as Promise<unknown>).catch((error: unknown) => {
-                            this.reportWarning('onIntentPartial', 'partial intent async callback rejected', error, agentName);
-                        });
+        const partialHandler = this.storedPartialHandler;
+        this.native.onIntentPartial((name: string, value: any, agentName: string) => {
+                const partialCtx = this.getBuildContext();
+                partialCtx.activeAgent = agentName as any;
+
+                if (partialHandler) {
+                    try {
+                        const maybePromise = (partialHandler as any)(name, value, agentName);
+                        if (maybePromise && typeof maybePromise.then === 'function') {
+                            (maybePromise as Promise<unknown>).catch((error: unknown) => {
+                                this.reportWarning('onIntentPartial', 'partial intent async callback rejected', error, agentName);
+                            });
+                        }
+                    } catch (error) {
+                        this.reportWarning('onIntentPartial', 'partial intent callback failed', error, agentName);
                     }
-                } catch (error) {
-                    this.reportWarning('onIntentPartial', 'partial intent callback failed', error, agentName);
+                }
+
+                for (const m of this.getMiddleware(partialCtx)) {
+                    if (m.onIntentPartial) {
+                        try {
+                            const maybePromise = (m.onIntentPartial as any)(name, value, partialCtx);
+                            if (maybePromise && typeof maybePromise.then === 'function') {
+                                (maybePromise as Promise<unknown>).catch((error: unknown) => {
+                                    this.reportWarning('middleware', 'middleware onIntentPartial threw', error, agentName);
+                                });
+                            }
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onIntentPartial threw', error, agentName);
+                        }
+                    }
                 }
             });
-        }
         this.native.onMiddlewareEvent(async (eventJson: string) => {
             try {
                 return await this.handleMiddlewareEvent(eventJson);

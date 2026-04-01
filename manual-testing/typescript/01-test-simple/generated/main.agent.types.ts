@@ -10,49 +10,49 @@ type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as MainAgentIR;
-export type Address = {
-    street: string;
-    zip: string;
-    city: string;
-    country: string;
-}
-
-export type ContactInfo = {
-    phone: string;
-    address: Address;
-    email: string;
-}
-
-export type Feature = {
-    enabled: boolean;
-    label: string;
-    id: string;
-    config: { limit: number; unit: string; overage_rate: number };
-}
-
 export type Subscription = {
-    renews_at: string;
-    id: string;
     tier: PricingTier;
-    features: Feature[];
+    renews_at: string;
     is_active: boolean;
+    id: string;
     started_at: string;
+    features: Feature[];
 }
 
-export type Organization = {
-    id: string;
-    member_count: number;
-    name: string;
-    subscription: Subscription;
-    tags: string[];
-    contact: ContactInfo;
+export type Address = {
+    country: string;
+    street: string;
+    city: string;
+    zip: string;
 }
 
 export type PricingTier = {
     name: string;
     monthly_cost: number;
-    max_seats: number;
     annual_cost: number;
+    max_seats: number;
+}
+
+export type Organization = {
+    name: string;
+    id: string;
+    subscription: Subscription;
+    member_count: number;
+    tags: string[];
+    contact: ContactInfo;
+}
+
+export type ContactInfo = {
+    email: string;
+    address: Address;
+    phone: string;
+}
+
+export type Feature = {
+    config: { limit: number; unit: string; overage_rate: number };
+    label: string;
+    id: string;
+    enabled: boolean;
 }
 export type MainAgentInput = {
 
@@ -71,6 +71,10 @@ export type MainAgentContext = {
 
 }
 
+export type MainAgentTools = {
+    user_name: (args: {  }) => Promise<string>;
+}
+
 /** Custom intents defined in the DSL (if any) */
 export type MainAgentCustomIntents =
     | never;
@@ -87,7 +91,7 @@ export type MainAgentAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     MainAgentCustomIntents,
     MainAgentOutput,
-    Record<string, never>
+    MainAgentTools
 >;
 
 /** Middleware object type — consistent with `MainAgentAgent.onIntent` intent narrowing */
@@ -95,11 +99,12 @@ export type MainAgentMiddleware<T extends import("@snrraptopack/auwgent-sdk").Mi
     typeof agentIR,
     MainAgentCustomIntents,
     MainAgentOutput,
-    Record<string, never>,
+    MainAgentTools,
     T
 >;
 
 export type MainAgentConfig = {
+    tools: MainAgentTools;
     middleware?: MainAgentMiddleware[];
     apiKeys: MainAgentApiKeys;
 }
@@ -109,16 +114,16 @@ export function createMainAgent(config: MainAgentConfig): MainAgentAgent {
         typeof agentIR,
         MainAgentCustomIntents,
         MainAgentOutput,
-        Record<string, never>
+        MainAgentTools
     >(agentIR, {
-        tools: {} as Record<string, never>,
+        tools: config.tools,
         middleware: config.middleware as any,
         apiKeys: config.apiKeys
     });
 }
 
 export const auwgent = createMainAgent;
-export type AuwgentTools = Record<string, never>;
+export type AuwgentTools = MainAgentTools;
 export type AuwgentConfig = MainAgentConfig;
 export type AuwgentAgent = MainAgentAgent;
 export type AuwgentMiddleware = MainAgentMiddleware;

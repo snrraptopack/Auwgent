@@ -60,7 +60,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         let mut tool_section = String::from("\n\nTools available:\n");
         for tool in &ir.tools {
             let params = format_params_signature(&tool.params.0, ir.types.as_ref());
-            tool_section.push_str(&format!("- {}({})", tool.name, params));
+            tool_section.push_str(&format!("- {}", format_callable_signature(&tool.name, &params)));
             if let Some(desc) = &tool.description {
                 tool_section.push_str(&format!(" // {}", desc));
             }
@@ -83,7 +83,10 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         let mut workflow_section = String::from("\n\nWorkflows available:\n");
         for workflow in &ir.workflows {
             let params = format_params_signature(&workflow.params.0, ir.types.as_ref());
-            workflow_section.push_str(&format!("- {}({})", workflow.name, params));
+            workflow_section.push_str(&format!(
+                "- {}",
+                format_callable_signature(&workflow.name, &params)
+            ));
             if let Some(desc) = &workflow.description {
                 workflow_section.push_str(&format!(" // {}", desc));
             }
@@ -108,7 +111,10 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
                 ir.types.as_ref(),
             );
 
-            helper_section.push_str(&format!("- {}({})", helper.name, params));
+            helper_section.push_str(&format!(
+                "- {}",
+                format_callable_signature(&helper.name, &params)
+            ));
             if let Some(desc) = &helper.description {
                 helper_section.push_str(&format!(" // {}", desc));
             }
@@ -130,7 +136,10 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
             let mut custom_section = String::from("\n\nCustom intents available:\n");
             for ci in custom {
                 let params_sig = format_params_signature(&ci.fields.0, ir.types.as_ref());
-                custom_section.push_str(&format!("- {}({})", ci.name, params_sig));
+                custom_section.push_str(&format!(
+                    "- {}",
+                    format_callable_signature(&ci.name, &params_sig)
+                ));
                 if let Some(desc) = &ci.description {
                     custom_section.push_str(&format!(" // {}", desc));
                 }
@@ -162,9 +171,8 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
                     collect_output_schema_entries(&output.0, ir.types.as_ref())
                 {
                     schema_section.push_str(&format!(
-                        "- {}({})\n",
-                        schema_name,
-                        format_flat_field_specs(&specs)
+                        "- {}\n",
+                        format_callable_signature(&schema_name, &format_flat_field_specs(&specs))
                     ));
                 }
 
@@ -277,7 +285,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
 
         for tool in &allowed_tools {
             let params = format_params_signature(&tool.params.0, ir.types.as_ref());
-            tool_section.push_str(&format!("- {}({})", tool.name, params));
+            tool_section.push_str(&format!("- {}", format_callable_signature(&tool.name, &params)));
             if let Some(desc) = &tool.description {
                 tool_section.push_str(&format!(" // {}", desc));
             }
@@ -299,7 +307,10 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
             let mut custom_section = String::from("\n\nCustom intents available:\n");
             for ci in custom {
                 let params_sig = format_params_signature(&ci.fields.0, ir.types.as_ref());
-                custom_section.push_str(&format!("- {}({})", ci.name, params_sig));
+                custom_section.push_str(&format!(
+                    "- {}",
+                    format_callable_signature(&ci.name, &params_sig)
+                ));
                 if let Some(desc) = &ci.description {
                     custom_section.push_str(&format!(" // {}", desc));
                 }
@@ -340,6 +351,14 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
 // ═══════════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS FOR BLOCK PROTOCOL FORMATTING
 // ═══════════════════════════════════════════════════════════════════════════
+
+fn format_callable_signature(name: &str, params: &str) -> String {
+    if params.trim().is_empty() {
+        name.to_string()
+    } else {
+        format!("{}({})", name, params)
+    }
+}
 
 /// Format parameter signature like: session_id: string, apply_compression?: boolean
 fn format_params_signature(
