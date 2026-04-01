@@ -258,20 +258,20 @@ Because helpers are agents, multiple agents may be emitting intents during a sin
   </TabItem>
   <TabItem label="Python">
     ```python
-    async def handle_intent(name: str, value: dict, agent_name: str):
-        if name == "helper_call":
+   class HandleIntent(AuwgentBaseIntentHandler):
+        async def helper_call(self, intent, agent_name):
             print(f"helper invoked: {agent_name}")
 
-        if name == "helper_result":
-            print(f"helper finished: {agent_name}", value)
+        async def helper_result(self, intent, agent_name: str):
+            print(f"helper finished: {agent_name}", intent)
 
-        if name == "response_text":
-            print(f"{agent_name} says:", value.get("text"))
+        async def response_text(self, intent, agent_name):
+            print(f"{agent_name} says:", intent.get("text"))
 
-        if name == "response_schema":
-            print(f"{agent_name} returned structured output:", value)
+        async def response_schema(self, intent, agent_name):
+            print(f"{agent_name} returned structured output:", intent)
 
-    agent.on_intent(handle_intent)
+    agent.on_intent(HandleIntent)
     ```
   </TabItem>
 </Tabs>

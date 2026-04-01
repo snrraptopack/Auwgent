@@ -108,9 +108,10 @@ Declaring a tool in the DSL defines the contract. The implementation lives entir
     Implement each tool as an async function. Arguments are passed as keyword arguments matching the names you declared in the DSL.
 
     ```python
-    async def get_weather(location: str) -> str:
-        # your implementation here
-        return json.dumps({"temperature": 28, "condition": "sunny"})
+    class Tools(AuwgentTools):
+      async def get_weather(self, location):
+          # your implementation here
+          return json.dumps({"temperature": 28, "condition": "sunny"})
     ```
 
     Register your tools in the agent config alongside your API keys and context:
@@ -122,9 +123,7 @@ Declaring a tool in the DSL defines the contract. The implementation lives entir
         "apiKeys": {
             "geminiApiKey": "YOUR_API_KEY"
         },
-        "tools": {
-            "get_weather": get_weather
-        }
+        "tools":Tools
     })
     ```
   </TabItem>
@@ -168,10 +167,7 @@ This is useful when you want to guard against certain tool calls based on runtim
   </TabItem>
   <TabItem label="Python">
     ```python
-    async def handle_intent(name: str, value: dict, agent_name: str):
-        if name == "tool_call" and value.get("type") == "delete_records":
-            print("Skipping dangerous tool call")
-            return {"skip": True}
+    Not available in the new api
 
     agent.on_intent(handle_intent)
     ```
@@ -198,9 +194,7 @@ This is useful for caching, mocking during development, or transforming what the
   </TabItem>
   <TabItem label="Python">
     ```python
-    async def handle_intent(name: str, value: dict, agent_name: str):
-        if name == "tool_call" and value.get("type") == "get_weather":
-            return {"result": "Sunny, 28°C"}
+    not available in the new api
 
     agent.on_intent(handle_intent)
     ```

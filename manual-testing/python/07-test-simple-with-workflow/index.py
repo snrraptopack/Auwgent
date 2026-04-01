@@ -9,15 +9,29 @@ from generated.main_types import (
     AuwgentContext,
     AuwgentMiddleware,
     MainIntentName,
+    AuwgentTools,
+    User
 )
 
-class Logger(AuwgentMiddleware):
-    name= "simple"
 
-    async def onRunComplete(self, finalSession, ctx):
-       ctx['set_context']({'name':10})
+class Tools(AuwgentTools):
+
+    async def remove_user(self,id):
+        # your implementation here
+        return f"deleted user {id}"
+
+    async def get_user(self,id):
+        # your implementation here
+        return f"user {id}"
 
 
+class ResearcherMiddleware(AuwgentMiddleware):
+    name = "researcher-middleware"
+    target = "Researcher"  # only fires when Researcher helper is active
+
+    async def onLLMStart(self, prompt: str, ctx):
+        # ctx["activeAgent"] is guaranteed to be "Researcher" here
+        pass
 
 context:AuwgentContext = {
     'user_id':"",
@@ -30,10 +44,19 @@ config:AuwgentConfig = {
         'my_groq_apiApiKey':""
     },
     'context':context,
-    'middleware':[Logger]
+    'middleware':[Logger],
+    'tools':Tools
 }
 
-agent = auwgent(config)
 
 
-class IntentHandler(AuwgentBaseIntentHandler):
+class HandleIntent(AuwgentBaseIntentHandler):
+    async def workflow_call(self, intent, agent_name: str):
+        print("workflow triggered:", intent.get("type"))
+
+    async def workflow_result(self, intent, agent_name: str):
+        print("workflow result:", intent)
+
+agent.on_intent(HandleIntent)
+
+print(agent.generate_prompt())

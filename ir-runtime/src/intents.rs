@@ -43,7 +43,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     }
     if let Some(output) = &ir.output {
         if output.0.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
-            allowed_blocks.push("- [schema: Name]...[/schema]".to_string());
+            allowed_blocks.push("- [schema: valid schema name]...[/schema]".to_string());
         }
     }
 
@@ -164,8 +164,19 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     if let Some(output) = &ir.output {
         if let Some(obj) = output.0.as_object() {
             if !obj.is_empty() {
+                let schema_entries =  collect_output_schema_entries(&output.0, ir.types.as_ref());
+                let schema_names: Vec<String> =schema_entries
+                    .iter()
+                    .map(|(name,_)| name.clone())
+                    .collect();
+
+                let schema_list = schema_names.join("|");
+
                 let mut schema_section = String::from(
-                    "\n\nSchemas available:\nUse [schema: Name] only for final structured output.\n",
+                   &format!(
+                     "\n\nSchemas available:\nUse [schema:{} ] only for final structured output.\n",
+                     schema_list
+                   ),
                 );
                 for (schema_name, specs) in
                     collect_output_schema_entries(&output.0, ir.types.as_ref())

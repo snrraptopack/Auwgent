@@ -574,8 +574,21 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         intent_names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ")
     ));
     blocks.push(String::new());
+    blocks.push(format!("class {agent_name}IntentControlSkip(TypedDict):"));
+    blocks.push("    skip: Literal[True]".to_string());
+    blocks.push(String::new());
+    blocks.push(format!("class {agent_name}IntentControlOverride(TypedDict):"));
+    blocks.push("    result: Any".to_string());
+    blocks.push(String::new());
     blocks.push(format!(
-        "{agent_name}IntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], Awaitable[Optional[SessionState]]]"
+        "{agent_name}IntentControl = Union[{agent_name}IntentControlSkip, {agent_name}IntentControlOverride]"
+    ));
+    blocks.push(format!(
+        "{agent_name}IntentHandlerReturn = Optional[Union[SessionState, {agent_name}IntentControl]]"
+    ));
+    blocks.push(String::new());
+    blocks.push(format!(
+        "{agent_name}IntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], Awaitable[{agent_name}IntentHandlerReturn]]"
     ));
     blocks.push(format!(
         "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, PartialIntentValue, str], None]"
@@ -584,36 +597,36 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BaseIntentHandler:"));
     if has_declared_tools {
-        blocks.push(format!("    def tool_call(self, intent: {agent_name}ToolCallIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+        blocks.push(format!("    def tool_call(self, intent: {agent_name}ToolCallIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_result(self, intent: {agent_name}ToolResultIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+        blocks.push(format!("    def tool_result(self, intent: {agent_name}ToolResultIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_error(self, intent: {agent_name}ToolErrorIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+        blocks.push(format!("    def tool_error(self, intent: {agent_name}ToolErrorIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}ToolSkippedIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}ToolSkippedIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
-    blocks.push(format!("    def response_text(self, intent: {agent_name}ResponseTextIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+    blocks.push(format!("    def response_text(self, intent: {agent_name}ResponseTextIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def response_schema(self, intent: {agent_name}ResponseSchemaIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+    blocks.push(format!("    def response_schema(self, intent: {agent_name}ResponseSchemaIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def error(self, intent: {agent_name}ErrorIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+    blocks.push(format!("    def error(self, intent: {agent_name}ErrorIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
     for (custom_name, custom_type) in &custom_intents {
         let method_name = sanitize_python_identifier(custom_name);
-        blocks.push(format!("    def {method_name}(self, intent: {custom_type}, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:"));
+        blocks.push(format!("    def {method_name}(self, intent: {custom_type}, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
     if !workflow_call_types.is_empty() {
-        blocks.push(format!("    def workflow_call(self, intent: Union[{}], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:", workflow_call_types.join(", ")));
+        blocks.push(format!("    def workflow_call(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", workflow_call_types.join(", ")));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def workflow_result(self, intent: Union[{}], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:", workflow_result_types.join(", ")));
+        blocks.push(format!("    def workflow_result(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", workflow_result_types.join(", ")));
         blocks.push("        pass".to_string());
     }
     if !helper_call_types.is_empty() {
-        blocks.push(format!("    def helper_call(self, intent: Union[{}], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:", helper_call_types.join(", ")));
+        blocks.push(format!("    def helper_call(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", helper_call_types.join(", ")));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def helper_result(self, intent: Union[{}], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:", helper_result_types.join(", ")));
+        blocks.push(format!("    def helper_result(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", helper_result_types.join(", ")));
         blocks.push("        pass".to_string());
     }
 
@@ -992,6 +1005,7 @@ mod tests {
         let output = generate(&ir, "main");
         assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
         assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
+        assert!(output.contains("ManagerIntentHandlerReturn = Optional[Union[SessionState, ManagerIntentControl]]"));
         assert!(output.contains("class ManagerBaseIntentHandler:"));
         assert!(output.contains("def on_intent(self, handler: Union[ManagerBaseIntentHandler, type[ManagerBaseIntentHandler]]) -> None:"));
         assert!(output.contains("class ManagerBasePartialIntentHandler:"));

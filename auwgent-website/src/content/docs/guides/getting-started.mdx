@@ -7,9 +7,9 @@ slug: guides/getting-started
 import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 <Aside type="tip" title="VS Code Extension (Alpha)">
-  Auwgent is currently in Alpha, so we provide the VS Code extension as a manual download. 
+  Auwgent is currently in Alpha, so we provide the VS Code extension as a manual download.
   It provides syntax highlighting and essential language support for your `.agent` files.
-  
+
   [**Download VSIX from GitHub**](https://github.com/snrraptopack/vscode-dist)
 </Aside>
 
@@ -184,7 +184,7 @@ In your application:
   </TabItem>
   <TabItem label="Python">
     ```python
-    from generated.main_types import auwgent
+    from generated.main_types import (auwgent,AuwgentBaseIntentHandler)
 
     agent = auwgent({
         "apiKeys": {
@@ -217,14 +217,14 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
   </TabItem>
   <TabItem label="Python">
     ```python
-    async def handle_intent(name: str, value: dict, agent_name: str):
-        if name == "response_text":
-            print(value.get("text"))
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def response_text(self, intent, agent_name):
+            print(intent.get('text'))
 
-        if name == "error":
-            print("Error:", value)
+        async def error(self, intent, agent_name: str):
+            print("Error",intent)
 
-    agent.on_intent(handle_intent)
+    agent.on_intent(HandleIntent)
     ```
   </TabItem>
 </Tabs>

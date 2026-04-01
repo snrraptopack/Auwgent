@@ -120,7 +120,7 @@ Like tools, workflows support the `@example()` annotation to teach the model how
 ```ts
 workflow get_weather(): string {
     description: "Gets the weather for the user's current location"
-    
+
 
     tool fetch_weather(location: string): string
 
@@ -203,14 +203,14 @@ These give you visibility into when workflows are triggered and what they return
   </TabItem>
   <TabItem label="Python">
     ```python
-    async def handle_intent(name: str, value: dict, agent_name: str):
-        if name == "workflow_call":
-            print("workflow triggered:", value.get("type"))
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def workflow_call(self, intent, agent_name: str):
+            print("workflow triggered:", intent.get("type"))
 
-        if name == "workflow_result":
-            print("workflow result:", value)
+        async def workflow_result(self, intent, agent_name: str):
+            print("workflow result:", intent)
 
-    agent.on_intent(handle_intent)
+    agent.on_intent(HandleIntent)
     ```
   </TabItem>
 </Tabs>
@@ -257,15 +257,17 @@ Scoped tools declared inside a workflow still need implementations in your appli
   </TabItem>
   <TabItem label="Python">
     ```python
-    from generated.main_types import auwgent
+    from generated.main_types import auwgent,AuwgentTools
 
-    async def remove_user(id: str) -> str:
-        # your implementation here
-        return f"deleted user {id}"
+    class Tools(AuwgentTools):
 
-    async def get_user(id: str) -> str:
-        # your implementation here
-        return f"user {id}"
+      async def remove_user(self,id):
+          # your implementation here
+          return f"deleted user {id}"
+
+      async def get_user(self,id):
+          # your implementation here
+          return f"user {id}"
 
     agent = auwgent({
         "apiKeys": {
@@ -275,10 +277,7 @@ Scoped tools declared inside a workflow still need implementations in your appli
             "is_admin": True,
             "user_id": "user_1"
         },
-        "tools": {
-            "get_user": get_user,
-            "remove_user": remove_user
-        }
+        "tools":Tools
     })
     ```
   </TabItem>

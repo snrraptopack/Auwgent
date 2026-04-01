@@ -70,23 +70,23 @@ Fires after the agent finishes. Receives the final session state. This is where 
   </TabItem>
   <TabItem label="Python">
     ```python
-    from generated.main_types import auwgent
+    from generated.main_types import (auwgent,AuwgentBaseIntentHandler)
 
-    class PersistenceMiddleware:
+    class PersistenceMiddleware(AuwgentBaseIntentHandler):
         name = "session-persistence"
 
-        async def onRunStart(self, session: dict, ctx: dict) -> dict:
+        async def onRunStart(self, session, ctx):
             saved = await db.sessions.get(ctx.get("userId"))
             return saved or session
 
-        async def onRunComplete(self, final_session: dict, ctx: dict) -> None:
-            await db.sessions.save(ctx.get("userId"), final_session)
+        async def onRunComplete(self, finalSession, ctx):
+            await db.sessions.save(ctx.get("userId"), finalSession)
 
     agent = auwgent({
         "apiKeys": {
             "geminiApiKey": "YOUR_API_KEY"
         },
-        "middleware": [PersistenceMiddleware()]
+        "middleware": [PersistenceMiddleware]
     })
 
     await agent.run("Hello")
