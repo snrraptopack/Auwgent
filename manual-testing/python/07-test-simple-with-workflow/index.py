@@ -8,18 +8,24 @@ from generated.main_types import (
     MainIntentName,
 )
 
+class Logger(AuwgentMiddleware):
+    name= "simple"
+
+    async def onRunComplete(self, finalSession, ctx):
+       print("")
+
 context:AuwgentContext = {
     'user_id':"",
     'is_vip':True,
     'session_id':""
 }
 
-
 config:AuwgentConfig = {
     'apiKeys':{
         'my_groq_apiApiKey':""
     },
-    'context':context
+    'context':context,
+    'middleware':[Logger]
 }
 
 agent = auwgent(config)
@@ -27,9 +33,6 @@ agent = auwgent(config)
 class PartialHander(AuwgentBasePartialIntentHandler):
     def response_text(self, intent, agent_name: str):
         print(intent.get('text'))
-
-
-
 
 
 

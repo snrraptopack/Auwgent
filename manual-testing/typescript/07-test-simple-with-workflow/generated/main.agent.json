@@ -1326,16 +1326,41 @@
     }
   ],
   "types": {
+    "QueryResult": {
+      "isOutput": false,
+      "properties": {
+        "success": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        },
+        "data": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "message": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
     "Product": {
       "isOutput": false,
       "properties": {
+        "stock": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
         "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "stock": {
-          "type": "number",
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         },
@@ -1343,9 +1368,37 @@
           "type": "number",
           "optional": false,
           "description": null
+        }
+      }
+    },
+    "AnalysisReport": {
+      "isOutput": false,
+      "properties": {
+        "total_products": {
+          "type": "number",
+          "optional": false,
+          "description": null
         },
-        "id": {
-          "type": "string",
+        "total_users": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "total_orders": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "revenue": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
           "optional": false,
           "description": null
         }
@@ -1354,7 +1407,7 @@
     "User": {
       "isOutput": false,
       "properties": {
-        "email": {
+        "id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1369,27 +1422,7 @@
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "QueryResult": {
-      "isOutput": false,
-      "properties": {
-        "message": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "success": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "data": {
+        "email": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1399,21 +1432,6 @@
     "Order": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "product_id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "quantity": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
         "total": {
           "type": "number",
           "optional": false,
@@ -1435,36 +1453,18 @@
           "type": "string",
           "optional": false,
           "description": null
-        }
-      }
-    },
-    "AnalysisReport": {
-      "isOutput": false,
-      "properties": {
-        "revenue": {
-          "type": "number",
+        },
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
+        "product_id": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "total_orders": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_products": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_users": {
+        "quantity": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1473,16 +1473,16 @@
     }
   },
   "helperToolGrants": {
-    "DataAnalyzer": "all",
     "ReportGenerator": [
       "db_query_users",
       "db_query_products",
       "db_query_orders"
-    ]
+    ],
+    "DataAnalyzer": "all"
   },
   "helperHandoff": {
-    "DataAnalyzer": "thenContinue",
-    "ReportGenerator": "user"
+    "ReportGenerator": "user",
+    "DataAnalyzer": "thenContinue"
   },
   "tests": [],
   "lifecycle": null,

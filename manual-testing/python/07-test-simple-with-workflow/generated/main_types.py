@@ -19,12 +19,12 @@ except ImportError:
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
 
 class Order(TypedDict, total=False):
-    total: float
-    id: str
-    user_id: str
-    status: str
-    quantity: float
     product_id: str
+    quantity: float
+    total: float
+    status: str
+    user_id: str
+    id: str
 
 class QueryResult(TypedDict, total=False):
     message: str
@@ -32,16 +32,16 @@ class QueryResult(TypedDict, total=False):
     data: str
 
 class AnalysisReport(TypedDict, total=False):
+    insights: List[str]
     revenue: float
     total_users: float
     total_orders: float
-    insights: List[str]
     total_products: float
 
 class Product(TypedDict, total=False):
-    price: float
     id: str
     name: str
+    price: float
     stock: float
 
 class User(TypedDict, total=False):
@@ -411,33 +411,33 @@ MainHelperCallIntentValue = Union[MainDataAnalyzerHelperCall, MainReportGenerato
 MainHelperResultIntentValue = Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult]
 MainIntentName = Literal["tool_call", "tool_result", "tool_error", "tool_skipped", "response_text", "response_schema", "error", "SpeakLoud", "workflow_call", "workflow_result", "helper_call", "helper_result"]
 
-MainIntentHandler = Callable[[MainIntentName, MainIntentValue, str], Awaitable[Optional[Dict[str, Any]]]]
+MainIntentHandler = Callable[[MainIntentName, MainIntentValue, str], Awaitable[Optional[SessionState]]]
 MainPartialIntentHandler = Callable[[MainIntentName, MainIntentValue, str], None]
 
 class MainBaseIntentHandler:
-    def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def tool_result(self, intent: MainToolResultIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def tool_result(self, intent: MainToolResultIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def tool_error(self, intent: MainToolErrorIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def tool_error(self, intent: MainToolErrorIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def tool_skipped(self, intent: MainToolSkippedIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def tool_skipped(self, intent: MainToolSkippedIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def response_text(self, intent: MainResponseTextIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def response_text(self, intent: MainResponseTextIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def response_schema(self, intent: MainResponseSchemaIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def response_schema(self, intent: MainResponseSchemaIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def error(self, intent: MainErrorIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def error(self, intent: MainErrorIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def speakloud(self, intent: MainSpeakLoudCustomIntent, agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def speakloud(self, intent: MainSpeakLoudCustomIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def workflow_call(self, intent: Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def workflow_call(self, intent: Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def workflow_result(self, intent: Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def workflow_result(self, intent: Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def helper_call(self, intent: Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def helper_call(self, intent: Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
-    def helper_result(self, intent: Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult], agent_name: str) -> Union[Optional[Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]:
+    def helper_result(self, intent: Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult], agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
         pass
 
 class MainBasePartialIntentHandler:
