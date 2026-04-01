@@ -6,7 +6,6 @@ resolver = "2"
 name = "ir-runtime"
 version = "0.1.0"
 edition = "2024"
-default-run = "ir-runtime"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

@@ -14,6 +14,8 @@ export { AuwgentNative };
 
 import {
     AuwgentToolError,
+    AuwgentWarning,
+    AuwgentWarningSource,
 } from './types.js';
 
 import type {
@@ -71,6 +73,8 @@ export class TypedAuwgent<
     private lastTurnRawBlock: string | undefined = undefined;
     private agentStack: string[] = [];
     private helperSessions = new Map<string, SessionState>();
+    private warnings: AuwgentWarning[] = [];
+    private warningHandler: ((warning: AuwgentWarning) => void) | null = null;
 
     constructor(ir: IR, config: AuwgentConfig<IR>) {
         this.ir = ir;
@@ -236,10 +240,11 @@ export class TypedAuwgent<
     }
 
     private async handleMiddlewareEvent(eventJson: string): Promise<string | undefined> {
-        const event = JSON.parse(eventJson);
-        const ctx = this.buildContextFromRuntimeEvent(event);
+        try {
+            const event = JSON.parse(eventJson);
+            const ctx = this.buildContextFromRuntimeEvent(event);
 
-        switch (event?.type) {
+            switch (event?.type) {
             case 'intent': {
                 const value = event?.value && typeof event.value === 'object'
                     ? { ...event.value }
@@ -251,9 +256,13 @@ export class TypedAuwgent<
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onIntent) {
-                        const control = await (m.onIntent as any)(event.name, value, ctx);
-                        if (control !== undefined && control !== null) {
-                            return JSON.stringify(control);
+                        try {
+                            const control = await (m.onIntent as any)(event.name, value, ctx);
+                            if (control !== undefined && control !== null) {
+                                return JSON.stringify(control);
+                            }
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onIntent threw', error, ctx.activeAgent as string);
                         }
                     }
                 }
@@ -265,9 +274,13 @@ export class TypedAuwgent<
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMStart) {
-                        const modified = await (m.onLLMStart as any)(currentPrompt, ctx);
-                        if (typeof modified === 'string') {
-                            currentPrompt = modified;
+                        try {
+                            const modified = await (m.onLLMStart as any)(currentPrompt, ctx);
+                            if (typeof modified === 'string') {
+                                currentPrompt = modified;
+                            }
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onLLMStart threw', error, ctx.activeAgent as string);
                         }
                     }
                 }
@@ -280,7 +293,11 @@ export class TypedAuwgent<
             case 'llm_end': {
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMEnd) {
-                        await (m.onLLMEnd as any)(event.response ?? {}, ctx);
+                        try {
+                            await (m.onLLMEnd as any)(event.response ?? {}, ctx);
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onLLMEnd threw', error, ctx.activeAgent as string);
+                        }
                     }
                 }
 
@@ -291,7 +308,11 @@ export class TypedAuwgent<
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onRunStart) {
-                        session = await (m.onRunStart as any)(session, ctx);
+                        try {
+                            session = await (m.onRunStart as any)(session, ctx);
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onRunStart threw', error, ctx.activeAgent as string);
+                        }
                     }
                 }
 
@@ -307,7 +328,11 @@ export class TypedAuwgent<
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onRunComplete) {
-                        await (m.onRunComplete as any)(session, ctx);
+                        try {
+                            await (m.onRunComplete as any)(session, ctx);
+                        } catch (error) {
+                            this.reportWarning('middleware', 'middleware onRunComplete threw', error, ctx.activeAgent as string);
+                        }
                     }
                 }
 
@@ -322,9 +347,13 @@ export class TypedAuwgent<
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onError) {
-                        const shouldSwallow = await (m.onError as any)(error, session, ctx);
-                        if (shouldSwallow) {
-                            return JSON.stringify({ swallow: true });
+                        try {
+                            const shouldSwallow = await (m.onError as any)(error, session, ctx);
+                            if (shouldSwallow) {
+                                return JSON.stringify({ swallow: true });
+                            }
+                        } catch (middlewareError) {
+                            this.reportWarning('middleware', 'middleware onError threw', middlewareError, ctx.activeAgent as string);
                         }
                     }
                 }
@@ -333,6 +362,10 @@ export class TypedAuwgent<
             }
             default:
                 return undefined;
+            }
+        } catch (error) {
+            this.reportWarning('onMiddlewareEvent', 'failed to handle middleware event', error);
+            return undefined;
         }
     }
 
@@ -340,9 +373,47 @@ export class TypedAuwgent<
         const ctx = this.getBuildContext();
         for (const m of this.getMiddleware(ctx)) {
             if (m.onError) {
-                await (m as any).onError(error, undefined, ctx);
+                try {
+                    await (m as any).onError(error, undefined, ctx);
+                } catch (middlewareError) {
+                    this.reportWarning('middleware', 'middleware onError handler threw', middlewareError);
+                }
             }
         }
+    }
+
+    private reportWarning(source: AuwgentWarningSource, message: string, error?: unknown, agentName?: string): void {
+        const warning: AuwgentWarning = {
+            timestamp: new Date().toISOString(),
+            source,
+            message,
+            detail: error instanceof Error ? error.message : (error != null ? String(error) : undefined),
+            agentName,
+        };
+
+        this.warnings.push(warning);
+
+        try {
+            this.warningHandler?.(warning);
+        } catch {
+            // Keep warning flow non-fatal.
+        }
+
+        const detailSuffix = warning.detail ? `: ${warning.detail}` : '';
+        const agentSuffix = warning.agentName ? ` [agent=${warning.agentName}]` : '';
+        console.warn(`[auwgent][${warning.source}]${agentSuffix} ${warning.message}${detailSuffix}`);
+    }
+
+    onWarning(handler: (warning: AuwgentWarning) => void): void {
+        this.warningHandler = handler;
+    }
+
+    getWarnings(): AuwgentWarning[] {
+        return [...this.warnings];
+    }
+
+    clearWarnings(): void {
+        this.warnings = [];
     }
 
     /** Generate an embedding for the given text using the configured model */
@@ -375,42 +446,71 @@ export class TypedAuwgent<
         const userHandler = this.storedIntentHandler;
 
         this.native.onIntent(async (name: string, value: any, agentName: string) => {
-            const intentCtx = this.getBuildContext();
-            intentCtx.activeAgent = agentName as any;
+            try {
+                const intentCtx = this.getBuildContext();
+                intentCtx.activeAgent = agentName as any;
 
-            if (value && typeof value === 'object' && '_raw' in value) {
-                intentCtx.rawBlock = value._raw;
-                this.lastTurnRawBlock = value._raw;
-                delete value._raw;
-            }
+                if (value && typeof value === 'object' && '_raw' in value) {
+                    intentCtx.rawBlock = value._raw;
+                    this.lastTurnRawBlock = value._raw;
+                    delete value._raw;
+                }
 
-            if (userHandler) {
-                const result = await (userHandler as any)(name, value, agentName);
-                return result ?? null;
+                if (userHandler) {
+                    const result = await (userHandler as any)(name, value, agentName);
+                    return result ?? null;
+                }
+            } catch (error) {
+                this.reportWarning('onIntent', 'intent callback failed', error, agentName);
             }
         });
 
         if (this.storedPartialHandler) {
             const partialHandler = this.storedPartialHandler;
             this.native.onIntentPartial((name: string, value: any, agentName: string) => {
-                (partialHandler as any)(name, value, agentName);
+                try {
+                    const maybePromise = (partialHandler as any)(name, value, agentName);
+                    if (maybePromise && typeof maybePromise.then === 'function') {
+                        (maybePromise as Promise<unknown>).catch((error: unknown) => {
+                            this.reportWarning('onIntentPartial', 'partial intent async callback rejected', error, agentName);
+                        });
+                    }
+                } catch (error) {
+                    this.reportWarning('onIntentPartial', 'partial intent callback failed', error, agentName);
+                }
             });
         }
-        this.native.onMiddlewareEvent((eventJson: string) => this.handleMiddlewareEvent(eventJson));
+        this.native.onMiddlewareEvent(async (eventJson: string) => {
+            try {
+                return await this.handleMiddlewareEvent(eventJson);
+            } catch (error) {
+                this.reportWarning('onMiddlewareEvent', 'middleware event callback failed', error);
+                return undefined;
+            }
+        });
 
         this.native.onSubEngineStart(async (helperName: string, emptySessionJson: string) => {
-            const session = this.helperSessions.get(helperName) || (JSON.parse(emptySessionJson) as SessionState);
-            if (session.stack) {
-                this.agentStack = [...session.stack];
+            try {
+                const session = this.helperSessions.get(helperName) || (JSON.parse(emptySessionJson) as SessionState);
+                if (session.stack) {
+                    this.agentStack = [...session.stack];
+                }
+                return JSON.stringify(session);
+            } catch (error) {
+                this.reportWarning('onSubEngineStart', 'sub-engine start callback failed', error, helperName);
+                return emptySessionJson;
             }
-            return JSON.stringify(session);
         });
 
         this.native.onSubEngineComplete(async (helperName: string, completedSessionJson: string) => {
-            const session = JSON.parse(completedSessionJson) as SessionState;
-            this.helperSessions.set(helperName, session);
-            if (session.stack) {
-                this.agentStack = [...session.stack];
+            try {
+                const session = JSON.parse(completedSessionJson) as SessionState;
+                this.helperSessions.set(helperName, session);
+                if (session.stack) {
+                    this.agentStack = [...session.stack];
+                }
+            } catch (error) {
+                this.reportWarning('onSubEngineComplete', 'sub-engine complete callback failed', error, helperName);
             }
         });
     }
@@ -445,6 +545,9 @@ export class TypedAuwgent<
             }
 
             return currentSession;
+        } catch (error) {
+            this.reportWarning('run', 'native run failed', error);
+            throw error;
         } finally {
             // Deactivate listeners after run to release the TSFN ref
             // and allow the Node.js process to exit gracefully.

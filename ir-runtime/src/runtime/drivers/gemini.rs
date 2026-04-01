@@ -124,9 +124,10 @@ impl ModelDriver for GeminiDriver {
                     let line = buffer.drain(..=index).collect::<String>();
                     let trimmed = line.trim();
 
-                    if let Some(data) = trimmed.strip_prefix("data: ") {
-                        if let Ok(json_val) = serde_json::from_str::<Value>(data) {
-                            if let Some(candidate) = json_val["candidates"].get(0) {
+                    if let Some(data) = trimmed.strip_prefix("data: ")
+                        && let Ok(json_val) = serde_json::from_str::<Value>(data)
+                    {
+                        if let Some(candidate) = json_val["candidates"].get(0) {
                                 if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
                                     result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(t.to_string()));
                                 }
@@ -156,9 +157,8 @@ impl ModelDriver for GeminiDriver {
                                         }));
                                     }
                                 }
-                            } else if let Some(error) = json_val["error"].get("message") {
-                                return Err(format!("Gemini streaming error: {}", error));
-                            }
+                        } else if let Some(error) = json_val["error"].get("message") {
+                            return Err(format!("Gemini streaming error: {}", error));
                         }
                     }
                 }
@@ -191,11 +191,11 @@ impl ModelDriver for GeminiDriver {
         });
 
         // Merge optional config directly into the body
-        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
-            if let Some(body_obj) = body.as_object_mut() {
-                for (k, v) in cfg {
-                    body_obj.insert(k.clone(), v.clone());
-                }
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object())
+            && let Some(body_obj) = body.as_object_mut()
+        {
+            for (k, v) in cfg {
+                body_obj.insert(k.clone(), v.clone());
             }
         }
 
@@ -225,7 +225,7 @@ impl ModelDriver for GeminiDriver {
         let values = embedding.as_array().ok_or_else(|| {
             format!(
                 "Missing 'embedding.values' field in response: {}",
-                json_val.to_string()
+                json_val
             )
         })?;
 
@@ -255,11 +255,11 @@ impl ModelDriver for GeminiDriver {
                 });
 
                 // Merge optional config into each request in the batch
-                if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
-                    if let Some(req_obj) = req.as_object_mut() {
-                        for (k, v) in cfg {
-                            req_obj.insert(k.clone(), v.clone());
-                        }
+                if let Some(cfg) = config.as_ref().and_then(|c| c.as_object())
+                    && let Some(req_obj) = req.as_object_mut()
+                {
+                    for (k, v) in cfg {
+                        req_obj.insert(k.clone(), v.clone());
                     }
                 }
                 req
@@ -293,7 +293,7 @@ impl ModelDriver for GeminiDriver {
         let embeddings = json_val["embeddings"].as_array().ok_or_else(|| {
             format!(
                 "Missing 'embeddings' field in response: {}",
-                json_val.to_string()
+                json_val
             )
         })?;
 

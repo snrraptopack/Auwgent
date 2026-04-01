@@ -119,39 +119,38 @@ impl ModelDriver for OpenAIDriver {
                         continue;
                     }
 
-                    if let Some(data) = trimmed.strip_prefix("data: ") {
-                        if let Ok(json_val) = serde_json::from_str::<Value>(data) {
-                            if let Some(choices) = json_val.get("choices").and_then(|v| v.as_array()) {
-                                if !choices.is_empty() {
-                                    if let Some(content) = choices[0].get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
-                                        result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(content.to_string()));
-                                    }
-                                    
-                                    if let Some(finish_reason_str) = choices[0].get("finish_reason").and_then(|f| f.as_str()) {
-                                        let finish_reason = match finish_reason_str {
-                                            "stop" => crate::runtime::drivers::FinishReason::Stop,
-                                            "length" => crate::runtime::drivers::FinishReason::Length,
-                                            "tool_calls" => crate::runtime::drivers::FinishReason::ToolCalls,
-                                            "content_filter" => crate::runtime::drivers::FinishReason::ContentFilter,
-                                            _ => crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string()),
-                                        };
-                                        result_events.push(crate::runtime::drivers::ModelEvent::FinishReason(finish_reason));
-                                    }
+                    if let Some(data) = trimmed.strip_prefix("data: ")
+                        && let Ok(json_val) = serde_json::from_str::<Value>(data)
+                    {
+                        if let Some(choices) = json_val.get("choices").and_then(|v| v.as_array())
+                            && !choices.is_empty()
+                        {
+                            if let Some(content) = choices[0].get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
+                                result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(content.to_string()));
+                            }
+
+                            if let Some(finish_reason_str) = choices[0].get("finish_reason").and_then(|f| f.as_str()) {
+                                let finish_reason = match finish_reason_str {
+                                    "stop" => crate::runtime::drivers::FinishReason::Stop,
+                                    "length" => crate::runtime::drivers::FinishReason::Length,
+                                    "tool_calls" => crate::runtime::drivers::FinishReason::ToolCalls,
+                                    "content_filter" => crate::runtime::drivers::FinishReason::ContentFilter,
+                                    _ => crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string()),
+                                };
+                                result_events.push(crate::runtime::drivers::ModelEvent::FinishReason(finish_reason));
+                            }
                                 }
-                            }
-                            
-                            // Extract usage if available
-                            if let Some(usage) = json_val.get("usage") {
-                                let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                                let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                                let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                                
-                                result_events.push(crate::runtime::drivers::ModelEvent::Usage(crate::runtime::drivers::TokenUsage {
-                                    prompt_tokens,
-                                    completion_tokens,
-                                    total_tokens,
-                                }));
-                            }
+                        // Extract usage if available
+                        if let Some(usage) = json_val.get("usage") {
+                            let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                            let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                            let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+                            result_events.push(crate::runtime::drivers::ModelEvent::Usage(crate::runtime::drivers::TokenUsage {
+                                prompt_tokens,
+                                completion_tokens,
+                                total_tokens,
+                            }));
                         }
                     }
                 }
@@ -186,11 +185,11 @@ impl ModelDriver for OpenAIDriver {
         });
 
         // Merge optional config directly into the body
-        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
-            if let Some(body_obj) = body.as_object_mut() {
-                for (k, v) in cfg {
-                    body_obj.insert(k.clone(), v.clone());
-                }
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object())
+            && let Some(body_obj) = body.as_object_mut()
+        {
+            for (k, v) in cfg {
+                body_obj.insert(k.clone(), v.clone());
             }
         }
 
@@ -221,7 +220,7 @@ impl ModelDriver for OpenAIDriver {
         let values = embedding_val.as_array().ok_or_else(|| {
             format!(
                 "Missing 'data[0].embedding' field in response: {}",
-                json_val.to_string()
+                json_val
             )
         })?;
 
@@ -250,11 +249,11 @@ impl ModelDriver for OpenAIDriver {
         });
 
         // Merge optional config directly into the body
-        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object()) {
-            if let Some(body_obj) = body.as_object_mut() {
-                for (k, v) in cfg {
-                    body_obj.insert(k.clone(), v.clone());
-                }
+        if let Some(cfg) = config.as_ref().and_then(|c| c.as_object())
+            && let Some(body_obj) = body.as_object_mut()
+        {
+            for (k, v) in cfg {
+                body_obj.insert(k.clone(), v.clone());
             }
         }
 
@@ -283,7 +282,7 @@ impl ModelDriver for OpenAIDriver {
 
         let data = json_val["data"]
             .as_array()
-            .ok_or_else(|| format!("Missing 'data' field in response: {}", json_val.to_string()))?;
+            .ok_or_else(|| format!("Missing 'data' field in response: {}", json_val))?;
 
         let mut results = Vec::new();
         for item in data {

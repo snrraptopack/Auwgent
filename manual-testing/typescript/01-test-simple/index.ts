@@ -5,6 +5,10 @@ let one: AuwgentMiddleware = {
   name: "one",
   target: "one",
 
+  onRunStart: (session, ctx) => {
+
+  },
+
 }
 
 const config: AuwgentConfig = {
@@ -18,6 +22,10 @@ const agent = auwgent(config)
 
 agent.onIntent((name, value, agentname) => {
   console.log(JSON.stringify(value, null, 2))
+})
+
+agent.onWarning((warning) => {
+  console.log(warning)
 })
 
 console.log(agent.generatePrompt())

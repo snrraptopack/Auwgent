@@ -53,6 +53,25 @@ export class AuwgentToolError extends Error {
     }
 }
 
+export type AuwgentWarningSource =
+    | 'onIntent'
+    | 'onIntentPartial'
+    | 'onMiddlewareEvent'
+    | 'onSubEngineStart'
+    | 'onSubEngineComplete'
+    | 'middleware'
+    | 'run'
+    | 'embed'
+    | 'embedBatch';
+
+export interface AuwgentWarning {
+    timestamp: string;
+    source: AuwgentWarningSource;
+    message: string;
+    detail?: string;
+    agentName?: string;
+}
+
 export interface AgentIRShape {
     name: string;
     input: any; // Now mandatory in IR for type extraction

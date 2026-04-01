@@ -10,6 +10,7 @@ import json
 import inspect
 import sys
 import typing
+from datetime import datetime
 from typing import (
     Any, Callable, Awaitable, Dict, List, Optional,
     TypeVar, Generic, Protocol, Union, TypedDict,
@@ -81,6 +82,15 @@ class AggregateUsage(TypedDict):
 class RunMetadata(TypedDict):
     aggregate: AggregateUsage
     turns: List[TurnMetadata]
+
+class AuwgentWarning(TypedDict, total=False):
+    timestamp: str
+    source: str
+    message: str
+    detail: Optional[str]
+    agentName: Optional[str]
+
+WarningCallback = Callable[[AuwgentWarning], None]
 
 # ── Error Types ───────────────────────────────────────────────────────────
 
@@ -154,6 +164,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         ]
         self._shared_context: Dict[str, Any] = {}
         self._agent_stack: List[str] = []
+        self._helper_sessions: Dict[str, SessionState] = {}
+        self._warnings: List[AuwgentWarning] = []
+        self._warning_handler: Optional[WarningCallback] = None
 
 
         # Deferred handler storage — registered/deregistered around each run()
@@ -295,6 +308,42 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 handler(value)
         self._stored_partial_handler = dispatch
 
+    def on_warning(self, callback: WarningCallback) -> None:
+        """Register a callback for non-fatal SDK/runtime integration warnings."""
+        self._warning_handler = callback
+
+    def get_warnings(self) -> List[AuwgentWarning]:
+        """Return collected non-fatal warnings."""
+        return [dict(w) for w in self._warnings]
+
+    def clear_warnings(self) -> None:
+        """Clear collected non-fatal warnings."""
+        self._warnings.clear()
+
+    def _report_warning(self, source: str, message: str, error: Optional[Exception] = None, agent_name: Optional[str] = None) -> None:
+        detail: Optional[str] = None
+        if error is not None:
+            detail = str(error)
+
+        warning: AuwgentWarning = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "source": source,
+            "message": message,
+            "detail": detail,
+            "agentName": agent_name,
+        }
+        self._warnings.append(warning)
+
+        if self._warning_handler is not None:
+            try:
+                self._warning_handler(warning)
+            except Exception:
+                pass
+
+        detail_suffix = f": {detail}" if detail else ""
+        agent_suffix = f" [agent={agent_name}]" if agent_name else ""
+        print(f"[auwgent][{source}]{agent_suffix} {message}{detail_suffix}", file=sys.stderr)
+
     # ── Middleware Helpers ─────────────────────────────────────────────────
 
     def _build_context(self) -> MiddlewareContext:
@@ -342,84 +391,106 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         return ctx
 
     async def _handle_middleware_event(self, event_json: str) -> Optional[str]:
-        event = cast(Dict[str, Any], json.loads(event_json))
-        ctx = self._build_context_from_runtime_event(event)
-        event_type = event.get("type")
+        try:
+            event = cast(Dict[str, Any], json.loads(event_json))
+            ctx = self._build_context_from_runtime_event(event)
+            event_type = event.get("type")
 
-        if event_type == "intent":
-            value = event.get("value")
-            if isinstance(value, dict):
-                value = dict(value)
-                value.pop("_raw", None)
+            if event_type == "intent":
+                value = event.get("value")
+                if isinstance(value, dict):
+                    value = dict(value)
+                    value.pop("_raw", None)
 
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onIntent"):
-                    control = await middleware.onIntent(cast(str, event.get("name", "")), value, ctx)
-                    if control is not None:
-                        return json.dumps(control)
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onIntent"):
+                        try:
+                            control = await middleware.onIntent(cast(str, event.get("name", "")), value, ctx)
+                            if control is not None:
+                                return json.dumps(control)
+                        except Exception as error:
+                            self._report_warning("middleware", "middleware onIntent threw", error, cast(str, ctx.get("activeAgent", "")))
+                return None
+
+            if event_type == "llm_start":
+                current_prompt = event.get("prompt", "")
+                if not isinstance(current_prompt, str):
+                    current_prompt = ""
+
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onLLMStart"):
+                        try:
+                            result = await middleware.onLLMStart(current_prompt, ctx)
+                            if isinstance(result, str):
+                                current_prompt = result
+                        except Exception as error:
+                            self._report_warning("middleware", "middleware onLLMStart threw", error, cast(str, ctx.get("activeAgent", "")))
+
+                return json.dumps({
+                    "prompt": current_prompt,
+                    "stack": ctx.get("stack")
+                })
+
+            if event_type == "llm_end":
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onLLMEnd"):
+                        try:
+                            await middleware.onLLMEnd(event.get("response") or {}, ctx)
+                        except Exception as error:
+                            self._report_warning("middleware", "middleware onLLMEnd threw", error, cast(str, ctx.get("activeAgent", "")))
+                return None
+
+            if event_type == "run_start":
+                session = cast(SessionState, event.get("session", {}))
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onRunStart"):
+                        try:
+                            session = await middleware.onRunStart(session, ctx)
+                        except Exception as error:
+                            self._report_warning("middleware", "middleware onRunStart threw", error, cast(str, ctx.get("activeAgent", "")))
+
+                if "stack" in ctx and isinstance(ctx["stack"], list):
+                    session["stack"] = list(ctx["stack"])
+                    self._agent_stack = list(ctx["stack"])
+
+                return json.dumps({"session": session})
+
+            if event_type == "run_complete":
+                session = cast(SessionState, event.get("session", {}))
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onRunComplete"):
+                        try:
+                            await middleware.onRunComplete(session, ctx)
+                        except Exception as error:
+                            self._report_warning("middleware", "middleware onRunComplete threw", error, cast(str, ctx.get("activeAgent", "")))
+                return None
+
+            if event_type == "error":
+                error_payload = event.get("error", {})
+                if isinstance(error_payload, dict) and error_payload.get("kind") == "tool_error":
+                    error: Exception = AuwgentToolError(
+                        cast(str, error_payload.get("tool", "unknown")),
+                        cast(str, error_payload.get("message", "unknown")),
+                    )
+                else:
+                    message = error_payload.get("message", "Unknown runtime error") if isinstance(error_payload, dict) else "Unknown runtime error"
+                    error = RuntimeError(message)
+
+                session = cast(Optional[SessionState], event.get("session"))
+                for middleware in self._get_middleware(ctx):
+                    if hasattr(middleware, "onError"):
+                        try:
+                            swallow = await middleware.onError(error, session, ctx)
+                            if swallow:
+                                return json.dumps({"swallow": True})
+                        except Exception as middleware_error:
+                            self._report_warning("middleware", "middleware onError threw", middleware_error, cast(str, ctx.get("activeAgent", "")))
+                return None
+
             return None
-
-        if event_type == "llm_start":
-            current_prompt = event.get("prompt", "")
-            if not isinstance(current_prompt, str):
-                current_prompt = ""
-
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onLLMStart"):
-                    result = await middleware.onLLMStart(current_prompt, ctx)
-                    if isinstance(result, str):
-                        current_prompt = result
-
-            return json.dumps({
-                "prompt": current_prompt,
-                "stack": ctx.get("stack")
-            })
-
-        if event_type == "llm_end":
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onLLMEnd"):
-                    await middleware.onLLMEnd(event.get("response") or {}, ctx)
+        except Exception as error:
+            self._report_warning("onMiddlewareEvent", "failed to handle middleware event", error)
             return None
-
-        if event_type == "run_start":
-            session = cast(SessionState, event.get("session", {}))
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onRunStart"):
-                    session = await middleware.onRunStart(session, ctx)
-
-            if "stack" in ctx and isinstance(ctx["stack"], list):
-                session["stack"] = list(ctx["stack"])
-                self._agent_stack = list(ctx["stack"])
-
-            return json.dumps({"session": session})
-
-        if event_type == "run_complete":
-            session = cast(SessionState, event.get("session", {}))
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onRunComplete"):
-                    await middleware.onRunComplete(session, ctx)
-            return None
-
-        if event_type == "error":
-            error_payload = event.get("error", {})
-            if isinstance(error_payload, dict) and error_payload.get("kind") == "tool_error":
-                error: Exception = AuwgentToolError(
-                    cast(str, error_payload.get("tool", "unknown")),
-                    cast(str, error_payload.get("message", "unknown")),
-                )
-            else:
-                message = error_payload.get("message", "Unknown runtime error") if isinstance(error_payload, dict) else "Unknown runtime error"
-                error = RuntimeError(message)
-
-            session = cast(Optional[SessionState], event.get("session"))
-            for middleware in self._get_middleware(ctx):
-                if hasattr(middleware, "onError"):
-                    swallow = await middleware.onError(error, session, ctx)
-                    if swallow:
-                        return json.dumps({"swallow": True})
-            return None
-
-        return None
 
     def _get_middleware(self, ctx: MiddlewareContext) -> List[Any]:
         valid: List[Any] = []
@@ -439,51 +510,74 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         user_handler = self._stored_intent_handler
 
         async def wrap_intent(name: str, value_json_str: str, agent_name: str) -> Optional[str]:
-            val_dict: Dict[str, Any] = json.loads(value_json_str)
-            ctx = self._build_context()
-            ctx["activeAgent"] = agent_name
+            try:
+                val_dict: Dict[str, Any] = json.loads(value_json_str)
+                ctx = self._build_context()
+                ctx["activeAgent"] = agent_name
 
-            # Extract _raw from Rust-injected field
-            raw_block = val_dict.get("_raw")
-            if raw_block is not None:
-                ctx["rawBlock"] = raw_block
-                self._last_raw_block = raw_block
-                val_dict.pop("_raw", None)
+                # Extract _raw from Rust-injected field
+                raw_block = val_dict.get("_raw")
+                if raw_block is not None:
+                    ctx["rawBlock"] = raw_block
+                    self._last_raw_block = raw_block
+                    val_dict.pop("_raw", None)
 
-            if user_handler:
-                sig = inspect.signature(user_handler)
-                if len(sig.parameters) >= 3:
-                    res = await user_handler(name, val_dict, agent_name)
-                else:
-                    res = await user_handler(name, val_dict)
-                return json.dumps(res) if res is not None else None
-            return None
+                if user_handler:
+                    sig = inspect.signature(user_handler)
+                    if len(sig.parameters) >= 3:
+                        res = await user_handler(name, val_dict, agent_name)
+                    else:
+                        res = await user_handler(name, val_dict)
+                    return json.dumps(res) if res is not None else None
+                return None
+            except Exception as error:
+                self._report_warning("onIntent", "intent callback failed", error, agent_name)
+                return None
 
         self._native.on_intent(wrap_intent)
 
         partial_handler = self._stored_partial_handler
         def wrap_partial(name: str, value_json_str: str, agent_name: str) -> None:
             if partial_handler is not None:
-                value_dict = json.loads(value_json_str)
-                sig = inspect.signature(partial_handler)
-                if len(sig.parameters) >= 3:
-                    partial_handler(name, value_dict, agent_name)
-                else:
-                    partial_handler(name, value_dict)
+                try:
+                    value_dict = json.loads(value_json_str)
+                    sig = inspect.signature(partial_handler)
+                    if len(sig.parameters) >= 3:
+                        result = partial_handler(name, value_dict, agent_name)
+                    else:
+                        result = partial_handler(name, value_dict)
+                    if inspect.isawaitable(result):
+                        self._report_warning("onIntentPartial", "partial intent handlers must be sync; awaitable result ignored", agent_name=agent_name)
+                except Exception as error:
+                    self._report_warning("onIntentPartial", "partial intent callback failed", error, agent_name)
         self._native.on_intent_partial(wrap_partial)
-        self._native.on_middleware_event(self._handle_middleware_event)
+        async def wrap_middleware_event(event_json: str) -> Optional[str]:
+            try:
+                return await self._handle_middleware_event(event_json)
+            except Exception as error:
+                self._report_warning("onMiddlewareEvent", "middleware event callback failed", error)
+                return None
+        self._native.on_middleware_event(wrap_middleware_event)
 
         async def wrap_sub_start(helper_name: str, session_json: str) -> Optional[str]:
-            session = cast(SessionState, json.loads(session_json))
-            if "stack" in session:
-                self._agent_stack = list(session["stack"])
-            return json.dumps(session)
+            try:
+                session = self._helper_sessions.get(helper_name) or cast(SessionState, json.loads(session_json))
+                if "stack" in session:
+                    self._agent_stack = list(session["stack"])
+                return json.dumps(session)
+            except Exception as error:
+                self._report_warning("onSubEngineStart", "sub-engine start callback failed", error, helper_name)
+                return session_json
         self._native.on_sub_engine_start(wrap_sub_start)
 
         async def wrap_sub_complete(helper_name: str, session_json: str) -> None:
-            session = cast(SessionState, json.loads(session_json))
-            if "stack" in session:
-                self._agent_stack = list(session["stack"])
+            try:
+                session = cast(SessionState, json.loads(session_json))
+                self._helper_sessions[helper_name] = session
+                if "stack" in session:
+                    self._agent_stack = list(session["stack"])
+            except Exception as error:
+                self._report_warning("onSubEngineComplete", "sub-engine complete callback failed", error, helper_name)
         self._native.on_sub_engine_complete(wrap_sub_complete)
 
     def _deactivate_listeners(self) -> None:
@@ -519,6 +613,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 self._agent_stack = list(current_session["stack"])
 
             return cast(SessionState, current_session)
+        except Exception as error:
+            self._report_warning("run", "native run failed", error)
+            raise
         finally:
             self._deactivate_listeners()
 
@@ -538,6 +635,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def clear_session(self) -> None:
         """Clear the session (fresh conversation)."""
         self._native.clear_session()
+        self._helper_sessions.clear()
 
     # ── Introspection ─────────────────────────────────────────────────────
 

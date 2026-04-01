@@ -77,8 +77,6 @@ impl FunctionParser {
                         args.insert(arg_name, val);
                     }
                 }
-            } else if self.current == TokenKind::Comma {
-                self.advance();
             } else {
                 self.advance();
             }

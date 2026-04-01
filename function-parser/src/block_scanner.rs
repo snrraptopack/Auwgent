@@ -177,10 +177,10 @@ impl BlockScanner {
                 break;
             }
 
-            if let Some(header) = self.try_read_header() {
-                if self.parse_header(&header).is_some() || self.is_known_closing_header(&header) {
-                    break;
-                }
+            if let Some(header) = self.try_read_header()
+                && (self.parse_header(&header).is_some() || self.is_known_closing_header(&header))
+            {
+                break;
             }
 
             if let Some(ch) = self.advance() {
@@ -214,17 +214,9 @@ impl BlockScanner {
                     content,
                     target_name: None,
                 });
-            } else if self.check_incomplete_response_text_open() {
-                if !implicit_chat.trim().is_empty() {
-                    blocks.push(Block {
-                        block_type: BlockType::Chat,
-                        content: implicit_chat.trim().to_string(),
-                        target_name: None,
-                    });
-                    implicit_chat.clear();
-                }
-                break;
-            } else if self.check_incomplete_response_text_close() {
+            } else if self.check_incomplete_response_text_open()
+                || self.check_incomplete_response_text_close()
+            {
                 if !implicit_chat.trim().is_empty() {
                     blocks.push(Block {
                         block_type: BlockType::Chat,
@@ -258,10 +250,8 @@ impl BlockScanner {
                 } else if let Some(ch) = self.advance() {
                     implicit_chat.push(ch);
                 }
-            } else {
-                if let Some(ch) = self.advance() {
-                    implicit_chat.push(ch);
-                }
+            } else if let Some(ch) = self.advance() {
+                implicit_chat.push(ch);
             }
         }
 

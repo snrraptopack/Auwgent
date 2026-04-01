@@ -4,25 +4,19 @@ use ir_runtime::runtime::drivers::gemini::GeminiDriver;
 use serde_json::json;
 use std::{env, fs, sync::Arc};
 
-/**
- * Main entry point for the IR Runtime verification harness.
- */
+/// Optional legacy verification harness.
+///
+/// Run only when needed:
+/// cargo run --example runtime_harness
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // ======================================================================================
-    // 1. Load and Parse IR
-    // ======================================================================================
     let content = fs::read_to_string("../manual-testing/out/main.agent.json")?;
     let agent: AgentIR = serde_json::from_str(&content)?;
     println!(" Successfully parsed Agent: {}", agent.name);
 
-    // ======================================================================================
-    // 2. Setup AuwgentEngine
-    // ======================================================================================
     println!("\nInitializing AuwgentEngine...");
     let engine = AuwgentEngine::new(agent);
 
-    // Register tools
     engine.register_tool(
         "hello",
         Arc::new(|args| {
@@ -33,22 +27,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     );
 
-    // Register onIntent callback for real-time visibility
     engine.on_intent(Arc::new(|name, value, _agent| {
         Box::pin(async move {
-            println!("\n  [onIntent] {} → {}", name, value);
-            None // proceed normally — auto-execute
+            println!("\n  [onIntent] {} -> {}", name, value);
+            None
         })
     }));
 
-    // Check for real LLM integration
     if let Ok(key) = env::var("GEMINI_API_KEY") {
         println!("*** LIVE MODE ENABLED (Gemini) ***");
         let driver = GeminiDriver::new(key);
         engine.register_driver("gemini", std::sync::Arc::new(driver));
 
         println!("\nStarting Live Agentic Run...");
-        // Ask a question that should trigger the "hello" tool
         match engine
             .run(
                 Some(json!("Please call the hello tool with id 'live_test_001'")),
@@ -69,7 +60,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             engine_prompt
         );
 
-        // Simulate LLM Output with a tool_call intent
         println!("\nSimulating LLM Output (Tool Call Intent)...");
         engine.write_llm_chunk("```yaml\n");
         engine.write_llm_chunk("tool_call:\n  type: hello\n  args:\n    id: \"123\"\n");
@@ -78,7 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let _ = engine.process_intents().await?;
 
-        // Simulate Workflow
         println!("\nSimulating LLM Output (Workflow Call Intent)...");
         engine.write_llm_chunk("```yaml\n");
         engine.write_llm_chunk(
@@ -90,9 +79,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine.process_intents().await?;
     }
 
-    // ======================================================================================
-    // 3. Final Session State
-    // ======================================================================================
     println!("\nFinal Session Turns:");
     for (i, turn) in engine.session().turns.iter().enumerate() {
         println!(
