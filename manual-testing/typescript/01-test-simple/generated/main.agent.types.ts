@@ -10,19 +10,6 @@ type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as MainAgentIR;
-export type Address = {
-    street: string;
-    country: string;
-    zip: string;
-    city: string;
-}
-
-export type ContactInfo = {
-    email: string;
-    address: Address;
-    phone: string;
-}
-
 export type Feature = {
     config: { limit: number; unit: string; overage_rate: number };
     label: string;
@@ -30,29 +17,42 @@ export type Feature = {
     id: string;
 }
 
-export type Organization = {
-    name: string;
-    contact: ContactInfo;
-    subscription: Subscription;
-    member_count: number;
-    id: string;
-    tags: string[];
+export type Address = {
+    street: string;
+    zip: string;
+    country: string;
+    city: string;
 }
 
 export type PricingTier = {
     annual_cost: number;
     max_seats: number;
-    monthly_cost: number;
     name: string;
+    monthly_cost: number;
 }
 
 export type Subscription = {
-    features: Feature[];
-    id: string;
-    tier: PricingTier;
-    renews_at: string;
     started_at: string;
     is_active: boolean;
+    features: Feature[];
+    renews_at: string;
+    id: string;
+    tier: PricingTier;
+}
+
+export type Organization = {
+    contact: ContactInfo;
+    subscription: Subscription;
+    member_count: number;
+    tags: string[];
+    name: string;
+    id: string;
+}
+
+export type ContactInfo = {
+    email: string;
+    phone: string;
+    address: Address;
 }
 export type MainAgentInput = {
 

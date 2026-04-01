@@ -11,44 +11,44 @@ except ImportError:
     from typing_extensions import NotRequired
 
 try:
-    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
+    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError
 except ImportError:
     # For local testing if auwgent is not installed via pip
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError
+    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError
 
 class Order(TypedDict, total=False):
-    product_id: str
-    quantity: float
-    total: float
-    status: str
     user_id: str
+    product_id: str
+    total: float
     id: str
-
-class QueryResult(TypedDict, total=False):
-    message: str
-    success: bool
-    data: str
-
-class AnalysisReport(TypedDict, total=False):
-    insights: List[str]
-    revenue: float
-    total_users: float
-    total_orders: float
-    total_products: float
-
-class Product(TypedDict, total=False):
-    id: str
-    name: str
-    price: float
-    stock: float
+    quantity: float
+    status: str
 
 class User(TypedDict, total=False):
-    email: str
-    name: str
     created_at: str
     id: str
+    name: str
+    email: str
+
+class QueryResult(TypedDict, total=False):
+    success: bool
+    message: str
+    data: str
+
+class Product(TypedDict, total=False):
+    stock: float
+    name: str
+    price: float
+    id: str
+
+class AnalysisReport(TypedDict, total=False):
+    total_orders: float
+    insights: List[str]
+    revenue: float
+    total_products: float
+    total_users: float
 class MainInput(TypedDict, total=False):
     pass
 
@@ -412,7 +412,7 @@ MainHelperResultIntentValue = Union[MainDataAnalyzerHelperResult, MainReportGene
 MainIntentName = Literal["tool_call", "tool_result", "tool_error", "tool_skipped", "response_text", "response_schema", "error", "SpeakLoud", "workflow_call", "workflow_result", "helper_call", "helper_result"]
 
 MainIntentHandler = Callable[[MainIntentName, MainIntentValue, str], Awaitable[Optional[SessionState]]]
-MainPartialIntentHandler = Callable[[MainIntentName, MainIntentValue, str], None]
+MainPartialIntentHandler = Callable[[MainIntentName, PartialIntentValue, str], None]
 
 class MainBaseIntentHandler:
     def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[Optional[SessionState], Awaitable[Optional[SessionState]]]:
@@ -441,39 +441,39 @@ class MainBaseIntentHandler:
         pass
 
 class MainBasePartialIntentHandler:
-    def tool_call(self, intent: MainToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def tool_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def tool_result(self, intent: MainToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def tool_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def tool_error(self, intent: MainToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def tool_error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def tool_skipped(self, intent: MainToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def tool_skipped(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def response_text(self, intent: MainResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def response_text(self, intent: PartialTextIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def response_schema(self, intent: MainResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def response_schema(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def error(self, intent: MainErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def speakloud(self, intent: MainSpeakLoudCustomIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def speakloud(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def workflow_call(self, intent: Union[Mainget_user_ordersWorkflowCall, Maincalculate_revenueWorkflowCall, Mainprocess_bulk_orderWorkflowCall], agent_name: str) -> Union[None, Awaitable[None]]:
+    def workflow_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def workflow_result(self, intent: Union[Mainget_user_ordersWorkflowResult, Maincalculate_revenueWorkflowResult, Mainprocess_bulk_orderWorkflowResult], agent_name: str) -> Union[None, Awaitable[None]]:
+    def workflow_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def helper_call(self, intent: Union[MainDataAnalyzerHelperCall, MainReportGeneratorHelperCall], agent_name: str) -> Union[None, Awaitable[None]]:
+    def helper_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
-    def helper_result(self, intent: Union[MainDataAnalyzerHelperResult, MainReportGeneratorHelperResult], agent_name: str) -> Union[None, Awaitable[None]]:
+    def helper_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
         pass
 
 class MainApiKeys(TypedDict, total=False):
     my_groq_apiApiKey: str  # API key for custom provider 'my-groq-api'
 
 class MainAgent(TypedAuwgent[Any, MainContext, MainOutput, MainTools]):
-    def on_intent(self, handler: MainBaseIntentHandler) -> None:
+    def on_intent(self, handler: Union[MainBaseIntentHandler, type[MainBaseIntentHandler]]) -> None:
         return super().on_intent(handler)
 
-    def on_intent_partial(self, handler: MainBasePartialIntentHandler) -> None:
+    def on_intent_partial(self, handler: Union[MainBasePartialIntentHandler, type[MainBasePartialIntentHandler]]) -> None:
         return super().on_intent_partial(handler)
 
 MainMiddleware = Middleware

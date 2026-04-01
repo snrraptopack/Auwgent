@@ -10,41 +10,41 @@ type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
   helpers: ({ name: "DataAnalyzer"; input: { analysis_request: string }; output: unknown } | { name: "ReportGenerator"; input: { report_type: string; parameters: string }; output: { report_title: string; summary: string; sections: string[]; generated_at: string } })[];
 };
 const agentIR = _importedIR as unknown as MainIR;
+export type Product = {
+    price: number;
+    name: string;
+    stock: number;
+    id: string;
+}
+
+export type AnalysisReport = {
+    revenue: number;
+    insights: string[];
+    total_users: number;
+    total_products: number;
+    total_orders: number;
+}
+
+export type User = {
+    created_at: string;
+    email: string;
+    name: string;
+    id: string;
+}
+
 export type QueryResult = {
     success: boolean;
     data: string;
     message: string;
 }
 
-export type Product = {
-    stock: number;
-    name: string;
-    id: string;
-    price: number;
-}
-
-export type AnalysisReport = {
-    total_products: number;
-    total_users: number;
-    total_orders: number;
-    revenue: number;
-    insights: string[];
-}
-
-export type User = {
-    id: string;
-    name: string;
-    created_at: string;
-    email: string;
-}
-
 export type Order = {
-    total: number;
     status: "pending" | "completed" | "cancelled";
     user_id: string;
     id: string;
-    product_id: string;
     quantity: number;
+    product_id: string;
+    total: number;
 }
 export type MainInput = {
 

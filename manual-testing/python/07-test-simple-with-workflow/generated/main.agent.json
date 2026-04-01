@@ -1329,17 +1329,27 @@
     "Order": {
       "isOutput": false,
       "properties": {
+        "user_id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "product_id": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "quantity": {
+        "total": {
           "type": "number",
           "optional": false,
           "description": null
         },
-        "total": {
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "quantity": {
           "type": "number",
           "optional": false,
           "description": null
@@ -1355,13 +1365,28 @@
           },
           "optional": false,
           "description": null
-        },
-        "user_id": {
+        }
+      }
+    },
+    "User": {
+      "isOutput": false,
+      "properties": {
+        "created_at": {
           "type": "string",
           "optional": false,
           "description": null
         },
         "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "email": {
           "type": "string",
           "optional": false,
           "description": null
@@ -1371,13 +1396,13 @@
     "QueryResult": {
       "isOutput": false,
       "properties": {
-        "message": {
-          "type": "string",
+        "success": {
+          "type": "boolean",
           "optional": false,
           "description": null
         },
-        "success": {
-          "type": "boolean",
+        "message": {
+          "type": "string",
           "optional": false,
           "description": null
         },
@@ -1388,44 +1413,11 @@
         }
       }
     },
-    "AnalysisReport": {
-      "isOutput": false,
-      "properties": {
-        "insights": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false,
-          "description": null
-        },
-        "revenue": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_users": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_orders": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "total_products": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
     "Product": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
+        "stock": {
+          "type": "number",
           "optional": false,
           "description": null
         },
@@ -1439,33 +1431,41 @@
           "optional": false,
           "description": null
         },
-        "stock": {
-          "type": "number",
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         }
       }
     },
-    "User": {
+    "AnalysisReport": {
       "isOutput": false,
       "properties": {
-        "email": {
-          "type": "string",
+        "total_orders": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "name": {
-          "type": "string",
+        "insights": {
+          "type": {
+            "type": "array",
+            "items": "string"
+          },
           "optional": false,
           "description": null
         },
-        "created_at": {
-          "type": "string",
+        "revenue": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
+        "total_products": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "total_users": {
+          "type": "number",
           "optional": false,
           "description": null
         }
@@ -1473,12 +1473,12 @@
     }
   },
   "helperToolGrants": {
+    "DataAnalyzer": "all",
     "ReportGenerator": [
       "db_query_users",
       "db_query_products",
       "db_query_orders"
-    ],
-    "DataAnalyzer": "all"
+    ]
   },
   "helperHandoff": {
     "DataAnalyzer": "thenContinue",

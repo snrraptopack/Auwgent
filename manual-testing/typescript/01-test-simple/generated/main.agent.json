@@ -90,54 +90,6 @@
   "workflows": [],
   "helpers": [],
   "types": {
-    "Address": {
-      "isOutput": false,
-      "properties": {
-        "street": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "country": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "zip": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "city": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "ContactInfo": {
-      "isOutput": false,
-      "properties": {
-        "email": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
-          "optional": false,
-          "description": null
-        },
-        "phone": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
     "Feature": {
       "isOutput": false,
       "properties": {
@@ -179,14 +131,103 @@
         }
       }
     },
-    "Organization": {
+    "Address": {
       "isOutput": false,
       "properties": {
+        "street": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "zip": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "country": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "city": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "PricingTier": {
+      "isOutput": false,
+      "properties": {
+        "annual_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "max_seats": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
         "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
+        "monthly_cost": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Subscription": {
+      "isOutput": false,
+      "properties": {
+        "started_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "is_active": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        },
+        "features": {
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "typeRef",
+              "name": "Feature"
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "renews_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "tier": {
+          "type": {
+            "type": "typeRef",
+            "name": "PricingTier"
+          },
+          "optional": false,
+          "description": null
+        }
+      }
+    },
+    "Organization": {
+      "isOutput": false,
+      "properties": {
         "contact": {
           "type": {
             "type": "typeRef",
@@ -208,11 +249,6 @@
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "tags": {
           "type": {
             "type": "array",
@@ -220,45 +256,9 @@
           },
           "optional": false,
           "description": null
-        }
-      }
-    },
-    "PricingTier": {
-      "isOutput": false,
-      "properties": {
-        "annual_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "max_seats": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "monthly_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
         },
         "name": {
           "type": "string",
-          "optional": false,
-          "description": null
-        }
-      }
-    },
-    "Subscription": {
-      "isOutput": false,
-      "properties": {
-        "features": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "typeRef",
-              "name": "Feature"
-            }
-          },
           "optional": false,
           "description": null
         },
@@ -266,27 +266,27 @@
           "type": "string",
           "optional": false,
           "description": null
+        }
+      }
+    },
+    "ContactInfo": {
+      "isOutput": false,
+      "properties": {
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
         },
-        "tier": {
+        "phone": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "address": {
           "type": {
             "type": "typeRef",
-            "name": "PricingTier"
+            "name": "Address"
           },
-          "optional": false,
-          "description": null
-        },
-        "renews_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "started_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "is_active": {
-          "type": "boolean",
           "optional": false,
           "description": null
         }

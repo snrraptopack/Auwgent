@@ -287,7 +287,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         response_text, tool_call, workflow_result.
         Method signature must be: (value, agent_name)
         """
-        if callable(handler):
+        if isinstance(handler, type):
+            handler = handler()
+        elif callable(handler):
             raise TypeError("on_intent expects a class/object handler, not a function callback")
         self._stored_intent_handler = handler
 
@@ -297,7 +299,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
         Method signature must be: (value, agent_name)
         """
-        if callable(handler):
+        if isinstance(handler, type):
+            handler = handler()
+        elif callable(handler):
             raise TypeError("on_intent_partial expects a class/object handler, not a function callback")
         self._stored_partial_handler = handler
 

@@ -32,11 +32,14 @@ agent = auwgent(config)
 
 class PartialHander(AuwgentBasePartialIntentHandler):
     def response_text(self, intent, agent_name: str):
-        print(intent.get('text'))
+        print(intent.get('delta'))
+
+    def response_schema(self,intent,agent_name):
 
 
 
-agent.on_intent_partial(PartialHander())
+
+agent.on_intent_partial(PartialHander)
 
 print(agent.generate_prompt())
 

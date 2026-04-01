@@ -14,6 +14,12 @@ const config: AuwgentConfig = {
 }
 
 const agent = auwgent(config)
+agent.onIntentPartial((name, value, age) => {
+  if (name == "response_text") {
+    value
+  }
+
+})
 
 agent.onIntent((name, value, agentname) => {
   console.log(JSON.stringify(value, null, 2))

@@ -32,12 +32,12 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         "    from typing_extensions import NotRequired",
         "",
         "try:",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError",
         "",
     ]
     .join("\n");
@@ -578,7 +578,7 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         "{agent_name}IntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], Awaitable[Optional[SessionState]]]"
     ));
     blocks.push(format!(
-        "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], None]"
+        "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, PartialIntentValue, str], None]"
     ));
 
     blocks.push(String::new());
@@ -620,36 +620,36 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BasePartialIntentHandler:"));
     if has_declared_tools {
-        blocks.push(format!("    def tool_call(self, intent: {agent_name}ToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("    def tool_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_result(self, intent: {agent_name}ToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("    def tool_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_error(self, intent: {agent_name}ToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("    def tool_error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}ToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("    def tool_skipped(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
     }
-    blocks.push(format!("    def response_text(self, intent: {agent_name}ResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push("    def response_text(self, intent: PartialTextIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def response_schema(self, intent: {agent_name}ResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push("    def response_schema(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def error(self, intent: {agent_name}ErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push("    def error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
     blocks.push("        pass".to_string());
-    for (custom_name, custom_type) in &custom_intents {
+    for (custom_name, _custom_type) in &custom_intents {
         let method_name = sanitize_python_identifier(custom_name);
-        blocks.push(format!("    def {method_name}(self, intent: {custom_type}, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def {method_name}(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
     if !workflow_call_types.is_empty() {
-        blocks.push(format!("    def workflow_call(self, intent: Union[{}], agent_name: str) -> Union[None, Awaitable[None]]:", workflow_call_types.join(", ")));
+        blocks.push("    def workflow_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def workflow_result(self, intent: Union[{}], agent_name: str) -> Union[None, Awaitable[None]]:", workflow_result_types.join(", ")));
+        blocks.push("    def workflow_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
     }
     if !helper_call_types.is_empty() {
-        blocks.push(format!("    def helper_call(self, intent: Union[{}], agent_name: str) -> Union[None, Awaitable[None]]:", helper_call_types.join(", ")));
+        blocks.push("    def helper_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def helper_result(self, intent: Union[{}], agent_name: str) -> Union[None, Awaitable[None]]:", helper_result_types.join(", ")));
+        blocks.push("    def helper_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
         blocks.push("        pass".to_string());
     }
 
@@ -779,10 +779,10 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
 
     [
         format!("class {agent_name}Agent(TypedAuwgent[Any, {agent_name}Context, {agent_name}Output, {agent_name}Tools]):"),
-        format!("    def on_intent(self, handler: {agent_name}BaseIntentHandler) -> None:"),
+        format!("    def on_intent(self, handler: Union[{agent_name}BaseIntentHandler, type[{agent_name}BaseIntentHandler]]) -> None:"),
         "        return super().on_intent(handler)".to_string(),
         String::new(),
-        format!("    def on_intent_partial(self, handler: {agent_name}BasePartialIntentHandler) -> None:"),
+        format!("    def on_intent_partial(self, handler: Union[{agent_name}BasePartialIntentHandler, type[{agent_name}BasePartialIntentHandler]]) -> None:"),
         "        return super().on_intent_partial(handler)".to_string(),
         String::new(),
         format!("{agent_name}Middleware = Middleware"),
@@ -993,7 +993,7 @@ mod tests {
         assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
         assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
         assert!(output.contains("class ManagerBaseIntentHandler:"));
-        assert!(output.contains("def on_intent(self, handler: ManagerBaseIntentHandler) -> None:"));
+        assert!(output.contains("def on_intent(self, handler: Union[ManagerBaseIntentHandler, type[ManagerBaseIntentHandler]]) -> None:"));
         assert!(output.contains("class ManagerBasePartialIntentHandler:"));
     }
 }
