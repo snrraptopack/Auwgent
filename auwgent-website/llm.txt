@@ -1,0 +1,2487 @@
+===== FILE: .\src\content\docs\introduction.mdx =====
+---
+title: Introduction
+description: Auwgent is a compiler-first framework for building AI agents that introduces a clean architectural boundary between AI logic and application logic.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## What is Auwgent?
+
+Auwgent is a compiler-first framework for building AI agents. It introduces a clean architectural boundary between what an AI agent can do and how your application does it — two concerns that, in most agent frameworks today, are collapsed into one.
+
+---
+
+## The problem with how agents are built today
+
+Most agent frameworks treat agentic logic as something that lives inside your application. Your prompts, your tool definitions, your workflows — they sit alongside your business logic, written in the same language, running in the same process, coupled to the same runtime. The result is that your choice of runtime stops being an engineering decision. It becomes a constraint the framework imposes on you.
+
+This matters more than it seems. If your application is best served by a performant systems language, a JVM-based stack, or a lightweight edge runtime, that decision gets overridden the moment you adopt a framework that only runs in one environment. The AI concern has leaked into an infrastructure decision where it was never supposed to be.
+
+The coupling wasn't a deliberate design choice. It was an architectural accident — and it has quietly shaped the entire AI agent development ecosystem around it.
+
+---
+
+## Auwgent's answer: a defined boundary
+
+Auwgent's core idea is that the AI's world and the application's world should have a contract between them, not a merger.
+
+In Auwgent, you define your agent using a DSL. You declare a prompt, the tools the model has access to, and the workflows that govern how those tools are used. This definition is compiled and presented to the model — it tells the model exactly what it can do. That boundary is fixed. The model sits on the other side of a network boundary, and the compiled definition is what it sees.
+
+On the application side, a tool declaration is not a function definition. When you declare that your agent has a `search` tool, you are telling the model that `search` exists and what its contract looks like. How `search` is implemented — what language it runs in, what it calls, what infrastructure it touches — is pure software development. Auwgent provides the binding point. You own everything behind it.
+
+This means your prompts and helper tools never interfere with your business logic. Your business logic never bleeds into your model context. And your choice of runtime stays yours.
+
+
+===== FILE: .\src\content\docs\guides\getting-started.mdx =====
+---
+title: Getting Started
+description: This page walks you through installing Auwgent, writing your first agent, and wiring it into your application.
+slug: guides/getting-started
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+<Aside type="tip" title="VS Code Extension (Alpha)">
+  Auwgent is currently in Alpha, so we provide the VS Code extension as a manual download.
+  It provides syntax highlighting and essential language support for your `.agent` files.
+
+  [**Download VSIX from GitHub**](https://github.com/snrraptopack/vscode-dist)
+</Aside>
+
+This page walks you through installing Auwgent, writing your first agent, and wiring it into your application. By the end you will have a running agent that accepts text input and streams structured output into your codebase.
+
+---
+
+## Prerequisites
+
+For **TypeScript**, Auwgent requires **Node.js 18 or later**.
+
+For **Python**, Auwgent requires **Python 3.8 or later**. Install the SDK with `pip install auwgent-sdk`.
+
+No other runtime dependencies are needed.
+
+---
+
+## Installation
+
+Auwgent ships as two separate packages — a CLI for compiling your agent definitions, and an SDK that your application imports at runtime.
+
+Install the CLI globally:
+
+```bash
+npm install -g @snrraptopack/auwgent-cli
+```
+
+Install the SDK in your project:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```bash
+    npm install @snrraptopack/auwgent-sdk
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```bash
+    pip install auwgent-sdk
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Project configuration
+
+In the root of your project, create an `auwgent.yml` file. This tells the compiler where your agent definitions live, where to write the generated output, and what language to compile to.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```yaml
+    source: "main.agent"
+    output: "generated"
+    targets:
+      - ts
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```yaml
+    source: "main.agent"
+    output: "generated"
+    targets:
+      - py
+    ```
+  </TabItem>
+</Tabs>
+
+**`source`** points to either a single `.agent` file or a folder. If you point to a folder, the compiler will pick up every `.agent` file inside it.
+
+**`output`** is the folder the compiler writes generated files into.
+
+**`targets`** is the list of languages to compile to. Currently `ts` (TypeScript) and `py` (Python) are supported.
+
+If you prefer a folder-based source layout:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```yaml
+    source: "auwgent_src"
+    output: "generated"
+    targets:
+      - ts
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```yaml
+    source: "auwgent_src"
+    output: "generated"
+    targets:
+      - py
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Your first agent
+
+Create the file you pointed `source` to — in this case `main.agent` — and add the following:
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant. Be polite."
+    }
+}
+```
+
+This is the minimal agent definition. It declares an agent named `Main`, assigns it a model, and gives it a system prompt. With just this, the agent accepts plain text input and returns plain text output.
+
+---
+
+## Generate
+
+Run the compiler:
+
+```bash
+auwgent generate
+```
+
+During development you can run it in watch mode, which recompiles automatically whenever you save changes to your `.agent` files:
+
+```bash
+auwgent generate --watch
+```
+
+After a successful compile, your `generated` folder will contain two files:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```
+    generated/
+      main.agent.json         ← compiled IR, describes your agent's intents and structure
+      main.agent.types.ts     ← generated TypeScript types, ready to import
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```
+    generated/
+      main.agent.json         ← compiled IR, describes your agent's intents and structure
+      main_types.py           ← generated Python types, ready to import
+    ```
+  </TabItem>
+</Tabs>
+
+You will only ever work with the generated types file. The JSON file is an internal artifact — it is already embedded in the types file. You do not need to read or reference it directly.
+
+---
+
+## Wiring it up
+
+Open the generated types file and look at what was generated. You will find a named export at the bottom — `auwgent` — which is a factory function pre-wired to your agent definition. It is all you need to create and run your agent.
+
+`AuwgentConfig` is a type that describes exactly what your agent needs to run — including which API key fields are required for the model you declared. TypeScript users will get intellisense; Python users will get full type hints. You do not need to look them up.
+
+In your application:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    from generated.main_types import (auwgent,AuwgentBaseIntentHandler)
+
+    agent = auwgent({
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        }
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Handling output
+
+Auwgent uses an intent-driven output model. Instead of returning a single response value, the agent emits named intents as it runs. You register a handler to receive them.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agent) => {
+        if (name === "response_text") {
+            console.log(value.text)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def response_text(self, intent, agent_name):
+            print(intent.get('text'))
+
+        async def error(self, intent, agent_name: str):
+            print("Error",intent)
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+For this basic agent, two intents are emitted:
+
+| Intent | When it fires |
+|---|---|
+| `response_text` | The model has produced a text response |
+| `error` | Something went wrong during execution |
+
+As your agent grows — custom intents, tools, workflows — new intent names will appear in this handler. The generated types will keep them typed and discoverable.
+
+---
+
+## Run it
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    await agent.run("hello")
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    await agent.run("hello")
+    ```
+  </TabItem>
+</Tabs>
+
+That's it. Your agent sends the input to the model, the model responds, and `onIntent` fires with a `response_text` intent carrying the reply.
+
+---
+
+## Next steps
+
+The agent you built here is intentionally minimal. From here you can explore:
+
+- **Tools** — declare capabilities the model can invoke, and implement them as plain functions in your application
+- **Workflows** — define multi-step sequences with compile-time verified state transitions
+- **Custom intents** — shape exactly what structured output the model emits
+- **Middleware** — intercept and transform the agent's execution pipeline
+
+
+===== FILE: .\src\content\docs\core-concepts\agent.md =====
+---
+title: The Agent
+description: Learn how to declare and configure an agent in Auwgent.
+---
+
+The `agent` block is the top-level declaration in Auwgent. Everything your AI agent is permitted to do — the model it runs on, the prompts it uses, the tools it can call, the workflows it follows — is defined inside it.
+
+---
+
+## Declaring an agent
+
+```ts
+agent Main {
+    // configuration goes here
+}
+```
+
+The name after the `agent` keyword is the agent's identifier. It is used by the compiler to generate the corresponding TypeScript types and exported functions in the output file.
+
+---
+
+## Configuration
+
+Every agent must have at least one configuration block — the `default config`. This is the baseline the agent runs on unless told otherwise.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant. Be polite."
+    }
+}
+```
+
+Inside a config block, two fields are mandatory: `model` and `prompt`.
+
+---
+
+## The model field
+
+The `model` field tells the agent which language model to use and how to reach it. Auwgent currently supports three providers.
+
+### Inline definition
+
+The simplest way to define a model is directly inside the config block:
+
+```ts
+default config {
+    model: gemini("gemini-2.5-flash")
+    prompt: "You are a helpful assistant."
+}
+```
+
+### Standalone model block
+
+For cleaner organisation — or when you want to reuse the same model definition across multiple configs or agents — you can define the model as a standalone block outside the agent and reference it by name:
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+    }
+}
+```
+
+You can define as many standalone model blocks as you need in the same file.
+
+---
+
+## Providers
+
+### `gemini`
+
+Uses Google's Gemini API.
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+```
+
+The first argument is the full model name as recognised by the Gemini API.
+
+### `openai`
+
+Uses the OpenAI API.
+
+```ts
+model MyGPT {
+    provider: openai("gpt-4o")
+}
+```
+
+The first argument is the full model name as recognised by the OpenAI API.
+
+### `custom`
+
+For any OpenAI-compatible API endpoint — self-hosted models, third-party providers, or internal inference servers.
+
+```ts
+model MyCustomModel {
+    provider: custom("my-provider", "https://api.example.com/v1", "model-name")
+}
+```
+
+The three positional arguments are:
+
+| Argument | Description |
+|---|---|
+| `id` | A unique identifier for this provider. Used to generate the corresponding API key field in the config |
+| `base_url` | The base URL of the OpenAI-compatible endpoint |
+| `model` | The model name to pass in the request |
+
+---
+
+## Provider configuration options
+
+All three providers accept an optional second argument — an object for fine-grained model parameters. The fields must match the provider's HTTP API equivalents exactly.
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash", {
+        temperature: 0.7
+        top_k: 40
+        top_p: 0.95
+        max_output_tokens: 1024
+    })
+}
+```
+
+Any parameter the provider's API accepts can be set here.
+
+---
+
+## Named configs
+
+Beyond `default config`, an agent can have as many named configs as you need. A named config follows the same rules as `default config` — it requires a `model` and a `prompt`.
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant. Be polite."
+    }
+
+    config Strict {
+        model: MyGemini
+        prompt: "You are a strict validator. Return only structured data."
+    }
+
+    config Creative {
+        model: MyGemini
+        prompt: "You are a creative writer. Be expressive and imaginative."
+    }
+}
+```
+
+Named configs let a single agent behave differently depending on context — different instructions, different models, different parameters — without duplicating the agent itself. How you switch between configs at runtime is covered in the SDK reference.
+
+---
+
+## The prompt field
+
+The `prompt` field defines the system prompt passed to the model. Because prompts are a significant part of how you shape agent behaviour in Auwgent — with support for dynamic context, intent shaping, and more — they have a dedicated page.
+
+→ See [Prompts and Context](/core-concepts/prompt-context) for the full reference.
+
+---
+
+## Next steps
+
+With your agent and its configuration defined, the next thing to explore is giving your agent capabilities it can act on.
+
+→ See [Tools](/core-concepts/tools) to learn how to declare tools the model can call.
+
+
+===== FILE: .\src\content\docs\core-concepts\prompt-context.mdx =====
+---
+title: Prompts and Context
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Prompts and context work together in Auwgent. Context defines what runtime values your agent has access to. Prompts define what the model sees — and they can pull from that context to shape the model's behaviour dynamically.
+
+---
+
+## Context
+
+The `context` block is declared inside your agent. It defines a set of typed values that will be injected at runtime — things like the current user's name, their role, a session flag, or any other application-level data your prompts need to reference.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+Declaring a context block does not make those values visible to the model on its own. Context values only reach the model when a prompt explicitly references them. The context block is a contract — it tells the compiler what values will be available, and the compiler enforces that they are provided at runtime.
+
+Context values are accessed inside prompts using the built-in `ctx` reference:
+
+```ts
+ctx.name
+ctx.is_vip
+```
+
+---
+
+## Prompts
+
+A prompt is a top-level block that defines what gets sent to the model as a system prompt. Prompts are declared outside the agent and referenced by name inside a config block.
+
+Auwgent has two flavors of prompt.
+
+---
+
+### Non-param prompt
+
+A static prompt with no arguments. The content is fixed at compile time.
+
+```ts
+prompt WelcomePrompt {
+    "You are a helpful assistant. Be polite and concise."
+}
+```
+
+---
+
+### Param prompt
+
+A prompt that accepts typed arguments, enabling dynamic content. Arguments can come from `ctx` values, runtime data, or any value available at the call site.
+
+```ts
+prompt GreetingPrompt(name: string, is_vip: boolean) {
+    """
+    You are a helpful assistant.
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Prioritise their request and offer premium options.
+    {{else}}
+        Treat this customer with standard support guidelines.
+    {{/if}}
+
+    Always be polite and concise.
+    """
+}
+```
+
+The param prompt body supports several forms of dynamic content.
+
+#### Parameter interpolation
+
+Inject any argument directly into the prompt body:
+
+```ts
+{{name}}
+{{is_vip}}
+```
+
+#### Schema injection
+
+Pull the agent's declared input or output schema directly into the prompt. This is useful for telling the model exactly what structure to expect or produce:
+
+```ts
+{{@schema(input)}}
+{{@schema(output)}}
+```
+
+#### Conditionals
+
+Two equivalent syntaxes are available. Use whichever reads more naturally for your prompt:
+
+**Template style:**
+```ts
+{{#if is_vip == true}}
+    This is a VIP customer.
+{{else}}
+    This is a standard customer.
+{{/if}}
+```
+
+**JS style:**
+```ts
+if (is_vip) {
+    return "This is a VIP customer."
+} else {
+    return "This is a standard customer."
+}
+```
+
+Both compile to the same output.
+
+---
+
+## Example blocks
+
+Any prompt body can include `Example` blocks. These are compiled into few-shot examples that teach the model the expected conversational pattern for this prompt.
+
+```ts
+prompt SupportPrompt {
+    "You are a customer support agent."
+
+    Example {
+        user: "Hello, I need help with my account."
+        assistant: "I'd be happy to help. Could you please provide your account email?"
+    }
+
+    Example {
+        user: "What is today's date?"
+        assistant: "I don't have access to real-time information, so I'm unable to tell you today's date."
+    }
+}
+```
+
+You can include as many `Example` blocks as you need. They appear in the compiled prompt in the order they are written.
+
+---
+
+## Prompt composition
+
+Prompts are composable. Inside a config block, the `prompt` field accepts any combination of named prompts, inline strings, and inline blocks joined with the `+` operator.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: GreetingPrompt(ctx.name, ctx.is_vip) + WelcomePrompt + "Always respond in English." + {
+            "Additional instructions can go here."
+        }
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+The order is preserved. The model receives the composed prompt in exactly the left-to-right order it is written. In the example above, `GreetingPrompt` comes first, then `WelcomePrompt`, then the inline string, then the inline block.
+
+The four composable forms are:
+
+| Form | Example |
+|---|---|
+| Named param prompt | `GreetingPrompt(ctx.name, ctx.is_vip)` |
+| Named non-param prompt | `WelcomePrompt` |
+| Inline string | `"Always respond in English."` |
+| Inline block | `{ "Additional instructions." }` |
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+prompt BasePrompt {
+    "You are a helpful assistant."
+
+    Example {
+        user: "Hello"
+        assistant: "Hi there! How can I help you today?"
+    }
+}
+
+prompt PersonalisedPrompt(name: string, is_vip: boolean) {
+    """
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Offer premium support.
+    {{else}}
+        Apply standard support guidelines.
+    {{/if}}
+    """
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: BasePrompt + PersonalisedPrompt(ctx.name, ctx.is_vip)
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+}
+```
+
+---
+
+## Injecting context at runtime
+
+Once your agent is compiled, the generated output reflects exactly what your context block declared. Your language's type system will surface the expected shape — you just fill it in when initialising the agent. There is no separate wiring step.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        context: {
+            name: "Auwgent",
+            is_vip: true
+        }
+    }
+
+    const agent = auwgent(config)
+
+
+    agent.onIntent((name, value, agent) => {
+        if (name === "response_text") {
+            console.log(value.text)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+
+    await agent.run("hello")
+
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    from generated.main_types import auwgent
+
+    agent = auwgent({
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "context": {
+            "name": "Auwgent",
+            "is_vip": True
+        }
+    })
+
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def response_text(self, intent, agent_name):
+            print(intent.get('text'))
+
+        async def error(self, intent, agent_name: str):
+            print("Error",intent)
+
+    agent.on_intent(HandleIntent)
+
+    await agent.run("hello")
+    ```
+  </TabItem>
+</Tabs>
+
+The context values are validated against the types the compiler generated from your DSL definition. If your context block declares `is_vip` as a `boolean`, passing a string will be caught before the agent runs.
+
+---
+
+## Next steps
+
+With prompts and context covered, the next step is shaping what goes into your agent and what comes back out.
+
+→ See [Input and Output](/core-concepts/input-output) to learn how to define your agent's data contract.
+
+
+===== FILE: .\src\content\docs\core-concepts\input-output.mdx =====
+---
+title: Input and Output
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Input and output define the data contract of your agent — what it receives and what it is expected to produce. Auwgent uses these declarations to shape the model's behaviour at compile time, not as a runtime hint.
+
+---
+
+## Defaults
+
+When you do not declare input or output explicitly, Auwgent defaults both to `Text`.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+    }
+}
+```
+
+This is equivalent to:
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a helpful assistant."
+        input: Text
+        output: Text
+    }
+}
+```
+
+A `Text` output means the model returns a plain text response. At runtime this fires the `response_text` intent.
+
+---
+
+## Input
+
+Auwgent currently supports `Text` as the input type. You can omit the input declaration entirely — it will always default to `Text`.
+
+Support for structured input types is on the roadmap.
+
+---
+
+## Output
+
+Output is where the data contract becomes expressive. Declaring anything other than `Text` as your output signals to the model that it must produce a structured response matching the shape you defined.
+
+When structured output is declared, the runtime fires the `response_schema` intent instead of `response_text`, carrying the structured object the model produced.
+
+### Text output
+
+The default. The model returns plain text.
+
+```ts
+output: Text
+```
+
+### Inline object output
+
+Define the expected shape directly in the output declaration.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract the user's name and age from their message."
+        output: { name: string, age: number }
+    }
+}
+```
+
+The model is expected to return an object that matches this structure exactly.
+
+### Named type output
+
+For reusable shapes, or when you want to document individual fields, declare a standalone `type` block and reference it by name.
+
+```ts
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract the person's details from the message."
+        output: Person
+    }
+}
+```
+
+The `@desc` annotation is optional. When present it gives the model additional context about what a field represents, which can improve extraction accuracy for ambiguous field names.
+
+### Multiple output types
+
+The pipe operator lets you declare more than one possible output shape. The model chooses which shape to return based on what best fits the response.
+
+```ts
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+type Organisation {
+    company_name: string
+    industry: string
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "Extract whatever entity is described in the message."
+        output: Person | Organisation
+    }
+}
+```
+
+You are not constraining the model to a single structure — you are giving it a set of valid shapes and trusting it to pick the right one. This is useful when your agent handles varied input where the shape of the response is context-dependent.
+
+---
+
+## How output affects the runtime intent
+
+The output declaration determines which intent fires at runtime.
+
+| Output declaration | Intent fired |
+|---|---|
+| `Text` or omitted | `response_text` |
+| Any structured output | `response_schema` |
+
+This means your intent handler needs to account for what your agent is configured to produce.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agent) => {
+
+        if (name === "response_schema") {
+            console.log(value)
+        }
+
+        if (name === "error") {
+            console.error(value)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def response_schema(self, intent, agent_name):
+            print(intent)
+
+        async def error(self, intent, agent_name: str):
+            print("Error",intent)
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+type Organisation {
+    company_name: string
+    industry: string
+}
+
+prompt ExtractionPrompt {
+    "You are an entity extraction assistant. Extract structured information from the user's message."
+
+    Example {
+        user: "My name is Kwame and I am 28 years old."
+        assistant: "Extracted a Person entity."
+    }
+
+    Example {
+        user: "I work at AngloGold Ashanti, a mining company."
+        assistant: "Extracted an Organisation entity."
+    }
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: ExtractionPrompt
+        output: Person | Organisation
+    }
+}
+```
+
+---
+
+## Next steps
+
+With your agent's data contract defined, the next step is giving it capabilities it can act on.
+
+→ See [Tools](/core-concepts/tools) to learn how to declare tools the model can call.
+
+
+===== FILE: .\src\content\docs\core-concepts\tools.mdx =====
+---
+title: Tools
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Tools are capabilities you give your agent. You define the contract — the name, arguments, and return type — in the DSL. The actual logic lives in your application, written in whatever language you are targeting. The model sees what tools are available and calls them as it sees fit during a conversation.
+
+---
+
+## Declaring a tool
+
+Use the `tool` keyword to declare a single tool. Every tool must have a return type. A description is optional but strongly advisable — it tells the model what the tool does and when to use it.
+
+```ts
+tool get_weather(): string @desc "Gets the current weather for the user's location"
+```
+
+Tools can accept arguments:
+
+```ts
+tool get_weather(location: string): string @desc "Gets the current weather for a given location"
+```
+
+Argument types and return types can reference standalone `type` blocks defined elsewhere in your file:
+
+```ts
+type WeatherResult {
+    temperature: number @desc "temperature in celsius"
+    condition: string @desc "weather condition eg. sunny, cloudy, rainy"
+}
+
+tool get_weather(location: string): WeatherResult @desc "Gets the current weather for a given location"
+```
+
+---
+
+## The tools block
+
+When you have multiple tools, use the `tools` block to group them together.
+
+```ts
+tools {
+    get_weather(location: string): string @desc "Gets the current weather for a given location"
+    get_forecast(location: string, days: number): string @desc "Gets the weather forecast for the next N days"
+    get_humidity(location: string): number @desc "Gets the current humidity percentage"
+}
+```
+
+---
+
+## Teaching the model with examples
+
+The `@example()` annotation teaches the model how to call a tool correctly. It takes the tool's argument names as named parameters.
+
+```ts
+tools {
+    get_weather(location: string): string
+        @desc "Gets the current weather for a given location"
+        @example(location = "Accra")
+
+    get_forecast(location: string, days: number): string
+        @desc "Gets the weather forecast for the next N days"
+        @example(location = "Kumasi", days = 3)
+}
+```
+
+`@example()` is optional but providing it significantly improves how reliably the model calls your tools — especially for tools with non-obvious argument formats.
+
+Auwgent includes a maximum of **5 examples total across all tools** in the compiled agent context. If you annotate more than 5 tools with examples, the compiler selects the most relevant ones. This keeps the model context lean regardless of how many tools your agent has.
+
+---
+
+## Implementing tools at runtime
+
+Declaring a tool in the DSL defines the contract. The implementation lives entirely in your application — plain code with no framework-specific requirements. When the compiler generates the output for your target language, it produces typed bindings that your implementation must satisfy.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    Implement each tool as an async function. The arguments arrive as a typed object matching the signature you declared in the DSL.
+
+    ```ts
+    const get_weather = async (args: { location: string }) => {
+        const { location } = args
+        // your implementation here
+        return JSON.stringify({ temperature: 28, condition: "sunny" })
+    }
+    ```
+
+    Register your tools in the agent config alongside your API keys and context:
+
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        tools: {
+            get_weather
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    Implement each tool as an async function. Arguments are passed as keyword arguments matching the names you declared in the DSL.
+
+    ```python
+    class Tools(AuwgentTools):
+      async def get_weather(self, location):
+          # your implementation here
+          return json.dumps({"temperature": 28, "condition": "sunny"})
+    ```
+
+    Register your tools in the agent config alongside your API keys and context:
+
+    ```python
+    from generated.main_types import auwgent
+
+    agent = auwgent({
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "tools":Tools
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+The generated types will tell you exactly what each tool's function signature should look like. Your editor will surface any mismatches before you run anything.
+
+---
+
+## The tool execution lifecycle
+
+When the model decides to call a tool, Auwgent fires a sequence of intents through your `onIntent` handler. These give you full visibility into what the model is doing and the ability to intervene at any point.
+
+| Intent | When it fires |
+|---|---|
+| `tool_call` | The model has decided to call a tool. Fires before execution |
+| `tool_result` | The tool has executed and returned a result |
+| `tool_skipped` | The tool was skipped before execution |
+| `tool_error` | The tool encountered an error during execution |
+
+You do not need to do anything for the basic case — the engine executes your registered tools automatically and feeds the results back to the model. The intents are there when you need visibility or control.
+
+---
+
+## Skipping a tool call
+
+Returning `{ skip: true }` from your `onIntent` handler when a `tool_call` fires tells the engine not to execute that tool. The model will see a `tool_skipped` event in its next turn history and can decide how to proceed.
+
+This is useful when you want to guard against certain tool calls based on runtime conditions — without the model knowing the rule exists in your application.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "tool_call" && value.type === "delete_records") {
+            console.log("Skipping dangerous tool call")
+            return { skip: true }
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    Not available in the new api
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Overriding a tool result
+
+Returning `{ result: ... }` from your handler bypasses execution entirely and feeds a synthetic result directly back to the model. The tool implementation is never called.
+
+This is useful for caching, mocking during development, or transforming what the model sees without changing the tool implementation itself.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent(async (name, value) => {
+        if (name === "tool_call" && value.type === "get_weather") {
+            return { result: "Sunny, 28°C" }
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    not available in the new api
+
+    agent.on_intent(handle_intent)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+You now know how to declare tools, implement them, and control their execution lifecycle. To define exactly when and in what sequence the model uses those tools — and to build multi-step agent behaviour — move on to workflows.
+
+→ See [Workflows](/core-concepts/workflows) to learn how to structure complex agent logic.
+
+
+===== FILE: .\src\content\docs\core-concepts\workflows.mdx =====
+---
+title: Workflows
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Workflows give you deterministic control over what your agent does. Where a tool is a capability the model calls freely, a workflow is a predefined sequence the model triggers but cannot influence. Once a workflow is invoked, it runs exactly as written — no model inference, no deviation, no prompt injection can alter its path.
+
+---
+
+## The problem workflows solve
+
+When you hand an agent a set of tools, the model decides when and how to call them. For most tasks that flexibility is exactly what you want. But there are two scenarios where it becomes a liability.
+
+**Dependent operations.** Suppose getting the weather requires a location, and getting the location requires a separate tool call. Left to its own devices, the model makes two roundtrips — first to get the location, then to call the weather tool with the result. You can encode that dependency directly in a workflow: get the location, store it in a variable, pass it to the weather tool. One additional step, no extra roundtrips, no guessing.
+
+**Privileged operations.** Dangerous tools — ones that delete records, execute transactions, or modify critical state — should not sit in the model's context where prompt injection could trigger them. A workflow lets you keep those tools completely invisible to the model. The model calls the workflow by name. Inside the workflow, your checks run first. The privileged tool only executes if those checks pass, and the model never knew it existed.
+
+---
+
+## Declaring a workflow
+
+Workflows are declared inside the agent block. Every workflow requires a `description` field — this is what the model sees when deciding whether to call it.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    workflow check_value(value: number): string {
+        description: "Checks whether the given value is above the threshold"
+
+        let threshold = 10
+
+        if (value > threshold) {
+            return "above threshold"
+        }
+
+        return "below threshold"
+    }
+}
+```
+
+Workflows support `let` variable declarations, `if/else` conditionals, tool calls, `ctx` access, and `return` statements — the building blocks of any deterministic sequence.
+
+---
+
+## Scoped tools
+
+Tools declared inside a workflow are scoped to that workflow. They are completely invisible to the model outside of it. The model cannot call them directly, cannot reference them by name, and cannot be manipulated into triggering them through prompt injection. The only way they execute is through the workflow itself.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    tool get_location(): string
+        @desc "Gets the user's current location"
+
+    workflow get_weather(): string {
+        description: "Gets the weather for the user's current location"
+
+        tool fetch_weather(location: string): string
+
+        let location = get_location()
+        let weather = fetch_weather(location)
+
+        return weather
+    }
+}
+```
+
+Here `get_location` is a regular tool — the model can see and call it directly. `fetch_weather` is scoped inside the workflow — the model has no knowledge of it. The workflow coordinates the two in a guaranteed sequence.
+
+---
+
+## Context in workflows
+
+Workflows have full access to `ctx`, the same as prompts. This makes them well-suited for enforcing runtime conditions that should not be visible to the model.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a helpful assistant."
+    }
+
+    context {
+        is_admin: boolean
+    }
+
+    workflow delete_record(id: number): string {
+        description: "Deletes a record by ID"
+
+        tool delete_from_db(id: number): string
+
+
+        if (ctx.is_admin) {
+            let result = delete_from_db(id)
+            return "record deleted"
+        }
+
+        return "you do not have permission to perform this action"
+    }
+}
+```
+
+`delete_from_db` is never exposed to the model. Even if the model were somehow told the tool exists, it has no way to call it. The permission check runs inside the workflow and the model only ever sees the outcome.
+
+---
+
+## Teaching the model with examples
+
+Like tools, workflows support the `@example()` annotation to teach the model how and when to call them.
+
+```ts
+workflow get_weather(): string {
+    description: "Gets the weather for the user's current location"
+
+
+    tool fetch_weather(location: string): string
+
+    let location = get_location()
+    let weather = fetch_weather(location)
+
+    return weather
+}@example()
+```
+
+The same 5-example limit that applies to tools applies across tools and workflows combined. Annotate the ones where call-time accuracy matters most.
+
+---
+
+## Putting it together
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant. You can query and manage records."
+    }
+
+    context {
+        is_admin: boolean
+        user_id: string
+    }
+
+    tool get_user(id: string): string
+        @desc "Retrieves a user record by ID"
+        @example(id = "user_1")
+
+    workflow delete_user(id: string): string {
+        description: "Deletes a user record. Requires admin privileges."
+
+        tool remove_user(id: string): string
+
+        if (ctx.is_admin) {
+            let result = remove_user(id)
+            return "user deleted"
+        }
+
+        return "you do not have permission to delete users"
+    }
+}
+```
+
+The model can call `get_user` freely. It can call `delete_user` by name, but what happens inside is entirely under your control — `remove_user` never appears in the model's context, and the admin check runs unconditionally before any deletion occurs.
+
+---
+
+## The workflow execution lifecycle
+
+When the model calls a workflow, Auwgent fires two intents through your `onIntent` handler — one before execution and one after.
+
+| Intent | When it fires |
+|---|---|
+| `workflow_call` | The model has decided to call a workflow. Fires before execution |
+| `workflow_result` | The workflow has finished and returned a result |
+
+These give you visibility into when workflows are triggered and what they return, without any intervention required on your part.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "workflow_call") {
+            console.log("workflow triggered:", value.type)
+        }
+
+        if (name === "workflow_result") {
+            console.log("workflow result:", value)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def workflow_call(self, intent, agent_name: str):
+            print("workflow triggered:", intent.get("type"))
+
+        async def workflow_result(self, intent, agent_name: str):
+            print("workflow result:", intent)
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Implementing workflow tools at runtime
+
+Scoped tools declared inside a workflow still need implementations in your application, just like regular tools. They will appear in the generated types file alongside your regular tools. You implement and register them the same way.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig } from "./generated/main.agent.types"
+
+    const remove_user = async (args: { id: string }) => {
+        const { id } = args
+        // your implementation here
+        return `deleted user ${id}`
+    }
+
+    const get_user = async (args: { id: string }) => {
+        const { id } = args
+        // your implementation here
+        return `user ${id}`
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        context: {
+            is_admin: true,
+            user_id: "user_1"
+        },
+        tools: {
+            get_user,
+            remove_user
+        }
+    }
+
+    const agent = auwgent(config)
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    from generated.main_types import auwgent,AuwgentTools
+
+    class Tools(AuwgentTools):
+
+      async def remove_user(self,id):
+          # your implementation here
+          return f"deleted user {id}"
+
+      async def get_user(self,id):
+          # your implementation here
+          return f"user {id}"
+
+    agent = auwgent({
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "context": {
+            "is_admin": True,
+            "user_id": "user_1"
+        },
+        "tools":Tools
+    })
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+With workflows covered, the next concept to explore is helpers — reusable logic you can share across your agent definitions.
+
+→ See [Helpers](/core-concepts/helpers) to learn how to define and reuse shared logic.
+
+
+===== FILE: .\src\content\docs\core-concepts\helpers.mdx =====
+---
+title: Helpers
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+A helper is a full agent that another agent can call. From the outside it looks and behaves like a tool — the parent agent decides when to invoke it. On the inside it is a complete agent with its own model, prompts, tools, workflows, and context. This makes helpers the primary way to compose specialised intelligence into a larger system without overloading a single agent's context.
+
+---
+
+## Declaring a helper
+
+A helper is declared with the `helper` keyword at the top level of your file. It has everything a regular agent has — `default config`, named configs, tools, workflows, context — with two differences:
+
+- The `description` field is mandatory inside `default config`. This is what the parent agent sees when deciding whether to call the helper.
+- Input can be structured, not just `Text`. Since the parent agent calls a helper like a tool, it may need to pass structured data rather than a plain string.
+
+```ts
+helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+        prompt: {
+            """
+            You are a data analyst expert. Analyse records and provide
+            statistical insights, trends, and recommendations.
+            """
+        }
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+        @example()
+}
+```
+
+---
+
+## Using helpers in an agent
+
+To make helpers available to an agent, declare them inside a `helpers` block within the agent.
+
+```ts
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant."
+    }
+
+    helpers {
+        DataAnalyzer
+        ReportGenerator
+    }
+}
+```
+
+Each line inside `helpers` declares one helper and optionally configures how it inherits tools from the parent and how it delivers its response.
+
+---
+
+## Tool inheritance
+
+By default a helper only has access to its own declared tools. You can extend this by inheriting tools from the parent agent using the `with` clause.
+
+**No inheritance — default:**
+```ts
+helpers {
+    DataAnalyzer
+}
+```
+The helper uses only the tools it declared itself.
+
+**Inherit all parent tools:**
+```ts
+helpers {
+    DataAnalyzer with all tools
+}
+```
+The helper has access to every tool the parent agent has, in addition to its own.
+
+**Inherit specific parent tools:**
+```ts
+helpers {
+    DataAnalyzer with tools { db_query_users, db_query_products }
+}
+```
+The helper only inherits the listed tools from the parent. Everything else in the parent's tool set remains invisible to it.
+
+---
+
+## Handoff modes
+
+By default, when a helper finishes, its output is passed back to the parent agent. The parent then decides what to say to the user. This keeps the parent in full control of the conversation.
+
+The `handoff` clause changes this behaviour.
+
+**Default — return to parent:**
+```ts
+helpers {
+    DataAnalyzer
+}
+```
+Helper output goes to the parent. The parent responds to the user.
+
+**`handoff user` — respond and end:**
+```ts
+helpers {
+    DataAnalyzer handoff user
+}
+```
+The helper responds directly to the user and ends. The parent receives nothing. Use this when the helper's response is the final answer and the parent has nothing more to contribute.
+
+**`handoff user then continue` — respond and notify:**
+```ts
+helpers {
+    DataAnalyzer handoff user then continue
+}
+```
+The helper responds directly to the user. Once delivery is confirmed, the parent receives an alert that the helper has finished so it can resume whatever it was doing. Use this when the helper handles a self-contained part of the conversation but the parent still has work to continue.
+
+---
+
+## Combining tool inheritance and handoff
+
+The `with` clause and the `handoff` clause are independent. When both are present, `with` comes first.
+
+```ts
+helpers {
+    DataAnalyzer with all tools handoff user then continue
+    ReportGenerator with tools { db_query_users, db_query_products } handoff user
+}
+```
+
+The full syntax for each helper line is:
+
+```
+HelperName [with all tools | with tools { ... }] [handoff user | handoff user then continue]
+```
+
+All combinations are valid. The clauses you omit fall back to their defaults.
+
+---
+
+## A complete example
+
+```ts
+model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+type AnalysisReport {
+    summary: string @desc "high level summary of findings"
+    recommendations: string @desc "recommended actions based on the analysis"
+}
+
+helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+        prompt: {
+            """
+            You are a data analyst expert. Analyse records and provide
+            statistical insights, trends, and recommendations.
+            """
+        }
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+        @example()
+
+    workflow comprehensive_analysis(): string {
+        description: "Run a comprehensive analysis across all entities"
+
+        tool calculate_average(numbers: string): number
+            @desc "Calculate average from comma-separated numbers"
+
+        let low_stock = detect_low_stock()
+
+        if (low_stock != "") {
+            return "ALERT: Low stock detected"
+        }
+
+        return "Analysis complete. No critical issues found."
+    } @example()
+}
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: "You are a data assistant. Delegate analysis tasks to your helpers."
+    }
+
+    tool db_query_users(filter: string): string
+        @desc "Query users from the database"
+
+    tool db_query_products(filter: string): string
+        @desc "Query products from the database"
+
+    helpers {
+        DataAnalyzer with tools { db_query_users, db_query_products } handoff user then continue
+    }
+}
+```
+
+---
+
+## The helper lifecycle
+
+A helper is an agent. Its internal lifecycle is identical to that of a regular agent — the same intents fire, the same output rules apply. If a helper's output is `Text` it fires `response_text`. If it declares a structured output type it fires `response_schema`. Everything you already know about agent output applies inside a helper.
+
+At the parent level, two additional intents wrap the helper's execution:
+
+| Intent | When it fires |
+|---|---|
+| `helper_call` | The parent agent has decided to invoke a helper. Fires before execution |
+| `helper_result` | The helper has finished and returned its result to the parent |
+
+### Knowing who is speaking
+
+Because helpers are agents, multiple agents may be emitting intents during a single conversation. The third argument in your `onIntent` handler is the name of the agent or helper currently speaking. Use it to route intent handling correctly.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "helper_call") {
+            console.log(`helper invoked: ${agentName}`)
+        }
+
+        if (name === "helper_result") {
+            console.log(`helper finished: ${agentName}`, value)
+        }
+
+        if (name === "response_text") {
+            console.log(`${agentName} says:`, value.text)
+        }
+
+        if (name === "response_schema") {
+            console.log(`${agentName} returned structured output:`, value)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+   class HandleIntent(AuwgentBaseIntentHandler):
+        async def helper_call(self, intent, agent_name):
+            print(f"helper invoked: {agent_name}")
+
+        async def helper_result(self, intent, agent_name: str):
+            print(f"helper finished: {agent_name}", intent)
+
+        async def response_text(self, intent, agent_name):
+            print(f"{agent_name} says:", intent.get("text"))
+
+        async def response_schema(self, intent, agent_name):
+            print(f"{agent_name} returned structured output:", intent)
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+This becomes especially useful when you have multiple helpers — `agentName` tells you whether `response_text` is coming from the main agent, `DataAnalyzer`, `ReportGenerator`, or any other helper in the system.
+
+---
+
+## Next steps
+
+Helpers introduce the idea of agents that can respond directly to the user, outlast a single session, and resume where they left off. This opens the door to a more advanced pattern.
+
+→ See [Teleportation and Stack-Aware Resumption](#) to explore how helpers and handoff combine to enable persistent, context-aware multi-agent conversations.
+
+
+===== FILE: .\src\content\docs\core-concepts\organize-codebase.mdx =====
+---
+title: Organizing Your Codebase
+---
+
+As your agent definitions grow, keeping everything in a single file becomes hard to maintain. Auwgent supports `export` and `import` statements so you can split your definitions across multiple files and compose them cleanly.
+
+---
+
+## Exporting
+
+Any of the following top-level constructs can be exported:
+
+- `model`
+- `prompt`
+- `type`
+- `helper`
+
+To export, add the `export` keyword before the declaration.
+
+```ts
+export model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+export type Person {
+    name: string @desc "the user's full name"
+    age: number
+}
+
+export prompt BasePrompt {
+    "You are a helpful assistant."
+}
+```
+
+---
+
+## Importing
+
+To use an exported construct in another file, import it by name.
+
+```ts
+import { MyGemini } from "./models"
+import { Person } from "./types"
+import { BasePrompt } from "./prompts"
+```
+
+You can import multiple constructs from the same file in a single statement.
+
+```ts
+import { MyGemini, MyGroq } from "./models"
+import { Person, Organisation, AnalysisReport } from "./types"
+```
+
+---
+
+## A suggested project structure
+
+There is no enforced folder structure in Auwgent. A structure that works well as projects grow is:
+
+```
+auwgent_src/
+  models.agent       ← model definitions
+  types.agent        ← shared type definitions
+  prompts.agent      ← reusable prompts
+  helpers/
+    data_analyzer.agent
+    report_generator.agent
+  main.agent         ← agent definition, imports everything it needs
+```
+
+Each file contains only the constructs relevant to it. The agent file stays focused on the agent definition itself — configs, tools, workflows, and helper references — while shared building blocks live in their own files.
+
+---
+
+## Example
+
+**models.agent**
+```ts
+export model MyGemini {
+    provider: gemini("gemini-2.5-flash")
+}
+
+export model MyGroq {
+    provider: custom("my-groq-api", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile")
+}
+```
+
+**types.agent**
+```ts
+export type AnalysisReport {
+    summary: string @desc "high level summary of findings"
+    recommendations: string @desc "recommended actions based on the analysis"
+}
+```
+
+**prompts.agent**
+```ts
+export prompt BasePrompt {
+    "You are a helpful assistant. Be polite and concise."
+}
+
+export prompt PersonalisedPrompt(name: string, is_vip: boolean) {
+    """
+    You are speaking with {{name}}.
+
+    {{#if is_vip == true}}
+        This is a VIP customer. Offer premium support.
+    {{else}}
+        Apply standard support guidelines.
+    {{/if}}
+    """
+}
+```
+
+**helpers/data_analyzer.agent**
+```ts
+import { MyGroq } from "../models"
+import { AnalysisReport } from "../types"
+
+export helper DataAnalyzer {
+    description: "Specialized helper for deep data analysis and insights generation"
+
+    default config {
+        model: MyGroq
+        prompt: "You are a data analyst expert."
+    }
+
+    input: {
+        analysis_request: string @desc "What kind of analysis to perform"
+    }
+
+    output: AnalysisReport
+
+    tool detect_low_stock(): string
+        @desc "Find products with low stock levels"
+}
+```
+
+**main.agent**
+```ts
+import { MyGemini } from "./models"
+import { BasePrompt, PersonalisedPrompt } from "./prompts"
+import { DataAnalyzer } from "./helpers/data_analyzer"
+
+agent Main {
+    default config {
+        model: MyGemini
+        prompt: BasePrompt + PersonalisedPrompt(ctx.name, ctx.is_vip)
+    }
+
+    context {
+        name: string
+        is_vip: boolean
+    }
+
+    tool db_query_users(filter: string): string
+        @desc "Query users from the database"
+
+    helpers {
+        DataAnalyzer with tools { db_query_users } handoff user then continue
+    }
+}
+```
+
+---
+
+## What stays in the agent file
+
+Tools and workflows are always declared directly inside the agent or helper that uses them. They cannot be exported or imported. This keeps the agent's execution contract — what it can do and how it does it — co-located and easy to reason about.
+
+---
+
+## Next steps
+
+With your codebase organized, the next topics cover how agents manage conversation state across multiple turns and how you can intercept and transform the execution pipeline.
+
+→ See [Sessions](/core-concepts/sessions) to learn how Auwgent handles conversation history and state.
+
+===== FILE: .\src\content\docs\core-concepts\sessions.mdx =====
+---
+title: Sessions
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Every time you call `agent.run()` it returns a session. That session is the complete record of what happened during the run — the system prompt, the execution stack, and the full turn history of user and model messages.
+
+On its own that is useful for inspecting a single run. But it is not enough to build a real application on. Without a way to load previous sessions before a run and save them after, your agent starts from scratch every time. There is no memory, no continuity, and no opportunity to manage context as conversations grow.
+
+Auwgent's answer to this is middleware. Session persistence is not a built-in feature with a prescribed database or storage format — it is a pattern you implement through two middleware hooks that give you full control over how sessions are loaded and saved.
+
+---
+
+## The session object
+
+When `agent.run()` completes it returns a session object with three parts:
+
+| Field | Description |
+|---|---|
+| `system_prompt` | The compiled system prompt that was sent to the model |
+| `stack` | The execution stack — agents and helpers that were active during the run |
+| `turns` | The ordered history of user and model messages |
+
+During execution Auwgent maintains this in memory. It is a plain object — nothing proprietary, nothing tied to a specific runtime or storage system. You own it completely.
+
+---
+
+## Persisting sessions with middleware
+
+Two middleware hooks handle session persistence. They are the same across every language Auwgent supports — the pattern and the developer experience are identical regardless of your target runtime.
+
+### `onRunStart`
+
+Fires before the engine starts. Receives the current in-memory session and allows you to replace it with one loaded from your storage. Whatever you return becomes the session the engine runs with.
+
+### `onRunComplete`
+
+Fires after the agent finishes. Receives the final session state. This is where you persist it.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { Middleware } from "@snrraptopack/auwgent-sdk"
+
+    const persistenceMiddleware: Middleware = {
+        name: "session-persistence",
+
+        onRunStart: async (session, ctx) => {
+            const saved = await db.sessions.get(ctx.userId)
+            return saved || session
+        },
+
+        onRunComplete: async (finalSession, ctx) => {
+            await db.sessions.save(ctx.userId, finalSession)
+        }
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        middleware: [persistenceMiddleware]
+    }
+
+    const agent = auwgent(config)
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    from generated.main_types import (auwgent,AuwgentBaseIntentHandler)
+
+    class PersistenceMiddleware(AuwgentBaseIntentHandler):
+        name = "session-persistence"
+
+        async def onRunStart(self, session, ctx):
+            saved = await db.sessions.get(ctx.get("userId"))
+            return saved or session
+
+        async def onRunComplete(self, finalSession, ctx):
+            await db.sessions.save(ctx.get("userId"), finalSession)
+
+    agent = auwgent({
+        "apiKeys": {
+            "geminiApiKey": "YOUR_API_KEY"
+        },
+        "middleware": [PersistenceMiddleware]
+    })
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+</Tabs>
+
+With this in place every run automatically loads the previous session before the model sees anything and saves the updated session when it is done. Your application code stays focused on the interaction — the middleware handles the persistence entirely behind the scenes.
+
+---
+
+## Storage is yours to choose
+
+Auwgent does not prescribe a database or storage format. The session object is plain data. You can store it in a relational database, a document store, a key-value cache, the filesystem, or anywhere else that makes sense for your application. The middleware hooks give you the integration point — what happens inside them is entirely up to you.
+
+The only storage Auwgent manages itself is a temporary in-memory store it uses during execution. This is just an array that lives for the duration of the run and is discarded when it completes. It is not something you interact with directly.
+
+---
+
+## Next steps
+
+Sessions and persistence are just two of the things middleware can do. Middleware is the primary extension point in Auwgent — it lets you intercept and transform every stage of the agent's execution pipeline.
+
+→ See [Middleware](/core-concepts/middleware) to explore the full set of hooks and what you can build with them.
+
+
+===== FILE: .\src\content\docs\core-concepts\middleware.mdx =====
+---
+title: Middleware
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Middleware is the primary extension point in Auwgent. It lets you intercept every stage of the agent's execution pipeline — before and after runs, before and after individual model calls, and on every intent the model emits. Every language binding exposes the same hooks with the same behaviour.
+
+---
+
+## The agentic loop
+
+Before understanding middleware hooks it helps to understand what Auwgent actually does when you call `agent.run()`. It does not make a single LLM call and return. It runs a loop.
+
+```
+agent.run() → [LLM call] → tool result → [LLM call] → response
+```
+
+A single `agent.run()` can make multiple LLM calls — one for the initial response, and more each time the model calls a tool and needs to see the result before deciding what to do next. Understanding this loop is the key to understanding which hook to use for any given task.
+
+---
+
+## Hooks
+
+Auwgent provides five middleware hooks.
+
+| Hook | Fires | Receives |
+|---|---|---|
+| `onRunStart` | Once when `agent.run()` is called | Full session state |
+| `onRunComplete` | Once when `agent.run()` fully exits | Final session state |
+| `onLLMStart` | Every time the LLM is called within the loop | The prompt string for this call |
+| `onLLMEnd` | Only when the LLM produces a terminal response | The terminal response value |
+| `onIntent` | Every time the model emits an intent | Intent name, value, and context |
+
+---
+
+## Run hooks vs LLM hooks
+
+This is the most important distinction in the middleware system.
+
+**Run hooks** — `onRunStart` and `onRunComplete` — wrap the entire agentic loop. They fire once per `agent.run()` call regardless of how many LLM calls happen inside it.
+
+**LLM hooks** — `onLLMStart` and `onLLMEnd` — wrap individual model calls within the loop.
+
+In a run where the model calls one tool before responding:
+
+```
+onRunStart            ← fires once
+
+  onLLMStart          ← turn 1: model decides to call a tool
+  (tool executes)
+  onLLMStart          ← turn 2: model sees tool result and responds
+  onLLMEnd            ← terminal response emitted
+
+onRunComplete         ← fires once
+```
+
+`onLLMStart` fires twice — once before each model call. `onLLMEnd` fires once — only when the model produces something terminal. Intermediate calls that result in tool invocations do not trigger `onLLMEnd`.
+
+| | `onRunStart` | `onLLMStart` |
+|---|---|---|
+| Fires | Once per run | Once per LLM call |
+| Receives | Full session history | Current prompt string |
+| Can modify | Entire session | Prompt being sent |
+| Use for | Loading sessions, history management | RAG injection, prompt enrichment |
+
+| | `onRunComplete` | `onLLMEnd` |
+|---|---|---|
+| Fires | Once per run | Only on terminal responses |
+| Receives | Final session state | Terminal response value |
+| Use for | Saving sessions, run analytics | Response auditing, post-processing |
+
+---
+
+## The MiddlewareContext
+
+Every hook receives a `MiddlewareContext` as its last argument. This object carries everything you need to understand and influence the current execution.
+
+### `activeAgent`
+
+The name of the agent or helper currently executing. Starts as the root agent name and changes to a helper's name when that helper is running. Use this to scope logic in a global middleware without needing separate middleware instances.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const middleware: Middleware = {
+        name: "scoped-logic",
+        onIntent: (name, value, ctx) => {
+            if (ctx.activeAgent === "BillingHelper") {
+                // only runs when BillingHelper is active
+            }
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+   class Middlware(AuwgentMiddleware):
+        name= "scoped-logic"
+
+      async def onIntent(self, name: str, value, ctx):
+          if ctx['activeAgent'] == 'BillingHelper':
+             pass  # only runs when BillingHelper is active
+    ```
+  </TabItem>
+</Tabs>
+
+### `rootAgent`
+
+The name of the top-level agent that was originally called. Never changes during a run, even as helpers come and go. Use this when you need to know who owns the session regardless of delegations.
+
+### `systemPrompt`
+
+The fully evaluated system prompt for the `activeAgent` at this point in the run. Available in all hooks. Useful for auditing what was actually sent to the model, or confirming that prompt composition resolved as expected.
+
+### `rawBlock`
+
+Only available in `onIntent`. The raw, unparsed output the model produced for this intent — exactly as it came out of the LLM, before Auwgent parsed it into a structured object.
+
+Two main uses: strict auditing where you need to log the exact model output rather than the parsed interpretation, and custom parsing where you need to extract something the default parser does not expose.
+
+### `setContext(data)`
+
+Replaces the agent's runtime context with the object you pass. This is what your `ctx.name`, `ctx.is_vip`, and other context values are resolved from at prompt evaluation time.
+
+The most common use is inside `onRunStart` — load user-specific data from your application and inject it before the prompts evaluate.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const contextMiddleware: Middleware = {
+        name: "context-injection",
+        onRunStart: async (session, ctx) => {
+            const user = await db.users.get(userId)
+            ctx.setContext({ name: user.name, is_vip: user.plan === "premium" })
+            return session
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class ContextMiddleware(AuwgentMiddleware):
+        name = "context-injection"
+
+        async def onRunStart(self, session, ctx):
+            user = await db.users.get(user_id)
+            ctx["set_context"]({"name": user.name, "is_vip": user.plan == "premium"})
+            return session
+    ```
+  </TabItem>
+</Tabs>
+
+### `embed` and `embedBatch`
+
+Utilities for vector embedding available on the context. Covered in detail in the Embeddings chapter.
+
+---
+
+## The shared blackboard
+
+`MiddlewareContext` is an open object. You can attach any property to it and it will be available across every hook in that run — including hooks in other middleware plugins. It lives for exactly the duration of one `agent.run()` call.
+
+This makes it a natural place to share state between hooks without reaching for external variables.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const observabilityMiddleware: Middleware = {
+        name: "observability",
+        onRunStart: async (session, ctx) => {
+            ctx.traceId = crypto.randomUUID()
+            ctx.startTime = Date.now()
+            return session
+        },
+        onRunComplete: async (session, ctx) => {
+            logger.log({
+                traceId: ctx.traceId,
+                duration: Date.now() - ctx.startTime
+            })
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import time
+    import uuid
+
+    class ObservabilityMiddleware(AuwgentMiddleware):
+      name = "observability"
+
+      async def onRunStart(self, session, ctx):
+          ctx["trace_id"] = str(uuid.uuid4())
+          ctx["start_time"] = time.time()
+          return session
+
+      async def onRunComplete(self, finalSession, ctx):
+          duration = time.time() - ctx.get("start_time", 0)
+          logger.info({"trace_id": ctx.get("trace_id"), "duration": duration})
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Scoping middleware to a specific helper
+
+The `target` field on a middleware definition scopes it to a specific agent or helper. When set, every hook in that middleware only fires when `activeAgent` matches the target name. As a bonus, the type system narrows `ctx.activeAgent` to that specific name inside every hook — no guard checks needed.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const researcherMiddleware: Middleware<IR, never, any, any, "Researcher"> = {
+        name: "researcher-middleware",
+        target: "Researcher",
+        onLLMStart: (prompt, ctx) => {
+            // ctx.activeAgent is typed as "Researcher" here
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+   class ResearcherMiddleware(AuwgentMiddleware):
+        name = "researcher-middleware"
+        target = "Researcher"  # only fires when Researcher helper is active
+
+        async def onLLMStart(self, prompt: str, ctx):
+            # ctx["activeAgent"] is guaranteed to be "Researcher" here
+            pass
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Putting it together
+
+A complete middleware setup combining session persistence, context injection, and observability:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    import { auwgent, AuwgentConfig, Middleware } from "./generated/main.agent.types"
+
+    const sessionMiddleware: Middleware = {
+        name: "session-persistence",
+        onRunStart: async (session, ctx) => {
+            const user = await db.users.get(userId)
+            ctx.setContext({ name: user.name, is_vip: user.plan === "premium" })
+            const saved = await db.sessions.get(userId)
+            return saved || session
+        },
+        onRunComplete: async (session, ctx) => {
+            await db.sessions.save(userId, session)
+        }
+    }
+
+    const observabilityMiddleware: Middleware = {
+        name: "observability",
+        onRunStart: async (session, ctx) => {
+            ctx.traceId = crypto.randomUUID()
+            ctx.startTime = Date.now()
+            return session
+        },
+        onRunComplete: async (session, ctx) => {
+            logger.log({
+                traceId: ctx.traceId,
+                duration: Date.now() - ctx.startTime
+            })
+        }
+    }
+
+    const config: AuwgentConfig = {
+        apiKeys: {
+            geminiApiKey: "YOUR_API_KEY"
+        },
+        middleware: [sessionMiddleware, observabilityMiddleware]
+    }
+
+    const agent = auwgent(config)
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    import time, uuid
+    from auwgent import auwgent
+
+
+ class SessionMiddleware:
+    name = "session-persistence"
+
+    async def onRunStart(self, session, ctx):
+         user = await db.users.get(user_id)
+         ctx["set_context"]({"name": user.name, "is_vip": user.plan == "premium"})
+         saved = await db.sessions.get(user_id)
+         return saved or session
+
+    async def onRunComplete(self, finalSession, ctx):
+        await db.sessions.save(user_id, finalSession)
+
+ class ObservabilityMiddleware:
+     name = "observability"
+
+     async def onRunStart(self, session, ctx):
+         ctx["trace_id"] = str(uuid.uuid4())
+         ctx["start_time"] = time.time()
+         return session
+
+     async def onRunComplete(self, finalSession: dict, ctx: dict):
+         duration = time.time() - ctx.get("start_time", 0)
+         logger.info({"trace_id": ctx.get("trace_id"), "duration": duration})
+
+    agent = auwgent({
+      "apiKeys": {
+          "geminiApiKey": "YOUR_API_KEY"
+      },
+      "middleware": [SessionMiddleware, ObservabilityMiddleware]
+    })
+
+    await agent.run("Hello")
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Next steps
+
+With middleware covered you have the full picture of how Auwgent's execution pipeline works. The next topic builds directly on middleware context to explore how embeddings and vector search fit into the system.
+
+→ See [Embeddings](#) to learn how to use `embed` and `embedBatch` inside your middleware.
+
+
+===== FILE: .\src\content\docs\index.mdx =====
+---
+title: Auwgent
+description: The compiler-first framework for building production-grade AI agents.
+template: splash
+hero:
+  tagline: Write your agent once. The compiler handles the rest.
+  actions:
+    - text: Get Started
+      link: /guides/getting-started/
+      icon: rocket
+      variant: primary
+    - text: What is Auwgent?
+      link: /introduction/
+      icon: right-arrow
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why Auwgent?
+
+<CardGrid stagger>
+	<Card title="Declarative agent definitions" icon="document">
+		Define your agent's model, prompts, tools, and context in the Auwgent DSL. The compiler generates fully-typed, production-ready bindings for your target language — no boilerplate, no wiring by hand.
+	</Card>
+	<Card title="Prompt composition" icon="pencil">
+		Build prompts from reusable, typed blocks. Mix named prompts, inline strings, and conditional templates. Inject runtime context, schema definitions, and few-shot examples — all resolved at compile time.
+	</Card>
+	<Card title="Deterministic workflows" icon="setting">
+		Tools the model calls freely. Workflows the model triggers but cannot influence. Scope privileged tools inside a workflow and they become invisible to the model — safe from prompt injection by design.
+	</Card>
+	<Card title="Composable helpers" icon="puzzle">
+		Split intelligence across specialised agents. Wire them together with `helpers` — each with its own model, context, and tools. Control exactly what data each helper inherits and how it hands off back to the parent.
+	</Card>
+	<Card title="Full lifecycle middleware" icon="seti:pipeline">
+		Intercept any stage of the execution pipeline. Load and save sessions, inject RAG context, skip or override tool calls, stream partial responses, and handle errors — all through a single composable middleware system.
+	</Card>
+	<Card title="Stream-first by default" icon="seti:clock">
+		Auwgent is built around streaming from the ground up. Responses and structured outputs arrive as they are generated. Your handlers receive data as it flows — no waiting for the full response before acting.
+	</Card>
+</CardGrid>
