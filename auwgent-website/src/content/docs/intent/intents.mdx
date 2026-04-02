@@ -1,0 +1,49 @@
+---
+title: Intents
+description: The protocol layer that connects model behavior to application execution in Auwgent.
+---
+
+## What is an intent?
+
+An intent in Auwgent is the protocol event that defines how the runtime, the model, and your application communicate. Every meaningful step in execution is represented as a named intent with a structured payload. This includes model-originated actions such as response_text, response_schema, tool_call, workflow_call, and helper_call, and runtime-originated outcomes such as tool_result, workflow_result, helper_result, tool_skipped, tool_error, and error.
+In other words, intents are not just labels for output. They are the typed event contract of the system.
+
+The intent name is the dispatch key, and the payload shape is the semantic contract. Your application does not need to parse raw model output to decide behavior. It reacts to intent names and values through handlers such as onIntent and onIntentPartial. This creates a stable boundary between inference and application logic.
+
+Intents also act as a constraint mechanism. The model can only emit actions that are permitted by the compiled agent definition. If a tool is not declared, a valid tool_call for it is outside contract. If a tool is scoped inside a workflow, the model cannot directly call it as a top-level tool_call. The intent layer enforces declared capability boundaries.
+
+Custom intents extend this architecture from fixed system events into domain-specific behavior contracts. Instead of relying on free-form prompt formatting, you declare named custom intents and their fields, and the model learns to communicate that behavior through explicit structured events.
+
+At a deeper architectural level, intents are the membrane that separates model reasoning from software execution. They give you control, observability, and portability: control through interception and policy, observability through structured event streams, and portability through a runtime-agnostic contract that remains consistent across targets.
+
+---
+
+## Default intents
+
+### Model-originated intents
+
+- **response_text**
+- **response_schema**
+- **tool_call**
+- **workflow_call**
+- **helper_call**
+
+### Runtime-originated intents
+
+- **tool_result**
+- **workflow_result**
+- **helper_result**
+- **tool_skipped**
+- **tool_error**
+- **error**
+
+---
+
+## What to cover next
+
+1. Intent families and lifecycle: model-originated vs runtime-originated, and when each appears.
+2. Intent payload contracts: exact JSON shape per default intent.
+3. Streaming path: how **onIntentPartial** differs from **onIntent**, plus the partial envelope fields.
+4. Control semantics: where skip/override apply and where they do not.
+5. Custom intents: declaration, shape, and dispatch behavior.
+6. Handler patterns: practical routing patterns in TypeScript and Python.

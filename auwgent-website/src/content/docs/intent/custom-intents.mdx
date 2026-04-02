@@ -1,0 +1,179 @@
+---
+title: Custom Intents
+description: Define your own intents, consume them in both SDKs, and understand their payloads.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Custom intents are how you introduce your own intent names into the protocol.
+
+Think of them as domain-level events that you define yourself.
+
+Instead of forcing the model to express a behavior through free text, you declare a named contract and let the model emit that contract directly.
+
+---
+
+## DSL format
+
+You define custom intents as top-level `intent` declarations, then attach them to an agent (or helper) through `intent:` config.
+
+### 1) Define intent(s)
+
+```ts
+intent Planning {
+    description: "Emit a structured execution plan before taking action"
+    fields {
+        step: string
+        confidence: number
+        rationale: string
+    }
+}
+
+intent Dialogue {
+    description: "Emit the user-facing dialogue decision"
+    fields {
+        tone: string
+        summary: string
+    }
+}
+```
+
+### 2) Attach to agent
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a planning assistant"
+    }
+
+    intent: Planning + Dialogue
+}
+```
+
+You can also inline custom intents directly inside `intent:`:
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a planning assistant"
+    }
+
+    intent: {
+        Planning {
+            description: "Emit plan"
+            fields {
+                step: string
+            }
+        }
+    }
+}
+```
+
+---
+
+## How SDKs consume custom intents
+
+The runtime callback signature pattern stays the same:
+
+- TypeScript callback receives `(name, value, agentName)`.
+- Python class method receives `(value, agent_name)`, where method name maps to intent name.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "Planning") {
+            console.log("step:", value.step)
+            console.log("confidence:", value.confidence)
+        }
+
+        if (name === "Dialogue") {
+            console.log("tone:", value.tone)
+            console.log("summary:", value.summary)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def Planning(self, intent, agent_name):
+            print("step:", intent.get("step"))
+            print("confidence:", intent.get("confidence"))
+
+        async def Dialogue(self, intent, agent_name):
+            print("tone:", intent.get("tone"))
+            print("summary:", intent.get("summary"))
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+Python note: method lookup tries exact intent name first, then a sanitized lowercase form.
+
+---
+
+## Custom intent payload shape
+
+For custom intents, the intent name comes from the callback's `name` parameter.
+
+The payload is the declared fields object directly.
+
+So if the emitted intent is `Planning`, payload looks like:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // name === "Planning"
+    {
+      step: "Collect user constraints",
+      confidence: 0.92,
+      rationale: "Need constraints before proposing options"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # name == "Planning" (method: Planning)
+    {
+      "step": "Collect user constraints",
+      "confidence": 0.92,
+      "rationale": "Need constraints before proposing options"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+And for `Dialogue`:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // name === "Dialogue"
+    {
+      tone: "calm",
+      summary: "I will ask two questions before making a recommendation"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # name == "Dialogue" (method: Dialogue)
+    {
+      "tone": "calm",
+      "summary": "I will ask two questions before making a recommendation"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Partial payloads for custom intents
+
+If a custom intent is emitted during streaming, `onIntentPartial` / `on_intent_partial` receives the same partial envelope style used by other structured intents.
+
+At completion, `onIntent` / `on_intent` receives the final fields object.

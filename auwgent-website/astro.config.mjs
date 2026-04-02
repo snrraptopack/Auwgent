@@ -36,6 +36,14 @@ export default defineConfig({
 						{ label: "Middleware", slug: "core-concepts/middleware" }
 					],
 				},
+				{
+					label: 'Intent',
+					items: [
+						{ label: "Intents", slug: "intent/intents" },
+						{ label: "Intents Payloads", slug: "intent/intents-payloads" },
+						{ label: "Custom Intents", slug: "intent/custom-intents" },
+					],
+				},
 			],
 		}),
 	],

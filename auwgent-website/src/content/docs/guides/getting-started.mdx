@@ -199,11 +199,18 @@ In your application:
 
 ## Handling output
 
-Auwgent uses an intent-driven output model. Instead of returning a single response value, the agent emits named intents as it runs. You register a handler to receive them.
+Auwgent uses an intent architecture. Instead of returning a single response value, the agent emits named intents as it runs. You register handlers to receive them.
+
+For deeper details on intent contracts and payload shapes, see **Intents** (coming soon).
+
+Use these as two separate handlers:
+- `onIntent` (or `on_intent`) for final intents.
+- `onIntentPartial` (or `on_intent_partial`) for streaming partial updates.
 
 <Tabs>
   <TabItem label="TypeScript">
     ```ts
+  // 1) Final intents
     agent.onIntent((name, value, agent) => {
         if (name === "response_text") {
             console.log(value.text)
@@ -214,9 +221,20 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
         }
     })
     ```
+
+    ```ts
+    // 2) Streaming partial updates (independent of onIntent)
+    // You can register this with or without onIntent.
+    agent.onIntentPartial((name, value, agentName) => {
+        if (name === "response_text") {
+            process.stdout.write(value.delta ?? "")
+        }
+    })
+    ```
   </TabItem>
   <TabItem label="Python">
     ```python
+    # 1) Final intents
     class HandleIntent(AuwgentBaseIntentHandler):
         async def response_text(self, intent, agent_name):
             print(intent.get('text'))
@@ -225,6 +243,17 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
             print("Error",intent)
 
     agent.on_intent(HandleIntent)
+    ```
+
+    ```python
+    # 2) Streaming partial updates (independent of on_intent)
+    # Partial handlers are class methods by intent name.
+    # Each method receives (value, agent_name).
+    class HandlePartialIntent(AuwgentBasePartialIntentHandler):
+        async def response_text(self, intent, agent_name):
+            print(intent.get("delta", ""), end="")
+
+    agent.on_intent_partial(HandlePartialIntent)
     ```
   </TabItem>
 </Tabs>
@@ -255,7 +284,7 @@ As your agent grows — custom intents, tools, workflows — new intent names wi
   </TabItem>
 </Tabs>
 
-That's it. Your agent sends the input to the model, the model responds, and `onIntent` fires with a `response_text` intent carrying the reply.
+That's it. Your agent sends the input to the model, partial text can stream through `onIntentPartial`, and the final message arrives via `onIntent` with a `response_text` intent. They are separate handler paths.
 
 ---
 

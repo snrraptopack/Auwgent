@@ -280,15 +280,15 @@ export type IsAny<T> = 0 extends (1 & T) ? true : false;
 export type GetToolResult<T> = T extends (args: any) => Promise<infer R> ? R : any;
 
 export interface ToolCallIntent<K extends string = string, A = any> { name: 'tool_call'; value: { type: K; args: A } }
-export interface ToolResultIntent<K extends string = string, R = any> { name: 'tool_result'; value: { name: K; result: R; overridden?: boolean } }
+export interface ToolResultIntent<K extends string = string, A = any, R = any> { name: 'tool_result'; value: { name: K; args: A; result: R; overridden?: boolean } }
 export interface ToolErrorIntent<K extends string = string> { name: 'tool_error'; value: { tool: K; message: string } }
 export interface ToolSkippedIntent<K extends string = string, A = any> { name: 'tool_skipped'; value: { type: K; args: A } }
 
 export interface WorkflowCallIntent<K = string, A = any> { name: 'workflow_call'; value: { type: K; args: A } }
-export interface WorkflowResultIntent<K = string, R = any> { name: 'workflow_result'; value: { name: K; result: R } }
+export interface WorkflowResultIntent<K = string, A = any, R = any> { name: 'workflow_result'; value: { name: K; args: A; result: R } }
 
 export interface HelperCallIntent<K = string, A = any> { name: 'helper_call'; value: { type: K; args: A } }
-export interface HelperResultIntent<K = string, R = any> { name: 'helper_result'; value: { name: K; result: R } }
+export interface HelperResultIntent<K = string, A = any, R = any> { name: 'helper_result'; value: { name: K; args: A; result: R } }
 
 export interface ResponseTextIntent { name: 'response_text'; value: { text: string } }
 
@@ -347,7 +347,7 @@ export type ToolIntents<Tools> =
     : {
         [K in keyof Tools & string]:
         | ToolCallIntent<K, GetToolArgs<Tools[K]>>
-        | ToolResultIntent<K, GetToolResult<Tools[K]>>
+        | ToolResultIntent<K, GetToolArgs<Tools[K]>, GetToolResult<Tools[K]>>
         | ToolErrorIntent<K>
         | ToolSkippedIntent<K, GetToolArgs<Tools[K]>>
     }[keyof Tools & string];
@@ -357,7 +357,7 @@ export type WorkflowIntents<IR extends AgentIRShape> =
     ? (IR['workflows'][number] extends never ? never :
         IR['workflows'][number] extends infer W extends IRWorkflowDef
         ? W extends { flowName: infer N extends string }
-        ? (WorkflowCallIntent<N, ExtractWorkflowArgs<W>> | WorkflowResultIntent<N, ExtractWorkflowResult<W>>)
+        ? (WorkflowCallIntent<N, ExtractWorkflowArgs<W>> | WorkflowResultIntent<N, ExtractWorkflowArgs<W>, ExtractWorkflowResult<W>>)
         : (WorkflowCallIntent | WorkflowResultIntent)
         : never
     )
@@ -368,7 +368,7 @@ export type HelperIntents<IR extends AgentIRShape> =
     ? (IR['helpers'][number] extends never ? never :
         IR['helpers'][number] extends infer H extends IRHelperDef
         ? H extends { name: infer N extends string }
-        ? (HelperCallIntent<N, ExtractHelperInput<H>> | HelperResultIntent<N, ExtractHelperOutput<H>>)
+        ? (HelperCallIntent<N, ExtractHelperInput<H>> | HelperResultIntent<N, ExtractHelperInput<H>, ExtractHelperOutput<H>>)
         : (HelperCallIntent | HelperResultIntent)
         : never
     )

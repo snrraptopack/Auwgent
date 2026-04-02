@@ -1,0 +1,367 @@
+---
+title: Intents Payloads
+description: Side-by-side payload shapes for TypeScript and Python.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This page is the practical payload map.
+
+If you are wiring handlers and you want to know "what exactly will I receive?", this is that reference.
+
+The key idea: intent names are the same across both SDKs. The payload shape is also the same at runtime. What differs is how each language presents and types that payload.
+
+---
+
+## First, one quick mental model
+
+Think of every callback as:
+
+- `intent name` + `payload` + `agent name`
+
+In TypeScript, callback style is typically:
+
+```ts
+agent.onIntent((name, value, agentName) => {
+  // name = intent name
+  // value = payload
+  // agentName = current active agent/helper
+})
+```
+
+In Python, class-based handlers receive payload + agent name, and the method name is the intent name:
+
+```python
+class MyIntents(AuwgentBaseIntentHandler):
+    async def response_text(self, intent, agent_name):
+        ...
+```
+
+---
+
+## 1) `response_text`
+
+When the model returns normal text.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      text: "Hello from Auwgent"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "text": "Hello from Auwgent"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 2) `response_schema`
+
+When the model returns structured output.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      type: "MainOutput",   // schema/type name
+      response: {
+        title: "Weekly summary",
+        score: 92
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "type": "MainOutput",
+      "response": {
+        "title": "Weekly summary",
+        "score": 92
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 3) `tool_call`
+
+When the model asks the engine to run a declared tool.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      type: "search_docs",
+      args: {
+        query: "intent payload shape"
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "type": "search_docs",
+      "args": {
+        "query": "intent payload shape"
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 4) `tool_result`, `tool_skipped`, `tool_error`
+
+These are runtime outcomes for tool execution.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // tool_result
+    {
+      name: "search_docs",
+      args: { query: "intent payload shape" },
+      result: { hits: 7 },
+      overridden: false // optional
+    }
+
+    // tool_skipped
+    {
+      type: "search_docs",
+      args: { query: "intent payload shape" }
+    }
+
+    // tool_error
+    {
+      tool: "search_docs",
+      message: "Tool not found: search_docs"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # tool_result
+    {
+      "name": "search_docs",
+      "args": { "query": "intent payload shape" },
+      "result": { "hits": 7 },
+      "overridden": False  # optional
+    }
+
+    # tool_skipped
+    {
+      "type": "search_docs",
+      "args": { "query": "intent payload shape" }
+    }
+
+    # tool_error
+    {
+      "tool": "search_docs",
+      "message": "Tool not found: search_docs"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 5) `workflow_call` and `workflow_result`
+
+Same pattern as tools.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // workflow_call
+    {
+      type: "summarize_report",
+      args: {
+        reportId: "r-123"
+      }
+    }
+
+    // workflow_result
+    {
+      name: "summarize_report",
+      args: {
+        reportId: "r-123"
+      },
+      result: {
+        status: "ok"
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # workflow_call
+    {
+      "type": "summarize_report",
+      "args": {
+        "reportId": "r-123"
+      }
+    }
+
+    # workflow_result
+    {
+      "name": "summarize_report",
+      "args": {
+        "reportId": "r-123"
+      },
+      "result": {
+        "status": "ok"
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 6) `helper_call` and `helper_result`
+
+Helpers follow the same call/result shape family.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // helper_call
+    {
+      type: "ResearchHelper",
+      args: {
+        topic: "market analysis"
+      }
+    }
+
+    // helper_result
+    {
+      name: "ResearchHelper",
+      args: {
+        topic: "market analysis"
+      },
+      result: {
+        summary: "..."
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # helper_call
+    {
+      "type": "ResearchHelper",
+      "args": {
+        "topic": "market analysis"
+      }
+    }
+
+    # helper_result
+    {
+      "name": "ResearchHelper",
+      "args": {
+        "topic": "market analysis"
+      },
+      "result": {
+        "summary": "..."
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 7) `error`
+
+Global engine/runtime error intent.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    {
+      message: "OpenAI API error (401): invalid key"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    {
+      "message": "OpenAI API error (401): invalid key"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Partial payloads (`onIntentPartial` / `on_intent_partial`)
+
+Partials are for streaming updates before final completion.
+
+Shared envelope fields:
+
+- `partial: true`
+- `complete: false`
+- `mode: "text" | "structured"`
+- `segment: number`
+- `snapshot: ...`
+- `raw: string`
+
+For text partials, a `delta` field is also available.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // response_text partial
+    {
+      partial: true,
+      complete: false,
+      mode: "text",
+      segment: 0,
+      snapshot: { text: "Hello there" },
+      raw: "Hello there",
+      delta: " there"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # response_text partial
+    {
+      "partial": True,
+      "complete": False,
+      "mode": "text",
+      "segment": 0,
+      "snapshot": { "text": "Hello there" },
+      "raw": "Hello there",
+      "delta": " there"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Final note
+
+When in doubt, route by intent name first, then validate expected payload fields for that name.
+
+That gives you simple, reliable handler logic across both languages.
