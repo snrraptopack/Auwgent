@@ -82,10 +82,13 @@ pub enum TokenKind {
     #[token("parallel")]
     Parallel,
     #[token("example")]
+    #[token("Example")]
     Example,
     #[token("user")]
+    #[token("User")]
     User,
     #[token("assistant")]
+    #[token("Assistant")]
     Assistant,
     #[token("test")]
     Test,

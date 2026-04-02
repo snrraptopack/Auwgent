@@ -139,4 +139,44 @@ mod tests {
         let (_model, parse_errors) = parse(&tokens);
         assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
     }
+
+    #[test]
+    fn capitalized_example_block_parses() {
+        let source = r#"
+        agent Main {
+            default config {
+                model: gemini("gemini-2.5-flash")
+                prompt {
+                    Example {
+                        user: "feat: add streaming support"
+                        assistant: "Introduced streaming responses."
+                    }
+                }
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (_model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+    }
+
+    #[test]
+    fn keyword_property_names_parse_in_object_literals() {
+        let source = r#"
+        agent Main {
+            workflow demo(): { let: string, user: string } {
+                return { let: "ok", user: "alice" }
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (_model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+    }
 }

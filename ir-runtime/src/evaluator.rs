@@ -39,26 +39,41 @@ impl<'a> Evaluator<'a> {
     ) -> AuwgentResult<Value> {
         match expr {
             Expression::SchemaDirective { path } => {
-                // Find the schema in the agent IR
-                let schema = match path.as_str() {
-                    "input" => &self.ir.input,
-                    "output" => &self.ir.output,
-                    "context" => &self.ir.context,
-                    _ => {
-                        return Err(AuwgentError::Evaluation(format!(
-                            "Unknown schema path: {}",
-                            path
-                        )));
+                match path.as_str() {
+                    "input" => {
+                        if let Some(schema) = &self.ir.input {
+                            Ok(Value::String(crate::schema::format_schema(
+                                &schema.0,
+                                self.ir.types.as_ref(),
+                            )))
+                        } else {
+                            Ok(Value::String("{}".to_string()))
+                        }
                     }
-                };
-
-                if let Some(s) = schema {
-                    Ok(Value::String(crate::schema::format_schema(
-                        &s.0,
-                        self.ir.types.as_ref(),
-                    )))
-                } else {
-                    Ok(Value::String("{}".to_string()))
+                    "output" => {
+                        if let Some(schema) = &self.ir.output {
+                            Ok(Value::String(crate::schema::format_output_schema_blocks(
+                                &schema.0,
+                                self.ir.types.as_ref(),
+                            )))
+                        } else {
+                            Ok(Value::String("{}".to_string()))
+                        }
+                    }
+                    "context" => {
+                        if let Some(schema) = &self.ir.context {
+                            Ok(Value::String(crate::schema::format_schema(
+                                &schema.0,
+                                self.ir.types.as_ref(),
+                            )))
+                        } else {
+                            Ok(Value::String("{}".to_string()))
+                        }
+                    }
+                    _ => Err(AuwgentError::Evaluation(format!(
+                        "Unknown schema path: {}",
+                        path
+                    ))),
                 }
             }
             Expression::Literal { value } => Ok(value.0.clone()),

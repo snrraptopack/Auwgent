@@ -367,6 +367,16 @@ fn lower_output_type_decl_fields(type_decl: &TypeDeclaration) -> Value {
         }
         map.insert(field.name.value.clone(), Value::Object(prop));
     }
+
+    if !type_decl.examples.is_empty() {
+        let examples_array: Vec<Value> = type_decl
+            .examples
+            .iter()
+            .map(lower_object_literal)
+            .collect();
+        map.insert("@examples".into(), Value::Array(examples_array));
+    }
+
     Value::Object(map)
 }
 

@@ -135,6 +135,8 @@ pub struct ToolIR {
 pub struct TypeDeclIR {
     pub is_output: bool,
     pub properties: HashMap<String, TypePropertyIR>,
+    #[serde(default, rename = "@examples")]
+    pub examples: Vec<JsonValue>,
 }
 
 /// Mirrors `ir-runtime/src/types.rs::TypeProperty`.

@@ -15,14 +15,12 @@ from generated.main_types import (
 
 
 class Tools(AuwgentTools):
+    async def sum_order_totals(self, *, orders_json: str):
+       return {'skip':True}
 
     async def remove_user(self,id):
         # your implementation here
         return f"deleted user {id}"
-
-    async def get_user(self,id):
-        # your implementation here
-        return f"user {id}"
 
 
 class ResearcherMiddleware(AuwgentMiddleware):

@@ -2,6 +2,55 @@ use crate::types::TypeDefinition;
 use serde_json::Value;
 use std::collections::HashMap;
 
+pub fn format_output_schema_blocks(
+    output: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> String {
+    let mut entries: Vec<(String, Vec<crate::flat_args::FlatFieldSpec>)> =
+        crate::flat_args::flatten_output_specs(output, types)
+            .into_iter()
+            .collect();
+
+    if entries.is_empty() {
+        return "{}".to_string();
+    }
+
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    entries
+        .into_iter()
+        .map(|(schema_name, specs)| {
+            format!(
+                "[schema: {}]\n{}\n[/schema]",
+                schema_name,
+                format_flat_schema_fields(&specs)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn format_flat_schema_fields(specs: &[crate::flat_args::FlatFieldSpec]) -> String {
+    specs
+        .iter()
+        .map(|spec| {
+            let mut line = if spec.optional {
+                format!("{}?: {}", spec.alias, spec.type_repr)
+            } else {
+                format!("{}: {}", spec.alias, spec.type_repr)
+            };
+
+            if let Some(desc) = &spec.description {
+                line.push_str(" // ");
+                line.push_str(desc);
+            }
+
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn format_schema_yaml(
     schema: &Value,
     indent_level: usize,
