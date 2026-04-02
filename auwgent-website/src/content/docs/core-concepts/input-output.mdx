@@ -28,9 +28,9 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "You are a helpful assistant."
-        input: Text
-        output: Text
     }
+    input: Text
+    output: Text
 }
 ```
 
@@ -69,8 +69,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract the user's name and age from their message."
-        output: { name: string, age: number }
     }
+    output: { name: string, age: number }
 }
 ```
 
@@ -90,8 +90,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract the person's details from the message."
-        output: Person
     }
+    output: Person
 }
 ```
 
@@ -116,8 +116,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract whatever entity is described in the message."
-        output: Person | Organisation
     }
+    output: Person | Organisation
 }
 ```
 
@@ -187,12 +187,12 @@ type Organisation {
 prompt ExtractionPrompt {
     "You are an entity extraction assistant. Extract structured information from the user's message."
 
-    Example {
+    example {
         user: "My name is Kwame and I am 28 years old."
         assistant: "Extracted a Person entity."
     }
 
-    Example {
+    example {
         user: "I work at AngloGold Ashanti, a mining company."
         assistant: "Extracted an Organisation entity."
     }
@@ -202,8 +202,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: ExtractionPrompt
-        output: Person | Organisation
     }
+    output: Person | Organisation
 }
 ```
 

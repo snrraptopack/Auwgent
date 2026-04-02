@@ -305,6 +305,26 @@ The agent you built here is intentionally minimal. From here you can explore:
 - **Middleware** — intercept and transform the agent's execution pipeline
 
 
+===== FILE: .\src\content\docs\guides\llm-export.mdx =====
+---
+title: LLM Export
+description: Access the full llm.txt bundle for copying or download.
+---
+
+Use this page to access the full documentation bundle in plain text.
+
+## Direct links
+
+- Open in browser: <a href="/llm.txt" target="_blank" rel="noopener">/llm.txt</a>
+- Download file: <a href="/llm.txt" download>Download llm.txt</a>
+- LLM-discovery alias: <a href="/llms.txt" target="_blank" rel="noopener">/llms.txt</a>
+
+## Notes
+
+- Both URLs serve the same content.
+- The file content is generated from the docs and preserved as plain text.
+
+
 ===== FILE: .\src\content\docs\core-concepts\agent.md =====
 ---
 title: The Agent
@@ -824,9 +844,9 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "You are a helpful assistant."
-        input: Text
-        output: Text
     }
+    input: Text
+    output: Text
 }
 ```
 
@@ -865,8 +885,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract the user's name and age from their message."
-        output: { name: string, age: number }
     }
+    output: { name: string, age: number }
 }
 ```
 
@@ -886,8 +906,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract the person's details from the message."
-        output: Person
     }
+    output: Person
 }
 ```
 
@@ -912,8 +932,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: "Extract whatever entity is described in the message."
-        output: Person | Organisation
     }
+    output: Person | Organisation
 }
 ```
 
@@ -983,12 +1003,12 @@ type Organisation {
 prompt ExtractionPrompt {
     "You are an entity extraction assistant. Extract structured information from the user's message."
 
-    Example {
+    example {
         user: "My name is Kwame and I am 28 years old."
         assistant: "Extracted a Person entity."
     }
 
-    Example {
+    example {
         user: "I work at AngloGold Ashanti, a mining company."
         assistant: "Extracted an Organisation entity."
     }
@@ -998,8 +1018,8 @@ agent Main {
     default config {
         model: MyGemini
         prompt: ExtractionPrompt
-        output: Person | Organisation
     }
+    output: Person | Organisation
 }
 ```
 
@@ -2441,47 +2461,3 @@ A complete middleware setup combining session persistence, context injection, an
 With middleware covered you have the full picture of how Auwgent's execution pipeline works. The next topic builds directly on middleware context to explore how embeddings and vector search fit into the system.
 
 → See [Embeddings](#) to learn how to use `embed` and `embedBatch` inside your middleware.
-
-
-===== FILE: .\src\content\docs\index.mdx =====
----
-title: Auwgent
-description: The compiler-first framework for building production-grade AI agents.
-template: splash
-hero:
-  tagline: Write your agent once. The compiler handles the rest.
-  actions:
-    - text: Get Started
-      link: /guides/getting-started/
-      icon: rocket
-      variant: primary
-    - text: What is Auwgent?
-      link: /introduction/
-      icon: right-arrow
-      variant: secondary
----
-
-import { Card, CardGrid } from '@astrojs/starlight/components';
-
-## Why Auwgent?
-
-<CardGrid stagger>
-	<Card title="Declarative agent definitions" icon="document">
-		Define your agent's model, prompts, tools, and context in the Auwgent DSL. The compiler generates fully-typed, production-ready bindings for your target language — no boilerplate, no wiring by hand.
-	</Card>
-	<Card title="Prompt composition" icon="pencil">
-		Build prompts from reusable, typed blocks. Mix named prompts, inline strings, and conditional templates. Inject runtime context, schema definitions, and few-shot examples — all resolved at compile time.
-	</Card>
-	<Card title="Deterministic workflows" icon="setting">
-		Tools the model calls freely. Workflows the model triggers but cannot influence. Scope privileged tools inside a workflow and they become invisible to the model — safe from prompt injection by design.
-	</Card>
-	<Card title="Composable helpers" icon="puzzle">
-		Split intelligence across specialised agents. Wire them together with `helpers` — each with its own model, context, and tools. Control exactly what data each helper inherits and how it hands off back to the parent.
-	</Card>
-	<Card title="Full lifecycle middleware" icon="seti:pipeline">
-		Intercept any stage of the execution pipeline. Load and save sessions, inject RAG context, skip or override tool calls, stream partial responses, and handle errors — all through a single composable middleware system.
-	</Card>
-	<Card title="Stream-first by default" icon="seti:clock">
-		Auwgent is built around streaming from the ground up. Responses and structured outputs arrive as they are generated. Your handlers receive data as it flows — no waiting for the full response before acting.
-	</Card>
-</CardGrid>
