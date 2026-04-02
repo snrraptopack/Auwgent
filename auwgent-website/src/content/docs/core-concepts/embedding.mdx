@@ -1,0 +1,116 @@
+---
+title: Embedding
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Embeddings turn text into vectors so you can do semantic search and retrieval. In Auwgent, embeddings are usually used from middleware: you generate vectors, query your vector DB, then inject the retrieved knowledge back into runtime context before the next model call.
+
+---
+
+## Configure embedding in your agent
+
+Auwgent lets you configure a dedicated embedding model in `default config`.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        embedding: gemini("gemini-embedding-001")
+        prompt: "You are a helpful assistant"
+    }
+}
+```
+
+You can use the same provider family as your chat model or a different one. What matters is that `embedding` is configured, because middleware `embed` and `embedBatch` depend on it.
+
+---
+
+## Which middleware hook fits retrieval?
+
+For retrieval, prefer `onRunStart`.
+
+- Use `onRunStart` through the session turns
+- Use `onLLMStart` this has the prompt as the first args
+
+In most RAG setups, `onRunStart` is the best fit because it runs once, avoids repeated vector lookups, and lets `setContext` affect prompt evaluation for the run.
+
+---
+
+## Embedding utilities in middleware
+
+Inside middleware context you get:
+
+- `embed(text)` → returns a single vector
+- `embedBatch(texts)` → returns vectors for many inputs
+
+Use `embedBatch` when processing many documents for indexing to reduce round-trips.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const ragMiddleware: Middleware = {
+        name: "rag",
+        onRunStart: async (session, ctx) => {
+            const query = session.turns.at(-1)?.input?.text ?? ""
+            const queryVector = await ctx.embed(query)
+
+            const hits = await vectorDb.search(queryVector, { topK: 5 })
+            const chunks = hits.map((h: any) => h.text)
+
+            // Inject retrieved knowledge into runtime context for prompt use.
+            ctx.setContext({ retrieved_chunks: chunks })
+            return session
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class RagMiddleware(AuwgentMiddleware):
+        name = "rag"
+
+        async def onRunStart(self, session, ctx):
+            turns = session.get("turns", [])
+            last_turn = turns[-1] 
+            query = last_turn.["input"] 
+            query_vector = await ctx["embed"](query)
+
+            hits = await vector_db.search(query_vector, top_k=5)
+            chunks = [item["text"] for item in hits]
+
+            # Inject retrieved knowledge into runtime context for prompt use.
+            ctx["set_context"]({"retrieved_chunks": chunks})
+            return session
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Injecting retrieved DB data: use middleware setContext
+
+When you fetch nearest neighbors from your vector DB, inject them through middleware context, not by mutating prompt strings manually.
+
+Use `setContext` (`set_context` in Python) to store retrieved data in your agent context, will automatically be injected`.
+
+This keeps retrieval structured, testable, and reusable across hooks.
+
+---
+
+## Typical RAG flow in Auwgent
+
+1. User message arrives.
+2. Middleware embeds the query with `embed`.
+3. You search your vector DB with that embedding.
+4. Middleware injects top matches using `setContext` / `set_context`.
+5. setContext/set_context inject the retrieved data.
+6. Model responds with grounded context.
+
+---
+
+## Next steps
+
+Now that embeddings are wired into middleware context, continue with intent handling.
+
+→ See [Intents](/intent/intents) to understand how model and runtime events flow through your app.

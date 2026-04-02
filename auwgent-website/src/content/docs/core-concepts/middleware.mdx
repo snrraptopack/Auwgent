@@ -22,7 +22,7 @@ A single `agent.run()` can make multiple LLM calls — one for the initial respo
 
 ## Hooks
 
-Auwgent provides five middleware hooks.
+Auwgent provides seven middleware hooks.
 
 | Hook | Fires | Receives |
 |---|---|---|
@@ -31,6 +31,48 @@ Auwgent provides five middleware hooks.
 | `onLLMStart` | Every time the LLM is called within the loop | The prompt string for this call |
 | `onLLMEnd` | Only when the LLM produces a terminal response | The terminal response value |
 | `onIntent` | Every time the model emits an intent | Intent name, value, and context |
+| `onIntentPartial` | During streaming partial updates | Intent name, partial value, and context |
+| `onError` | When runtime or tool execution errors occur | Error, session, and context |
+
+---
+
+## Function shapes
+
+Below are the middleware function shapes exposed by the SDKs.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    type Middleware = {
+      name: string
+      target?: string | string[]
+
+      onRunStart?: (session, ctx) => SessionState | Promise<SessionState>
+      onLLMStart?: (prompt, ctx) => void | string | Promise<void | string>
+      onIntent?: (name, value, ctx) => IntentControl | Promise<IntentControl>
+      onIntentPartial?: (name, value, ctx) => void | Promise<void>
+      onLLMEnd?: (response, ctx) => void | Promise<void>
+      onRunComplete?: (finalSession, ctx) => void | Promise<void>
+      onError?: (error, session, ctx) => boolean | void | Promise<boolean | void>
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class Middleware(Protocol):
+        name: ClassVar[str]
+        target: ClassVar[Optional[Union[str, List[str]]]]
+
+        async def onRunStart(self, session, ctx) -> dict: ...
+        async def onLLMStart(self, prompt: str, ctx) -> Optional[str]: ...
+        async def onIntent(self, name: str, value, ctx) -> Optional[dict]: ...
+        async def onIntentPartial(self, name: str, value, ctx) -> None: ...
+        async def onLLMEnd(self, response, ctx) -> None: ...
+        async def onRunComplete(self, finalSession, ctx) -> None: ...
+        async def onError(self, error: Exception, session, ctx) -> bool: ...
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 
@@ -122,6 +164,8 @@ Two main uses: strict auditing where you need to log the exact model output rath
 ### `setContext(data)`
 
 Replaces the agent's runtime context with the object you pass. This is what your `ctx.name`, `ctx.is_vip`, and other context values are resolved from at prompt evaluation time.
+
+`setContext` is runtime injection, not schema declaration. The schema/shape is declared in DSL using `context { ... }`, while `setContext(...)` supplies values for that schema during execution.
 
 The most common use is inside `onRunStart` — load user-specific data from your application and inject it before the prompts evaluate.
 
@@ -332,4 +376,4 @@ A complete middleware setup combining session persistence, context injection, an
 
 With middleware covered you have the full picture of how Auwgent's execution pipeline works. The next topic builds directly on middleware context to explore how embeddings and vector search fit into the system.
 
-→ See [Embeddings](#) to learn how to use `embed` and `embedBatch` inside your middleware.
+→ See [Embedding](/core-concepts/embedding) to learn how to use `embed` and `embedBatch` inside your middleware.

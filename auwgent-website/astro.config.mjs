@@ -33,7 +33,8 @@ export default defineConfig({
 						{ label: "Helpers", slug: "core-concepts/helpers" },
 						{ label: "Organizing Your Codebase", slug: "core-concepts/organize-codebase" },
 						{ label: "Sessions", slug: "core-concepts/sessions" },
-						{ label: "Middleware", slug: "core-concepts/middleware" }
+						{ label: "Middleware", slug: "core-concepts/middleware" },
+						{ label: "Embedding", slug: "core-concepts/embedding" }
 					],
 				},
 				{

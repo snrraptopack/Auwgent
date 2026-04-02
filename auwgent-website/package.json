@@ -8,6 +8,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "generate:llm": "node scripts/generate-llm.mjs",
     "deploy": "bun run build && npx wrangler deploy"
   },
   "dependencies": {

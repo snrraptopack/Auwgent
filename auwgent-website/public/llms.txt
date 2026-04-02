@@ -32,7 +32,6 @@ On the application side, a tool declaration is not a function definition. When y
 
 This means your prompts and helper tools never interfere with your business logic. Your business logic never bleeds into your model context. And your choice of runtime stays yours.
 
-
 ===== FILE: .\src\content\docs\guides\getting-started.mdx =====
 ---
 title: Getting Started
@@ -235,11 +234,18 @@ In your application:
 
 ## Handling output
 
-Auwgent uses an intent-driven output model. Instead of returning a single response value, the agent emits named intents as it runs. You register a handler to receive them.
+Auwgent uses an intent architecture. Instead of returning a single response value, the agent emits named intents as it runs. You register handlers to receive them.
+
+For deeper details on intent contracts and payload shapes, see **Intents** (coming soon).
+
+Use these as two separate handlers:
+- `onIntent` (or `on_intent`) for final intents.
+- `onIntentPartial` (or `on_intent_partial`) for streaming partial updates.
 
 <Tabs>
   <TabItem label="TypeScript">
     ```ts
+  // 1) Final intents
     agent.onIntent((name, value, agent) => {
         if (name === "response_text") {
             console.log(value.text)
@@ -250,9 +256,20 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
         }
     })
     ```
+
+    ```ts
+    // 2) Streaming partial updates (independent of onIntent)
+    // You can register this with or without onIntent.
+    agent.onIntentPartial((name, value, agentName) => {
+        if (name === "response_text") {
+            process.stdout.write(value.delta ?? "")
+        }
+    })
+    ```
   </TabItem>
   <TabItem label="Python">
     ```python
+    # 1) Final intents
     class HandleIntent(AuwgentBaseIntentHandler):
         async def response_text(self, intent, agent_name):
             print(intent.get('text'))
@@ -261,6 +278,17 @@ Auwgent uses an intent-driven output model. Instead of returning a single respon
             print("Error",intent)
 
     agent.on_intent(HandleIntent)
+    ```
+
+    ```python
+    # 2) Streaming partial updates (independent of on_intent)
+    # Partial handlers are class methods by intent name.
+    # Each method receives (value, agent_name).
+    class HandlePartialIntent(AuwgentBasePartialIntentHandler):
+        async def response_text(self, intent, agent_name):
+            print(intent.get("delta", ""), end="")
+
+    agent.on_intent_partial(HandlePartialIntent)
     ```
   </TabItem>
 </Tabs>
@@ -291,7 +319,7 @@ As your agent grows — custom intents, tools, workflows — new intent names wi
   </TabItem>
 </Tabs>
 
-That's it. Your agent sends the input to the model, the model responds, and `onIntent` fires with a `response_text` intent carrying the reply.
+That's it. Your agent sends the input to the model, partial text can stream through `onIntentPartial`, and the final message arrives via `onIntent` with a `response_text` intent. They are separate handler paths.
 
 ---
 
@@ -303,7 +331,6 @@ The agent you built here is intentionally minimal. From here you can explore:
 - **Workflows** — define multi-step sequences with compile-time verified state transitions
 - **Custom intents** — shape exactly what structured output the model emits
 - **Middleware** — intercept and transform the agent's execution pipeline
-
 
 ===== FILE: .\src\content\docs\guides\llm-export.mdx =====
 ---
@@ -323,7 +350,6 @@ Use this page to access the full documentation bundle in plain text.
 
 - Both URLs serve the same content.
 - The file content is generated from the docs and preserved as plain text.
-
 
 ===== FILE: .\src\content\docs\core-concepts\agent.md =====
 ---
@@ -509,7 +535,6 @@ The `prompt` field defines the system prompt passed to the model. Because prompt
 With your agent and its configuration defined, the next thing to explore is giving your agent capabilities it can act on.
 
 → See [Tools](/core-concepts/tools) to learn how to declare tools the model can call.
-
 
 ===== FILE: .\src\content\docs\core-concepts\prompt-context.mdx =====
 ---
@@ -812,7 +837,6 @@ With prompts and context covered, the next step is shaping what goes into your a
 
 → See [Input and Output](/core-concepts/input-output) to learn how to define your agent's data contract.
 
-
 ===== FILE: .\src\content\docs\core-concepts\input-output.mdx =====
 ---
 title: Input and Output
@@ -1031,7 +1055,6 @@ With your agent's data contract defined, the next step is giving it capabilities
 
 → See [Tools](/core-concepts/tools) to learn how to declare tools the model can call.
 
-
 ===== FILE: .\src\content\docs\core-concepts\tools.mdx =====
 ---
 title: Tools
@@ -1243,7 +1266,6 @@ This is useful for caching, mocking during development, or transforming what the
 You now know how to declare tools, implement them, and control their execution lifecycle. To define exactly when and in what sequence the model uses those tools — and to build multi-step agent behaviour — move on to workflows.
 
 → See [Workflows](/core-concepts/workflows) to learn how to structure complex agent logic.
-
 
 ===== FILE: .\src\content\docs\core-concepts\workflows.mdx =====
 ---
@@ -1539,7 +1561,6 @@ With workflows covered, the next concept to explore is helpers — reusable logi
 
 → See [Helpers](/core-concepts/helpers) to learn how to define and reuse shared logic.
 
-
 ===== FILE: .\src\content\docs\core-concepts\helpers.mdx =====
 ---
 title: Helpers
@@ -1828,7 +1849,6 @@ This becomes especially useful when you have multiple helpers — `agentName` te
 Helpers introduce the idea of agents that can respond directly to the user, outlast a single session, and resume where they left off. This opens the door to a more advanced pattern.
 
 → See [Teleportation and Stack-Aware Resumption](#) to explore how helpers and handoff combine to enable persistent, context-aware multi-agent conversations.
-
 
 ===== FILE: .\src\content\docs\core-concepts\organize-codebase.mdx =====
 ---
@@ -2124,7 +2144,6 @@ Sessions and persistence are just two of the things middleware can do. Middlewar
 
 → See [Middleware](/core-concepts/middleware) to explore the full set of hooks and what you can build with them.
 
-
 ===== FILE: .\src\content\docs\core-concepts\middleware.mdx =====
 ---
 title: Middleware
@@ -2150,7 +2169,7 @@ A single `agent.run()` can make multiple LLM calls — one for the initial respo
 
 ## Hooks
 
-Auwgent provides five middleware hooks.
+Auwgent provides seven middleware hooks.
 
 | Hook | Fires | Receives |
 |---|---|---|
@@ -2159,6 +2178,48 @@ Auwgent provides five middleware hooks.
 | `onLLMStart` | Every time the LLM is called within the loop | The prompt string for this call |
 | `onLLMEnd` | Only when the LLM produces a terminal response | The terminal response value |
 | `onIntent` | Every time the model emits an intent | Intent name, value, and context |
+| `onIntentPartial` | During streaming partial updates | Intent name, partial value, and context |
+| `onError` | When runtime or tool execution errors occur | Error, session, and context |
+
+---
+
+## Function shapes
+
+Below are the middleware function shapes exposed by the SDKs.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    type Middleware = {
+      name: string
+      target?: string | string[]
+
+      onRunStart?: (session, ctx) => SessionState | Promise<SessionState>
+      onLLMStart?: (prompt, ctx) => void | string | Promise<void | string>
+      onIntent?: (name, value, ctx) => IntentControl | Promise<IntentControl>
+      onIntentPartial?: (name, value, ctx) => void | Promise<void>
+      onLLMEnd?: (response, ctx) => void | Promise<void>
+      onRunComplete?: (finalSession, ctx) => void | Promise<void>
+      onError?: (error, session, ctx) => boolean | void | Promise<boolean | void>
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class Middleware(Protocol):
+        name: ClassVar[str]
+        target: ClassVar[Optional[Union[str, List[str]]]]
+
+        async def onRunStart(self, session, ctx) -> dict: ...
+        async def onLLMStart(self, prompt: str, ctx) -> Optional[str]: ...
+        async def onIntent(self, name: str, value, ctx) -> Optional[dict]: ...
+        async def onIntentPartial(self, name: str, value, ctx) -> None: ...
+        async def onLLMEnd(self, response, ctx) -> None: ...
+        async def onRunComplete(self, finalSession, ctx) -> None: ...
+        async def onError(self, error: Exception, session, ctx) -> bool: ...
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 
@@ -2250,6 +2311,8 @@ Two main uses: strict auditing where you need to log the exact model output rath
 ### `setContext(data)`
 
 Replaces the agent's runtime context with the object you pass. This is what your `ctx.name`, `ctx.is_vip`, and other context values are resolved from at prompt evaluation time.
+
+`setContext` is runtime injection, not schema declaration. The schema/shape is declared in DSL using `context { ... }`, while `setContext(...)` supplies values for that schema during execution.
 
 The most common use is inside `onRunStart` — load user-specific data from your application and inject it before the prompts evaluate.
 
@@ -2460,4 +2523,714 @@ A complete middleware setup combining session persistence, context injection, an
 
 With middleware covered you have the full picture of how Auwgent's execution pipeline works. The next topic builds directly on middleware context to explore how embeddings and vector search fit into the system.
 
-→ See [Embeddings](#) to learn how to use `embed` and `embedBatch` inside your middleware.
+→ See [Embedding](/core-concepts/embedding) to learn how to use `embed` and `embedBatch` inside your middleware.
+
+===== FILE: .\src\content\docs\core-concepts\embedding.mdx =====
+---
+title: Embedding
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Embeddings turn text into vectors so you can do semantic search and retrieval. In Auwgent, embeddings are usually used from middleware: you generate vectors, query your vector DB, then inject the retrieved knowledge back into runtime context before the next model call.
+
+---
+
+## Configure embedding in your agent
+
+Auwgent lets you configure a dedicated embedding model in `default config`.
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        embedding: gemini("gemini-embedding-001")
+        prompt: "You are a helpful assistant"
+    }
+}
+```
+
+You can use the same provider family as your chat model or a different one. What matters is that `embedding` is configured, because middleware `embed` and `embedBatch` depend on it.
+
+---
+
+## Which middleware hook fits retrieval?
+
+For retrieval, prefer `onRunStart`.
+
+- Use `onRunStart` through the session turns
+- Use `onLLMStart` this has the prompt as the first args
+
+In most RAG setups, `onRunStart` is the best fit because it runs once, avoids repeated vector lookups, and lets `setContext` affect prompt evaluation for the run.
+
+---
+
+## Embedding utilities in middleware
+
+Inside middleware context you get:
+
+- `embed(text)` → returns a single vector
+- `embedBatch(texts)` → returns vectors for many inputs
+
+Use `embedBatch` when processing many documents for indexing to reduce round-trips.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    const ragMiddleware: Middleware = {
+        name: "rag",
+        onRunStart: async (session, ctx) => {
+            const query = session.turns.at(-1)?.input?.text ?? ""
+            const queryVector = await ctx.embed(query)
+
+            const hits = await vectorDb.search(queryVector, { topK: 5 })
+            const chunks = hits.map((h: any) => h.text)
+
+            // Inject retrieved knowledge into runtime context for prompt use.
+            ctx.setContext({ retrieved_chunks: chunks })
+            return session
+        }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class RagMiddleware(AuwgentMiddleware):
+        name = "rag"
+
+        async def onRunStart(self, session, ctx):
+            turns = session.get("turns", [])
+            last_turn = turns[-1] 
+            query = last_turn.["input"] 
+            query_vector = await ctx["embed"](query)
+
+            hits = await vector_db.search(query_vector, top_k=5)
+            chunks = [item["text"] for item in hits]
+
+            # Inject retrieved knowledge into runtime context for prompt use.
+            ctx["set_context"]({"retrieved_chunks": chunks})
+            return session
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Injecting retrieved DB data: use middleware setContext
+
+When you fetch nearest neighbors from your vector DB, inject them through middleware context, not by mutating prompt strings manually.
+
+Use `setContext` (`set_context` in Python) to store retrieved data in your agent context, will automatically be injected`.
+
+This keeps retrieval structured, testable, and reusable across hooks.
+
+---
+
+## Typical RAG flow in Auwgent
+
+1. User message arrives.
+2. Middleware embeds the query with `embed`.
+3. You search your vector DB with that embedding.
+4. Middleware injects top matches using `setContext` / `set_context`.
+5. setContext/set_context inject the retrieved data.
+6. Model responds with grounded context.
+
+---
+
+## Next steps
+
+Now that embeddings are wired into middleware context, continue with intent handling.
+
+→ See [Intents](/intent/intents) to understand how model and runtime events flow through your app.
+
+===== FILE: .\src\content\docs\intent\intents.mdx =====
+---
+title: Intents
+description: The protocol layer that connects model behavior to application execution in Auwgent.
+---
+
+## What is an intent?
+
+An intent in Auwgent is the protocol event that defines how the runtime, the model, and your application communicate. Every meaningful step in execution is represented as a named intent with a structured payload. This includes model-originated actions such as response_text, response_schema, tool_call, workflow_call, and helper_call, and runtime-originated outcomes such as tool_result, workflow_result, helper_result, tool_skipped, tool_error, and error.
+In other words, intents are not just labels for output. They are the typed event contract of the system.
+
+The intent name is the dispatch key, and the payload shape is the semantic contract. Your application does not need to parse raw model output to decide behavior. It reacts to intent names and values through handlers such as onIntent and onIntentPartial. This creates a stable boundary between inference and application logic.
+
+Intents also act as a constraint mechanism. The model can only emit actions that are permitted by the compiled agent definition. If a tool is not declared, a valid tool_call for it is outside contract. If a tool is scoped inside a workflow, the model cannot directly call it as a top-level tool_call. The intent layer enforces declared capability boundaries.
+
+Custom intents extend this architecture from fixed system events into domain-specific behavior contracts. Instead of relying on free-form prompt formatting, you declare named custom intents and their fields, and the model learns to communicate that behavior through explicit structured events.
+
+At a deeper architectural level, intents are the membrane that separates model reasoning from software execution. They give you control, observability, and portability: control through interception and policy, observability through structured event streams, and portability through a runtime-agnostic contract that remains consistent across targets.
+
+---
+
+## Default intents
+
+### Model-originated intents
+
+- **response_text**
+- **response_schema**
+- **tool_call**
+- **workflow_call**
+- **helper_call**
+
+### Runtime-originated intents
+
+- **tool_result**
+- **workflow_result**
+- **helper_result**
+- **tool_skipped**
+- **tool_error**
+- **error**
+
+---
+
+===== FILE: .\src\content\docs\intent\intents-payloads.mdx =====
+---
+title: Intents Payloads
+description: Side-by-side payload shapes for TypeScript and Python.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+This page is the practical payload map.
+
+If you are wiring handlers and you want to know "what exactly will I receive?", this is that reference.
+
+The key idea: intent names are the same across both SDKs. The payload shape is also the same at runtime. What differs is how each language presents and types that payload.
+
+---
+
+## First, one quick mental model
+
+Think of every callback as:
+
+- `intent name` + `payload` + `agent name`
+
+In TypeScript, callback style is typically:
+
+```ts
+agent.onIntent((name, value, agentName) => {
+  // name = intent name
+  // value = payload
+  // agentName = current active agent/helper
+})
+```
+
+In Python, class-based handlers receive payload + agent name, and the method name is the intent name:
+
+```python
+class MyIntents(AuwgentBaseIntentHandler):
+    async def response_text(self, intent, agent_name):
+        ...
+```
+
+---
+
+## 1) `response_text`
+
+When the model returns normal text.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      text: "Hello from Auwgent"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "text": "Hello from Auwgent"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 2) `response_schema`
+
+When the model returns structured output.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      type: "MainOutput",   // schema/type name
+      response: {
+        title: "Weekly summary",
+        score: 92
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "type": "MainOutput",
+      "response": {
+        "title": "Weekly summary",
+        "score": 92
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 3) `tool_call`
+
+When the model asks the engine to run a declared tool.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // onIntent payload
+    {
+      type: "search_docs",
+      args: {
+        query: "intent payload shape"
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # on_intent method payload (dict)
+    {
+      "type": "search_docs",
+      "args": {
+        "query": "intent payload shape"
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 4) `tool_result`, `tool_skipped`, `tool_error`
+
+These are runtime outcomes for tool execution.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // tool_result
+    {
+      name: "search_docs",
+      args: { query: "intent payload shape" },
+      result: { hits: 7 },
+      overridden: false // optional
+    }
+
+    // tool_skipped
+    {
+      type: "search_docs",
+      args: { query: "intent payload shape" }
+    }
+
+    // tool_error
+    {
+      tool: "search_docs",
+      message: "Tool not found: search_docs"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # tool_result
+    {
+      "name": "search_docs",
+      "args": { "query": "intent payload shape" },
+      "result": { "hits": 7 },
+      "overridden": False  # optional
+    }
+
+    # tool_skipped
+    {
+      "type": "search_docs",
+      "args": { "query": "intent payload shape" }
+    }
+
+    # tool_error
+    {
+      "tool": "search_docs",
+      "message": "Tool not found: search_docs"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 5) `workflow_call` and `workflow_result`
+
+Same pattern as tools.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // workflow_call
+    {
+      type: "summarize_report",
+      args: {
+        reportId: "r-123"
+      }
+    }
+
+    // workflow_result
+    {
+      name: "summarize_report",
+      args: {
+        reportId: "r-123"
+      },
+      result: {
+        status: "ok"
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # workflow_call
+    {
+      "type": "summarize_report",
+      "args": {
+        "reportId": "r-123"
+      }
+    }
+
+    # workflow_result
+    {
+      "name": "summarize_report",
+      "args": {
+        "reportId": "r-123"
+      },
+      "result": {
+        "status": "ok"
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 6) `helper_call` and `helper_result`
+
+Helpers follow the same call/result shape family.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // helper_call
+    {
+      type: "ResearchHelper",
+      args: {
+        topic: "market analysis"
+      }
+    }
+
+    // helper_result
+    {
+      name: "ResearchHelper",
+      args: {
+        topic: "market analysis"
+      },
+      result: {
+        summary: "..."
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # helper_call
+    {
+      "type": "ResearchHelper",
+      "args": {
+        "topic": "market analysis"
+      }
+    }
+
+    # helper_result
+    {
+      "name": "ResearchHelper",
+      "args": {
+        "topic": "market analysis"
+      },
+      "result": {
+        "summary": "..."
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 7) `error`
+
+Global engine/runtime error intent.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    {
+      message: "OpenAI API error (401): invalid key"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    {
+      "message": "OpenAI API error (401): invalid key"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Partial payloads (`onIntentPartial` / `on_intent_partial`)
+
+Partials are for streaming updates before final completion.
+
+Shared envelope fields:
+
+- `partial: true`
+- `complete: false`
+- `mode: "text" | "structured"`
+- `segment: number`
+- `snapshot: ...`
+- `raw: string`
+
+For text partials, a `delta` field is also available.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // response_text partial
+    {
+      partial: true,
+      complete: false,
+      mode: "text",
+      segment: 0,
+      snapshot: { text: "Hello there" },
+      raw: "Hello there",
+      delta: " there"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # response_text partial
+    {
+      "partial": True,
+      "complete": False,
+      "mode": "text",
+      "segment": 0,
+      "snapshot": { "text": "Hello there" },
+      "raw": "Hello there",
+      "delta": " there"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Final note
+
+When in doubt, route by intent name first, then validate expected payload fields for that name.
+
+That gives you simple, reliable handler logic across both languages.
+
+===== FILE: .\src\content\docs\intent\custom-intents.mdx =====
+---
+title: Custom Intents
+description: Define your own intents, consume them in both SDKs, and understand their payloads.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Custom intents are how you introduce your own intent names into the protocol.
+
+Think of them as domain-level events that you define yourself.
+
+Instead of forcing the model to express a behavior through free text, you declare a named contract and let the model emit that contract directly.
+
+---
+
+## DSL format
+
+You define custom intents as top-level `intent` declarations, then attach them to an agent (or helper) through `intent:` config.
+
+### 1) Define intent(s)
+
+```ts
+intent Planning {
+    description: "Emit a structured execution plan before taking action"
+    fields {
+        step: string
+        confidence: number
+        rationale: string
+    }
+}
+
+intent Dialogue {
+    description: "Emit the user-facing dialogue decision"
+    fields {
+        tone: string
+        summary: string
+    }
+}
+```
+
+### 2) Attach to agent
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a planning assistant"
+    }
+
+    intent: Planning + Dialogue
+}
+```
+
+You can also inline custom intents directly inside `intent:`:
+
+```ts
+agent Main {
+    default config {
+        model: gemini("gemini-2.5-flash")
+        prompt: "You are a planning assistant"
+    }
+
+    intent: {
+        Planning {
+            description: "Emit plan"
+            fields {
+                step: string
+            }
+        }
+    }
+}
+```
+
+---
+
+## How SDKs consume custom intents
+
+The runtime callback signature pattern stays the same:
+
+- TypeScript callback receives `(name, value, agentName)`.
+- Python class method receives `(value, agent_name)`, where method name maps to intent name.
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    agent.onIntent((name, value, agentName) => {
+        if (name === "Planning") {
+            console.log("step:", value.step)
+            console.log("confidence:", value.confidence)
+        }
+
+        if (name === "Dialogue") {
+            console.log("tone:", value.tone)
+            console.log("summary:", value.summary)
+        }
+    })
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    class HandleIntent(AuwgentBaseIntentHandler):
+        async def Planning(self, intent, agent_name):
+            print("step:", intent.get("step"))
+            print("confidence:", intent.get("confidence"))
+
+        async def Dialogue(self, intent, agent_name):
+            print("tone:", intent.get("tone"))
+            print("summary:", intent.get("summary"))
+
+    agent.on_intent(HandleIntent)
+    ```
+  </TabItem>
+</Tabs>
+
+Python note: method lookup tries exact intent name first, then a sanitized lowercase form.
+
+---
+
+## Custom intent payload shape
+
+For custom intents, the intent name comes from the callback's `name` parameter.
+
+The payload is the declared fields object directly.
+
+So if the emitted intent is `Planning`, payload looks like:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // name === "Planning"
+    {
+      step: "Collect user constraints",
+      confidence: 0.92,
+      rationale: "Need constraints before proposing options"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # name == "Planning" (method: Planning)
+    {
+      "step": "Collect user constraints",
+      "confidence": 0.92,
+      "rationale": "Need constraints before proposing options"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+And for `Dialogue`:
+
+<Tabs>
+  <TabItem label="TypeScript">
+    ```ts
+    // name === "Dialogue"
+    {
+      tone: "calm",
+      summary: "I will ask two questions before making a recommendation"
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    # name == "Dialogue" (method: Dialogue)
+    {
+      "tone": "calm",
+      "summary": "I will ask two questions before making a recommendation"
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Partial payloads for custom intents
+
+If a custom intent is emitted during streaming, `onIntentPartial` / `on_intent_partial` receives the same partial envelope style used by other structured intents.
+
+At completion, `onIntent` / `on_intent` receives the final fields object.
