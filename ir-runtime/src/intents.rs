@@ -18,7 +18,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
          Rules:\n\
          - Use only the block types listed below.\n\
          - If no external action is needed, reply with [response_text].\n\
-         - If UI output is needed, emit one or more [component] blocks.\n\
+         - If UI output is needed, emit one or more [component] blocks and then a [render_component] block.\n\
          - If a tool, workflow, or helper is needed, emit only the action block(s) for that turn and stop.\n\
          - After an action turn, wait for the next turn's [result] block(s) before producing [response_text] or [schema].\n\
          - Close every block correctly.\n\
@@ -38,6 +38,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     }
     if !ir.components.is_empty() {
         allowed_blocks.push("- [component: type, c_id:\"meaningful_id\"]...[/component]".to_string());
+        allowed_blocks.push("- [render_component]...[/render_component]".to_string());
     }
     if ir
         .custom_intents
@@ -78,6 +79,9 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     if !ir.components.is_empty() {
         block_syntax.push(
             "Component output: [component: valid_component_name, c_id:\"meaningful_accessible_id\"] then write one `key: value` or `key = value` prop per line, use reserved `action_*` fields for actions, then close with [/component]".to_string(),
+        );
+        block_syntax.push(
+            "Render output: [render_component] then write `root: \"component_c_id\"` or `roots: [\"c_id\"]`, then close with [/render_component]".to_string(),
         );
     }
     if ir
@@ -203,6 +207,9 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
             component_section.push('\n');
         }
 
+        component_section.push_str("\nRender example:\n");
+        component_section.push_str("[render_component]\nroot: \"button_instance\"\n[/render_component]\n");
+
         sections.push(component_section);
     }
 
@@ -299,6 +306,8 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     if !ir.components.is_empty() {
         constraints.push("- Component blocks must use a listed component name and a required c_id header.".to_string());
         constraints.push("- Component fields must match the listed component props and reserved action_* bindings.".to_string());
+        constraints.push("- Component children must reference component c_id values, not nested component objects.".to_string());
+        constraints.push("- UI output must end with a [render_component] block that references declared component c_id values.".to_string());
     }
     if let Some(output) = &ir.output {
         if output.0.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
@@ -347,7 +356,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
          Rules:\n\
          - Use only the block types listed below.\n\
          - If no external action is needed, reply with [response_text].\n\
-         - If UI output is needed, emit one or more [component] blocks.\n\
+         - If UI output is needed, emit one or more [component] blocks and then a [render_component] block.\n\
          - If a tool is needed, emit only the tool_call block(s) for that turn and stop.\n\
          - After a tool turn, wait for the next turn's [result] block(s) before producing [response_text].\n\
          - Close every block correctly.\n\
@@ -361,6 +370,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     }
     if !ir.components.is_empty() {
         allowed_blocks.push("- [component: type, c_id:\"meaningful_id\"]...[/component]".to_string());
+        allowed_blocks.push("- [render_component]...[/render_component]".to_string());
     }
     if ir
         .custom_intents
@@ -385,6 +395,9 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     if !ir.components.is_empty() {
         block_syntax.push(
             "Component output: [component: valid_component_name, c_id:\"meaningful_accessible_id\"] then write one `key: value` or `key = value` prop per line, use reserved `action_*` fields for actions, then close with [/component]".to_string(),
+        );
+        block_syntax.push(
+            "Render output: [render_component] then write `root: \"component_c_id\"` or `roots: [\"c_id\"]`, then close with [/render_component]".to_string(),
         );
     }
     if ir
@@ -478,6 +491,8 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
             component_section.push_str(&example);
             component_section.push('\n');
         }
+        component_section.push_str("\nRender example:\n");
+        component_section.push_str("[render_component]\nroot: \"button_instance\"\n[/render_component]\n");
         sections.push(component_section);
     }
 
@@ -490,6 +505,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     }
     if !ir.components.is_empty() {
         constraints.push("- Component blocks must use a listed component name and a required c_id header.".to_string());
+        constraints.push("- UI output must end with a [render_component] block that references declared component c_id values.".to_string());
     }
 
     sections.push(format!(
@@ -765,7 +781,7 @@ fn collect_component_example_block(components: &[ComponentDefinition]) -> Option
     let component = components.first()?;
     let mut lines = vec![format!(
         "[component: {}, c_id:\"{}_instance\"]",
-        component.name, component.name
+        component.name, component.name.to_lowercase()
     )];
 
     if let Some(props) = component.props.0.as_object() {

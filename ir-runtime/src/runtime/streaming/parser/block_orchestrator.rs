@@ -207,6 +207,7 @@ impl BlockOrchestrator {
         let terminal_types: HashSet<&str> = ["response_schema"].iter().cloned().collect();
         let mut terminal_intents: std::collections::HashMap<String, Vec<Value>> =
             std::collections::HashMap::new();
+        let component_instances = self.collect_component_instances(&blocks, is_final);
 
         for (block_index, block) in blocks.iter().enumerate() {
             match &block.block_type {
@@ -369,6 +370,19 @@ impl BlockOrchestrator {
                     } else {
                         self.emit_intent("response_schema", intent, is_final, false);
                     }
+                }
+
+                BlockType::RenderComponent => {
+                    let parsed = parse_partial_block_fields(&block.content)
+                        .map(|fields| ast_to_json_object(&fields))
+                        .unwrap_or_else(|| Value::Object(Map::new()));
+                    let intent = build_render_component_intent(&parsed, &component_instances);
+                    let intent = if is_final {
+                        intent
+                    } else {
+                        build_partial_structured_payload(intent, &block.content, block_index)
+                    };
+                    self.emit_intent("render_component", intent, is_final, true);
                 }
 
                 BlockType::Custom(intent_name) => {
@@ -552,6 +566,45 @@ impl BlockOrchestrator {
             response,
         )
     }
+
+    fn collect_component_instances(&self, blocks: &[function_parser::Block], is_final: bool) -> HashMap<String, Value> {
+        let mut instances = HashMap::new();
+
+        for block in blocks {
+            if block.block_type != BlockType::Component {
+                continue;
+            }
+
+            let (Some(component_name), Some(instance_id)) =
+                (block.target_name.as_deref(), block.instance_id.as_deref())
+            else {
+                continue;
+            };
+
+            let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+                self.unflatten_component_args(component_name, ast_to_json_object(&fields))
+            });
+
+            if is_final && parsed.is_none() {
+                continue;
+            }
+
+            let fields_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+            let intent = if is_final {
+                build_component_intent(component_name, instance_id, fields_json)
+            } else {
+                build_component_intent(
+                    component_name,
+                    instance_id,
+                    self.merge_component_args(component_name, &fields_json),
+                )
+            };
+
+            instances.insert(instance_id.to_string(), intent);
+        }
+
+        instances
+    }
 }
 
 fn parse_block_fields(content: &str) -> Option<std::collections::HashMap<String, ASTValue>> {
@@ -681,6 +734,73 @@ fn build_component_intent(component_name: &str, instance_id: &str, fields: Value
     }
 
     Value::Object(intent)
+}
+
+fn build_render_component_intent(
+    render_fields: &Value,
+    component_instances: &HashMap<String, Value>,
+) -> Value {
+    let mut intent = Map::new();
+
+    if let Some(root) = render_fields.get("root").and_then(Value::as_str) {
+        intent.insert("root".to_string(), Value::String(root.to_string()));
+        if let Some(tree) = resolve_component_instance(root, component_instances, &mut HashSet::new()) {
+            intent.insert("tree".to_string(), tree);
+        }
+    }
+
+    if let Some(roots) = render_fields.get("roots").and_then(Value::as_array) {
+        intent.insert("roots".to_string(), Value::Array(roots.clone()));
+        let mut trees = Vec::new();
+        for root in roots.iter().filter_map(Value::as_str) {
+            if let Some(tree) = resolve_component_instance(root, component_instances, &mut HashSet::new()) {
+                trees.push(tree);
+            }
+        }
+        if !trees.is_empty() {
+            intent.insert("trees".to_string(), Value::Array(trees));
+        }
+    }
+
+    if !component_instances.is_empty() {
+        let registry: Map<String, Value> = component_instances
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        intent.insert("components".to_string(), Value::Object(registry));
+    }
+
+    if intent.is_empty() {
+        return render_fields.clone();
+    }
+
+    Value::Object(intent)
+}
+
+fn resolve_component_instance(
+    instance_id: &str,
+    component_instances: &HashMap<String, Value>,
+    seen: &mut HashSet<String>,
+) -> Option<Value> {
+    let component = component_instances.get(instance_id)?.as_object()?.clone();
+
+    if !seen.insert(instance_id.to_string()) {
+        return None;
+    }
+
+    let mut resolved = component;
+    if let Some(children) = resolved.get("children").and_then(Value::as_array) {
+        let mut resolved_children = Vec::new();
+        for child_id in children.iter().filter_map(Value::as_str) {
+            if let Some(child) = resolve_component_instance(child_id, component_instances, seen) {
+                resolved_children.push(child);
+            }
+        }
+        resolved.insert("children".to_string(), Value::Array(resolved_children));
+    }
+
+    seen.remove(instance_id);
+    Some(Value::Object(resolved))
 }
 
 fn partial_payload_key(name: &str, value: &Value) -> String {

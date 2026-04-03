@@ -99,6 +99,7 @@ impl AuwgentEngine {
         orchestrator.register_intent("helper_call");
         if !ir.components.is_empty() {
             orchestrator.register_intent("component");
+            orchestrator.register_intent("render_component");
             for component in &ir.components {
                 orchestrator.register_component_shape(component, ir.types.as_ref());
             }

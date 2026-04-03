@@ -333,6 +333,62 @@ fn test_component_block_reconstructs_props_and_action() {
 }
 
 #[test]
+fn test_render_component_resolves_children_from_component_registry() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("component");
+    orch.register_intent("render_component");
+
+    let button: ComponentDefinition = serde_json::from_value(json!({
+        "name": "Button",
+        "props": {
+            "label": { "type": "string", "optional": false }
+        },
+        "action": {
+            "onclick": ["confirm_order"]
+        }
+    }))
+    .expect("valid button def");
+    let card: ComponentDefinition = serde_json::from_value(json!({
+        "name": "Card",
+        "props": {
+            "title": { "type": "string", "optional": false }
+        },
+        "children": {
+            "kind": "only",
+            "components": ["Button"]
+        }
+    }))
+    .expect("valid card def");
+    orch.register_component_shape(&button, None);
+    orch.register_component_shape(&card, None);
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[component: Card, c_id:\"checkout_card\"]\ntitle: \"Checkout\"\nchildren: [\"confirm_btn\"]\n[/component]\n\
+         [component: Button, c_id:\"confirm_btn\"]\nlabel: \"Confirm\"\naction_onclick: \"confirm_order\"\n[/component]\n\
+         [render_component]\nroot: \"checkout_card\"\n[/render_component]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 3);
+    assert_eq!(results[2].0, "render_component");
+    assert_eq!(results[2].1["root"], "checkout_card");
+    assert_eq!(results[2].1["tree"]["type"], "Card");
+    assert_eq!(results[2].1["tree"]["children"][0]["type"], "Button");
+    assert_eq!(
+        results[2].1["tree"]["children"][0]["action"]["onclick"],
+        "confirm_order"
+    );
+}
+
+#[test]
 fn test_last_wins_for_response_schema() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_schema");

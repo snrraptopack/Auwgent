@@ -5,6 +5,7 @@
 /// - [workflow_call: name]...[/workflow]
 /// - [helper_call: name]...[/helper]
 /// - [component: name, c_id:"instance_id"]...[/component]
+/// - [render_component]...[/render_component]
 /// - [schema: name]...[/schema]
 /// - [custom: name]...[/custom]
 /// - [result]...[/result]
@@ -17,6 +18,7 @@ pub enum BlockType {
     Workflow,
     Helper,
     Component,
+    RenderComponent,
     Out,
     Result,
     Error,
@@ -39,7 +41,7 @@ pub struct BlockScanner {
 impl BlockScanner {
     const RESPONSE_TEXT_OPEN_BRACKET: &'static str = "[response_text]";
     const RESPONSE_TEXT_CLOSE_BRACKET: &'static str = "[/response_text]";
-    const INCOMPLETE_HEADER_PREFIXES: [&'static str; 14] = [
+    const INCOMPLETE_HEADER_PREFIXES: [&'static str; 16] = [
         "[response_text]",
         "[/response_text]",
         "[tool_call:",
@@ -50,6 +52,8 @@ impl BlockScanner {
         "[/helper]",
         "[component:",
         "[/component]",
+        "[render_component]",
+        "[/render_component]",
         "[schema:",
         "[/schema]",
         "[custom:",
@@ -158,6 +162,7 @@ impl BlockScanner {
                 | "/workflow"
                 | "/helper"
                 | "/component"
+                | "/render_component"
                 | "/schema"
                 | "/custom"
                 | "/result"
@@ -169,6 +174,7 @@ impl BlockScanner {
     fn is_known_opening_header_kind(&self, header: &str) -> bool {
         let header = header.trim();
         if header.eq_ignore_ascii_case("response_text")
+            || header.eq_ignore_ascii_case("render_component")
             || header.eq_ignore_ascii_case("result")
             || header.eq_ignore_ascii_case("error")
         {
@@ -207,6 +213,10 @@ impl BlockScanner {
 
         if header.eq_ignore_ascii_case("error") {
             return Some((BlockType::Error, None, None, "[/error]"));
+        }
+
+        if header.eq_ignore_ascii_case("render_component") {
+            return Some((BlockType::RenderComponent, None, None, "[/render_component]"));
         }
 
         let (kind, target) = header.split_once(':')?;
@@ -282,6 +292,10 @@ impl BlockScanner {
 
         if header.eq_ignore_ascii_case("response_text") {
             return Some(Self::RESPONSE_TEXT_CLOSE_BRACKET);
+        }
+
+        if header.eq_ignore_ascii_case("render_component") {
+            return Some("[/render_component]");
         }
 
         if header.eq_ignore_ascii_case("result") {
@@ -512,6 +526,19 @@ mod tests {
             Some("confirm_order_button".to_string())
         );
         assert!(blocks[0].content.contains("action_onclick"));
+    }
+
+    #[test]
+    fn test_render_component_block() {
+        let input = "[render_component]\nroot: \"checkout_screen\"\n[/render_component]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::RenderComponent);
+        assert_eq!(blocks[0].target_name, None);
+        assert_eq!(blocks[0].instance_id, None);
+        assert_eq!(blocks[0].content, "root: \"checkout_screen\"");
     }
 
     #[test]
