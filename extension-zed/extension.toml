@@ -7,8 +7,8 @@ authors = ["Theophilus"]
 repository = "https://github.com/snrraptopack/Auwgent"
 
 [grammars.auwgent]
-repository = "file://C:/Users/babyface/Desktop/auwgent/Auwgent/extension-zed/grammars/auwgent"
-rev = "HEAD"
+repository = "file:///C:/Users/babyface/Desktop/auwgent/Auwgent/tree-sitter-auwgent"
+rev = "1fb796a5e175c48ba9b02ae7adf3f1c7d8c872e5"
 
 [language_servers.auwgent-lsp]
 name = "Auwgent LSP"

@@ -1,10 +1,4 @@
 
-component Button {
-    action : {
-        onclick : "delete"
-    }
-}
-
 agent Assistants{
 
     default config{
