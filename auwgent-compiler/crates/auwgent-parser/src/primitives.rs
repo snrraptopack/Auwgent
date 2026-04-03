@@ -82,6 +82,7 @@ pub(crate) fn property_name(
         let name = match &tok {
             TokenKind::Agent => "agent",
             TokenKind::Helper => "helper",
+            TokenKind::Component => "component",
             TokenKind::Tool => "tool",
             TokenKind::Tools => "tools",
             TokenKind::Workflow => "workflow",

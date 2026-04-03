@@ -2,7 +2,7 @@ use crate::flat_args::{
     flatten_example_object, flatten_helper_input_specs, flatten_named_field_specs,
     flatten_output_specs,
 };
-use crate::types::{AgentIR, TypeDefinition};
+use crate::types::{AgentIR, ComponentDefinition, TypeDefinition};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -18,10 +18,11 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
          Rules:\n\
          - Use only the block types listed below.\n\
          - If no external action is needed, reply with [response_text].\n\
+         - If UI output is needed, emit one or more [component] blocks.\n\
          - If a tool, workflow, or helper is needed, emit only the action block(s) for that turn and stop.\n\
          - After an action turn, wait for the next turn's [result] block(s) before producing [response_text] or [schema].\n\
          - Close every block correctly.\n\
-         - Do not invent tools, workflows, helpers, schemas, or custom intents."
+         - Do not invent tools, workflows, helpers, components, schemas, or custom intents."
             .to_string(),
     );
 
@@ -34,6 +35,9 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     }
     if !ir.helpers.is_empty() {
         allowed_blocks.push("- [helper_call: type]...[/helper]".to_string());
+    }
+    if !ir.components.is_empty() {
+        allowed_blocks.push("- [component: type, c_id:\"meaningful_id\"]...[/component]".to_string());
     }
     if ir
         .custom_intents
@@ -69,6 +73,11 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     if !ir.helpers.is_empty() {
         block_syntax.push(
             "Helper call: [helper_call: valid_helper_name] then write one `key: value` or `key = value` field per line, then close with [/helper]".to_string(),
+        );
+    }
+    if !ir.components.is_empty() {
+        block_syntax.push(
+            "Component output: [component: valid_component_name, c_id:\"meaningful_accessible_id\"] then write one `key: value` or `key = value` prop per line, use reserved `action_*` fields for actions, then close with [/component]".to_string(),
         );
     }
     if ir
@@ -179,6 +188,24 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         sections.push(helper_section);
     }
 
+    if !ir.components.is_empty() {
+        let mut component_section = String::from("\n\nComponents available:\n");
+        for component in &ir.components {
+            component_section.push_str(&format!(
+                "- {}\n",
+                format_component_signature(component, ir.types.as_ref())
+            ));
+        }
+
+        if let Some(example) = collect_component_example_block(&ir.components) {
+            component_section.push_str("\nComponent example:\n");
+            component_section.push_str(&example);
+            component_section.push('\n');
+        }
+
+        sections.push(component_section);
+    }
+
     if let Some(custom) = &ir.custom_intents {
         if !custom.is_empty() {
             let mut custom_section = String::from("\n\nCustom intents available:\n");
@@ -269,6 +296,10 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     if !ir.helpers.is_empty() {
         constraints.push("- Helper fields must match the listed helper signatures.".to_string());
     }
+    if !ir.components.is_empty() {
+        constraints.push("- Component blocks must use a listed component name and a required c_id header.".to_string());
+        constraints.push("- Component fields must match the listed component props and reserved action_* bindings.".to_string());
+    }
     if let Some(output) = &ir.output {
         if output.0.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
             constraints.push("- Schema output must match the listed schema shape.".to_string());
@@ -316,16 +347,20 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
          Rules:\n\
          - Use only the block types listed below.\n\
          - If no external action is needed, reply with [response_text].\n\
+         - If UI output is needed, emit one or more [component] blocks.\n\
          - If a tool is needed, emit only the tool_call block(s) for that turn and stop.\n\
          - After a tool turn, wait for the next turn's [result] block(s) before producing [response_text].\n\
          - Close every block correctly.\n\
-         - Do not invent tools or custom intents."
+         - Do not invent tools, components, or custom intents."
             .to_string(),
     );
 
     let mut allowed_blocks = vec!["- [response_text]...[/response_text]".to_string()];
     if !allowed_tools.is_empty() {
         allowed_blocks.push("- [tool_call: type]...[/tool]".to_string());
+    }
+    if !ir.components.is_empty() {
+        allowed_blocks.push("- [component: type, c_id:\"meaningful_id\"]...[/component]".to_string());
     }
     if ir
         .custom_intents
@@ -345,6 +380,11 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     if !allowed_tools.is_empty() {
         block_syntax.push(
             "Tool call: [tool_call: valid_tool_name] then write one `key: value` or `key = value` field per line, then close with [/tool]".to_string(),
+        );
+    }
+    if !ir.components.is_empty() {
+        block_syntax.push(
+            "Component output: [component: valid_component_name, c_id:\"meaningful_accessible_id\"] then write one `key: value` or `key = value` prop per line, use reserved `action_*` fields for actions, then close with [/component]".to_string(),
         );
     }
     if ir
@@ -425,12 +465,31 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
         }
     }
 
+    if !ir.components.is_empty() {
+        let mut component_section = String::from("\n\nComponents available:\n");
+        for component in &ir.components {
+            component_section.push_str(&format!(
+                "- {}\n",
+                format_component_signature(component, ir.types.as_ref())
+            ));
+        }
+        if let Some(example) = collect_component_example_block(&ir.components) {
+            component_section.push_str("\nComponent example:\n");
+            component_section.push_str(&example);
+            component_section.push('\n');
+        }
+        sections.push(component_section);
+    }
+
     let mut constraints = Vec::new();
     constraints.push("- Use at least one protocol block in every response.".to_string());
     constraints.push("- Never invent names or fields that are not listed.".to_string());
 
     if !allowed_tools.is_empty() {
         constraints.push("- Tool fields must match the listed tool signatures.".to_string());
+    }
+    if !ir.components.is_empty() {
+        constraints.push("- Component blocks must use a listed component name and a required c_id header.".to_string());
     }
 
     sections.push(format!(
@@ -662,6 +721,74 @@ fn format_flat_field_specs(specs: &[crate::flat_args::FlatFieldSpec]) -> String 
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn format_component_signature(
+    component: &ComponentDefinition,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> String {
+    let mut parts = Vec::new();
+
+    let prop_sig = format_params_signature(&component.props.0, types);
+    if !prop_sig.is_empty() {
+        parts.push(prop_sig);
+    }
+
+    if let Some(action) = &component.action {
+        let mut action_keys: Vec<_> = action.keys().cloned().collect();
+        action_keys.sort();
+        for key in action_keys {
+            if let Some(allowed) = action.get(&key) {
+                parts.push(format!("action_{}: {}", key, allowed.join(" | ")));
+            }
+        }
+    }
+
+    if let Some(children) = &component.children {
+        let child_desc = match children {
+            crate::types::ComponentChildrenConstraint::All => "children: all".to_string(),
+            crate::types::ComponentChildrenConstraint::Only { components } => {
+                format!("children: {}", components.join(" | "))
+            }
+        };
+        parts.push(child_desc);
+    }
+
+    if parts.is_empty() {
+        return format!("{}(c_id: string)", component.name);
+    }
+
+    format!("{}(c_id: string, {})", component.name, parts.join(", "))
+}
+
+fn collect_component_example_block(components: &[ComponentDefinition]) -> Option<String> {
+    let component = components.first()?;
+    let mut lines = vec![format!(
+        "[component: {}, c_id:\"{}_instance\"]",
+        component.name, component.name
+    )];
+
+    if let Some(props) = component.props.0.as_object() {
+        let mut keys: Vec<_> = props.keys().cloned().collect();
+        keys.sort();
+        if let Some(first_key) = keys.first() {
+            lines.push(format!("{first_key}: \"value\""));
+        }
+    }
+
+    if let Some(action) = &component.action {
+        let mut action_keys: Vec<_> = action.keys().cloned().collect();
+        action_keys.sort();
+        if let Some(first_action) = action_keys.first()
+            && let Some(allowed) = action.get(first_action)
+            && let Some(first_allowed) = allowed.first()
+        {
+            lines.push(format!("action_{first_action}: \"{first_allowed}\""));
+        }
+    }
+
+    lines.push("[/component]".to_string());
+    Some(lines.join("\n"))
 }
 
 fn format_flattened_fields(flattened: &[(String, Value)]) -> String {

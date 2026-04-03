@@ -25,6 +25,8 @@ pub enum TokenKind {
     Agent,
     #[token("helper")]
     Helper,
+    #[token("component")]
+    Component,
     #[token("tool")]
     Tool,
     #[token("tools")]
@@ -249,6 +251,7 @@ impl fmt::Display for TokenKind {
         match self {
             Self::Agent => write!(f, "'agent'"),
             Self::Helper => write!(f, "'helper'"),
+            Self::Component => write!(f, "'component'"),
             Self::Tool => write!(f, "'tool'"),
             Self::Tools => write!(f, "'tools'"),
             Self::Workflow => write!(f, "'workflow'"),

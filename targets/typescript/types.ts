@@ -43,6 +43,18 @@ export interface IRHelperDef {
     output?: any;
 }
 
+export interface IRComponentChildrenDef {
+    kind: 'all' | 'only';
+    components?: readonly string[];
+}
+
+export interface IRComponentDef {
+    name: string;
+    props?: unknown;
+    action?: Record<string, readonly string[]>;
+    children?: IRComponentChildrenDef;
+}
+
 /**
  * Custom error thrown/emitted when a tool execution fails.
  */
@@ -79,6 +91,7 @@ export interface AgentIRShape {
     tools: readonly IRToolDef[];
     workflows?: readonly IRWorkflowDef[];
     helpers?: readonly IRHelperDef[];
+    components?: readonly IRComponentDef[];
     types?: Record<string, any>;
     output?: any;
     modelConfig?: IRModelConfigEntry[];

@@ -31,6 +31,7 @@ pub fn check(model: &Model) -> Vec<Diagnostic> {
         match element {
             Element::Agent(agent) => checker.check_agent(agent, &mut diags),
             Element::Helper(helper) => checker.check_helper(helper, &mut diags),
+            Element::ComponentDecl(component) => checker.check_component_decl(component, &mut diags),
             Element::TypeDecl(td) => checker.check_type_decl(td, &mut diags),
             Element::NamedPrompt(p) => checker.check_named_prompt(p, &mut diags),
             Element::ModelDef(_) => {}
@@ -48,6 +49,7 @@ struct Checker {
     prompt_map: HashMap<String, Vec<TypeConfigDecl>>,
     tool_map: HashMap<String, ToolFunction>,
     helper_map: HashMap<String, Helper>,
+    component_map: HashMap<String, ComponentDeclaration>,
     top_level_names: HashMap<String, (&'static str, Span)>,
     /// Context fields for validating ctx.property references
     context_fields: HashMap<String, Span>,
@@ -61,6 +63,7 @@ impl Checker {
             prompt_map: HashMap::new(),
             tool_map: HashMap::new(),
             helper_map: HashMap::new(),
+            component_map: HashMap::new(),
             top_level_names: HashMap::new(),
             context_fields: HashMap::new(),
             context_types: HashMap::new(),
@@ -322,6 +325,107 @@ impl Checker {
         }
     }
 
+    fn check_component_decl(&self, component: &ComponentDeclaration, diags: &mut Vec<Diagnostic>) {
+        if component.fields.is_empty() {
+            diags.push(
+                Diagnostic::warning(
+                    format!("Component '{}' has no fields", component.name.value),
+                    component.name.span,
+                )
+                .with_help("Add props, action bindings, or a children constraint to make this component useful."),
+            );
+        }
+
+        let mut seen: HashMap<String, Span> = HashMap::new();
+        let mut action_seen: HashMap<String, Span> = HashMap::new();
+        let mut has_children = false;
+
+        for field in &component.fields {
+            match field {
+                ComponentField::Prop(prop) => {
+                    if let Some(prev_span) = seen.get(&prop.name.value) {
+                        diags.push(
+                            Diagnostic::error(
+                                format!(
+                                    "Duplicate field '{}' in component '{}'",
+                                    prop.name.value, component.name.value
+                                ),
+                                prop.name.span,
+                            )
+                            .with_label(*prev_span, "first defined here"),
+                        );
+                    } else {
+                        seen.insert(prop.name.value.clone(), prop.name.span);
+                    }
+                    self.check_type_ref_exists(&prop.ty, diags);
+                }
+                ComponentField::Action(action) => {
+                    if let Some(prev_span) = seen.get("action") {
+                        diags.push(
+                            Diagnostic::error(
+                                format!("Duplicate field 'action' in component '{}'", component.name.value),
+                                action.span,
+                            )
+                            .with_label(*prev_span, "first defined here"),
+                        );
+                    } else {
+                        seen.insert("action".to_string(), action.span);
+                    }
+
+                    for binding in &action.bindings {
+                        if let Some(prev_span) = action_seen.get(&binding.name.value) {
+                            diags.push(
+                                Diagnostic::error(
+                                    format!(
+                                        "Duplicate action binding '{}' in component '{}'",
+                                        binding.name.value, component.name.value
+                                    ),
+                                    binding.name.span,
+                                )
+                                .with_label(*prev_span, "first defined here"),
+                            );
+                        } else {
+                            action_seen.insert(binding.name.value.clone(), binding.name.span);
+                        }
+                    }
+                }
+                ComponentField::Children(children) => {
+                    if has_children {
+                        diags.push(
+                            Diagnostic::error(
+                                format!("Duplicate field 'children' in component '{}'", component.name.value),
+                                children.span,
+                            )
+                            .with_help("A component can declare at most one children constraint."),
+                        );
+                    }
+                    has_children = true;
+
+                    if let ComponentChildrenConstraint::Only(allowed) = &children.allowed {
+                        for child in allowed {
+                            if !self.component_map.contains_key(&child.value) {
+                                diags.push(
+                                    Diagnostic::error(
+                                        format!(
+                                            "Unknown component '{}' in children constraint for '{}'",
+                                            child.value, component.name.value
+                                        ),
+                                        child.span,
+                                    )
+                                    .with_help(format!(
+                                        "Declare component '{}' or use one of: {}",
+                                        child.value,
+                                        self.component_map.keys().cloned().collect::<Vec<_>>().join(", ")
+                                    )),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     fn check_type_ref_exists(&self, ty: &TypeExpr, diags: &mut Vec<Diagnostic>) {
         match ty {
             TypeExpr::TypeRef(name) => {
@@ -525,6 +629,37 @@ mod tests {
                 .iter()
                 .any(|message| message.contains("If-condition must be boolean")),
             "expected boolean condition error, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_component_in_children_constraint() {
+        let diagnostics = check_source(
+            r#"
+            component Button {
+                label: string
+            }
+
+            component Screen {
+                children: Button | MissingCard
+            }
+
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics
+                .iter()
+                .any(|message| message.contains("Unknown component 'MissingCard'")),
+            "expected unknown component error, got {diagnostics:?}"
         );
     }
 }

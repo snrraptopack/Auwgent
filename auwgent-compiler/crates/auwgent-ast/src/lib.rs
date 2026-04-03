@@ -48,6 +48,7 @@ pub enum ImportKind {
 pub enum Element {
     Agent(Agent),
     Helper(Helper),
+    ComponentDecl(ComponentDeclaration),
     TypeDecl(TypeDeclaration),
     NamedPrompt(NamedPrompt),
     ModelDef(ModelDefinition),
@@ -344,6 +345,46 @@ pub struct TypeConfigDecl {
     pub ty: TypeExpr,
     pub description: Option<Spanned<String>>,
     pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentDeclaration {
+    pub exported: bool,
+    pub name: Spanned<String>,
+    pub fields: Vec<ComponentField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComponentField {
+    Prop(TypeConfigDecl),
+    Action(ComponentAction),
+    Children(ComponentChildren),
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentAction {
+    pub bindings: Vec<ComponentActionBinding>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentActionBinding {
+    pub name: Spanned<String>,
+    pub targets: Vec<Spanned<String>>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentChildren {
+    pub allowed: ComponentChildrenConstraint,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub enum ComponentChildrenConstraint {
+    All,
+    Only(Vec<Spanned<String>>),
 }
 
 // ── Type Expressions ─────────────────────────────────────────────────────

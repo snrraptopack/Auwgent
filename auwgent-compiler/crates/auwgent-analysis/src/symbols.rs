@@ -167,6 +167,7 @@ fn symbol_in_element(element: &Element, offset: usize) -> Option<SymbolTarget> {
             }
             None
         }
+        Element::ComponentDecl(_) => None,
         Element::TypeDecl(ty) => {
             if contains_offset(ty.name.span.start, ty.name.span.end, offset) {
                 return Some(SymbolTarget {
@@ -723,6 +724,7 @@ fn collect_element_symbols(element: &Element, symbols: &mut Vec<SymbolTarget>) {
                 collect_agent_config_symbols(config, symbols);
             }
         }
+        Element::ComponentDecl(_) => {}
         Element::TypeDecl(ty) => {
             symbols.push(SymbolTarget {
                 kind: SymbolTargetKind::Type(ty.name.value.clone()),

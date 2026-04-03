@@ -223,6 +223,7 @@ fn prompt_suffix(signature: &str) -> &str {
 fn is_exported(element: &Element) -> bool {
     match element {
         Element::Helper(helper) => helper.exported,
+        Element::ComponentDecl(component) => component.exported,
         Element::TypeDecl(declaration) => declaration.exported,
         Element::NamedPrompt(prompt) => prompt.exported,
         Element::ModelDef(model) => model.exported,

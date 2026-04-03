@@ -64,6 +64,29 @@ class PartialStructuredIntentValue(PartialIntentEnvelope, total=False):
 PartialIntentValue = Union[PartialTextIntentValue, PartialStructuredIntentValue, Dict[str, Any]]
 IntentValue = Dict[str, Any]
 
+class IRComponentChildrenDef(TypedDict, total=False):
+    kind: str
+    components: List[str]
+
+class IRComponentDef(TypedDict, total=False):
+    name: str
+    props: Any
+    action: Dict[str, List[str]]
+    children: IRComponentChildrenDef
+
+class AgentIRShape(TypedDict, total=False):
+    name: str
+    input: Any
+    output: Any
+    context: Any
+    tools: List[Dict[str, Any]]
+    workflows: List[Dict[str, Any]]
+    helpers: List[Dict[str, Any]]
+    components: List[IRComponentDef]
+    types: Dict[str, Any]
+    modelConfig: List[Dict[str, Any]]
+    customIntents: List[Dict[str, Any]]
+
 # ── Error Types ───────────────────────────────────────────────────────────
 
 class AuwgentToolError(Exception):

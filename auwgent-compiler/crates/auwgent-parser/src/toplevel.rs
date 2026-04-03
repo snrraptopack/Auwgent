@@ -52,6 +52,95 @@ pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<T
         })
 }
 
+pub(crate) fn component_decl_parser(
+) -> impl Parser<TokenKind, ComponentDeclaration, Error = Simple<TokenKind>> + Clone {
+    let action_target_union = ident()
+        .then(tok(TokenKind::Pipe).ignore_then(ident()).repeated())
+        .map(|(first, rest)| {
+            let mut targets = vec![first];
+            targets.extend(rest);
+            targets
+        });
+
+    let action_binding = ident()
+        .then_ignore(tok(TokenKind::Colon))
+        .then(action_target_union)
+        .then_ignore(tok(TokenKind::Comma).or_not())
+        .map_with_span(|(name, targets), span| ComponentActionBinding {
+            name,
+            targets,
+            span: s(span),
+        });
+
+    let action_field = ident()
+        .try_map(|name, span| {
+            if name.value == "action" {
+                Ok(name)
+            } else {
+                Err(Simple::custom(span, "expected 'action'"))
+            }
+        })
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(
+            action_binding
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|bindings, span| {
+            ComponentField::Action(ComponentAction {
+                bindings,
+                span: s(span),
+            })
+        });
+
+    let children_constraint = choice((
+        tok(TokenKind::All).to(ComponentChildrenConstraint::All),
+        ident()
+            .then(tok(TokenKind::Pipe).ignore_then(ident()).repeated())
+            .map(|(first, rest)| {
+                let mut allowed = vec![first];
+                allowed.extend(rest);
+                ComponentChildrenConstraint::Only(allowed)
+            }),
+    ));
+
+    let children_field = ident()
+        .try_map(|name, span| {
+            if name.value == "children" {
+                Ok(name)
+            } else {
+                Err(Simple::custom(span, "expected 'children'"))
+            }
+        })
+        .ignore_then(tok(TokenKind::Colon))
+        .ignore_then(children_constraint)
+        .map_with_span(|allowed, span| {
+            ComponentField::Children(ComponentChildren {
+                allowed,
+                span: s(span),
+            })
+        });
+
+    let prop_field = type_config_decl_parser().map(ComponentField::Prop);
+
+    let component_field = choice((action_field, children_field, prop_field))
+        .then_ignore(tok(TokenKind::Comma).or_not());
+
+    tok(TokenKind::Component)
+        .ignore_then(ident())
+        .then(
+            component_field
+                .repeated()
+                .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
+        )
+        .map_with_span(|(name, fields), span| ComponentDeclaration {
+            exported: false,
+            name,
+            fields,
+            span: s(span),
+        })
+}
+
 pub(crate) fn type_decl_parser(
 ) -> impl Parser<TokenKind, TypeDeclaration, Error = Simple<TokenKind>> + Clone {
     let example_args = tok(TokenKind::AtExample)
@@ -176,6 +265,10 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
                 h.exported = true;
                 Element::Helper(h)
             }),
+            component_decl_parser().map(|mut c| {
+                c.exported = true;
+                Element::ComponentDecl(c)
+            }),
             type_decl_parser().map(|mut td| {
                 td.exported = true;
                 Element::TypeDecl(td)
@@ -195,6 +288,7 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
         ))),
         agent_parser().map(Element::Agent),
         helper_parser().map(Element::Helper),
+        component_decl_parser().map(Element::ComponentDecl),
         type_decl_parser().map(Element::TypeDecl),
         named_prompt_parser().map(Element::NamedPrompt),
         model_def_parser().map(Element::ModelDef),

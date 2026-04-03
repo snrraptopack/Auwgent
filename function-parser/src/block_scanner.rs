@@ -4,6 +4,7 @@
 /// - [tool_call: name]...[/tool]
 /// - [workflow_call: name]...[/workflow]
 /// - [helper_call: name]...[/helper]
+/// - [component: name, c_id:"instance_id"]...[/component]
 /// - [schema: name]...[/schema]
 /// - [custom: name]...[/custom]
 /// - [result]...[/result]
@@ -15,6 +16,7 @@ pub enum BlockType {
     Tool,
     Workflow,
     Helper,
+    Component,
     Out,
     Result,
     Error,
@@ -26,6 +28,7 @@ pub struct Block {
     pub block_type: BlockType,
     pub content: String,
     pub target_name: Option<String>,
+    pub instance_id: Option<String>,
 }
 
 pub struct BlockScanner {
@@ -36,7 +39,7 @@ pub struct BlockScanner {
 impl BlockScanner {
     const RESPONSE_TEXT_OPEN_BRACKET: &'static str = "[response_text]";
     const RESPONSE_TEXT_CLOSE_BRACKET: &'static str = "[/response_text]";
-    const INCOMPLETE_HEADER_PREFIXES: [&'static str; 12] = [
+    const INCOMPLETE_HEADER_PREFIXES: [&'static str; 14] = [
         "[response_text]",
         "[/response_text]",
         "[tool_call:",
@@ -45,6 +48,8 @@ impl BlockScanner {
         "[/workflow]",
         "[helper_call:",
         "[/helper]",
+        "[component:",
+        "[/component]",
         "[schema:",
         "[/schema]",
         "[custom:",
@@ -152,6 +157,7 @@ impl BlockScanner {
             "/tool"
                 | "/workflow"
                 | "/helper"
+                | "/component"
                 | "/schema"
                 | "/custom"
                 | "/result"
@@ -174,24 +180,33 @@ impl BlockScanner {
             Some("tool_call")
                 | Some("workflow_call")
                 | Some("helper_call")
+                | Some("component")
                 | Some("schema")
                 | Some("custom")
         )
     }
 
-    fn parse_header(&self, header: &str) -> Option<(BlockType, Option<String>, &'static str)> {
+    fn parse_header(
+        &self,
+        header: &str,
+    ) -> Option<(BlockType, Option<String>, Option<String>, &'static str)> {
         let header = header.trim();
 
         if header.eq_ignore_ascii_case("response_text") {
-            return Some((BlockType::Chat, None, Self::RESPONSE_TEXT_CLOSE_BRACKET));
+            return Some((
+                BlockType::Chat,
+                None,
+                None,
+                Self::RESPONSE_TEXT_CLOSE_BRACKET,
+            ));
         }
 
         if header.eq_ignore_ascii_case("result") {
-            return Some((BlockType::Result, None, "[/result]"));
+            return Some((BlockType::Result, None, None, "[/result]"));
         }
 
         if header.eq_ignore_ascii_case("error") {
-            return Some((BlockType::Error, None, "[/error]"));
+            return Some((BlockType::Error, None, None, "[/error]"));
         }
 
         let (kind, target) = header.split_once(':')?;
@@ -200,23 +215,90 @@ impl BlockScanner {
         if target.is_empty() {
             return None;
         }
-        if target
-            .chars()
-            .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
-        {
-            return None;
-        }
 
         match kind {
-            "tool_call" => Some((BlockType::Tool, Some(target.to_string()), "[/tool]")),
-            "workflow_call" => Some((BlockType::Workflow, Some(target.to_string()), "[/workflow]")),
-            "helper_call" => Some((BlockType::Helper, Some(target.to_string()), "[/helper]")),
-            "schema" => Some((BlockType::Out, Some(target.to_string()), "[/schema]")),
+            "tool_call" => {
+                if target
+                    .chars()
+                    .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+                {
+                    return None;
+                }
+                Some((BlockType::Tool, Some(target.to_string()), None, "[/tool]"))
+            }
+            "workflow_call" => {
+                if target
+                    .chars()
+                    .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+                {
+                    return None;
+                }
+                Some((
+                    BlockType::Workflow,
+                    Some(target.to_string()),
+                    None,
+                    "[/workflow]",
+                ))
+            }
+            "helper_call" => {
+                if target
+                    .chars()
+                    .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+                {
+                    return None;
+                }
+                Some((BlockType::Helper, Some(target.to_string()), None, "[/helper]"))
+            }
+            "component" => {
+                let (component_name, instance_id) = parse_component_header_target(target)?;
+                Some((
+                    BlockType::Component,
+                    Some(component_name),
+                    Some(instance_id),
+                    "[/component]",
+                ))
+            }
+            "schema" => {
+                if target
+                    .chars()
+                    .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+                {
+                    return None;
+                }
+                Some((BlockType::Out, Some(target.to_string()), None, "[/schema]"))
+            }
             "custom" => Some((
                 BlockType::Custom(target.to_string()),
                 Some(target.to_string()),
+                None,
                 "[/custom]",
             )),
+            _ => None,
+        }
+    }
+
+    fn close_literal_for_header_kind(&self, header: &str) -> Option<&'static str> {
+        let header = header.trim();
+
+        if header.eq_ignore_ascii_case("response_text") {
+            return Some(Self::RESPONSE_TEXT_CLOSE_BRACKET);
+        }
+
+        if header.eq_ignore_ascii_case("result") {
+            return Some("[/result]");
+        }
+
+        if header.eq_ignore_ascii_case("error") {
+            return Some("[/error]");
+        }
+
+        match header.split_once(':').map(|(kind, _)| kind.trim()) {
+            Some("tool_call") => Some("[/tool]"),
+            Some("workflow_call") => Some("[/workflow]"),
+            Some("helper_call") => Some("[/helper]"),
+            Some("component") => Some("[/component]"),
+            Some("schema") => Some("[/schema]"),
+            Some("custom") => Some("[/custom]"),
             _ => None,
         }
     }
@@ -274,6 +356,7 @@ impl BlockScanner {
                         block_type: BlockType::Chat,
                         content: implicit_chat.trim().to_string(),
                         target_name: None,
+                        instance_id: None,
                     });
                     implicit_chat.clear();
                 }
@@ -285,6 +368,7 @@ impl BlockScanner {
                     block_type: BlockType::Chat,
                     content,
                     target_name: None,
+                    instance_id: None,
                 });
             } else if self.check_incomplete_response_text_open()
                 || self.check_incomplete_response_text_close()
@@ -295,17 +379,21 @@ impl BlockScanner {
                         block_type: BlockType::Chat,
                         content: implicit_chat.trim().to_string(),
                         target_name: None,
+                        instance_id: None,
                     });
                     implicit_chat.clear();
                 }
                 break;
             } else if let Some(header) = self.try_read_header() {
-                if let Some((block_type, target_name, close_literal)) = self.parse_header(&header) {
+                if let Some((block_type, target_name, instance_id, close_literal)) =
+                    self.parse_header(&header)
+                {
                     if !implicit_chat.trim().is_empty() {
                         blocks.push(Block {
                             block_type: BlockType::Chat,
                             content: implicit_chat.trim().to_string(),
                             target_name: None,
+                            instance_id: None,
                         });
                         implicit_chat.clear();
                     }
@@ -317,9 +405,14 @@ impl BlockScanner {
                         block_type,
                         content,
                         target_name,
+                        instance_id,
                     });
                 } else if self.is_known_opening_header_kind(&header) {
                     self.consume_header();
+                    if let Some(close_literal) = self.close_literal_for_header_kind(&header) {
+                        self.read_until_literal_or_eof(close_literal);
+                        self.consume_literal(close_literal);
+                    }
                 } else if self.is_known_closing_header(&header) {
                     self.consume_header();
                 } else if let Some(ch) = self.advance() {
@@ -336,11 +429,45 @@ impl BlockScanner {
                 block_type: BlockType::Chat,
                 content: implicit_chat.trim().to_string(),
                 target_name: None,
+                instance_id: None,
             });
         }
 
         blocks
     }
+}
+
+fn parse_component_header_target(target: &str) -> Option<(String, String)> {
+    let (component_name, metadata) = target.split_once(',')?;
+    let component_name = component_name.trim();
+    if component_name.is_empty()
+        || component_name
+            .chars()
+            .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+    {
+        return None;
+    }
+
+    let (key, raw_value) = metadata.split_once(':')?;
+    if key.trim() != "c_id" {
+        return None;
+    }
+
+    let raw_value = raw_value.trim();
+    if !raw_value.starts_with('"') || !raw_value.ends_with('"') || raw_value.len() < 2 {
+        return None;
+    }
+
+    let instance_id = raw_value[1..raw_value.len() - 1].trim().to_string();
+    if instance_id.is_empty()
+        || instance_id
+            .chars()
+            .any(|ch| matches!(ch, '[' | ']' | '<' | '>' | '"'))
+    {
+        return None;
+    }
+
+    Some((component_name.to_string(), instance_id))
 }
 
 #[cfg(test)]
@@ -367,7 +494,24 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].block_type, BlockType::Tool);
         assert_eq!(blocks[0].target_name, Some("fetch_user".to_string()));
+        assert_eq!(blocks[0].instance_id, None);
         assert_eq!(blocks[0].content, "id: \"123\"");
+    }
+
+    #[test]
+    fn test_component_block_with_required_instance_id() {
+        let input = "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\naction_onclick: \"confirm_order\"\n[/component]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Component);
+        assert_eq!(blocks[0].target_name, Some("Button".to_string()));
+        assert_eq!(
+            blocks[0].instance_id,
+            Some("confirm_order_button".to_string())
+        );
+        assert!(blocks[0].content.contains("action_onclick"));
     }
 
     #[test]
@@ -467,6 +611,15 @@ mod tests {
     #[test]
     fn test_rejects_malformed_tool_header_with_whitespace_in_target() {
         let input = "[tool_call: user_name To get your name]\n[/tool]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_rejects_component_header_without_c_id() {
+        let input = "[component: Button]\nlabel: \"Confirm\"\n[/component]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 

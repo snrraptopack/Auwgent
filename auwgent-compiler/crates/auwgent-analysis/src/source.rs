@@ -372,6 +372,7 @@ fn is_exported_element(element: &Element) -> bool {
 fn exported_element_name(element: &Element) -> Option<(String, bool)> {
     match element {
         Element::Helper(helper) => Some((helper.name.value.clone(), helper.exported)),
+        Element::ComponentDecl(component) => Some((component.name.value.clone(), component.exported)),
         Element::TypeDecl(ty) => Some((ty.name.value.clone(), ty.exported)),
         Element::NamedPrompt(prompt) => Some((prompt.name.value.clone(), prompt.exported)),
         Element::ModelDef(model) => Some((model.name.value.clone(), model.exported)),

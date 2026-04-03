@@ -23,12 +23,14 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
     let mut model_defs: Vec<&ModelDefinition> = Vec::new();
     let mut prompts: Vec<&NamedPrompt> = Vec::new();
     let mut helpers_vec: Vec<&Helper> = Vec::new();
+    let mut component_decls: Vec<&ComponentDeclaration> = Vec::new();
     let mut agent: Option<&Agent> = None;
 
     for element in &model.elements {
         match element {
             Element::Agent(a) => agent = Some(a),
             Element::Helper(h) => helpers_vec.push(h),
+            Element::ComponentDecl(c) => component_decls.push(c),
             Element::TypeDecl(td) => type_decls.push(td),
             Element::ModelDef(md) => model_defs.push(md),
             Element::NamedPrompt(p) => prompts.push(p),
@@ -60,6 +62,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
     let mut tools_val: Vec<Value> = Vec::new();
     let mut workflows_val: Vec<Value> = Vec::new();
     let mut helpers_ir: Vec<Value> = Vec::new();
+    let mut components_ir: Vec<Value> = Vec::new();
     let tests_val: Vec<Value> = Vec::new();
     let mut helper_tool_grants: Map<String, Value> = Map::new();
     let mut helper_handoff: Map<String, Value> = Map::new();
@@ -143,6 +146,10 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
         ));
     }
 
+    for component in &component_decls {
+        components_ir.push(lower_component(component));
+    }
+
     ir.insert("modelConfig".into(), Value::Array(model_config));
     ir.insert("input".into(), input_val);
     ir.insert("output".into(), output_val);
@@ -150,6 +157,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
     ir.insert("tools".into(), Value::Array(tools_val));
     ir.insert("workflows".into(), Value::Array(workflows_val));
     ir.insert("helpers".into(), Value::Array(helpers_ir));
+    ir.insert("components".into(), Value::Array(components_ir));
     ir.insert("tests".into(), Value::Array(tests_val));
 
     // Types map
@@ -417,6 +425,58 @@ fn lower_type_expr_value(ty: &TypeExpr) -> Value {
             json!({ "type": "union", "options": opts })
         }
     }
+}
+
+fn lower_component(component: &ComponentDeclaration) -> Value {
+    let mut obj = Map::new();
+    obj.insert("name".into(), json!(component.name.value));
+
+    let mut props = Map::new();
+    let mut action = Map::new();
+    let mut children: Option<Value> = None;
+
+    for field in &component.fields {
+        match field {
+            ComponentField::Prop(prop) => {
+                let mut prop_value = Map::new();
+                prop_value.insert("type".into(), lower_type_expr_value(&prop.ty));
+                prop_value.insert("optional".into(), json!(prop.optional));
+                if let Some(desc) = &prop.description {
+                    prop_value.insert("description".into(), json!(desc.value));
+                }
+                props.insert(prop.name.value.clone(), Value::Object(prop_value));
+            }
+            ComponentField::Action(action_decl) => {
+                for binding in &action_decl.bindings {
+                    let targets: Vec<Value> = binding
+                        .targets
+                        .iter()
+                        .map(|target| json!(target.value))
+                        .collect();
+                    action.insert(binding.name.value.clone(), Value::Array(targets));
+                }
+            }
+            ComponentField::Children(children_decl) => {
+                children = Some(match &children_decl.allowed {
+                    ComponentChildrenConstraint::All => json!({ "kind": "all" }),
+                    ComponentChildrenConstraint::Only(allowed) => json!({
+                        "kind": "only",
+                        "components": allowed.iter().map(|component| component.value.clone()).collect::<Vec<_>>()
+                    }),
+                });
+            }
+        }
+    }
+
+    obj.insert("props".into(), Value::Object(props));
+    if !action.is_empty() {
+        obj.insert("action".into(), Value::Object(action));
+    }
+    if let Some(children) = children {
+        obj.insert("children".into(), children);
+    }
+
+    Value::Object(obj)
 }
 
 fn lower_tool(tf: &ToolFunction) -> Value {
@@ -1477,6 +1537,42 @@ mod tests {
             ir["types"]["Hey"]["properties"]["name"]["type"],
             json!("string")
         );
+    }
+
+    #[test]
+    fn lowers_components_into_ir() {
+        let ir = lower_source(
+            r#"
+            component Button {
+                label: string
+                variant: "primary" | "secondary"
+                action: {
+                    onclick: confirm_order | delete_user
+                }
+            }
+
+            component Screen {
+                children: Button
+            }
+
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        let components = ir["components"].as_array().expect("components array");
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0]["name"], "Button");
+        assert_eq!(components[0]["props"]["label"]["type"], json!("string"));
+        assert_eq!(components[0]["action"]["onclick"][0], "confirm_order");
+        assert_eq!(components[1]["children"]["kind"], "only");
+        assert_eq!(components[1]["children"]["components"][0], "Button");
     }
 
     #[test]

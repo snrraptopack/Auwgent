@@ -1,5 +1,6 @@
 /// Integration tests for block protocol
 use ir_runtime::runtime::streaming::parser::block_orchestrator::BlockOrchestrator;
+use ir_runtime::ComponentDefinition;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -290,6 +291,45 @@ fn test_custom_intent() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0, "ask_user");
     assert_eq!(results[0].1["question"], "Are you sure?");
+}
+
+#[test]
+fn test_component_block_reconstructs_props_and_action() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("component");
+    let component: ComponentDefinition = serde_json::from_value(json!({
+        "name": "Button",
+        "props": {
+            "label": { "type": "string", "optional": false },
+            "variant": { "type": "string", "optional": false }
+        },
+        "action": {
+            "onclick": ["confirm_order", "delete_user"]
+        }
+    }))
+    .expect("valid component def");
+    orch.register_component_shape(&component, None);
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\nvariant: \"primary\"\naction_onclick: \"confirm_order\"\n[/component]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "component");
+    assert_eq!(results[0].1["type"], "Button");
+    assert_eq!(results[0].1["c_id"], "confirm_order_button");
+    assert_eq!(results[0].1["props"]["label"], "Confirm");
+    assert_eq!(results[0].1["props"]["variant"], "primary");
+    assert_eq!(results[0].1["action"]["onclick"], "confirm_order");
 }
 
 #[test]

@@ -179,4 +179,24 @@ mod tests {
         let (_model, parse_errors) = parse(&tokens);
         assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
     }
+
+    #[test]
+    fn component_declaration_parses_with_action_and_children() {
+        let source = r#"
+        component Button {
+            label: string
+            variant: "primary" | "secondary" | "danger"
+            action: {
+                onclick: confirm_order | delete_user
+            }
+            children: all
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (_model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+    }
 }

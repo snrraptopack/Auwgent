@@ -15,6 +15,11 @@ impl Checker {
                     self.helper_map
                         .insert(helper.name.value.clone(), helper.clone());
                 }
+                Element::ComponentDecl(component) => {
+                    self.register_top_level_name(&component.name, "component", diags);
+                    self.component_map
+                        .insert(component.name.value.clone(), component.clone());
+                }
                 Element::TypeDecl(td) => {
                     self.register_top_level_name(&td.name, "type", diags);
                     self.type_map
@@ -58,7 +63,7 @@ impl Checker {
                     name.value, kind
                 )
             } else {
-                "Agents, helpers, prompts, types, and models share one top-level namespace. Rename one of them.".to_string()
+                "Agents, helpers, components, prompts, types, intents, and models share one top-level namespace. Rename one of them.".to_string()
             };
 
             diags.push(Diagnostic::error(message, name.span).with_help(help));

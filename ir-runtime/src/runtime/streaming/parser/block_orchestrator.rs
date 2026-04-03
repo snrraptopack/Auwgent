@@ -4,7 +4,7 @@ use crate::flat_args::{
     alias_map_from_specs, flatten_helper_input_specs, flatten_named_field_specs,
     flatten_output_specs, unflatten_object,
 };
-use crate::types::TypeDefinition;
+use crate::types::{ComponentDefinition, TypeDefinition};
 use function_parser::{
     ASTValue, BlockScanner, BlockType, parse_assignment_object, parse_ts_object,
 };
@@ -27,6 +27,8 @@ pub struct BlockOrchestrator {
     workflow_arg_templates: HashMap<String, Value>,
     helper_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
     helper_arg_templates: HashMap<String, Value>,
+    component_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
+    component_templates: HashMap<String, Value>,
     custom_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
     custom_templates: HashMap<String, Value>,
     output_alias_maps: HashMap<String, HashMap<String, Vec<String>>>,
@@ -48,6 +50,8 @@ impl BlockOrchestrator {
             workflow_arg_templates: HashMap::new(),
             helper_alias_maps: HashMap::new(),
             helper_arg_templates: HashMap::new(),
+            component_alias_maps: HashMap::new(),
+            component_templates: HashMap::new(),
             custom_alias_maps: HashMap::new(),
             custom_templates: HashMap::new(),
             output_alias_maps: HashMap::new(),
@@ -133,6 +137,20 @@ impl BlockOrchestrator {
             intent_name.to_string(),
             build_named_field_template(fields, types),
         );
+    }
+
+    pub fn register_component_shape(
+        &mut self,
+        component: &ComponentDefinition,
+        types: Option<&HashMap<String, TypeDefinition>>,
+    ) {
+        let (aliases, template) = build_component_shape(component, types);
+        if !aliases.is_empty() {
+            self.component_alias_maps
+                .insert(component.name.clone(), aliases);
+        }
+        self.component_templates
+            .insert(component.name.clone(), template);
     }
 
     pub fn register_output_shape(
@@ -288,6 +306,39 @@ impl BlockOrchestrator {
                     }
                 }
 
+                BlockType::Component => {
+                    if let (Some(component_name), Some(instance_id)) =
+                        (block.target_name.as_deref(), block.instance_id.as_deref())
+                    {
+                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+                            self.unflatten_component_args(
+                                component_name,
+                                ast_to_json_object(&fields),
+                            )
+                        });
+                        if is_final && parsed.is_none() {
+                            continue;
+                        }
+                        let fields_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
+                        let intent =
+                            build_component_intent(component_name, instance_id, fields_json.clone());
+                        let intent = if is_final {
+                            intent
+                        } else {
+                            let snapshot = build_component_intent(
+                                component_name,
+                                instance_id,
+                                self.merge_component_args(
+                                    component_name,
+                                    &fields_json,
+                                ),
+                            );
+                            build_partial_structured_payload(snapshot, &block.content, block_index)
+                        };
+                        self.emit_intent("component", intent, is_final, false);
+                    }
+                }
+
                 BlockType::Out => {
                     let schema_name = block.target_name.as_deref().unwrap_or("Output");
                     let parsed = parse_partial_schema_content(&block.content)
@@ -432,6 +483,13 @@ impl BlockOrchestrator {
             .unwrap_or(args)
     }
 
+    fn unflatten_component_args(&self, component_name: &str, args: Value) -> Value {
+        self.component_alias_maps
+            .get(component_name)
+            .map(|aliases| unflatten_object(&args, aliases))
+            .unwrap_or(args)
+    }
+
     fn unflatten_schema_response(&self, schema_name: &str, response: Value) -> Value {
         self.output_alias_maps
             .get(schema_name)
@@ -471,6 +529,15 @@ impl BlockOrchestrator {
         merge_template(
             self.custom_templates
                 .get(intent_name)
+                .unwrap_or(&Value::Object(Map::new())),
+            args,
+        )
+    }
+
+    fn merge_component_args(&self, component_name: &str, args: &Value) -> Value {
+        merge_template(
+            self.component_templates
+                .get(component_name)
                 .unwrap_or(&Value::Object(Map::new())),
             args,
         )
@@ -593,6 +660,29 @@ fn build_partial_structured_payload(snapshot: Value, raw: &str, segment: usize) 
     payload
 }
 
+fn build_component_intent(component_name: &str, instance_id: &str, fields: Value) -> Value {
+    let mut intent = Map::new();
+    intent.insert(
+        "type".to_string(),
+        Value::String(component_name.to_string()),
+    );
+    intent.insert("c_id".to_string(), Value::String(instance_id.to_string()));
+
+    if let Value::Object(fields_obj) = fields {
+        if let Some(props) = fields_obj.get("props") {
+            intent.insert("props".to_string(), props.clone());
+        }
+        if let Some(action) = fields_obj.get("action") {
+            intent.insert("action".to_string(), action.clone());
+        }
+        if let Some(children) = fields_obj.get("children") {
+            intent.insert("children".to_string(), children.clone());
+        }
+    }
+
+    Value::Object(intent)
+}
+
 fn partial_payload_key(name: &str, value: &Value) -> String {
     let segment = value
         .get("segment")
@@ -629,6 +719,48 @@ fn build_named_field_template(
     types: Option<&HashMap<String, TypeDefinition>>,
 ) -> Value {
     Value::Object(build_template_fields(schema_value, types))
+}
+
+fn build_component_shape(
+    component: &ComponentDefinition,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> (HashMap<String, Vec<String>>, Value) {
+    let mut aliases = HashMap::new();
+    let mut template = Map::new();
+
+    let prop_specs = flatten_named_field_specs(&component.props.0, types);
+    if !prop_specs.is_empty() {
+        for spec in prop_specs {
+            aliases.insert(
+                spec.alias.clone(),
+                std::iter::once("props".to_string())
+                    .chain(spec.path.into_iter())
+                    .collect(),
+            );
+        }
+        template.insert(
+            "props".to_string(),
+            build_named_field_template(&component.props.0, types),
+        );
+    }
+
+    if let Some(actions) = &component.action {
+        let mut action_template = Map::new();
+        for (event_name, _allowed_actions) in actions {
+            aliases.insert(
+                format!("action_{event_name}"),
+                vec!["action".to_string(), event_name.clone()],
+            );
+            action_template.insert(event_name.clone(), pending_value());
+        }
+        template.insert("action".to_string(), Value::Object(action_template));
+    }
+
+    if component.children.is_some() {
+        template.insert("children".to_string(), Value::Array(Vec::new()));
+    }
+
+    (aliases, Value::Object(template))
 }
 
 fn build_helper_input_template(

@@ -48,6 +48,8 @@ pub struct AgentIR {
     #[serde(default)]
     pub helpers: Vec<HelperIR>,
     #[serde(default)]
+    pub components: Vec<ComponentIR>,
+    #[serde(default)]
     pub types: Option<HashMap<String, TypeDeclIR>>,
     /// Tool grants per helper: `"all"` or `["toolA", "toolB"]`.
     #[serde(default)]
@@ -357,6 +359,24 @@ pub struct CustomIntentIR {
     pub fields: JsonValue,
     #[serde(default)]
     pub examples: Vec<JsonValue>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentIR {
+    pub name: String,
+    pub props: JsonValue,
+    #[serde(default)]
+    pub action: Option<HashMap<String, Vec<String>>>,
+    #[serde(default)]
+    pub children: Option<ComponentChildrenIR>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ComponentChildrenIR {
+    All,
+    Only { components: Vec<String> },
 }
 
 // ── Handoff ──────────────────────────────────────────────────────────────────
