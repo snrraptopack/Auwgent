@@ -1,76 +1,78 @@
-// Auto-generated types for Main
+// Auto-generated types for Assistants
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type MainIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "Main";
+type AssistantsIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "Assistants";
   workflows: undefined;
-  helpers: ({ name: "A"; input: null; output: null })[];
+  helpers: undefined;
 };
-const agentIR = _importedIR as unknown as MainIR;
-export type MainInput = {
+const agentIR = _importedIR as unknown as AssistantsIR;
+export type AssistantsInput = {
 
 }
 
-export type MainOutput = {
+export type AssistantsOutput = {
 
 }
 
-export type MainContext = {
-
+export type AssistantsContext = {
+    user_name: string;
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type MainCustomIntents =
+export type AssistantsCustomIntents =
     | never;
 
 /**
- * API keys required for Main
+ * API keys required for Assistants
  */
-export type MainApiKeys = {
+export type AssistantsApiKeys = {
     geminiApiKey: string;
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type MainAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
+export type AssistantsAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
-    MainCustomIntents,
-    MainOutput,
+    AssistantsCustomIntents,
+    AssistantsOutput,
     Record<string, never>
 >;
 
-/** Middleware object type — consistent with `MainAgent.onIntent` intent narrowing */
-export type MainMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
+/** Middleware object type — consistent with `AssistantsAgent.onIntent` intent narrowing */
+export type AssistantsMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
-    MainCustomIntents,
-    MainOutput,
+    AssistantsCustomIntents,
+    AssistantsOutput,
     Record<string, never>,
     T
 >;
 
-export type MainConfig = {
-    middleware?: MainMiddleware[];
-    apiKeys: MainApiKeys;
+export type AssistantsConfig = {
+    middleware?: AssistantsMiddleware[];
+    context: AssistantsContext;
+    apiKeys: AssistantsApiKeys;
 }
 
-export function createMain(config: MainConfig): MainAgent {
+export function createAssistants(config: AssistantsConfig): AssistantsAgent {
     return createAuwgent<
         typeof agentIR,
-        MainCustomIntents,
-        MainOutput,
+        AssistantsCustomIntents,
+        AssistantsOutput,
         Record<string, never>
     >(agentIR, {
         tools: {} as Record<string, never>,
         middleware: config.middleware as any,
+        context: config.context,
         apiKeys: config.apiKeys
     });
 }
 
-export const auwgent = createMain;
+export const auwgent = createAssistants;
 export type AuwgentTools = Record<string, never>;
-export type AuwgentConfig = MainConfig;
-export type AuwgentAgent = MainAgent;
-export type AuwgentMiddleware = MainMiddleware;
-export type AuwgentContext = MainContext;
+export type AuwgentConfig = AssistantsConfig;
+export type AuwgentAgent = AssistantsAgent;
+export type AuwgentMiddleware = AssistantsMiddleware;
+export type AuwgentContext = AssistantsContext;

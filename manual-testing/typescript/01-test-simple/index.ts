@@ -22,6 +22,7 @@ agent.onIntentPartial((name, value, age) => {
   if (name === "tool_call") {
       console.log(value.args)
   }
+
 })
 
 agent.onIntent((name, value, agentname) => {
@@ -35,7 +36,7 @@ agent.onWarning((warning) => {
 
 console.log(agent.generatePrompt())
 
-const session = await agent.run(`what my name`)
+const session = await agent.run(`render one component for me to se`)
 
 console.log(JSON.stringify(session,null,2))
 

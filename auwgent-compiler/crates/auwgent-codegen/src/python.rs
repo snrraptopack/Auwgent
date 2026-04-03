@@ -289,6 +289,11 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         .and_then(Value::as_array)
         .map(|tools| !tools.is_empty())
         .unwrap_or(false);
+    let has_components = ir
+        .get("components")
+        .and_then(Value::as_array)
+        .map(|components| !components.is_empty())
+        .unwrap_or(false);
 
     let mut blocks = vec![];
     let mut value_types = vec![
@@ -569,6 +574,28 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         intent_names.push("helper_result".to_string());
     }
 
+    if has_components {
+        blocks.push(format!("class {agent_name}ComponentIntent(TypedDict):"));
+        blocks.push("    type: str".to_string());
+        blocks.push("    c_id: str".to_string());
+        blocks.push("    props: Dict[str, Any]".to_string());
+        blocks.push("    action: NotRequired[Any]".to_string());
+        blocks.push("    children: NotRequired[List[str]]".to_string());
+        blocks.push(String::new());
+        blocks.push(format!("class {agent_name}RenderComponentIntent(TypedDict):"));
+        blocks.push("    root: NotRequired[str]".to_string());
+        blocks.push("    roots: NotRequired[List[str]]".to_string());
+        blocks.push("    components: NotRequired[Dict[str, Any]]".to_string());
+        blocks.push("    tree: NotRequired[Any]".to_string());
+        blocks.push("    trees: NotRequired[List[Any]]".to_string());
+        blocks.push(String::new());
+
+        value_types.push(format!("{agent_name}ComponentIntent"));
+        value_types.push(format!("{agent_name}RenderComponentIntent"));
+        intent_names.push("component".to_string());
+        intent_names.push("render_component".to_string());
+    }
+
     blocks.push(format!(
         "{agent_name}IntentName = Literal[{}]",
         intent_names.iter().map(|name| format!("\"{name}\"")).collect::<Vec<_>>().join(", ")
@@ -607,6 +634,10 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
     if !helper_call_types.is_empty() {
         blocks.push(format!("{agent_name}PartialHelperCallIntent = PartialStructuredIntentValue"));
         blocks.push(format!("{agent_name}PartialHelperResultIntent = PartialStructuredIntentValue"));
+    }
+    if has_components {
+        blocks.push(format!("{agent_name}PartialComponentIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialRenderComponentIntent = PartialStructuredIntentValue"));
     }
     blocks.push(format!(
         "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, PartialIntentValue, str], None]"
@@ -647,6 +678,12 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         blocks.push(format!("    def helper_result(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", helper_result_types.join(", ")));
         blocks.push("        pass".to_string());
     }
+    if has_components {
+        blocks.push(format!("    def component(self, intent: {agent_name}ComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push("        pass".to_string());
+        blocks.push(format!("    def render_component(self, intent: {agent_name}RenderComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push("        pass".to_string());
+    }
 
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BasePartialIntentHandler:"));
@@ -681,6 +718,12 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         blocks.push(format!("    def helper_call(self, intent: {agent_name}PartialHelperCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
         blocks.push(format!("    def helper_result(self, intent: {agent_name}PartialHelperResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("        pass".to_string());
+    }
+    if has_components {
+        blocks.push(format!("    def component(self, intent: {agent_name}PartialComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push("        pass".to_string());
+        blocks.push(format!("    def render_component(self, intent: {agent_name}PartialRenderComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
 
@@ -1027,5 +1070,41 @@ mod tests {
         assert!(output.contains("class ManagerBaseIntentHandler:"));
         assert!(output.contains("def on_intent(self, handler: Union[ManagerBaseIntentHandler, type[ManagerBaseIntentHandler]]) -> None:"));
         assert!(output.contains("class ManagerBasePartialIntentHandler:"));
+    }
+
+    #[test]
+    fn emits_python_intent_typing_for_components() {
+        let ir = json!({
+            "name": "UiAgent",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [{
+                "name": "Button",
+                "props": {},
+                "action": {
+                    "onclick": [{
+                        "name": "delete",
+                        "params": {
+                            "id": { "type": "string", "optional": false }
+                        }
+                    }]
+                },
+                "children": null
+            }]
+        });
+
+        let output = generate(&ir, "main");
+        assert!(output.contains("class UiAgentComponentIntent(TypedDict):"));
+        assert!(output.contains("class UiAgentRenderComponentIntent(TypedDict):"));
+        assert!(output.contains("UiAgentIntentName = Literal[\"response_text\", \"response_schema\", \"error\", \"component\", \"render_component\"]"));
+        assert!(output.contains("def component(self, intent: UiAgentComponentIntent, agent_name: str)"));
+        assert!(output.contains("def render_component(self, intent: UiAgentRenderComponentIntent, agent_name: str)"));
+        assert!(output.contains("UiAgentPartialComponentIntent = PartialStructuredIntentValue"));
+        assert!(output.contains("UiAgentPartialRenderComponentIntent = PartialStructuredIntentValue"));
     }
 }

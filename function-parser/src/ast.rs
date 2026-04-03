@@ -14,6 +14,10 @@ pub enum ASTValue {
     Boolean(bool),
     Array(Vec<ASTValue>),
     Object(HashMap<String, ASTValue>),
+    Call {
+        name: String,
+        args: HashMap<String, ASTValue>,
+    },
     Null,
 }
 

@@ -316,7 +316,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         Register a class/object intent handler.
 
         Handler methods are resolved by intent name (exact then sanitized), e.g.
-        response_text, tool_call, workflow_result.
+        response_text, tool_call, workflow_result, component, render_component.
         Method signature must be: (value, agent_name)
         """
         if isinstance(handler, type):

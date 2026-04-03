@@ -1,4 +1,10 @@
 
+component Button {
+    action : {
+        onclick : delete(id:string)
+    }
+}
+
 agent Assistants{
 
     default config{

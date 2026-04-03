@@ -42,57 +42,7 @@
     }
   ],
   "input": null,
-  "output": {
-    "id": {
-      "type": "string",
-      "optional": false
-    },
-    "name": {
-      "type": "string",
-      "optional": false
-    },
-    "contact": {
-      "type": {
-        "type": "typeRef",
-        "name": "ContactInfo"
-      },
-      "optional": false
-    },
-    "subscription": {
-      "type": {
-        "type": "typeRef",
-        "name": "Subscription"
-      },
-      "optional": false
-    },
-    "member_count": {
-      "type": "number",
-      "optional": false
-    },
-    "tags": {
-      "type": {
-        "type": "array",
-        "items": "string"
-      },
-      "optional": false
-    },
-    "@examples": [
-      {
-        "id": {
-          "type": "literal",
-          "value": "abc"
-        },
-        "name": {
-          "type": "literal",
-          "value": "any name"
-        },
-        "contact": {
-          "type": "literal",
-          "value": ".... and so on"
-        }
-      }
-    ]
-  },
+  "output": null,
   "context": null,
   "tools": [
     {
@@ -110,20 +60,34 @@
   ],
   "workflows": [],
   "helpers": [],
+  "components": [
+    {
+      "name": "Button",
+      "props": {},
+      "action": {
+        "onclick": [
+          {
+            "name": "delete",
+            "params": null
+          },
+          {
+            "name": "add",
+            "params": {
+              "id": {
+                "type": "string",
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "children": null
+    }
+  ],
   "types": {
     "PricingTier": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "max_seats": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
         "monthly_cost": {
           "type": "number",
           "optional": false,
@@ -133,6 +97,85 @@
           "type": "number",
           "optional": false,
           "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "max_seats": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
+    },
+    "ContactInfo": {
+      "isOutput": false,
+      "properties": {
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "address": {
+          "type": {
+            "type": "typeRef",
+            "name": "Address"
+          },
+          "optional": false,
+          "description": null
+        },
+        "phone": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
+    },
+    "Subscription": {
+      "isOutput": false,
+      "properties": {
+        "is_active": {
+          "type": "boolean",
+          "optional": false,
+          "description": null
+        },
+        "features": {
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "typeRef",
+              "name": "Feature"
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "renews_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "started_at": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "tier": {
+          "type": {
+            "type": "typeRef",
+            "name": "PricingTier"
+          },
+          "optional": false,
+          "description": null
         }
       },
       "@examples": []
@@ -140,12 +183,12 @@
     "Address": {
       "isOutput": false,
       "properties": {
-        "street": {
+        "city": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "city": {
+        "zip": {
           "type": "string",
           "optional": false,
           "description": null
@@ -155,7 +198,7 @@
           "optional": false,
           "description": null
         },
-        "zip": {
+        "street": {
           "type": "string",
           "optional": false,
           "description": null
@@ -166,6 +209,11 @@
     "Feature": {
       "isOutput": false,
       "properties": {
+        "label": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "config": {
           "type": {
             "type": "object",
@@ -192,82 +240,8 @@
           "optional": false,
           "description": null
         },
-        "label": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "id": {
           "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "Subscription": {
-      "isOutput": false,
-      "properties": {
-        "tier": {
-          "type": {
-            "type": "typeRef",
-            "name": "PricingTier"
-          },
-          "optional": false,
-          "description": null
-        },
-        "features": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "typeRef",
-              "name": "Feature"
-            }
-          },
-          "optional": false,
-          "description": null
-        },
-        "renews_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "started_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "is_active": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "ContactInfo": {
-      "isOutput": false,
-      "properties": {
-        "phone": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "email": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
           "optional": false,
           "description": null
         }
@@ -277,12 +251,15 @@
     "Organization": {
       "isOutput": false,
       "properties": {
-        "id": {
-          "type": "string",
+        "contact": {
+          "type": {
+            "type": "typeRef",
+            "name": "ContactInfo"
+          },
           "optional": false,
           "description": null
         },
-        "name": {
+        "id": {
           "type": "string",
           "optional": false,
           "description": null
@@ -292,26 +269,23 @@
           "optional": false,
           "description": null
         },
-        "subscription": {
-          "type": {
-            "type": "typeRef",
-            "name": "Subscription"
-          },
-          "optional": false,
-          "description": null
-        },
-        "contact": {
-          "type": {
-            "type": "typeRef",
-            "name": "ContactInfo"
-          },
-          "optional": false,
-          "description": null
-        },
         "tags": {
           "type": {
             "type": "array",
             "items": "string"
+          },
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "subscription": {
+          "type": {
+            "type": "typeRef",
+            "name": "Subscription"
           },
           "optional": false,
           "description": null

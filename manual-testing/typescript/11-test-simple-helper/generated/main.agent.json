@@ -1,5 +1,5 @@
 {
-  "name": "Main",
+  "name": "Assistants",
   "modelConfig": [
     {
       "defaultConfig": {
@@ -10,8 +10,32 @@
         },
         "embedding": null,
         "prompt": {
-          "value": "You are a helper be polite",
-          "type": "literal"
+          "type": "block",
+          "value": [
+            {
+              "type": "template",
+              "value": [
+                {
+                  "type": "literal",
+                  "value": "\r\n            You are an assistant agent please be polite to the user\r\n            the user name is "
+                },
+                {
+                  "type": "memberAccess",
+                  "object": {
+                    "type": "varRef",
+                    "value": "ctx"
+                  },
+                  "properties": [
+                    "user_name"
+                  ]
+                },
+                {
+                  "type": "literal",
+                  "value": "\r\n        "
+                }
+              ]
+            }
+          ]
         }
       },
       "namedConfig": []
@@ -19,34 +43,33 @@
   ],
   "input": null,
   "output": null,
-  "context": null,
+  "context": {
+    "user_name": {
+      "type": "string",
+      "optional": false
+    }
+  },
   "tools": [],
   "workflows": [],
-  "helpers": [
+  "helpers": [],
+  "components": [
     {
-      "name": "A",
-      "description": "mandatory description",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash",
-              "config": null
-            },
-            "embedding": null,
-            "prompt": null
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": [],
-      "customIntents": null,
-      "examples": []
+      "name": "Button",
+      "props": {},
+      "action": {
+        "onclick": [
+          {
+            "name": "delete",
+            "params": {
+              "id": {
+                "type": "string",
+                "optional": false
+              }
+            }
+          }
+        ]
+      },
+      "children": null
     }
   ],
   "types": null,

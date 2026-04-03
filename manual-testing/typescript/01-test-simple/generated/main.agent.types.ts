@@ -11,60 +11,55 @@ type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
 };
 const agentIR = _importedIR as unknown as MainAgentIR;
 export type PricingTier = {
-    name: string;
-    max_seats: number;
     monthly_cost: number;
     annual_cost: number;
-}
-
-export type Address = {
-    street: string;
-    city: string;
-    country: string;
-    zip: string;
-}
-
-export type Feature = {
-    config: { limit: number; unit: string; overage_rate: number };
-    enabled: boolean;
-    label: string;
-    id: string;
-}
-
-export type Subscription = {
-    tier: PricingTier;
-    features: Feature[];
-    renews_at: string;
-    started_at: string;
-    is_active: boolean;
-    id: string;
+    name: string;
+    max_seats: number;
 }
 
 export type ContactInfo = {
-    phone: string;
     email: string;
     address: Address;
+    phone: string;
+}
+
+export type Subscription = {
+    is_active: boolean;
+    features: Feature[];
+    id: string;
+    renews_at: string;
+    started_at: string;
+    tier: PricingTier;
+}
+
+export type Address = {
+    city: string;
+    zip: string;
+    country: string;
+    street: string;
+}
+
+export type Feature = {
+    label: string;
+    config: { limit: number; unit: string; overage_rate: number };
+    enabled: boolean;
+    id: string;
 }
 
 export type Organization = {
-    id: string;
-    name: string;
-    member_count: number;
-    subscription: Subscription;
     contact: ContactInfo;
+    id: string;
+    member_count: number;
     tags: string[];
+    name: string;
+    subscription: Subscription;
 }
 export type MainAgentInput = {
 
 }
 
 export type MainAgentOutput = {
-    id: string;
-    name: string;
-    contact: ContactInfo;
-    subscription: Subscription;
-    member_count: number;
-    tags: string[];
+
 }
 
 export type MainAgentContext = {

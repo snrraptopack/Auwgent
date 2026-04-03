@@ -104,6 +104,8 @@ impl Auwgent {
     /// The callback fires for every detected intent during the agentic loop:
     /// - `"tool_call"` — LLM requested a tool call (value: { type, args })
     /// - `"tool_result"` — Tool finished (value: { name, result })
+    /// - `"component"` — LLM declared a UI component instance
+    /// - `"render_component"` — LLM requested a UI render root/tree
     /// - `"response_text"` — LLM text response (value: { text })
     /// - `"response_schema"` — LLM structured output
     /// - `"workflow_call"` — LLM requested a workflow

@@ -52,6 +52,12 @@ export type Organization {
     contact = '.... and so on'
 )
 
+component Button{
+    action : {
+        onclick : delete | add(id:string)
+    }
+}
+
 agent MainAgent{
 
     default config{
@@ -67,5 +73,5 @@ agent MainAgent{
     }
 
     tool user_name(id:number):string @desc "for getting the user name"
-    output:Organization
+    output:Text
 }

@@ -262,6 +262,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def on_intent(self, callback: Callable[[str, Dict[str, Any]], Awaitable[Optional[Dict[str, Any]]]]) -> None:
         """
         Register an intent callback for real-time streaming events.
+
+        Runtime-emitted intent names can include tool/workflow/helper events,
+        `component`, `render_component`, `response_text`, `response_schema`, and `error`.
         """
         self._stored_intent_handler = callback
 

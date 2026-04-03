@@ -81,7 +81,7 @@ fn main_protocol_prompt_includes_generic_block_syntax() {
     assert!(prompt.contains("[render_component]"));
     assert!(prompt.contains("[schema: valid_schema_name]"));
     assert!(prompt.contains("Components available:"));
-    assert!(prompt.contains("Button(c_id: string"));
+    assert!(prompt.contains("Button(label: string"));
     assert!(prompt.contains("action_onclick: confirm_order | delete_user(id: string)"));
     assert!(prompt.contains("root: \"component_c_id\""));
     assert!(prompt.contains("UI output must end with a [render_component] block"));

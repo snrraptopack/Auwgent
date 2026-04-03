@@ -246,13 +246,63 @@ impl TSObjectParser {
                 Ok(ASTValue::Array(arr))
             }
             TokenKind::Identifier(s) => {
-                // Bare identifier - treat as string
-                let val = ASTValue::String(s.clone());
+                let ident = s.clone();
                 self.advance();
-                Ok(val)
+
+                if self.current == TokenKind::OpenParen {
+                    self.advance();
+                    let args = self.parse_object_like_args(TokenKind::CloseParen)?;
+                    if self.current == TokenKind::CloseParen {
+                        self.advance();
+                    }
+                    Ok(ASTValue::Call { name: ident, args })
+                } else {
+                    Ok(ASTValue::String(ident))
+                }
             }
             _ => Err(format!("Unexpected token: {:?}", self.current)),
         }
+    }
+
+    fn parse_object_like_args(
+        &mut self,
+        close_token: TokenKind,
+    ) -> Result<HashMap<String, ASTValue>, String> {
+        let mut map = HashMap::new();
+
+        while self.current != TokenKind::EOF && self.current != close_token {
+            let key = match &self.current {
+                TokenKind::Identifier(s) => {
+                    let k = s.clone();
+                    self.advance();
+                    k
+                }
+                TokenKind::StringLiteral(s) => {
+                    let k = s.clone();
+                    self.advance();
+                    k
+                }
+                TokenKind::Comma => {
+                    self.advance();
+                    continue;
+                }
+                _ => return Err(format!("Expected argument name, got: {:?}", self.current)),
+            };
+
+            if self.current != TokenKind::Equals {
+                return Err(format!("Expected '=' or ':', got: {:?}", self.current));
+            }
+            self.advance();
+
+            let value = self.parse_value()?;
+            map.insert(key, value);
+
+            if self.current == TokenKind::Comma {
+                self.advance();
+            }
+        }
+
+        Ok(map)
     }
 
     fn parse_object(&mut self) -> Result<HashMap<String, ASTValue>, String> {
@@ -436,5 +486,22 @@ mod tests {
             Some(&ASTValue::String("123".to_string()))
         );
         assert_eq!(result.get("count"), Some(&ASTValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_assignment_object_supports_call_expression_values() {
+        let input = "action_onclick: delete(id: \"123\")";
+        let result = parse_assignment_object(input).unwrap();
+
+        assert_eq!(
+            result.get("action_onclick"),
+            Some(&ASTValue::Call {
+                name: "delete".to_string(),
+                args: HashMap::from([(
+                    "id".to_string(),
+                    ASTValue::String("123".to_string())
+                )]),
+            })
+        );
     }
 }

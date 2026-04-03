@@ -726,7 +726,7 @@ fn build_component_intent(component_name: &str, instance_id: &str, fields: Value
             intent.insert("props".to_string(), props.clone());
         }
         if let Some(action) = fields_obj.get("action") {
-            intent.insert("action".to_string(), action.clone());
+            intent.insert("action".to_string(), normalize_component_action_value(action));
         }
         if let Some(children) = fields_obj.get("children") {
             intent.insert("children".to_string(), children.clone());
@@ -775,6 +775,41 @@ fn build_render_component_intent(
     }
 
     Value::Object(intent)
+}
+
+fn normalize_component_action_value(action: &Value) -> Value {
+    let Some(action_obj) = action.as_object() else {
+        return action.clone();
+    };
+
+    let mut normalized = Map::new();
+    for (event_name, event_value) in action_obj {
+        if let Some(call_obj) = event_value.as_object()
+            && call_obj.get("__kind").and_then(Value::as_str) == Some("call")
+        {
+            let mut target = Map::new();
+            if let Some(name) = call_obj.get("name") {
+                target.insert("name".to_string(), name.clone());
+            }
+            if let Some(args) = call_obj.get("args") {
+                target.insert("args".to_string(), args.clone());
+            }
+            normalized.insert(event_name.clone(), Value::Object(target));
+            continue;
+        }
+
+        if let Some(name) = event_value.as_str() {
+            normalized.insert(
+                event_name.clone(),
+                serde_json::json!({ "name": name }),
+            );
+            continue;
+        }
+
+        normalized.insert(event_name.clone(), event_value.clone());
+    }
+
+    Value::Object(normalized)
 }
 
 fn resolve_component_instance(
@@ -866,41 +901,12 @@ fn build_component_shape(
 
     if let Some(actions) = &component.action {
         let mut action_template = Map::new();
-        for (event_name, allowed_actions) in actions {
+        for (event_name, _allowed_actions) in actions {
             aliases.insert(
                 format!("action_{event_name}"),
-                vec!["action".to_string(), event_name.clone(), "name".to_string()],
+                vec!["action".to_string(), event_name.clone()],
             );
-            let mut action_value = Map::new();
-            action_value.insert("name".to_string(), pending_value());
-
-            let mut args_template = Map::new();
-            for target in allowed_actions {
-                if let Some(params) = target.params.as_ref().and_then(|value| value.0.as_object()) {
-                    for (param_name, param_def) in params {
-                        aliases.insert(
-                            format!("action_{event_name}_{param_name}"),
-                            vec![
-                                "action".to_string(),
-                                event_name.clone(),
-                                "args".to_string(),
-                                param_name.clone(),
-                            ],
-                        );
-                        if !args_template.contains_key(param_name) {
-                            args_template.insert(
-                                param_name.clone(),
-                                build_template_value(param_def, types),
-                            );
-                        }
-                    }
-                }
-            }
-
-            if !args_template.is_empty() {
-                action_value.insert("args".to_string(), Value::Object(args_template));
-            }
-            action_template.insert(event_name.clone(), Value::Object(action_value));
+            action_template.insert(event_name.clone(), pending_value());
         }
         template.insert("action".to_string(), Value::Object(action_template));
     }
@@ -1116,6 +1122,17 @@ fn ast_to_json(val: &ASTValue) -> Value {
                 map.insert(k.clone(), ast_to_json(v));
             }
             Value::Object(map)
+        }
+        ASTValue::Call { name, args } => {
+            let mut args_map = Map::new();
+            for (key, value) in args {
+                args_map.insert(key.clone(), ast_to_json(value));
+            }
+            serde_json::json!({
+                "__kind": "call",
+                "name": name,
+                "args": Value::Object(args_map),
+            })
         }
     }
 }

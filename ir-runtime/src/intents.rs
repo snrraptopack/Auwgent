@@ -201,7 +201,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
             ));
         }
 
-        if let Some(example) = collect_component_example_block(&ir.components) {
+        if let Some(example) = collect_component_example_block(&ir.components, ir.types.as_ref()) {
             component_section.push_str("\nComponent example:\n");
             component_section.push_str(&example);
             component_section.push('\n');
@@ -486,7 +486,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
                 format_component_signature(component, ir.types.as_ref())
             ));
         }
-        if let Some(example) = collect_component_example_block(&ir.components) {
+        if let Some(example) = collect_component_example_block(&ir.components, ir.types.as_ref()) {
             component_section.push_str("\nComponent example:\n");
             component_section.push_str(&example);
             component_section.push('\n');
@@ -787,13 +787,16 @@ fn format_component_signature(
     }
 
     if parts.is_empty() {
-        return format!("{}(c_id: string)", component.name);
+        return format!("{}()", component.name);
     }
 
-    format!("{}(c_id: string, {})", component.name, parts.join(", "))
+    format!("{}({})", component.name, parts.join(", "))
 }
 
-fn collect_component_example_block(components: &[ComponentDefinition]) -> Option<String> {
+fn collect_component_example_block(
+    components: &[ComponentDefinition],
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Option<String> {
     let component = components.first()?;
     let mut lines = vec![format!(
         "[component: {}, c_id:\"{}_instance\"]",
@@ -815,15 +818,16 @@ fn collect_component_example_block(components: &[ComponentDefinition]) -> Option
             && let Some(allowed) = action.get(first_action)
             && let Some(first_allowed) = allowed.first()
         {
-            lines.push(format!("action_{first_action}: \"{}\"", first_allowed.name));
-            if let Some(params) = &first_allowed.params
-                && let Some(param_obj) = params.0.as_object()
-            {
-                let mut param_keys: Vec<_> = param_obj.keys().cloned().collect();
-                param_keys.sort();
-                if let Some(first_param) = param_keys.first() {
-                    lines.push(format!("action_{first_action}_{first_param}: \"value\""));
-                }
+            if let Some(params) = &first_allowed.params {
+                let specs = flatten_named_field_specs(&params.0, types);
+                let args = specs
+                    .iter()
+                    .map(|spec| format!("{}: \"value\"", spec.alias))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                lines.push(format!("action_{first_action}: {}({args})", first_allowed.name));
+            } else {
+                lines.push(format!("action_{first_action}: {}", first_allowed.name));
             }
         }
     }

@@ -326,7 +326,7 @@ fn test_component_block_reconstructs_props_and_action() {
     }));
 
     orch.write(
-        "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\nvariant: \"primary\"\naction_onclick: \"delete_user\"\naction_onclick_id: \"usr_123\"\n[/component]",
+        "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\nvariant: \"primary\"\naction_onclick: delete_user(id: \"usr_123\")\n[/component]",
     );
     orch.end();
 
@@ -380,7 +380,7 @@ fn test_render_component_resolves_children_from_component_registry() {
 
     orch.write(
         "[component: Card, c_id:\"checkout_card\"]\ntitle: \"Checkout\"\nchildren: [\"confirm_btn\"]\n[/component]\n\
-         [component: Button, c_id:\"confirm_btn\"]\nlabel: \"Confirm\"\naction_onclick: \"confirm_order\"\n[/component]\n\
+         [component: Button, c_id:\"confirm_btn\"]\nlabel: \"Confirm\"\naction_onclick: confirm_order\n[/component]\n\
          [render_component]\nroot: \"checkout_card\"\n[/render_component]",
     );
     orch.end();
