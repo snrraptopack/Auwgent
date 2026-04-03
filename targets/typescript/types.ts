@@ -320,19 +320,19 @@ export interface ResponseSchemaIntent<Output = any, SchemaType extends string = 
     };
 }
 export interface PendingStreamValue { $state: 'pending' }
-export interface PartialIntentEnvelope<Snapshot = unknown> {
+export interface PartialIntentEnvelope {
     partial: true
     complete: false
     mode: 'text' | 'structured'
     segment: number
-    snapshot: Snapshot
     raw: string
 }
-export type PartialTextIntentValue = PartialIntentEnvelope<{ text: string }> & {
+export type PartialTextIntentValue = PartialIntentEnvelope & {
     mode: 'text'
+    text: string
     delta?: string
 }
-export type PartialStructuredIntentValue<T> = PartialIntentEnvelope<T> & {
+export type PartialStructuredIntentValue<T> = PartialIntentEnvelope & Omit<T, keyof PartialIntentEnvelope | 'mode'> & {
     mode: 'structured'
 }
 

@@ -88,7 +88,7 @@ fn parse_object_entry(
 ) -> Result<(String, ASTValue), String> {
     let line = &lines[*index];
     let (key, value_text) = split_key_value(&line.text)
-        .ok_or_else(|| format!("Expected 'key: value' pair near '{}'", line.text))?;
+        .ok_or_else(|| format!("Expected 'key: value' or 'key = value' pair near '{}'", line.text))?;
     let current_indent = line.indent;
     *index += 1;
 
@@ -400,5 +400,41 @@ mod tests {
         } else {
             panic!("Expected object");
         }
+    }
+
+    #[test]
+    fn test_assignment_object_supports_colon_syntax() {
+        let input = "session_id: \"123\"\ncount: 42";
+        let result = parse_assignment_object(input).unwrap();
+
+        assert_eq!(
+            result.get("session_id"),
+            Some(&ASTValue::String("123".to_string()))
+        );
+        assert_eq!(result.get("count"), Some(&ASTValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_assignment_object_supports_equals_syntax() {
+        let input = "session_id = \"123\"\ncount = 42";
+        let result = parse_assignment_object(input).unwrap();
+
+        assert_eq!(
+            result.get("session_id"),
+            Some(&ASTValue::String("123".to_string()))
+        );
+        assert_eq!(result.get("count"), Some(&ASTValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_assignment_object_supports_mixed_assignment_syntax() {
+        let input = "session_id: \"123\"\ncount = 42";
+        let result = parse_assignment_object(input).unwrap();
+
+        assert_eq!(
+            result.get("session_id"),
+            Some(&ASTValue::String("123".to_string()))
+        );
+        assert_eq!(result.get("count"), Some(&ASTValue::Number(42.0)));
     }
 }

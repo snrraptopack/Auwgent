@@ -551,7 +551,7 @@ fn parse_partial_schema_content(content: &str) -> Option<ASTValue> {
 }
 
 fn is_incomplete_response_text_open(input: &str) -> bool {
-    const OPEN_TAG: &str = "<response_text>";
+    const OPEN_TAG: &str = "[response_text]";
     let trimmed = input.trim_start();
     !trimmed.is_empty()
         && trimmed.len() < OPEN_TAG.len()
@@ -564,22 +564,33 @@ fn build_partial_text_payload(text: &str, segment: usize) -> Value {
         "complete": false,
         "mode": "text",
         "segment": segment,
-        "snapshot": {
-            "text": text
-        },
+        "text": text,
         "raw": text
     })
 }
 
 fn build_partial_structured_payload(snapshot: Value, raw: &str, segment: usize) -> Value {
-    serde_json::json!({
-        "partial": true,
-        "complete": false,
-        "mode": "structured",
-        "segment": segment,
-        "snapshot": snapshot,
-        "raw": raw,
-    })
+    let mut payload = match snapshot {
+        Value::Object(map) => Value::Object(map),
+        other => {
+            let mut map = Map::new();
+            map.insert("value".to_string(), other);
+            Value::Object(map)
+        }
+    };
+
+    if let Value::Object(ref mut map) = payload {
+        map.insert("partial".to_string(), Value::Bool(true));
+        map.insert("complete".to_string(), Value::Bool(false));
+        map.insert("mode".to_string(), Value::String("structured".to_string()));
+        map.insert(
+            "segment".to_string(),
+            Value::Number(serde_json::Number::from(segment as u64)),
+        );
+        map.insert("raw".to_string(), Value::String(raw.to_string()));
+    }
+
+    payload
 }
 
 fn partial_payload_key(name: &str, value: &Value) -> String {
@@ -592,6 +603,10 @@ fn partial_payload_key(name: &str, value: &Value) -> String {
 }
 
 fn merge_template(template: &Value, actual: &Value) -> Value {
+    if actual.is_null() {
+        return template.clone();
+    }
+
     match (template, actual) {
         (Value::Object(template_obj), Value::Object(actual_obj)) => {
             let mut merged = template_obj.clone();
@@ -790,7 +805,19 @@ fn ast_to_json(val: &ASTValue) -> Value {
     match val {
         ASTValue::String(s) => Value::String(s.clone()),
         ASTValue::Number(n) => {
-            if let Some(num) = serde_json::Number::from_f64(*n) {
+            let num = if n.is_finite() && n.fract() == 0.0 {
+                if *n >= 0.0 && *n <= u64::MAX as f64 {
+                    Some(serde_json::Number::from(*n as u64))
+                } else if *n >= i64::MIN as f64 && *n <= i64::MAX as f64 {
+                    Some(serde_json::Number::from(*n as i64))
+                } else {
+                    serde_json::Number::from_f64(*n)
+                }
+            } else {
+                serde_json::Number::from_f64(*n)
+            };
+
+            if let Some(num) = num {
                 Value::Number(num)
             } else {
                 Value::Null

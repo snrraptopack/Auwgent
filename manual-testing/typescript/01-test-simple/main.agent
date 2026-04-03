@@ -66,6 +66,6 @@ agent MainAgent{
         }
     }
 
-    tool user_name():string @desc "for getting the user name"
+    tool user_name(id:number):string @desc "for getting the user name"
     output:Organization
 }

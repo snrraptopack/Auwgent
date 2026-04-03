@@ -1,6 +1,5 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
-use crate::intent_parser::block_orchestrator::BlockOrchestrator as Orchestrator;
 use crate::runtime::drivers::{ModelDriver, ModelEvent, TokenUsage, FinishReason};
 pub use crate::runtime::engine_types::{
     AsyncErrorCallback, AsyncIntentCallback, AsyncLlmEndCallback, AsyncLlmStartCallback,
@@ -10,6 +9,10 @@ pub use crate::runtime::engine_types::{
 };
 use crate::runtime::middleware;
 use crate::runtime::session::SessionState;
+use crate::runtime::streaming::{
+    JsonlEventBuffer, PartialIntentState, StructuredOutputEvent,
+};
+use crate::runtime::streaming::parser::block_orchestrator::BlockOrchestrator as Orchestrator;
 use crate::types::*;
 use futures_util::StreamExt;
 use serde_json::Value;
@@ -51,8 +54,9 @@ pub struct AuwgentEngine {
     context: Arc<Mutex<Option<Value>>>,
     /// Pending intents collected by the orchestrator callback
     pending_intents: Arc<Mutex<Vec<(String, Value)>>>,
-    /// Track intents that were emitted as partials to avoid duplicate complete emissions
-    emitted_partial_intents: Arc<Mutex<std::collections::HashSet<(String, String)>>>,
+    /// Streaming state for partial intent dedupe/cursors and JSONL output buffer.
+    streaming_partials: Arc<Mutex<PartialIntentState>>,
+    streaming_jsonl: Arc<Mutex<JsonlEventBuffer>>,
     /// Tool/workflow results accumulated during the current turn
     /// Format: (name, args, result) where args is the input and result is the output
     pending_tool_results: Arc<Mutex<Vec<(String, Value, Value)>>>,
@@ -132,8 +136,6 @@ impl AuwgentEngine {
 
         let pending_intents = Arc::new(Mutex::new(Vec::new()));
         let intents_for_handler = Arc::clone(&pending_intents);
-        let emitted_partial_intents = Arc::new(Mutex::new(std::collections::HashSet::new()));
-
         orchestrator.on_intent_ready(Arc::new(move |name, value| {
             if let Ok(mut pending) = intents_for_handler.lock() {
                 // Check if this exact intent (by name and value) is already pending
@@ -155,7 +157,8 @@ impl AuwgentEngine {
             drivers: Arc::new(Mutex::new(HashMap::new())),
             context: Arc::new(Mutex::new(None)),
             pending_intents,
-            emitted_partial_intents,
+            streaming_partials: Arc::new(Mutex::new(PartialIntentState::default())),
+            streaming_jsonl: Arc::new(Mutex::new(JsonlEventBuffer::default())),
             pending_tool_results: Arc::new(Mutex::new(Vec::new())),
             current_raw_response: Arc::new(Mutex::new(String::new())),
             last_turn_response_value: Arc::new(Mutex::new(Value::Null)),
@@ -174,6 +177,55 @@ impl AuwgentEngine {
             final_response_emitted: Arc::new(Mutex::new(false)),
             user_input: Arc::new(Mutex::new(None)),
             last_run_metadata: Arc::new(Mutex::new(RunMetadata::default())),
+        }
+    }
+
+    fn next_structured_seq(&self) -> u64 {
+        self.streaming_jsonl.lock().unwrap().next_seq()
+    }
+
+    fn push_structured_output_event(&self, event: StructuredOutputEvent) {
+        self.streaming_jsonl.lock().unwrap().push_event(event);
+    }
+
+    fn emit_structured_intent(&self, name: String, payload: Value) {
+        let seq = self.next_structured_seq();
+        let event = StructuredOutputEvent::intent(seq, self.ir.name.clone(), name, payload);
+        self.push_structured_output_event(event);
+    }
+
+    fn emit_structured_stream_start(&self) {
+        let seq = self.next_structured_seq();
+        let event = StructuredOutputEvent::lifecycle_start(seq, self.ir.name.clone());
+        self.push_structured_output_event(event);
+    }
+
+    fn emit_structured_stream_finish(&self) {
+        let seq = self.next_structured_seq();
+        let event = StructuredOutputEvent::lifecycle_finish(seq, self.ir.name.clone());
+        self.push_structured_output_event(event);
+    }
+
+    fn emit_structured_stream_error(&self, message: String) {
+        let seq = self.next_structured_seq();
+        let event = StructuredOutputEvent::lifecycle_error(seq, self.ir.name.clone(), message);
+        self.push_structured_output_event(event);
+    }
+
+    /// Drain the current structured JSONL event buffer.
+    pub fn drain_structured_output_jsonl(&self) -> Vec<String> {
+        self.streaming_jsonl.lock().unwrap().drain_lines()
+    }
+
+    /// Drain the structured output buffer as newline-delimited text.
+    pub fn drain_structured_output_jsonl_text(&self) -> String {
+        let lines = self.drain_structured_output_jsonl();
+        if lines.is_empty() {
+            String::new()
+        } else {
+            let mut out = lines.join("\n");
+            out.push('\n');
+            out
         }
     }
 
@@ -252,49 +304,31 @@ impl AuwgentEngine {
     pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
         // Wire into the orchestrator's partial handler
         let user_handler = handler.clone();
-        let emitted_partials = Arc::clone(&self.emitted_partial_intents);
+        let partial_state = Arc::clone(&self.streaming_partials);
         let agent_name = self.ir.name.clone();
-        let partial_cursor: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
 
         self.orchestrator
             .lock()
             .unwrap()
             .on_intent_partial(Arc::new(move |name, value| {
-                // Track this partial emission to prevent duplicate complete emission
-                let value_hash = serde_json::to_string(&value).unwrap_or_default();
-                let partial_key = (name.clone(), value_hash);
-
-                if let Ok(mut partials) = emitted_partials.lock() {
-                    partials.insert(partial_key);
-                }
-
                 let value = if name == "response_text" {
                     if let Some(text) = value
-                        .get("snapshot")
-                        .and_then(|snapshot| snapshot.get("text"))
+                        .get("text")
                         .and_then(Value::as_str)
                     {
                         let segment = value
                             .get("segment")
                             .and_then(Value::as_u64)
                             .unwrap_or(0);
-                        let key = format!("{agent_name}:{name}:{segment}");
-                        let previous = partial_cursor
+                        let delta = partial_state
                             .lock()
-                            .ok()
-                            .and_then(|cursor| cursor.get(&key).cloned())
-                            .unwrap_or_default();
-                        let delta = if text.starts_with(&previous) {
-                            &text[previous.len()..]
-                        } else {
-                            text
-                        };
-                        if let Ok(mut cursor) = partial_cursor.lock() {
-                            cursor.insert(key, text.to_string());
-                        }
+                            .map(|mut state| {
+                                state.response_text_delta(&agent_name, &name, segment, text)
+                            })
+                            .unwrap_or_else(|_| text.to_string());
                         let mut updated = value.clone();
                         if let Value::Object(ref mut map) = updated {
-                            map.insert("delta".to_string(), Value::String(delta.to_string()));
+                            map.insert("delta".to_string(), Value::String(delta));
                         }
                         updated
                     } else {
@@ -648,6 +682,7 @@ impl AuwgentEngine {
 
         *self.terminal_response_emitted.lock().unwrap() = false;
         *self.final_response_emitted.lock().unwrap() = false;
+        self.emit_structured_stream_start();
 
         // Start the first turn if an explicit input is provided AND we are not teleporting.
         // If we ARE teleporting, the turn will be started by the target agent.
@@ -691,7 +726,7 @@ impl AuwgentEngine {
             self.current_raw_response.lock().unwrap().clear();
             *self.last_turn_response_value.lock().unwrap() = Value::Null;
             self.pending_tool_results.lock().unwrap().clear();
-            self.emitted_partial_intents.lock().unwrap().clear();
+            self.streaming_partials.lock().unwrap().clear_turn();
             self.orchestrator.lock().unwrap().reset();
 
             // ── Stack-Aware Resumption: TELEPORTATION ─────────────────────
@@ -1016,6 +1051,7 @@ impl AuwgentEngine {
 
         match run_result {
             Ok(()) => {
+                self.emit_structured_stream_finish();
                 if let Some(_) = self
                     .fire_middleware_event(serde_json::json!({
                         "type": "run_complete",
@@ -1034,6 +1070,7 @@ impl AuwgentEngine {
                 Ok(())
             }
             Err(err) => {
+                self.emit_structured_stream_error(err.to_string());
                 // If the run failed and no text was captured for the active turn,
                 // persist the error text so follow-up turns do not silently collapse
                 // into the generic "(no response)" placeholder.

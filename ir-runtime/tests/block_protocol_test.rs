@@ -1,5 +1,5 @@
 /// Integration tests for block protocol
-use ir_runtime::intent_parser::block_orchestrator::BlockOrchestrator;
+use ir_runtime::runtime::streaming::parser::block_orchestrator::BlockOrchestrator;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -15,7 +15,7 @@ fn test_chat_to_response_text() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("<response_text>Hello world</response_text>");
+    orch.write("[response_text]Hello world[/response_text]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -151,9 +151,9 @@ fn test_multi_block_response() {
     }));
 
     let input = r#"
-<response_text>
+[response_text]
 Let me fetch that data.
-</response_text>
+[/response_text]
 
 [tool_call: fetch_session]
 session_id: "sess_123"
@@ -162,9 +162,9 @@ session_id: "sess_123"
 user_id: "usr_456"
 [/tool]
 
-<response_text>
+[response_text]
 Here's the result.
-</response_text>
+[/response_text]
 "#;
 
     orch.write(input);
@@ -236,7 +236,7 @@ fn test_auto_close() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("<response_text>\nHello\n[tool_call: fetch]\nid: \"123\"\n[/tool]");
+    orch.write("[response_text]\nHello\n[tool_call: fetch]\nid: \"123\"\n[/tool]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -258,7 +258,7 @@ fn test_last_wins_for_terminal() {
     }));
 
     orch.write(
-        "<response_text>First attempt</response_text><response_text>Second attempt</response_text><response_text>Final answer</response_text>",
+        "[response_text]First attempt[/response_text][response_text]Second attempt[/response_text][response_text]Final answer[/response_text]",
     );
     orch.end();
 
@@ -414,7 +414,7 @@ fn test_malformed_close_tag_recovers_and_keeps_next_block() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("[tool_call: fetch]\nid: \"123\"\n[/workflow]\n<response_text>Done</response_text>");
+    orch.write("[tool_call: fetch]\nid: \"123\"\n[/workflow]\n[response_text]Done[/response_text]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -437,19 +437,19 @@ fn test_partial_response_text_does_not_emit_incomplete_open_tag() {
         partials_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("<response_text");
+    orch.write("[response_text");
     assert!(partials.lock().unwrap().is_empty());
 
-    orch.write(">Hello");
+    orch.write("]Hello");
 
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "response_text");
-    assert_eq!(partials[0].1["snapshot"]["text"], "Hello");
+    assert_eq!(partials[0].1["text"], "Hello");
 }
 
 #[test]
-fn test_partial_response_text_does_not_reemit_same_snapshot_on_close() {
+fn test_partial_response_text_does_not_reemit_same_payload_on_close() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_text");
 
@@ -460,19 +460,91 @@ fn test_partial_response_text_does_not_reemit_same_snapshot_on_close() {
         partials_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("<response_text>Hello");
-    orch.write("</response_text>");
+    orch.write("[response_text]Hello");
+    orch.write("[/response_text]");
 
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "response_text");
-    assert_eq!(partials[0].1["snapshot"]["text"], "Hello");
+    assert_eq!(partials[0].1["text"], "Hello");
 }
 
 #[test]
-fn test_partial_tool_call_emits_structured_snapshot() {
+fn test_tool_call_preserves_integer_numbers() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("tool_call");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[tool_call: user_name]\nid: 123\n[/tool]");
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "tool_call");
+    assert_eq!(results[0].1["args"]["id"], 123);
+}
+
+#[test]
+fn test_response_text_does_not_leak_stray_closing_tag() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("response_text");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[response_text]Hello[/response_text][/response_text]");
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "response_text");
+    assert_eq!(results[0].1["text"], "Hello");
+}
+
+#[test]
+fn test_malformed_tool_header_is_not_emitted_as_tool_call() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+    orch.register_intent("response_text");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write("[tool_call: user_name To get your name][/tool][response_text]Hello Theo[/response_text]");
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "response_text");
+    assert_eq!(results[0].1["text"], "Hello Theo");
+}
+
+#[test]
+fn test_partial_tool_call_emits_structured_payload() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+    orch.register_tool_shape(
+        "create_user",
+        &json!({
+            "name": { "type": "string", "optional": false },
+            "email": { "type": "string", "optional": false }
+        }),
+        None,
+    );
 
     let partials = Arc::new(Mutex::new(Vec::new()));
     let partials_clone = Arc::clone(&partials);
@@ -488,16 +560,16 @@ fn test_partial_tool_call_emits_structured_snapshot() {
     assert_eq!(partials[0].0, "tool_call");
     assert_eq!(partials[0].1["partial"], true);
     assert_eq!(partials[0].1["mode"], "structured");
-    assert_eq!(partials[0].1["snapshot"]["type"], "create_user");
-    assert_eq!(partials[0].1["snapshot"]["args"]["name"], "Ama");
+    assert_eq!(partials[0].1["type"], "create_user");
+    assert_eq!(partials[0].1["args"]["name"], "Ama");
     assert_eq!(
-        partials[0].1["snapshot"]["args"]["email"]["$state"],
+        partials[0].1["args"]["email"]["$state"],
         "pending"
     );
 }
 
 #[test]
-fn test_partial_tool_call_does_not_reemit_same_snapshot_on_close() {
+fn test_partial_tool_call_does_not_reemit_same_payload_on_close() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("tool_call");
 
@@ -514,14 +586,21 @@ fn test_partial_tool_call_does_not_reemit_same_snapshot_on_close() {
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);
     assert_eq!(partials[0].0, "tool_call");
-    assert_eq!(partials[0].1["snapshot"]["type"], "create_user");
-    assert_eq!(partials[0].1["snapshot"]["args"]["name"], "Ama");
+    assert_eq!(partials[0].1["type"], "create_user");
+    assert_eq!(partials[0].1["args"]["name"], "Ama");
 }
 
 #[test]
-fn test_partial_response_schema_emits_structured_snapshot() {
+fn test_partial_response_schema_emits_structured_payload() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_schema");
+    orch.register_output_shape(
+        &json!({
+            "status": { "type": "string", "optional": false },
+            "summary": { "type": "string", "optional": false }
+        }),
+        None,
+    );
 
     let partials = Arc::new(Mutex::new(Vec::new()));
     let partials_clone = Arc::clone(&partials);
@@ -537,9 +616,9 @@ fn test_partial_response_schema_emits_structured_snapshot() {
     assert_eq!(partials[0].0, "response_schema");
     assert_eq!(partials[0].1["partial"], true);
     assert_eq!(partials[0].1["mode"], "structured");
-    assert_eq!(partials[0].1["snapshot"]["response"]["status"], "draft");
+    assert_eq!(partials[0].1["response"]["status"], "draft");
     assert_eq!(
-        partials[0].1["snapshot"]["response"]["summary"]["$state"],
+        partials[0].1["response"]["summary"]["$state"],
         "pending"
     );
 }

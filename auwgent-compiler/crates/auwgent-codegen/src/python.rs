@@ -590,6 +590,24 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
     blocks.push(format!(
         "{agent_name}IntentHandler = Callable[[{agent_name}IntentName, {agent_name}IntentValue, str], Awaitable[{agent_name}IntentHandlerReturn]]"
     ));
+    blocks.push(format!("# Partial intent payloads use top-level fields (for example: text/type/args/response)."));
+    blocks.push(format!("{agent_name}PartialResponseTextIntent = PartialTextIntentValue"));
+    blocks.push(format!("{agent_name}PartialResponseSchemaIntent = PartialStructuredIntentValue"));
+    blocks.push(format!("{agent_name}PartialErrorIntent = PartialStructuredIntentValue"));
+    if has_declared_tools {
+        blocks.push(format!("{agent_name}PartialToolCallIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialToolResultIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialToolErrorIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialToolSkippedIntent = PartialStructuredIntentValue"));
+    }
+    if !workflow_call_types.is_empty() {
+        blocks.push(format!("{agent_name}PartialWorkflowCallIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialWorkflowResultIntent = PartialStructuredIntentValue"));
+    }
+    if !helper_call_types.is_empty() {
+        blocks.push(format!("{agent_name}PartialHelperCallIntent = PartialStructuredIntentValue"));
+        blocks.push(format!("{agent_name}PartialHelperResultIntent = PartialStructuredIntentValue"));
+    }
     blocks.push(format!(
         "{agent_name}PartialIntentHandler = Callable[[{agent_name}IntentName, PartialIntentValue, str], None]"
     ));
@@ -633,20 +651,20 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BasePartialIntentHandler:"));
     if has_declared_tools {
-        blocks.push("    def tool_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def tool_call(self, intent: {agent_name}PartialToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push("    def tool_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def tool_result(self, intent: {agent_name}PartialToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push("    def tool_error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def tool_error(self, intent: {agent_name}PartialToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push("    def tool_skipped(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}PartialToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
-    blocks.push("    def response_text(self, intent: PartialTextIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+    blocks.push(format!("    def response_text(self, intent: {agent_name}PartialResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
-    blocks.push("    def response_schema(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+    blocks.push(format!("    def response_schema(self, intent: {agent_name}PartialResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
-    blocks.push("    def error(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+    blocks.push(format!("    def error(self, intent: {agent_name}PartialErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
     for (custom_name, _custom_type) in &custom_intents {
         let method_name = sanitize_python_identifier(custom_name);
@@ -654,15 +672,15 @@ fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
         blocks.push("        pass".to_string());
     }
     if !workflow_call_types.is_empty() {
-        blocks.push("    def workflow_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def workflow_call(self, intent: {agent_name}PartialWorkflowCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push("    def workflow_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def workflow_result(self, intent: {agent_name}PartialWorkflowResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
     if !helper_call_types.is_empty() {
-        blocks.push("    def helper_call(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def helper_call(self, intent: {agent_name}PartialHelperCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push("    def helper_result(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:".to_string());
+        blocks.push(format!("    def helper_result(self, intent: {agent_name}PartialHelperResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
 

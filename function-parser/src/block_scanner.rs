@@ -1,6 +1,6 @@
-/// Block scanner for the tag/bracket protocol
+/// Block scanner for the bracket protocol
 /// Scans for:
-/// - <response_text>...</response_text>
+/// - [response_text]...[/response_text]
 /// - [tool_call: name]...[/tool]
 /// - [workflow_call: name]...[/workflow]
 /// - [helper_call: name]...[/helper]
@@ -34,6 +34,23 @@ pub struct BlockScanner {
 }
 
 impl BlockScanner {
+    const RESPONSE_TEXT_OPEN_BRACKET: &'static str = "[response_text]";
+    const RESPONSE_TEXT_CLOSE_BRACKET: &'static str = "[/response_text]";
+    const INCOMPLETE_HEADER_PREFIXES: [&'static str; 12] = [
+        "[response_text]",
+        "[/response_text]",
+        "[tool_call:",
+        "[/tool]",
+        "[workflow_call:",
+        "[/workflow]",
+        "[helper_call:",
+        "[/helper]",
+        "[schema:",
+        "[/schema]",
+        "[custom:",
+        "[/custom]",
+    ];
+
     pub fn new(input: &str) -> Self {
         Self {
             chars: input.chars().collect(),
@@ -87,11 +104,22 @@ impl BlockScanner {
     }
 
     fn check_incomplete_response_text_open(&self) -> bool {
-        self.check_incomplete_literal_prefix("<response_text>")
+        self.check_incomplete_literal_prefix(Self::RESPONSE_TEXT_OPEN_BRACKET)
     }
 
     fn check_incomplete_response_text_close(&self) -> bool {
-        self.check_incomplete_literal_prefix("</response_text>")
+        self.check_incomplete_literal_prefix(Self::RESPONSE_TEXT_CLOSE_BRACKET)
+    }
+
+    fn check_incomplete_known_header_prefix(&self) -> bool {
+        if self.peek() != Some('[') || self.try_read_header().is_some() {
+            return false;
+        }
+
+        let remaining: String = self.chars[self.pos..].iter().collect();
+        Self::INCOMPLETE_HEADER_PREFIXES
+            .iter()
+            .any(|literal| remaining.starts_with(literal))
     }
 
     fn try_read_header(&self) -> Option<String> {
@@ -121,12 +149,42 @@ impl BlockScanner {
     fn is_known_closing_header(&self, header: &str) -> bool {
         matches!(
             header.trim(),
-            "/tool" | "/workflow" | "/helper" | "/schema" | "/custom" | "/result" | "/error"
+            "/tool"
+                | "/workflow"
+                | "/helper"
+                | "/schema"
+                | "/custom"
+                | "/result"
+                | "/error"
+                | "/response_text"
+        )
+    }
+
+    fn is_known_opening_header_kind(&self, header: &str) -> bool {
+        let header = header.trim();
+        if header.eq_ignore_ascii_case("response_text")
+            || header.eq_ignore_ascii_case("result")
+            || header.eq_ignore_ascii_case("error")
+        {
+            return true;
+        }
+
+        matches!(
+            header.split_once(':').map(|(kind, _)| kind.trim()),
+            Some("tool_call")
+                | Some("workflow_call")
+                | Some("helper_call")
+                | Some("schema")
+                | Some("custom")
         )
     }
 
     fn parse_header(&self, header: &str) -> Option<(BlockType, Option<String>, &'static str)> {
         let header = header.trim();
+
+        if header.eq_ignore_ascii_case("response_text") {
+            return Some((BlockType::Chat, None, Self::RESPONSE_TEXT_CLOSE_BRACKET));
+        }
 
         if header.eq_ignore_ascii_case("result") {
             return Some((BlockType::Result, None, "[/result]"));
@@ -140,6 +198,12 @@ impl BlockScanner {
         let kind = kind.trim();
         let target = target.trim();
         if target.is_empty() {
+            return None;
+        }
+        if target
+            .chars()
+            .any(|ch| ch.is_whitespace() || matches!(ch, '[' | ']' | '<' | '>'))
+        {
             return None;
         }
 
@@ -165,7 +229,11 @@ impl BlockScanner {
                 break;
             }
 
-            if self.check_literal("<response_text>") {
+            if self.check_literal(Self::RESPONSE_TEXT_OPEN_BRACKET) {
+                break;
+            }
+
+            if self.check_literal(Self::RESPONSE_TEXT_CLOSE_BRACKET) {
                 break;
             }
 
@@ -174,6 +242,10 @@ impl BlockScanner {
             }
 
             if self.check_incomplete_response_text_close() {
+                break;
+            }
+
+            if self.check_incomplete_known_header_prefix() {
                 break;
             }
 
@@ -196,7 +268,7 @@ impl BlockScanner {
         let mut implicit_chat = String::new();
 
         while self.pos < self.chars.len() {
-            if self.check_literal("<response_text>") {
+            if self.check_literal(Self::RESPONSE_TEXT_OPEN_BRACKET) {
                 if !implicit_chat.trim().is_empty() {
                     blocks.push(Block {
                         block_type: BlockType::Chat,
@@ -206,9 +278,9 @@ impl BlockScanner {
                     implicit_chat.clear();
                 }
 
-                self.consume_literal("<response_text>");
-                let content = self.read_until_literal_or_eof("</response_text>");
-                self.consume_literal("</response_text>");
+                self.consume_literal(Self::RESPONSE_TEXT_OPEN_BRACKET);
+                let content = self.read_until_literal_or_eof(Self::RESPONSE_TEXT_CLOSE_BRACKET);
+                self.consume_literal(Self::RESPONSE_TEXT_CLOSE_BRACKET);
                 blocks.push(Block {
                     block_type: BlockType::Chat,
                     content,
@@ -216,6 +288,7 @@ impl BlockScanner {
                 });
             } else if self.check_incomplete_response_text_open()
                 || self.check_incomplete_response_text_close()
+                || self.check_incomplete_known_header_prefix()
             {
                 if !implicit_chat.trim().is_empty() {
                     blocks.push(Block {
@@ -245,6 +318,8 @@ impl BlockScanner {
                         content,
                         target_name,
                     });
+                } else if self.is_known_opening_header_kind(&header) {
+                    self.consume_header();
                 } else if self.is_known_closing_header(&header) {
                     self.consume_header();
                 } else if let Some(ch) = self.advance() {
@@ -274,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_basic_response_text_block() {
-        let input = "<response_text>Hello world</response_text>";
+        let input = "[response_text]Hello world[/response_text]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -323,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_auto_closes_when_next_block_starts() {
-        let input = "<response_text>Hello\n[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
+        let input = "[response_text]Hello\n[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -336,7 +411,7 @@ mod tests {
 
     #[test]
     fn test_ignores_stray_closing_headers() {
-        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/workflow]\n<response_text>Done</response_text>";
+        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/workflow]\n[response_text]Done[/response_text]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -349,7 +424,7 @@ mod tests {
 
     #[test]
     fn test_incomplete_response_text_open_is_not_emitted_as_chat() {
-        let input = "<response_text";
+        let input = "[response_text";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -358,7 +433,7 @@ mod tests {
 
     #[test]
     fn test_incomplete_response_text_open_flushes_prior_chat_only() {
-        let input = "Hello<response_text";
+        let input = "Hello[response_text";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -369,12 +444,63 @@ mod tests {
 
     #[test]
     fn test_incomplete_response_text_close_is_not_emitted_as_chat() {
-        let input = "<response_text>Hello</response_text";
+        let input = "[response_text]Hello[/response_text";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].block_type, BlockType::Chat);
         assert_eq!(blocks[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_response_text_accepts_bracket_close() {
+        let input = "[response_text]Hello world[/response_text]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hello world");
+    }
+
+    #[test]
+    fn test_rejects_malformed_tool_header_with_whitespace_in_target() {
+        let input = "[tool_call: user_name To get your name]\n[/tool]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_ignores_stray_response_text_closing_header() {
+        let input = "[response_text]Hello[/response_text][/response_text]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_incomplete_tool_header_is_not_emitted_as_chat() {
+        let input = "[tool_call: user_name";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert!(blocks.is_empty());
+    }
+
+    #[test]
+    fn test_incomplete_tool_header_flushes_prior_chat_only() {
+        let input = "Thinking...[tool_call: user_name";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Thinking...");
     }
 }

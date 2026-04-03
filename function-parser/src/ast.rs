@@ -18,21 +18,6 @@ pub enum ASTValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Field {
-    pub name: String,
-    pub value: ASTValue,
-    pub position: Position,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Intent {
-    pub name: String,
-    pub fields: HashMap<String, ASTValue>,
-    pub position: Position,
-    pub is_complete: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Identifier(String),
     Equals,

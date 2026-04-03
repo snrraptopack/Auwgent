@@ -50,6 +50,10 @@ impl AuwgentEngine {
             std::mem::take(&mut *pending)
         };
 
+        let contains_actions = intents.iter().any(|(name, _)| {
+            matches!(name.as_str(), "tool_call" | "workflow_call" | "helper_call")
+        });
+
         let mut has_terminal = false;
         let mut has_actions = false;
         let mut hard_stop = false;
@@ -57,6 +61,10 @@ impl AuwgentEngine {
         let mut tool_results: Vec<(String, Value, Value)> = Vec::new();
 
         for (name, mut value) in intents {
+            if contains_actions && matches!(name.as_str(), "response_text" | "response_schema") {
+                continue;
+            }
+
             let control = if let Some(control) = self
                 .apply_intent_middleware(&name, &value, &self.ir.name)
                 .await
@@ -71,6 +79,9 @@ impl AuwgentEngine {
             if let Value::Object(ref mut map) = value {
                 map.remove("_raw");
             }
+
+            // Emit framework-agnostic structured output as JSONL events.
+            self.emit_structured_intent(name.clone(), value.clone());
 
             match name.as_str() {
                 "tool_call" => {

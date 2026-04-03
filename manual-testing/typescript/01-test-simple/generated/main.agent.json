@@ -75,14 +75,35 @@
         "items": "string"
       },
       "optional": false
-    }
+    },
+    "@examples": [
+      {
+        "id": {
+          "type": "literal",
+          "value": "abc"
+        },
+        "name": {
+          "type": "literal",
+          "value": "any name"
+        },
+        "contact": {
+          "type": "literal",
+          "value": ".... and so on"
+        }
+      }
+    ]
   },
   "context": null,
   "tools": [
     {
       "name": "user_name",
       "description": "for getting the user name",
-      "params": {},
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
       "returns": "string",
       "examples": []
     }
@@ -90,81 +111,61 @@
   "workflows": [],
   "helpers": [],
   "types": {
-    "Subscription": {
+    "PricingTier": {
       "isOutput": false,
       "properties": {
-        "id": {
+        "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "features": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "typeRef",
-              "name": "Feature"
-            }
-          },
+        "max_seats": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "started_at": {
-          "type": "string",
+        "monthly_cost": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "tier": {
-          "type": {
-            "type": "typeRef",
-            "name": "PricingTier"
-          },
-          "optional": false,
-          "description": null
-        },
-        "renews_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "is_active": {
-          "type": "boolean",
+        "annual_cost": {
+          "type": "number",
           "optional": false,
           "description": null
         }
-      }
+      },
+      "@examples": []
     },
-    "ContactInfo": {
+    "Address": {
       "isOutput": false,
       "properties": {
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
-          "optional": false,
-          "description": null
-        },
-        "email": {
+        "street": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "phone": {
+        "city": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "country": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "zip": {
           "type": "string",
           "optional": false,
           "description": null
         }
-      }
+      },
+      "@examples": []
     },
     "Feature": {
       "isOutput": false,
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
         "config": {
           "type": {
             "type": "object",
@@ -186,8 +187,8 @@
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
+        "enabled": {
+          "type": "boolean",
           "optional": false,
           "description": null
         },
@@ -195,42 +196,89 @@
           "type": "string",
           "optional": false,
           "description": null
+        },
+        "id": {
+          "type": "string",
+          "optional": false,
+          "description": null
         }
-      }
+      },
+      "@examples": []
     },
-    "Address": {
+    "Subscription": {
       "isOutput": false,
       "properties": {
-        "zip": {
+        "tier": {
+          "type": {
+            "type": "typeRef",
+            "name": "PricingTier"
+          },
+          "optional": false,
+          "description": null
+        },
+        "features": {
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "typeRef",
+              "name": "Feature"
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "renews_at": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "street": {
+        "started_at": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "country": {
-          "type": "string",
+        "is_active": {
+          "type": "boolean",
           "optional": false,
           "description": null
         },
-        "city": {
+        "id": {
           "type": "string",
           "optional": false,
           "description": null
         }
-      }
+      },
+      "@examples": []
+    },
+    "ContactInfo": {
+      "isOutput": false,
+      "properties": {
+        "phone": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "email": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
+        "address": {
+          "type": {
+            "type": "typeRef",
+            "name": "Address"
+          },
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
     },
     "Organization": {
       "isOutput": false,
       "properties": {
-        "subscription": {
-          "type": {
-            "type": "typeRef",
-            "name": "Subscription"
-          },
+        "id": {
+          "type": "string",
           "optional": false,
           "description": null
         },
@@ -239,8 +287,16 @@
           "optional": false,
           "description": null
         },
-        "id": {
-          "type": "string",
+        "member_count": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "subscription": {
+          "type": {
+            "type": "typeRef",
+            "name": "Subscription"
+          },
           "optional": false,
           "description": null
         },
@@ -259,38 +315,24 @@
           },
           "optional": false,
           "description": null
-        },
-        "member_count": {
-          "type": "number",
-          "optional": false,
-          "description": null
         }
-      }
-    },
-    "PricingTier": {
-      "isOutput": false,
-      "properties": {
-        "annual_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "monthly_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "max_seats": {
-          "type": "number",
-          "optional": false,
-          "description": null
+      },
+      "@examples": [
+        {
+          "id": {
+            "type": "literal",
+            "value": "abc"
+          },
+          "name": {
+            "type": "literal",
+            "value": "any name"
+          },
+          "contact": {
+            "type": "literal",
+            "value": ".... and so on"
+          }
         }
-      }
+      ]
     }
   },
   "helperToolGrants": null,

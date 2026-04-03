@@ -268,7 +268,7 @@ describe('TypedAuwgent', () => {
             complete: false,
             mode: 'text',
             segment: 0,
-            snapshot: { text: 'Hello' },
+            text: 'Hello',
             raw: 'Hello',
             delta: 'Hello',
         }, 'Main');
@@ -277,7 +277,7 @@ describe('TypedAuwgent', () => {
             complete: false,
             mode: 'text',
             segment: 0,
-            snapshot: { text: 'Hello there' },
+            text: 'Hello there',
             raw: 'Hello there',
             delta: ' there',
         }, 'Main');
@@ -318,10 +318,8 @@ describe('TypedAuwgent', () => {
             complete: false,
             mode: 'structured',
             segment: 1,
-            snapshot: {
-                type: 'search',
-                args: { query: 'Accra' },
-            },
+            type: 'search',
+            args: { query: 'Accra' },
             raw: 'query: "Accra"',
         }, 'Main');
 
@@ -330,10 +328,8 @@ describe('TypedAuwgent', () => {
             complete: false,
             mode: 'structured',
             segment: 1,
-            snapshot: {
-                type: 'search',
-                args: { query: 'Accra' },
-            },
+            type: 'search',
+            args: { query: 'Accra' },
             raw: 'query: "Accra"',
         }]);
     });

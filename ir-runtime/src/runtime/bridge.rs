@@ -146,6 +146,17 @@ impl EngineBridge {
         serde_json::to_string(&val).map_err(|e| format!("{}", e))
     }
 
+    /// Drain structured output events as newline-delimited JSON.
+    pub fn drain_structured_output_jsonl(&self) -> String {
+        self.engine.drain_structured_output_jsonl_text()
+    }
+
+    /// Drain structured output events as a JSON array of JSONL lines.
+    pub fn drain_structured_output_jsonl_lines(&self) -> Result<String, String> {
+        serde_json::to_string(&self.engine.drain_structured_output_jsonl())
+            .map_err(|e| format!("{}", e))
+    }
+
     pub fn clear_listeners(&self) {
         self.engine.clear_intent_handlers();
         self.engine.clear_sub_engine_handlers();

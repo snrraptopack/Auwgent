@@ -10,49 +10,49 @@ type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as MainAgentIR;
-export type Subscription = {
-    id: string;
-    features: Feature[];
-    started_at: string;
-    tier: PricingTier;
-    renews_at: string;
-    is_active: boolean;
-}
-
-export type ContactInfo = {
-    address: Address;
-    email: string;
-    phone: string;
-}
-
-export type Feature = {
-    enabled: boolean;
-    config: { limit: number; unit: string; overage_rate: number };
-    id: string;
-    label: string;
+export type PricingTier = {
+    name: string;
+    max_seats: number;
+    monthly_cost: number;
+    annual_cost: number;
 }
 
 export type Address = {
-    zip: string;
     street: string;
-    country: string;
     city: string;
+    country: string;
+    zip: string;
+}
+
+export type Feature = {
+    config: { limit: number; unit: string; overage_rate: number };
+    enabled: boolean;
+    label: string;
+    id: string;
+}
+
+export type Subscription = {
+    tier: PricingTier;
+    features: Feature[];
+    renews_at: string;
+    started_at: string;
+    is_active: boolean;
+    id: string;
+}
+
+export type ContactInfo = {
+    phone: string;
+    email: string;
+    address: Address;
 }
 
 export type Organization = {
-    subscription: Subscription;
-    name: string;
     id: string;
+    name: string;
+    member_count: number;
+    subscription: Subscription;
     contact: ContactInfo;
     tags: string[];
-    member_count: number;
-}
-
-export type PricingTier = {
-    annual_cost: number;
-    monthly_cost: number;
-    name: string;
-    max_seats: number;
 }
 export type MainAgentInput = {
 
@@ -72,7 +72,7 @@ export type MainAgentContext = {
 }
 
 export type MainAgentTools = {
-    user_name: (args: {  }) => Promise<string>;
+    user_name: (args: { id: number }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */

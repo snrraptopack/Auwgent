@@ -17,13 +17,15 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         "You are an execution engine. Respond only with valid protocol blocks.\n\n\
          Rules:\n\
          - Use only the block types listed below.\n\
-         - If no external action is needed, reply with <response_text>.\n\
+         - If no external action is needed, reply with [response_text].\n\
+         - If a tool, workflow, or helper is needed, emit only the action block(s) for that turn and stop.\n\
+         - After an action turn, wait for the next turn's [result] block(s) before producing [response_text] or [schema].\n\
          - Close every block correctly.\n\
          - Do not invent tools, workflows, helpers, schemas, or custom intents."
             .to_string(),
     );
 
-    let mut allowed_blocks = vec!["- <response_text>...</response_text>".to_string()];
+    let mut allowed_blocks = vec!["- [response_text]...[/response_text]".to_string()];
     if !ir.tools.is_empty() {
         allowed_blocks.push("- [tool_call: type]...[/tool]".to_string());
     }
@@ -52,21 +54,21 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         allowed_blocks.join("\n")
     ));
     let mut block_syntax = vec![
-        "Text response: <response_text>...plain text...</response_text>".to_string(),
+        "Text response: [response_text]...plain text...[/response_text]".to_string(),
     ];
     if !ir.tools.is_empty() {
         block_syntax.push(
-            "Tool call: [tool_call: valid_tool_name] then write one `key: value` field per line, then close with [/tool]".to_string(),
+            "Tool call: [tool_call: valid_tool_name] then write one `key: value` or `key = value` field per line, then close with [/tool]".to_string(),
         );
     }
     if !ir.workflows.is_empty() {
         block_syntax.push(
-            "Workflow call: [workflow_call: valid_workflow_name] then write one `key: value` field per line, then close with [/workflow]".to_string(),
+            "Workflow call: [workflow_call: valid_workflow_name] then write one `key: value` or `key = value` field per line, then close with [/workflow]".to_string(),
         );
     }
     if !ir.helpers.is_empty() {
         block_syntax.push(
-            "Helper call: [helper_call: valid_helper_name] then write one `key: value` field per line, then close with [/helper]".to_string(),
+            "Helper call: [helper_call: valid_helper_name] then write one `key: value` or `key = value` field per line, then close with [/helper]".to_string(),
         );
     }
     if ir
@@ -76,13 +78,13 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         .unwrap_or(false)
     {
         block_syntax.push(
-            "Custom intent: [custom: valid_intent_name] then write one `key: value` field per line, then close with [/custom]".to_string(),
+            "Custom intent: [custom: valid_intent_name] then write one `key: value` or `key = value` field per line, then close with [/custom]".to_string(),
         );
     }
     if let Some(output) = &ir.output {
         if output.0.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
             block_syntax.push(
-                "Schema output: [schema: valid_schema_name] then write one `key: value` field per line, then close with [/schema]".to_string(),
+                "Schema output: [schema: valid_schema_name] then write one `key: value` or `key = value` field per line, then close with [/schema]".to_string(),
             );
         }
     }
@@ -98,7 +100,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         block_syntax.join("\n- ")
     ));
     sections.push(
-        "\n\nText example:\n<response_text>\nHello! How can I help you today?\n</response_text>"
+        "\n\nText example:\n[response_text]\nHello! How can I help you today?\n[/response_text]"
             .to_string(),
     );
 
@@ -253,6 +255,9 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     constraints.push(
         "- Do not mix tool_call, workflow_call, and helper_call in the same response.".to_string(),
     );
+    constraints.push(
+        "- Do not emit response_text or response_schema in the same response as any tool_call, workflow_call, or helper_call.".to_string(),
+    );
 
     if !ir.tools.is_empty() {
         constraints.push("- Tool fields must match the listed tool signatures.".to_string());
@@ -310,13 +315,15 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
         "You are a specialized helper agent. Respond only with valid protocol blocks.\n\n\
          Rules:\n\
          - Use only the block types listed below.\n\
-         - If no external action is needed, reply with <response_text>.\n\
+         - If no external action is needed, reply with [response_text].\n\
+         - If a tool is needed, emit only the tool_call block(s) for that turn and stop.\n\
+         - After a tool turn, wait for the next turn's [result] block(s) before producing [response_text].\n\
          - Close every block correctly.\n\
          - Do not invent tools or custom intents."
             .to_string(),
     );
 
-    let mut allowed_blocks = vec!["- <response_text>...</response_text>".to_string()];
+    let mut allowed_blocks = vec!["- [response_text]...[/response_text]".to_string()];
     if !allowed_tools.is_empty() {
         allowed_blocks.push("- [tool_call: type]...[/tool]".to_string());
     }
@@ -333,11 +340,11 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
         allowed_blocks.join("\n")
     ));
     let mut block_syntax = vec![
-        "Text response: <response_text>...plain text...</response_text>".to_string(),
+        "Text response: [response_text]...plain text...[/response_text]".to_string(),
     ];
     if !allowed_tools.is_empty() {
         block_syntax.push(
-            "Tool call: [tool_call: valid_tool_name] then write one `key: value` field per line, then close with [/tool]".to_string(),
+            "Tool call: [tool_call: valid_tool_name] then write one `key: value` or `key = value` field per line, then close with [/tool]".to_string(),
         );
     }
     if ir
@@ -347,7 +354,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
         .unwrap_or(false)
     {
         block_syntax.push(
-            "Custom intent: [custom: valid_intent_name] then write one `key: value` field per line, then close with [/custom]".to_string(),
+            "Custom intent: [custom: valid_intent_name] then write one `key: value` or `key = value` field per line, then close with [/custom]".to_string(),
         );
     }
     block_syntax.push(
@@ -362,7 +369,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
         block_syntax.join("\n- ")
     ));
     sections.push(
-        "\n\nText example:\n<response_text>\nHello! How can I help you today?\n</response_text>"
+        "\n\nText example:\n[response_text]\nHello! How can I help you today?\n[/response_text]"
             .to_string(),
     );
 

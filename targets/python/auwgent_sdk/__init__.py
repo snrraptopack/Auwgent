@@ -53,14 +53,19 @@ class PartialIntentEnvelope(TypedDict, total=False):
     complete: bool
     mode: str
     segment: int
-    snapshot: Any
     raw: str
 
 class PartialTextIntentValue(PartialIntentEnvelope, total=False):
+    text: str
     delta: str
 
 class PartialStructuredIntentValue(PartialIntentEnvelope, total=False):
-    pass
+    type: str
+    args: Any
+    response: Any
+    result: Any
+    error: Any
+    message: str
 
 PartialIntentValue = Union[PartialTextIntentValue, PartialStructuredIntentValue, Dict[str, Any]]
 IntentValue = Dict[str, Any]

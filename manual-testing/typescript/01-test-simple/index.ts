@@ -8,7 +8,7 @@ const config: AuwgentConfig = {
   },
 
   tools: {
-    user_name: async()=> "Theo"
+    user_name: async(args:{id})=> "Theo"
   }
 
 }
@@ -16,14 +16,17 @@ const config: AuwgentConfig = {
 const agent = auwgent(config)
 agent.onIntentPartial((name, value, age) => {
   if (name == "response_text") {
-    value
+    process.stdout.write(value.delta ?? "")
   }
 
+  if (name === "tool_call") {
+      console.log(value.args)
+  }
 })
 
 agent.onIntent((name, value, agentname) => {
   console.log(JSON.stringify(value, null, 2))
-
+   console.log("\n")
 })
 
 agent.onWarning((warning) => {
@@ -32,6 +35,9 @@ agent.onWarning((warning) => {
 
 console.log(agent.generatePrompt())
 
-await agent.run(`what my name`)
+const session = await agent.run(`what my name`)
+
+console.log(JSON.stringify(session,null,2))
+
 
 console.log(agent.getMetadata().aggregate)

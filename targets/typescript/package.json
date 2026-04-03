@@ -26,18 +26,21 @@
     }
   },
   "napi": {
-    "name": "auwgent-runtime",
-    "triples": {
-      "defaults": true
-    }
+    "binaryName": "auwgent-runtime",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu"
+    ]
   },
   "scripts": {
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --esm --release",
+    "build:debug": "napi build --platform --esm",
     "test": "bun test"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.0",
+    "@napi-rs/cli": "^3.6.0",
     "@types/bun": "latest"
   },
   "license": "MIT",
