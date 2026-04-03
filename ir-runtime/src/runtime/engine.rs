@@ -1150,6 +1150,7 @@ impl AuwgentEngine {
         let parsed_prompt: crate::types::Expression =
             serde_json::from_value(default.prompt.0.clone())
                 .map_err(|e| AuwgentError::Evaluation(format!("Prompt parse error: {}", e)))?;
+        let referenced_context_keys = evaluator.collect_context_references(&parsed_prompt, &scope);
         let prompt_val = evaluator.evaluate(&parsed_prompt, &mut scope)?;
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
 
@@ -1158,6 +1159,9 @@ impl AuwgentEngine {
             if let Some(obj) = ctx.as_object() {
                 let mut filtered_ctx = serde_json::Map::new();
                 for (k, v) in obj {
+                    if referenced_context_keys.contains(k) {
+                        continue;
+                    }
                     let is_empty = match v {
                         Value::Null => true,
                         Value::Array(a) => a.is_empty(),

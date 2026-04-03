@@ -1,7 +1,8 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::types::{AgentIR, Expression};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
 /// Synchronous tool handler for workflow-level function calls.
 /// For async tool execution (engine-level tool_call intents), the engine
@@ -12,6 +13,7 @@ pub struct Evaluator<'a> {
     pub ir: &'a AgentIR,
     /// Optional tool registry for resolving FunctionCall expressions within workflows.
     tools: HashMap<String, SyncToolFn>,
+    context_usage: RefCell<HashSet<String>>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -19,17 +21,196 @@ impl<'a> Evaluator<'a> {
         Self {
             ir,
             tools: HashMap::new(),
+            context_usage: RefCell::new(HashSet::new()),
         }
     }
 
     /// Create an evaluator with a pre-populated tool registry.
     pub fn with_tools(ir: &'a AgentIR, tools: HashMap<String, SyncToolFn>) -> Self {
-        Self { ir, tools }
+        Self {
+            ir,
+            tools,
+            context_usage: RefCell::new(HashSet::new()),
+        }
     }
 
     /// Register a synchronous tool function for workflow-level calls.
     pub fn register_tool(&mut self, name: impl Into<String>, handler: SyncToolFn) {
         self.tools.insert(name.into(), handler);
+    }
+
+    pub fn clear_context_usage(&self) {
+        self.context_usage.borrow_mut().clear();
+    }
+
+    pub fn context_usage(&self) -> HashSet<String> {
+        self.context_usage.borrow().clone()
+    }
+
+    pub fn collect_context_references(
+        &self,
+        expr: &Expression,
+        scope: &HashMap<String, Value>,
+    ) -> HashSet<String> {
+        let mut refs = HashSet::new();
+        self.collect_context_references_from_expr(expr, scope, &mut refs);
+        refs
+    }
+
+    fn record_context_property(&self, property: &str) {
+        self.context_usage
+            .borrow_mut()
+            .insert(property.to_string());
+    }
+
+    fn record_all_context_properties(&self, scope: &HashMap<String, Value>) {
+        if let Some(Value::Object(ctx)) = scope.get("context") {
+            for key in ctx.keys() {
+                self.record_context_property(key);
+            }
+        }
+    }
+
+    fn extract_context_member_access<'b>(&self, expr: &'b Expression) -> Option<&'b [String]> {
+        if let Expression::MemberAccess { object, properties } = expr {
+            if let Expression::VarRef { value } = object.as_ref() {
+                if value == "context" || value == "ctx" {
+                    return Some(properties.as_slice());
+                }
+            }
+        }
+
+        None
+    }
+
+    fn collect_context_references_from_expr(
+        &self,
+        expr: &Expression,
+        scope: &HashMap<String, Value>,
+        refs: &mut HashSet<String>,
+    ) {
+        match expr {
+            Expression::ContextRef { property } => {
+                refs.insert(property.clone());
+            }
+            Expression::MemberAccess { object, properties } => {
+                if let Expression::VarRef { value } = object.as_ref() {
+                    if (value == "context" || value == "ctx") && !properties.is_empty() {
+                        refs.insert(properties[0].clone());
+                    }
+                }
+                self.collect_context_references_from_expr(object, scope, refs);
+            }
+            Expression::IndexAccess { object, index } => {
+                if object == "context" || object == "ctx" {
+                    if let Expression::Literal { value } = index.as_ref() {
+                        if let Some(key) = value.0.as_str() {
+                            refs.insert(key.to_string());
+                        }
+                    }
+                }
+                self.collect_context_references_from_expr(index, scope, refs);
+            }
+            Expression::Parts { value } | Expression::Array { value } | Expression::Parallel { body: value } => {
+                for part in value {
+                    self.collect_context_references_from_expr(part, scope, refs);
+                }
+            }
+            Expression::Template { value } | Expression::InlinePrompt { parts: value } => {
+                for part in value {
+                    if let Ok(parsed) = serde_json::from_value::<Expression>(part.0.clone()) {
+                        self.collect_context_references_from_expr(&parsed, scope, refs);
+                    }
+                }
+            }
+            Expression::Object { value } => {
+                for expr in value.values() {
+                    self.collect_context_references_from_expr(expr, scope, refs);
+                }
+            }
+            Expression::InlineIf {
+                condition,
+                then,
+                else_block,
+            }
+            | Expression::If {
+                condition,
+                then,
+                else_block,
+            } => {
+                if let Ok(cond) = serde_json::from_value::<crate::types::Condition>(condition.0.clone()) {
+                    self.collect_context_references_from_condition(&cond, scope, refs);
+                }
+                for expr in then {
+                    self.collect_context_references_from_expr(expr, scope, refs);
+                }
+                for expr in else_block {
+                    self.collect_context_references_from_expr(expr, scope, refs);
+                }
+            }
+            Expression::PromptRef { args, value, .. } => {
+                for arg in args {
+                    self.collect_context_references_from_expr(arg, scope, refs);
+                }
+                for part in value {
+                    if let Ok(parsed) = serde_json::from_value::<Expression>(part.0.clone()) {
+                        self.collect_context_references_from_expr(&parsed, scope, refs);
+                    }
+                }
+            }
+            Expression::Return { value }
+            | Expression::Expression { value }
+            | Expression::Transfer { target: value, .. } => {
+                self.collect_context_references_from_expr(value, scope, refs);
+            }
+            Expression::VariableDeclaration { value, .. } => {
+                self.collect_context_references_from_expr(value, scope, refs);
+            }
+            Expression::BinaryOp { left, right, .. } => {
+                self.collect_context_references_from_expr(left, scope, refs);
+                self.collect_context_references_from_expr(right, scope, refs);
+            }
+            Expression::FunctionCall { args, .. }
+            | Expression::HelperCall { args, .. }
+            | Expression::PromptCall { args, .. } => {
+                for arg in args {
+                    self.collect_context_references_from_expr(arg, scope, refs);
+                }
+            }
+            Expression::SchemaDirective { path } => {
+                if path == "context" {
+                    if let Some(Value::Object(ctx)) = scope.get("context") {
+                        refs.extend(ctx.keys().cloned());
+                    }
+                }
+            }
+            Expression::Literal { .. } | Expression::VarRef { .. } | Expression::PromptExamples { .. } => {}
+            _ => {}
+        }
+    }
+
+    fn collect_context_references_from_condition(
+        &self,
+        cond: &crate::types::Condition,
+        scope: &HashMap<String, Value>,
+        refs: &mut HashSet<String>,
+    ) {
+        match cond {
+            crate::types::Condition::Comparison(cmp) => {
+                self.collect_context_references_from_expr(&cmp.left, scope, refs);
+                self.collect_context_references_from_expr(&cmp.right, scope, refs);
+            }
+            crate::types::Condition::Boolean { value } => {
+                self.collect_context_references_from_expr(value, scope, refs);
+            }
+            crate::types::Condition::ContextRef { property } => {
+                refs.insert(property.clone());
+            }
+            crate::types::Condition::Logical { left, right, .. } => {
+                self.collect_context_references_from_condition(left, scope, refs);
+                self.collect_context_references_from_condition(right, scope, refs);
+            }
+        }
     }
 
     pub fn evaluate(
@@ -61,6 +242,7 @@ impl<'a> Evaluator<'a> {
                         }
                     }
                     "context" => {
+                        self.record_all_context_properties(scope);
                         if let Some(schema) = &self.ir.context {
                             Ok(Value::String(crate::schema::format_schema(
                                 &schema.0,
@@ -82,6 +264,11 @@ impl<'a> Evaluator<'a> {
                 .cloned()
                 .ok_or_else(|| AuwgentError::VariableNotFound(value.clone())),
             Expression::MemberAccess { object, properties } => {
+                if let Some(props) = self.extract_context_member_access(expr) {
+                    if let Some(first) = props.first() {
+                        self.record_context_property(first);
+                    }
+                }
                 // 1. Evaluate the base object (e.g., "input")
                 let mut current = self.evaluate(object, scope)?;
 
@@ -198,6 +385,7 @@ impl<'a> Evaluator<'a> {
             }
 
             Expression::ContextRef { property } => {
+                self.record_context_property(property);
                 if let Some(Value::Object(ctx)) = scope.get("context") {
                     ctx.get(property)
                         .cloned()
@@ -536,10 +724,16 @@ impl<'a> Evaluator<'a> {
                 self.compare_values(&left, &right, &cmp.operator)
             }
             crate::types::Condition::Boolean { value } => {
+                if let Some(props) = self.extract_context_member_access(value) {
+                    if let Some(first) = props.first() {
+                        self.record_context_property(first);
+                    }
+                }
                 let val = self.evaluate(value, scope)?;
                 Ok(self.is_truthy(&val))
             }
             crate::types::Condition::ContextRef { property } => {
+                self.record_context_property(property);
                 if let Some(Value::Object(ctx)) = scope.get("context") {
                     let val = ctx.get(property).unwrap_or(&Value::Null);
                     Ok(self.is_truthy(val))

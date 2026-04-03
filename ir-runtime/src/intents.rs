@@ -51,6 +51,52 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         "\n\nAllowed blocks:\n{}",
         allowed_blocks.join("\n")
     ));
+    let mut block_syntax = vec![
+        "Text response: <response_text>...plain text...</response_text>".to_string(),
+    ];
+    if !ir.tools.is_empty() {
+        block_syntax.push(
+            "Tool call: [tool_call: valid_tool_name] then write one `key: value` field per line, then close with [/tool]".to_string(),
+        );
+    }
+    if !ir.workflows.is_empty() {
+        block_syntax.push(
+            "Workflow call: [workflow_call: valid_workflow_name] then write one `key: value` field per line, then close with [/workflow]".to_string(),
+        );
+    }
+    if !ir.helpers.is_empty() {
+        block_syntax.push(
+            "Helper call: [helper_call: valid_helper_name] then write one `key: value` field per line, then close with [/helper]".to_string(),
+        );
+    }
+    if ir
+        .custom_intents
+        .as_ref()
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        block_syntax.push(
+            "Custom intent: [custom: valid_intent_name] then write one `key: value` field per line, then close with [/custom]".to_string(),
+        );
+    }
+    if let Some(output) = &ir.output {
+        if output.0.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+            block_syntax.push(
+                "Schema output: [schema: valid_schema_name] then write one `key: value` field per line, then close with [/schema]".to_string(),
+            );
+        }
+    }
+    block_syntax.push(
+        "Values may be strings, numbers, booleans, null, arrays like [1, 2], or objects like { city: \"Lagos\" }.".to_string(),
+    );
+    block_syntax.push(
+        "Use only the exact listed name after the colon in the opening block tag.".to_string(),
+    );
+
+    sections.push(format!(
+        "\n\nBlock syntax:\n- {}",
+        block_syntax.join("\n- ")
+    ));
     sections.push(
         "\n\nText example:\n<response_text>\nHello! How can I help you today?\n</response_text>"
             .to_string(),
@@ -285,6 +331,35 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     sections.push(format!(
         "\n\nAllowed blocks:\n{}",
         allowed_blocks.join("\n")
+    ));
+    let mut block_syntax = vec![
+        "Text response: <response_text>...plain text...</response_text>".to_string(),
+    ];
+    if !allowed_tools.is_empty() {
+        block_syntax.push(
+            "Tool call: [tool_call: valid_tool_name] then write one `key: value` field per line, then close with [/tool]".to_string(),
+        );
+    }
+    if ir
+        .custom_intents
+        .as_ref()
+        .map(|v| !v.is_empty())
+        .unwrap_or(false)
+    {
+        block_syntax.push(
+            "Custom intent: [custom: valid_intent_name] then write one `key: value` field per line, then close with [/custom]".to_string(),
+        );
+    }
+    block_syntax.push(
+        "Values may be strings, numbers, booleans, null, arrays like [1, 2], or objects like { city: \"Lagos\" }.".to_string(),
+    );
+    block_syntax.push(
+        "Use only the exact listed name after the colon in the opening block tag.".to_string(),
+    );
+
+    sections.push(format!(
+        "\n\nBlock syntax:\n- {}",
+        block_syntax.join("\n- ")
     ));
     sections.push(
         "\n\nText example:\n<response_text>\nHello! How can I help you today?\n</response_text>"
