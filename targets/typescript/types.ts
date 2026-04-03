@@ -48,10 +48,15 @@ export interface IRComponentChildrenDef {
     components?: readonly string[];
 }
 
+export interface IRComponentActionTargetDef {
+    name: string;
+    params?: unknown;
+}
+
 export interface IRComponentDef {
     name: string;
     props?: unknown;
-    action?: Record<string, readonly string[]>;
+    action?: Record<string, readonly IRComponentActionTargetDef[]>;
     children?: IRComponentChildrenDef;
 }
 

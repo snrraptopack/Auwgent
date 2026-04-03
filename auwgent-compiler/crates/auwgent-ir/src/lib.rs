@@ -451,7 +451,24 @@ fn lower_component(component: &ComponentDeclaration) -> Value {
                     let targets: Vec<Value> = binding
                         .targets
                         .iter()
-                        .map(|target| json!(target.value))
+                        .map(|target| {
+                            let mut target_obj = Map::new();
+                            target_obj.insert("name".into(), json!(target.name.value));
+                            if !target.params.is_empty() {
+                                let mut params = Map::new();
+                                for param in &target.params {
+                                    let mut param_value = Map::new();
+                                    param_value.insert("type".into(), lower_type_expr_value(&param.ty));
+                                    param_value.insert("optional".into(), json!(param.optional));
+                                    if let Some(desc) = &param.description {
+                                        param_value.insert("description".into(), json!(desc.value));
+                                    }
+                                    params.insert(param.name.value.clone(), Value::Object(param_value));
+                                }
+                                target_obj.insert("params".into(), Value::Object(params));
+                            }
+                            Value::Object(target_obj)
+                        })
                         .collect();
                     action.insert(binding.name.value.clone(), Value::Array(targets));
                 }
@@ -1547,7 +1564,7 @@ mod tests {
                 label: string
                 variant: "primary" | "secondary"
                 action: {
-                    onclick: confirm_order | delete_user
+                    onclick: confirm_order | delete_user(id: string)
                 }
             }
 
@@ -1570,7 +1587,12 @@ mod tests {
         assert_eq!(components.len(), 2);
         assert_eq!(components[0]["name"], "Button");
         assert_eq!(components[0]["props"]["label"]["type"], json!("string"));
-        assert_eq!(components[0]["action"]["onclick"][0], "confirm_order");
+        assert_eq!(components[0]["action"]["onclick"][0]["name"], "confirm_order");
+        assert_eq!(components[0]["action"]["onclick"][1]["name"], "delete_user");
+        assert_eq!(
+            components[0]["action"]["onclick"][1]["params"]["id"]["type"],
+            json!("string")
+        );
         assert_eq!(components[1]["children"]["kind"], "only");
         assert_eq!(components[1]["children"]["components"][0], "Button");
     }

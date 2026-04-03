@@ -30,6 +30,7 @@ module.exports = grammar({
       $.agent_declaration,
       $.helper_declaration,
       $.type_declaration,
+      $.component_declaration,
       $.named_prompt_declaration,
       $.model_definition,
       $.intent_declaration
@@ -58,6 +59,7 @@ module.exports = grammar({
       choice(
         $.helper_declaration,
         $.type_declaration,
+        $.component_declaration,
         $.named_prompt_declaration,
         $.model_definition,
         $.intent_declaration
@@ -94,6 +96,48 @@ module.exports = grammar({
       $.identifier,
       $.type_body
     ),
+
+    component_declaration: $ => seq(
+      'component',
+      $.identifier,
+      $.component_body
+    ),
+
+    component_body: $ => seq(
+      '{',
+      repeat($.component_field),
+      '}'
+    ),
+
+    component_field: $ => choice(
+      $.property_declaration,
+      $.component_action_field,
+      $.component_children_field
+    ),
+
+    component_action_field: $ => prec(2, seq(
+      'action',
+      ':',
+      '{',
+      repeat($.component_action_binding),
+      '}'
+    )),
+
+    component_action_binding: $ => seq(
+      $.identifier,
+      ':',
+      $.identifier,
+      repeat(seq('|', $.identifier))
+    ),
+
+    component_children_field: $ => prec(2, seq(
+      'children',
+      ':',
+      choice(
+        'all',
+        seq($.identifier, repeat(seq('|', $.identifier)))
+      )
+    )),
 
     type_body: $ => seq(
       '{',

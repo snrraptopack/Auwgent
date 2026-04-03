@@ -371,7 +371,14 @@ pub struct ComponentAction {
 #[derive(Debug, Clone)]
 pub struct ComponentActionBinding {
     pub name: Spanned<String>,
-    pub targets: Vec<Spanned<String>>,
+    pub targets: Vec<ComponentActionTarget>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ComponentActionTarget {
+    pub name: Spanned<String>,
+    pub params: Vec<TypeConfigDecl>,
     pub span: Span,
 }
 

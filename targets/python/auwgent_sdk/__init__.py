@@ -74,10 +74,14 @@ class IRComponentChildrenDef(TypedDict, total=False):
     kind: str
     components: List[str]
 
+class IRComponentActionTargetDef(TypedDict, total=False):
+    name: str
+    params: Any
+
 class IRComponentDef(TypedDict, total=False):
     name: str
     props: Any
-    action: Dict[str, List[str]]
+    action: Dict[str, List[IRComponentActionTargetDef]]
     children: IRComponentChildrenDef
 
 class AgentIRShape(TypedDict, total=False):

@@ -54,8 +54,24 @@ pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<T
 
 pub(crate) fn component_decl_parser(
 ) -> impl Parser<TokenKind, ComponentDeclaration, Error = Simple<TokenKind>> + Clone {
-    let action_target_union = ident()
-        .then(tok(TokenKind::Pipe).ignore_then(ident()).repeated())
+    let action_target = ident()
+        .then(
+            type_config_decl_parser()
+                .separated_by(tok(TokenKind::Comma))
+                .allow_trailing()
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
+                .or_not()
+                .map(|opt| opt.unwrap_or_default()),
+        )
+        .map_with_span(|(name, params), span| ComponentActionTarget {
+            name,
+            params,
+            span: s(span),
+        });
+
+    let action_target_union = action_target
+        .clone()
+        .then(tok(TokenKind::Pipe).ignore_then(action_target).repeated())
         .map(|(first, rest)| {
             let mut targets = vec![first];
             targets.extend(rest);

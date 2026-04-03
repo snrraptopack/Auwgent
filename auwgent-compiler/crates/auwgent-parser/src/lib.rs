@@ -187,7 +187,7 @@ mod tests {
             label: string
             variant: "primary" | "secondary" | "danger"
             action: {
-                onclick: confirm_order | delete_user
+                onclick: confirm_order | delete_user(id: string)
             }
             children: all
         }

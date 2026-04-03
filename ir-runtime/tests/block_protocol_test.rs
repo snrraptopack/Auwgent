@@ -304,7 +304,15 @@ fn test_component_block_reconstructs_props_and_action() {
             "variant": { "type": "string", "optional": false }
         },
         "action": {
-            "onclick": ["confirm_order", "delete_user"]
+            "onclick": [
+                { "name": "confirm_order" },
+                {
+                    "name": "delete_user",
+                    "params": {
+                        "id": { "type": "string", "optional": false }
+                    }
+                }
+            ]
         }
     }))
     .expect("valid component def");
@@ -318,7 +326,7 @@ fn test_component_block_reconstructs_props_and_action() {
     }));
 
     orch.write(
-        "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\nvariant: \"primary\"\naction_onclick: \"confirm_order\"\n[/component]",
+        "[component: Button, c_id:\"confirm_order_button\"]\nlabel: \"Confirm\"\nvariant: \"primary\"\naction_onclick: \"delete_user\"\naction_onclick_id: \"usr_123\"\n[/component]",
     );
     orch.end();
 
@@ -329,7 +337,8 @@ fn test_component_block_reconstructs_props_and_action() {
     assert_eq!(results[0].1["c_id"], "confirm_order_button");
     assert_eq!(results[0].1["props"]["label"], "Confirm");
     assert_eq!(results[0].1["props"]["variant"], "primary");
-    assert_eq!(results[0].1["action"]["onclick"], "confirm_order");
+    assert_eq!(results[0].1["action"]["onclick"]["name"], "delete_user");
+    assert_eq!(results[0].1["action"]["onclick"]["args"]["id"], "usr_123");
 }
 
 #[test]
@@ -344,7 +353,7 @@ fn test_render_component_resolves_children_from_component_registry() {
             "label": { "type": "string", "optional": false }
         },
         "action": {
-            "onclick": ["confirm_order"]
+            "onclick": [{ "name": "confirm_order" }]
         }
     }))
     .expect("valid button def");
@@ -383,7 +392,7 @@ fn test_render_component_resolves_children_from_component_registry() {
     assert_eq!(results[2].1["tree"]["type"], "Card");
     assert_eq!(results[2].1["tree"]["children"][0]["type"], "Button");
     assert_eq!(
-        results[2].1["tree"]["children"][0]["action"]["onclick"],
+        results[2].1["tree"]["children"][0]["action"]["onclick"]["name"],
         "confirm_order"
     );
 }

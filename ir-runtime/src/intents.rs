@@ -755,7 +755,23 @@ fn format_component_signature(
         action_keys.sort();
         for key in action_keys {
             if let Some(allowed) = action.get(&key) {
-                parts.push(format!("action_{}: {}", key, allowed.join(" | ")));
+                let variants = allowed
+                    .iter()
+                    .map(|target| {
+                        if let Some(params) = target.params.as_ref() {
+                            let sig = format_params_signature(&params.0, types);
+                            if sig.is_empty() {
+                                target.name.clone()
+                            } else {
+                                format!("{}({})", target.name, sig)
+                            }
+                        } else {
+                            target.name.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                parts.push(format!("action_{}: {}", key, variants));
             }
         }
     }
@@ -799,7 +815,16 @@ fn collect_component_example_block(components: &[ComponentDefinition]) -> Option
             && let Some(allowed) = action.get(first_action)
             && let Some(first_allowed) = allowed.first()
         {
-            lines.push(format!("action_{first_action}: \"{first_allowed}\""));
+            lines.push(format!("action_{first_action}: \"{}\"", first_allowed.name));
+            if let Some(params) = &first_allowed.params
+                && let Some(param_obj) = params.0.as_object()
+            {
+                let mut param_keys: Vec<_> = param_obj.keys().cloned().collect();
+                param_keys.sort();
+                if let Some(first_param) = param_keys.first() {
+                    lines.push(format!("action_{first_action}_{first_param}: \"value\""));
+                }
+            }
         }
     }
 

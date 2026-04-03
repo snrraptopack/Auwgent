@@ -387,6 +387,28 @@ impl Checker {
                         } else {
                             action_seen.insert(binding.name.value.clone(), binding.name.span);
                         }
+
+                        let mut target_seen: HashMap<String, Span> = HashMap::new();
+                        for target in &binding.targets {
+                            if let Some(prev_span) = target_seen.get(&target.name.value) {
+                                diags.push(
+                                    Diagnostic::error(
+                                        format!(
+                                            "Duplicate action target '{}' in binding '{}' for component '{}'",
+                                            target.name.value, binding.name.value, component.name.value
+                                        ),
+                                        target.name.span,
+                                    )
+                                    .with_label(*prev_span, "first defined here"),
+                                );
+                            } else {
+                                target_seen.insert(target.name.value.clone(), target.name.span);
+                            }
+
+                            for param in &target.params {
+                                self.check_type_ref_exists(&param.ty, diags);
+                            }
+                        }
                     }
                 }
                 ComponentField::Children(children) => {

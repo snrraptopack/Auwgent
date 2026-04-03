@@ -866,12 +866,41 @@ fn build_component_shape(
 
     if let Some(actions) = &component.action {
         let mut action_template = Map::new();
-        for (event_name, _allowed_actions) in actions {
+        for (event_name, allowed_actions) in actions {
             aliases.insert(
                 format!("action_{event_name}"),
-                vec!["action".to_string(), event_name.clone()],
+                vec!["action".to_string(), event_name.clone(), "name".to_string()],
             );
-            action_template.insert(event_name.clone(), pending_value());
+            let mut action_value = Map::new();
+            action_value.insert("name".to_string(), pending_value());
+
+            let mut args_template = Map::new();
+            for target in allowed_actions {
+                if let Some(params) = target.params.as_ref().and_then(|value| value.0.as_object()) {
+                    for (param_name, param_def) in params {
+                        aliases.insert(
+                            format!("action_{event_name}_{param_name}"),
+                            vec![
+                                "action".to_string(),
+                                event_name.clone(),
+                                "args".to_string(),
+                                param_name.clone(),
+                            ],
+                        );
+                        if !args_template.contains_key(param_name) {
+                            args_template.insert(
+                                param_name.clone(),
+                                build_template_value(param_def, types),
+                            );
+                        }
+                    }
+                }
+            }
+
+            if !args_template.is_empty() {
+                action_value.insert("args".to_string(), Value::Object(args_template));
+            }
+            action_template.insert(event_name.clone(), Value::Object(action_value));
         }
         template.insert("action".to_string(), Value::Object(action_template));
     }

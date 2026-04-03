@@ -192,6 +192,108 @@
     }
   },
   {
+    "type": "component_action_binding",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "component_action_field",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "component_action_binding",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "component_body",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "component_field",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "component_children_field",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "component_declaration",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "component_body",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "component_field",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "component_action_field",
+          "named": true
+        },
+        {
+          "type": "component_children_field",
+          "named": true
+        },
+        {
+          "type": "property_declaration",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "condition",
     "named": true,
     "fields": {},
@@ -282,6 +384,10 @@
       "multiple": false,
       "required": true,
       "types": [
+        {
+          "type": "component_declaration",
+          "named": true
+        },
         {
           "type": "helper_declaration",
           "named": true
@@ -1134,6 +1240,10 @@
           "named": true
         },
         {
+          "type": "component_declaration",
+          "named": true
+        },
+        {
           "type": "export_declaration",
           "named": true
         },
@@ -1530,6 +1640,10 @@
     "named": false
   },
   {
+    "type": "action",
+    "named": false
+  },
+  {
     "type": "agent",
     "named": false
   },
@@ -1550,9 +1664,17 @@
     "named": false
   },
   {
+    "type": "children",
+    "named": false
+  },
+  {
     "type": "comment",
     "named": true,
     "extra": true
+  },
+  {
+    "type": "component",
+    "named": false
   },
   {
     "type": "config",

@@ -1,22 +1,23 @@
-// This manual test is for helper definitions
 
-agent Main{
-    default config {
-        model: gemini("gemini-2.5-flash")
-        prompt: "You are a helper be polite"
+component Button {
+    action : {
+        onclick : "delete"
     }
-
-    helpers{
-        A
-    }
-
 }
 
+agent Assistants{
 
-helper A {
-    description: "mandatory description"
-    default config {
+    default config{
         model: gemini("gemini-2.5-flash")
+        prompt {
+        """
+            You are an assistant agent please be polite to the user
+            the user name is {{ctx.user_name}}
+        """
+        }
     }
-    input:Text
+    context {
+        user_name:string
+    }
+
 }

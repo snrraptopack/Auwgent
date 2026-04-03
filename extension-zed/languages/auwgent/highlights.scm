@@ -45,7 +45,10 @@
   "openai"
   "custom"
   "intent"
+  "component"
   "fields"
+  "action"
+  "children"
 ] @keyword
 
 ; Built-in types
@@ -107,9 +110,11 @@
 (agent_declaration (identifier) @type)
 (helper_declaration (identifier) @type)
 (type_declaration (identifier) @type)
+(component_declaration (identifier) @type)
 (named_prompt_declaration (identifier) @function)
 (workflow_config (identifier) @function)
 (tool_function (identifier) @function)
+(component_action_binding (identifier) @function.method)
 
 ; Variables and Properties
 (let_statement (identifier) @variable)

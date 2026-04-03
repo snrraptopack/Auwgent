@@ -367,9 +367,17 @@ pub struct ComponentIR {
     pub name: String,
     pub props: JsonValue,
     #[serde(default)]
-    pub action: Option<HashMap<String, Vec<String>>>,
+    pub action: Option<HashMap<String, Vec<ComponentActionTargetIR>>>,
     #[serde(default)]
     pub children: Option<ComponentChildrenIR>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentActionTargetIR {
+    pub name: String,
+    #[serde(default)]
+    pub params: Option<JsonValue>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug)]
