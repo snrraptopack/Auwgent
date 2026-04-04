@@ -124,6 +124,17 @@ class Middleware(Protocol):
     async def onRunComplete(self, finalSession: SessionState, ctx: MiddlewareContext) -> None: ...
     async def onError(self, error: Exception, session: Optional[SessionState], ctx: MiddlewareContext) -> bool: ...
 
+_RESERVED_MIDDLEWARE_CONTEXT_KEYS: set[str] = {
+    "activeAgent",
+    "stack",
+    "rootAgent",
+    "rawBlock",
+    "systemPrompt",
+    "embed",
+    "embedBatch",
+    "set_context",
+}
+
 # ── Configuration ────────────────────────────────────────────────────────
 
 class AuwgentConfig(TypedDict, total=False):
@@ -313,6 +324,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             ctx[k] = v  # type: ignore
         return ctx
 
+    def _persist_middleware_context(self, ctx: MiddlewareContext) -> None:
+        for key, value in ctx.items():
+            if key not in _RESERVED_MIDDLEWARE_CONTEXT_KEYS:
+                self._shared_context[key] = value
+
     def _build_context_from_runtime_event(self, event: Dict[str, Any]) -> MiddlewareContext:
         ctx = self._build_context()
         runtime_ctx = event.get("context")
@@ -356,8 +372,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onIntent"):
                     control = await middleware.onIntent(cast(str, event.get("name", "")), value, ctx)
+                    self._persist_middleware_context(ctx)
                     if control is not None:
                         return json.dumps(control)
+            self._persist_middleware_context(ctx)
             return None
 
         if event_type == "llm_start":
@@ -368,8 +386,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onLLMStart"):
                     result = await middleware.onLLMStart(current_prompt, ctx)
+                    self._persist_middleware_context(ctx)
                     if isinstance(result, str):
                         current_prompt = result
+
+            self._persist_middleware_context(ctx)
 
             return json.dumps({
                 "prompt": current_prompt,
@@ -380,6 +401,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onLLMEnd"):
                     await middleware.onLLMEnd(event.get("response") or {}, ctx)
+                    self._persist_middleware_context(ctx)
+            self._persist_middleware_context(ctx)
             return None
 
         if event_type == "run_start":
@@ -387,6 +410,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onRunStart"):
                     session = await middleware.onRunStart(session, ctx)
+                    self._persist_middleware_context(ctx)
+
+            self._persist_middleware_context(ctx)
 
             if "stack" in ctx and isinstance(ctx["stack"], list):
                 session["stack"] = list(ctx["stack"])
@@ -399,6 +425,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onRunComplete"):
                     await middleware.onRunComplete(session, ctx)
+                    self._persist_middleware_context(ctx)
+            self._persist_middleware_context(ctx)
             return None
 
         if event_type == "error":
@@ -416,8 +444,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onError"):
                     swallow = await middleware.onError(error, session, ctx)
+                    self._persist_middleware_context(ctx)
                     if swallow:
                         return json.dumps({"swallow": True})
+            self._persist_middleware_context(ctx)
             return None
 
         return None

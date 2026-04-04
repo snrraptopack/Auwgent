@@ -164,6 +164,17 @@ class Middleware(Protocol):
 # Accept both instances and class types in middleware lists
 MiddlewareEntry = Union[Middleware, Type[Any]]
 
+_RESERVED_MIDDLEWARE_CONTEXT_KEYS: set[str] = {
+    "activeAgent",
+    "stack",
+    "rootAgent",
+    "rawBlock",
+    "systemPrompt",
+    "embed",
+    "embedBatch",
+    "set_context",
+}
+
 
 # ── Configuration ────────────────────────────────────────────────────────
 
@@ -463,6 +474,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             ctx[k] = v  # type: ignore
         return ctx
 
+    def _persist_middleware_context(self, ctx: MiddlewareContext) -> None:
+        for key, value in ctx.items():
+            if key not in _RESERVED_MIDDLEWARE_CONTEXT_KEYS:
+                self._shared_context[key] = value
+
     def _build_context_from_runtime_event(self, event: Dict[str, Any]) -> MiddlewareContext:
         ctx = self._build_context()
         runtime_ctx = event.get("context")
@@ -508,10 +524,12 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onIntent"):
                         try:
                             control = await middleware.onIntent(cast(str, event.get("name", "")), value, ctx)
+                            self._persist_middleware_context(ctx)
                             if control is not None:
                                 return json.dumps(control)
                         except Exception as error:
                             self._report_warning("middleware", "middleware onIntent threw", error, cast(str, ctx.get("activeAgent", "")))
+                self._persist_middleware_context(ctx)
                 return None
 
             if event_type == "llm_start":
@@ -523,10 +541,13 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onLLMStart"):
                         try:
                             result = await middleware.onLLMStart(current_prompt, ctx)
+                            self._persist_middleware_context(ctx)
                             if isinstance(result, str):
                                 current_prompt = result
                         except Exception as error:
                             self._report_warning("middleware", "middleware onLLMStart threw", error, cast(str, ctx.get("activeAgent", "")))
+
+                self._persist_middleware_context(ctx)
 
                 return json.dumps({
                     "prompt": current_prompt,
@@ -538,8 +559,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onLLMEnd"):
                         try:
                             await middleware.onLLMEnd(event.get("response") or {}, ctx)
+                            self._persist_middleware_context(ctx)
                         except Exception as error:
                             self._report_warning("middleware", "middleware onLLMEnd threw", error, cast(str, ctx.get("activeAgent", "")))
+                self._persist_middleware_context(ctx)
                 return None
 
             if event_type == "run_start":
@@ -548,8 +571,11 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onRunStart"):
                         try:
                             session = await middleware.onRunStart(session, ctx)
+                            self._persist_middleware_context(ctx)
                         except Exception as error:
                             self._report_warning("middleware", "middleware onRunStart threw", error, cast(str, ctx.get("activeAgent", "")))
+
+                self._persist_middleware_context(ctx)
 
                 if "stack" in ctx and isinstance(ctx["stack"], list):
                     session["stack"] = list(ctx["stack"])
@@ -563,8 +589,10 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onRunComplete"):
                         try:
                             await middleware.onRunComplete(session, ctx)
+                            self._persist_middleware_context(ctx)
                         except Exception as error:
                             self._report_warning("middleware", "middleware onRunComplete threw", error, cast(str, ctx.get("activeAgent", "")))
+                self._persist_middleware_context(ctx)
                 return None
 
             if event_type == "error":
@@ -583,10 +611,12 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                     if hasattr(middleware, "onError"):
                         try:
                             swallow = await middleware.onError(error, session, ctx)
+                            self._persist_middleware_context(ctx)
                             if swallow:
                                 return json.dumps({"swallow": True})
                         except Exception as middleware_error:
                             self._report_warning("middleware", "middleware onError threw", middleware_error, cast(str, ctx.get("activeAgent", "")))
+                self._persist_middleware_context(ctx)
                 return None
 
             return None

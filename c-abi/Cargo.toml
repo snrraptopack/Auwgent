@@ -1,0 +1,13 @@
+[package]
+name = "auwgent-c-abi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "auwgent_c_abi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+ir-runtime = { path = "../ir-runtime" }
+serde_json = "1.0"
+tokio = { version = "1.43", features = ["rt", "rt-multi-thread"] }

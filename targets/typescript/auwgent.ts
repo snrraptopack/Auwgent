@@ -186,6 +186,25 @@ export class TypedAuwgent<
     // Shared context storage for cross-hook state mapping
     private sharedContext: Record<string, any> = {};
 
+    private persistMiddlewareContext(ctx: MiddlewareContext<IR>): void {
+        const reserved = new Set([
+            'activeAgent',
+            'stack',
+            'rootAgent',
+            'rawBlock',
+            'systemPrompt',
+            'embed',
+            'embedBatch',
+            'setContext',
+        ]);
+
+        for (const [key, value] of Object.entries(ctx as Record<string, any>)) {
+            if (!reserved.has(key)) {
+                this.sharedContext[key] = value;
+            }
+        }
+    }
+
     private getBuildContext(): MiddlewareContext<IR> {
         const activeAgent = this.agentStack[this.agentStack.length - 1] ?? this.ir.name;
         return {
@@ -267,6 +286,8 @@ export class TypedAuwgent<
                     }
                 }
 
+                this.persistMiddlewareContext(ctx);
+
                 return undefined;
             }
             case 'llm_start': {
@@ -285,6 +306,8 @@ export class TypedAuwgent<
                     }
                 }
 
+                this.persistMiddlewareContext(ctx);
+
                 return JSON.stringify({
                     prompt: currentPrompt,
                     stack: ctx.stack,
@@ -300,6 +323,8 @@ export class TypedAuwgent<
                         }
                     }
                 }
+
+                this.persistMiddlewareContext(ctx);
 
                 return undefined;
             }
@@ -321,6 +346,8 @@ export class TypedAuwgent<
                     this.agentStack = [...ctx.stack];
                 }
 
+                this.persistMiddlewareContext(ctx);
+
                 return JSON.stringify({ session });
             }
             case 'run_complete': {
@@ -336,6 +363,8 @@ export class TypedAuwgent<
                     }
                 }
 
+                this.persistMiddlewareContext(ctx);
+
                 return undefined;
             }
             case 'error': {
@@ -350,6 +379,7 @@ export class TypedAuwgent<
                         try {
                             const shouldSwallow = await (m.onError as any)(error, session, ctx);
                             if (shouldSwallow) {
+                                this.persistMiddlewareContext(ctx);
                                 return JSON.stringify({ swallow: true });
                             }
                         } catch (middlewareError) {
@@ -357,6 +387,8 @@ export class TypedAuwgent<
                         }
                     }
                 }
+
+                this.persistMiddlewareContext(ctx);
 
                 return undefined;
             }
@@ -380,6 +412,8 @@ export class TypedAuwgent<
                 }
             }
         }
+
+        this.persistMiddlewareContext(ctx);
     }
 
     private reportWarning(source: AuwgentWarningSource, message: string, error?: unknown, agentName?: string): void {
@@ -497,6 +531,8 @@ export class TypedAuwgent<
                         }
                     }
                 }
+
+                this.persistMiddlewareContext(partialCtx);
             });
         this.native.onMiddlewareEvent(async (eventJson: string) => {
             try {

@@ -1,6 +1,6 @@
 {
   "name": "@snrraptopack/auwgent-sdk",
-  "version": "0.1.0-alpha.24",
+  "version": "0.1.0-alpha.25",
   "description": "Auwgent IR Runtime — Rust-powered agent engine with type-safe TypeScript bindings",
   "repository": {
     "type": "git",
@@ -48,9 +48,9 @@
     "typescript": "^5"
   },
   "optionalDependencies": {
-    "@snrraptopack/auwgent-sdk-win32-x64-msvc": "0.1.0-alpha.24",
-    "@snrraptopack/auwgent-sdk-darwin-x64": "0.1.0-alpha.24",
-    "@snrraptopack/auwgent-sdk-darwin-arm64": "0.1.0-alpha.24",
-    "@snrraptopack/auwgent-sdk-linux-x64-gnu": "0.1.0-alpha.24"
+    "@snrraptopack/auwgent-sdk-win32-x64-msvc": "0.1.0-alpha.25",
+    "@snrraptopack/auwgent-sdk-darwin-x64": "0.1.0-alpha.25",
+    "@snrraptopack/auwgent-sdk-darwin-arm64": "0.1.0-alpha.25",
+    "@snrraptopack/auwgent-sdk-linux-x64-gnu": "0.1.0-alpha.25"
   }
 }
