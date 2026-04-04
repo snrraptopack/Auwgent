@@ -10,50 +10,6 @@ type MainAgentIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as MainAgentIR;
-export type PricingTier = {
-    monthly_cost: number;
-    annual_cost: number;
-    name: string;
-    max_seats: number;
-}
-
-export type ContactInfo = {
-    email: string;
-    address: Address;
-    phone: string;
-}
-
-export type Subscription = {
-    is_active: boolean;
-    features: Feature[];
-    id: string;
-    renews_at: string;
-    started_at: string;
-    tier: PricingTier;
-}
-
-export type Address = {
-    city: string;
-    zip: string;
-    country: string;
-    street: string;
-}
-
-export type Feature = {
-    label: string;
-    config: { limit: number; unit: string; overage_rate: number };
-    enabled: boolean;
-    id: string;
-}
-
-export type Organization = {
-    contact: ContactInfo;
-    id: string;
-    member_count: number;
-    tags: string[];
-    name: string;
-    subscription: Subscription;
-}
 export type MainAgentInput = {
 
 }
@@ -64,10 +20,6 @@ export type MainAgentOutput = {
 
 export type MainAgentContext = {
 
-}
-
-export type MainAgentTools = {
-    user_name: (args: { id: number }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */
@@ -86,7 +38,7 @@ export type MainAgentAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
     MainAgentCustomIntents,
     MainAgentOutput,
-    MainAgentTools
+    Record<string, never>
 >;
 
 /** Middleware object type — consistent with `MainAgentAgent.onIntent` intent narrowing */
@@ -94,12 +46,11 @@ export type MainAgentMiddleware<T extends import("@snrraptopack/auwgent-sdk").Mi
     typeof agentIR,
     MainAgentCustomIntents,
     MainAgentOutput,
-    MainAgentTools,
+    Record<string, never>,
     T
 >;
 
 export type MainAgentConfig = {
-    tools: MainAgentTools;
     middleware?: MainAgentMiddleware[];
     apiKeys: MainAgentApiKeys;
 }
@@ -109,16 +60,16 @@ export function createMainAgent(config: MainAgentConfig): MainAgentAgent {
         typeof agentIR,
         MainAgentCustomIntents,
         MainAgentOutput,
-        MainAgentTools
+        Record<string, never>
     >(agentIR, {
-        tools: config.tools,
+        tools: {} as Record<string, never>,
         middleware: config.middleware as any,
         apiKeys: config.apiKeys
     });
 }
 
 export const auwgent = createMainAgent;
-export type AuwgentTools = MainAgentTools;
+export type AuwgentTools = Record<string, never>;
 export type AuwgentConfig = MainAgentConfig;
 export type AuwgentAgent = MainAgentAgent;
 export type AuwgentMiddleware = MainAgentMiddleware;

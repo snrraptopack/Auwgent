@@ -31,7 +31,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\r\n                You are a helpful assistant please your response should accurately be in this strcuture\r\n            "
+                  "value": "\r\n                You are a helpful assistant, if user asks a question or query that can be modeled with a component use it\r\n                Try to give the user variety of options if possible even if their request seems affirmative\r\n\r\n                if you want to add a children you can do it like\r\n\r\n                [component: type, c_id:\"your root id\"]\r\n                    name: \"value\"\r\n                    children: [of all the component references in order of how you want it to appear]\r\n                [/component]\r\n\r\n                you can define two component of the same kind with different id's as the distiction for more options\r\n\r\n\r\n                current items available:\r\n                    biscuit id 20 price of 30\r\n                    book id 30 price 40\r\n            "
                 }
               ]
             }
@@ -44,271 +44,79 @@
   "input": null,
   "output": null,
   "context": null,
-  "tools": [
-    {
-      "name": "user_name",
-      "description": "for getting the user name",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "returns": "string",
-      "examples": []
-    }
-  ],
+  "tools": [],
   "workflows": [],
   "helpers": [],
   "components": [
     {
+      "name": "Product",
+      "props": {
+        "product_id": {
+          "type": "string",
+          "optional": false
+        },
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "price": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "action": null,
+      "children": {
+        "kind": "only",
+        "components": [
+          "Button"
+        ]
+      }
+    },
+    {
       "name": "Button",
-      "props": {},
+      "props": {
+        "variant": {
+          "type": {
+            "type": "union",
+            "options": [
+              "red",
+              "green",
+              "gray"
+            ]
+          },
+          "optional": false
+        }
+      },
       "action": {
         "onclick": [
           {
             "name": "delete",
-            "params": null
-          },
-          {
-            "name": "add",
             "params": {
               "id": {
                 "type": "string",
                 "optional": false
               }
             }
+          },
+          {
+            "name": "purchase",
+            "params": {
+              "id": {
+                "type": "string",
+                "optional": false
+              }
+            }
+          },
+          {
+            "name": "decline",
+            "params": null
           }
         ]
       },
       "children": null
     }
   ],
-  "types": {
-    "PricingTier": {
-      "isOutput": false,
-      "properties": {
-        "monthly_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "annual_cost": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "max_seats": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "ContactInfo": {
-      "isOutput": false,
-      "properties": {
-        "email": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "address": {
-          "type": {
-            "type": "typeRef",
-            "name": "Address"
-          },
-          "optional": false,
-          "description": null
-        },
-        "phone": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "Subscription": {
-      "isOutput": false,
-      "properties": {
-        "is_active": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "features": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "typeRef",
-              "name": "Feature"
-            }
-          },
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "renews_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "started_at": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "tier": {
-          "type": {
-            "type": "typeRef",
-            "name": "PricingTier"
-          },
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "Address": {
-      "isOutput": false,
-      "properties": {
-        "city": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "zip": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "country": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "street": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "Feature": {
-      "isOutput": false,
-      "properties": {
-        "label": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "config": {
-          "type": {
-            "type": "object",
-            "properties": {
-              "limit": {
-                "type": "number",
-                "optional": false
-              },
-              "unit": {
-                "type": "string",
-                "optional": false
-              },
-              "overage_rate": {
-                "type": "number",
-                "optional": false
-              }
-            }
-          },
-          "optional": false,
-          "description": null
-        },
-        "enabled": {
-          "type": "boolean",
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
-    "Organization": {
-      "isOutput": false,
-      "properties": {
-        "contact": {
-          "type": {
-            "type": "typeRef",
-            "name": "ContactInfo"
-          },
-          "optional": false,
-          "description": null
-        },
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "member_count": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
-        "tags": {
-          "type": {
-            "type": "array",
-            "items": "string"
-          },
-          "optional": false,
-          "description": null
-        },
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "subscription": {
-          "type": {
-            "type": "typeRef",
-            "name": "Subscription"
-          },
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": [
-        {
-          "id": {
-            "type": "literal",
-            "value": "abc"
-          },
-          "name": {
-            "type": "literal",
-            "value": "any name"
-          },
-          "contact": {
-            "type": "literal",
-            "value": ".... and so on"
-          }
-        }
-      ]
-    }
-  },
+  "types": null,
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],

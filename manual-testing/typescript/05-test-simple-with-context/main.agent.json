@@ -1,0 +1,52 @@
+{
+  "name": "Main",
+  "modelConfig": [
+    {
+      "defaultConfig": {
+        "model": {
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash",
+          "config": null
+        },
+        "embedding": null,
+        "prompt": {
+          "value": "You are a helper be polite",
+          "type": "literal"
+        }
+      },
+      "namedConfig": []
+    }
+  ],
+  "input": null,
+  "output": {
+    "name": {
+      "type": "string",
+      "optional": false,
+      "description": "no description"
+    },
+    "age": {
+      "type": "number",
+      "optional": false,
+      "description": "no description"
+    }
+  },
+  "context": {
+    "your_name": {
+      "type": "string",
+      "optional": false
+    },
+    "age": {
+      "type": "number",
+      "optional": false
+    }
+  },
+  "tools": [],
+  "workflows": [],
+  "helpers": [],
+  "types": null,
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
+}

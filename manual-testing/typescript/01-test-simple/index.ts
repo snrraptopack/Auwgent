@@ -26,8 +26,9 @@ agent.onIntentPartial((name, value, age) => {
 })
 
 agent.onIntent((name, value, agentname) => {
-  console.log(JSON.stringify(value, null, 2))
-   console.log("\n")
+  if (name === "render_component") {
+    console.log(JSON.stringify(value,null,2))
+  }
 })
 
 agent.onWarning((warning) => {
@@ -36,9 +37,9 @@ agent.onWarning((warning) => {
 
 console.log(agent.generatePrompt())
 
-const session = await agent.run(`render one component for me to se`)
+const session = await agent.run(`let me look at the product biscuit`)
 
-console.log(JSON.stringify(session,null,2))
+//console.log(JSON.stringify(session,null,2))
 
 
 console.log(agent.getMetadata().aggregate)

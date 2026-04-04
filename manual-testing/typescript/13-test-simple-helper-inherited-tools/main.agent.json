@@ -105,13 +105,12 @@
       "examples": []
     }
   ],
-  "components": [],
   "types": null,
   "helperToolGrants": {
-    "A": "all",
     "B": [
       "bb"
-    ]
+    ],
+    "A": "all"
   },
   "helperHandoff": null,
   "tests": [],

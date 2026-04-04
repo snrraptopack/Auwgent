@@ -20,22 +20,7 @@
   "input": null,
   "output": null,
   "context": null,
-  "tools": [
-    {
-      "name": "aa",
-      "description": "",
-      "params": {},
-      "returns": "number",
-      "examples": []
-    },
-    {
-      "name": "bb",
-      "description": "",
-      "params": {},
-      "returns": "boolean",
-      "examples": []
-    }
-  ],
+  "tools": [],
   "workflows": [],
   "helpers": [
     {
@@ -70,49 +55,10 @@
       "workflows": [],
       "customIntents": null,
       "examples": []
-    },
-    {
-      "name": "B",
-      "description": "mandatory description",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "gemini",
-              "modelName": "gemini-2.5-flash",
-              "config": null
-            },
-            "embedding": null,
-            "prompt": null
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [
-        {
-          "name": "one",
-          "description": "This tools is available to the helper only",
-          "params": {},
-          "returns": "string",
-          "examples": []
-        }
-      ],
-      "workflows": [],
-      "customIntents": null,
-      "examples": []
     }
   ],
-  "components": [],
   "types": null,
-  "helperToolGrants": {
-    "A": "all",
-    "B": [
-      "bb"
-    ]
-  },
+  "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],
   "lifecycle": null,

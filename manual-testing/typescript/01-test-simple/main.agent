@@ -1,60 +1,15 @@
 
-export type Address {
-    street: string
-    city: string
-    zip: string
-    country: string
+component Product{
+    product_id:string,
+    name: string,
+    price:number
+    children: Button
 }
-
-export type ContactInfo{
-    email: string
-    phone: string
-    address: Address
-}
-
-export type PricingTier {
-    name: string
-    monthly_cost: number
-    annual_cost: number
-    max_seats: number
-}
-
-export type Feature {
-    id: string
-    label: string
-    enabled: boolean
-    config: {
-        limit: number
-        unit: string
-        overage_rate: number
-    }
-}
-
-export type Subscription{
-    id: string
-    tier: PricingTier
-    features: Feature[]
-    started_at: string
-    renews_at: string
-    is_active: boolean
-}
-
-export type Organization {
-    id: string
-    name: string
-    contact: ContactInfo
-    subscription: Subscription
-    member_count: number
-    tags: string[]
-}@example(
-    id = "abc",
-    name = "any name",
-    contact = '.... and so on'
-)
 
 component Button{
+    variant: "red" | "green" | "gray",
     action : {
-        onclick : delete | add(id:string)
+        onclick : delete(id:string) | purchase(id:string) | decline
     }
 }
 
@@ -67,11 +22,25 @@ agent MainAgent{
             })
         prompt: {
             """
-                You are a helpful assistant please your response should accurately be in this strcuture
+                You are a helpful assistant, if user asks a question or query that can be modeled with a component use it
+                Try to give the user variety of options if possible even if their request seems affirmative
+
+                if you want to add a children you can do it like
+
+                [component: type, c_id:"your root id"]
+                    name: "value"
+                    children: [of all the component references in order of how you want it to appear]
+                [/component]
+
+                you can define two component of the same kind with different id's as the distiction for more options
+
+
+                current items available:
+                    biscuit id 20 price of 30
+                    book id 30 price 40
             """
         }
     }
 
-    tool user_name(id:number):string @desc "for getting the user name"
     output:Text
 }
