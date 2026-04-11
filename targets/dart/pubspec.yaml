@@ -1,0 +1,10 @@
+name: auwgent_sdk_dart
+description: Experimental Dart SDK for Auwgent built on the shared C ABI.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+
+dependencies:
+  ffi: ^2.2.0

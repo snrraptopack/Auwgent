@@ -1,0 +1,13 @@
+
+
+agent Hello{
+    default config{
+        model:gemini("gemini-2.5-flash")
+        prompt: "You are a helper"
+    }
+
+    output {
+        name:string,
+        age:number
+    }
+}

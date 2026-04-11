@@ -22,7 +22,7 @@ pub fn resolve_watch_roots(path: Option<&Path>, config_source: Option<&str>) -> 
 
 pub fn resolve_targets(target_arg: Option<&str>, config_targets: Option<&[String]>) -> Vec<String> {
     match target_arg {
-        Some("both") => vec!["ts".to_string(), "python".to_string()],
+        Some("both") => vec!["ts".to_string(), "python".to_string(), "dart".to_string()],
         Some(t) => vec![t.to_string()],
         None => {
             if let Some(targets) = config_targets {

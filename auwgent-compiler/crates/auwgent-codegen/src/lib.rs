@@ -3,6 +3,7 @@
 //! Generates target-language type stubs from the lowered IR.
 
 mod common;
+mod dart;
 mod python;
 mod typescript;
 
@@ -16,4 +17,14 @@ pub fn generate_typescript(ir: &AgentIR, base_name: &str) -> String {
 pub fn generate_python(ir: &AgentIR, base_name: &str) -> String {
     let ir_value = serde_json::to_value(ir).expect("Schema serialization should succeed");
     python::generate(&ir_value, base_name)
+}
+
+pub fn generate_dart(ir: &AgentIR, base_name: &str) -> String {
+    let ir_value = serde_json::to_value(ir).expect("Schema serialization should succeed");
+    dart::generate(&ir_value, base_name)
+}
+
+pub fn generate_dart_ir_module(ir: &AgentIR) -> String {
+    let ir_value = serde_json::to_value(ir).expect("Schema serialization should succeed");
+    dart::generate_ir_module(&ir_value)
 }

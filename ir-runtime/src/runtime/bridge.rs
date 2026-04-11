@@ -25,9 +25,23 @@ impl EngineBridge {
         let ir: AgentIR = serde_json::from_str(&ir_json)
             .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;
 
+        Self::with_runtime(ir, tokio::runtime::Builder::new_multi_thread())
+    }
+
+    pub fn new_current_thread(ir_json: String) -> Result<Self, String> {
+        let ir: AgentIR = serde_json::from_str(&ir_json)
+            .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;
+
+        Self::with_runtime(ir, tokio::runtime::Builder::new_current_thread())
+    }
+
+    fn with_runtime(
+        ir: AgentIR,
+        mut builder: tokio::runtime::Builder,
+    ) -> Result<Self, String> {
         let engine = AuwgentEngine::new(ir.clone());
 
-        let rt = tokio::runtime::Builder::new_multi_thread()
+        let rt = builder
             .enable_all()
             .build()
             .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
