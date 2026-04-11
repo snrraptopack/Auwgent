@@ -1144,3 +1144,167 @@ fn ast_to_json_object(fields: &std::collections::HashMap<String, ASTValue>) -> V
     }
     Value::Object(map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_orchestrator() -> BlockOrchestrator {
+        let mut orch = BlockOrchestrator::new();
+        orch.register_intent("tool_call");
+        orch.register_intent("workflow_call");
+        orch.register_intent("response_schema");
+        orch.register_intent("response_text");
+        orch.register_intent("helper_call");
+        orch
+    }
+
+    #[test]
+    fn test_response_text_and_schema_both_emitted() {
+        let mut orch = setup_orchestrator();
+
+        // Register output shape for schema parsing
+        let output = serde_json::json!({
+            "name": { "type": "string" },
+            "age": { "type": "number" },
+            "country": { "type": "string" },
+            "is_student": { "type": "boolean" }
+        });
+        orch.register_output_shape(&output, None);
+
+        // Collect emitted intents
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        // Simulate the model response arriving as a single chunk
+        let model_output = " \n[response_text]\nHiroshi is a 21-year-old student from Japan.\n[/response_text]\n[schema: Output ]\nname: Hiroshi\nage: 21\ncountry: Japan\nis_student: true\n[/schema]";
+
+        orch.write(model_output);
+
+        // During streaming, no intents should be emitted (only partials)
+        let emitted_during_streaming = emitted.lock().unwrap().clone();
+        assert!(
+            emitted_during_streaming.is_empty(),
+            "No intents should be emitted during streaming, got: {:?}",
+            emitted_during_streaming
+        );
+
+        // Finalize
+        orch.end();
+
+        // After finalization, both response_text and response_schema should be emitted
+        let final_emitted = emitted.lock().unwrap().clone();
+        let intent_names: Vec<&str> = final_emitted.iter().map(|(name, _)| name.as_str()).collect();
+
+        assert!(
+            intent_names.contains(&"response_text"),
+            "Expected response_text intent to be emitted. Got: {:?}",
+            intent_names
+        );
+        assert!(
+            intent_names.contains(&"response_schema"),
+            "Expected response_schema intent to be emitted. Got: {:?}",
+            intent_names
+        );
+
+        // Verify response_text content
+        let text_intent = final_emitted.iter().find(|(n, _)| n == "response_text").unwrap();
+        assert_eq!(
+            text_intent.1["text"].as_str().unwrap(),
+            "Hiroshi is a 21-year-old student from Japan."
+        );
+
+        // Verify response_schema content
+        let schema_intent = final_emitted.iter().find(|(n, _)| n == "response_schema").unwrap();
+        assert_eq!(schema_intent.1["type"].as_str().unwrap(), "Output");
+        assert!(schema_intent.1["response"].is_object(), "response_schema should have a response object");
+    }
+
+    #[test]
+    fn test_response_text_only() {
+        let mut orch = setup_orchestrator();
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[response_text]\nHello world!\n[/response_text]");
+        orch.end();
+
+        let final_emitted = emitted.lock().unwrap().clone();
+        assert_eq!(final_emitted.len(), 1);
+        assert_eq!(final_emitted[0].0, "response_text");
+        assert_eq!(final_emitted[0].1["text"].as_str().unwrap(), "Hello world!");
+    }
+
+    #[test]
+    fn test_schema_only() {
+        let mut orch = setup_orchestrator();
+
+        let output = serde_json::json!({
+            "name": { "type": "string" },
+            "age": { "type": "number" }
+        });
+        orch.register_output_shape(&output, None);
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[schema: Output]\nname: John\nage: 30\n[/schema]");
+        orch.end();
+
+        let final_emitted = emitted.lock().unwrap().clone();
+        assert_eq!(final_emitted.len(), 1);
+        assert_eq!(final_emitted[0].0, "response_schema");
+        assert_eq!(final_emitted[0].1["type"].as_str().unwrap(), "Output");
+    }
+
+    #[test]
+    fn test_incremental_streaming_then_finalize() {
+        let mut orch = setup_orchestrator();
+
+        let output = serde_json::json!({
+            "name": { "type": "string" }
+        });
+        orch.register_output_shape(&output, None);
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        // Simulate incremental token streaming
+        orch.write("[response_text]\nHello");
+        orch.write(" world!\n[/response_text]\n[schema:");
+        orch.write(" Output]\nname: Alice\n[/schema]");
+
+        // Nothing emitted yet during streaming
+        assert!(emitted.lock().unwrap().is_empty());
+
+        // Finalize
+        orch.end();
+
+        let final_emitted = emitted.lock().unwrap().clone();
+        let intent_names: Vec<&str> = final_emitted.iter().map(|(name, _)| name.as_str()).collect();
+
+        assert!(
+            intent_names.contains(&"response_text"),
+            "Expected response_text, got: {:?}",
+            intent_names
+        );
+        assert!(
+            intent_names.contains(&"response_schema"),
+            "Expected response_schema, got: {:?}",
+            intent_names
+        );
+    }
+}

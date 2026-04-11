@@ -38,8 +38,6 @@ final class Tools extends AuwgentTools {
 
 
 Future<void> main() async {
-
-
   final config = AuwgentConfig(
     apiKeys: AuwgentApiKeys(
       geminiApiKey: '..',

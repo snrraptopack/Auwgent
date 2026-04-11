@@ -683,4 +683,20 @@ mod tests {
         assert_eq!(blocks[0].block_type, BlockType::Chat);
         assert_eq!(blocks[0].content, "Thinking...");
     }
+
+    #[test]
+    fn test_response_text_and_schema_both_parsed() {
+        // Exact model output pattern from the bug report
+        let input = " \n[response_text]\nHiroshi is a 21-year-old student from Japan.\n[/response_text]\n[schema: Output ]\nname: Hiroshi\nage: 21\ncountry: Japan\nis_student: true\n[/schema]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 2, "Expected 2 blocks (Chat + Out), got {}: {:?}", blocks.len(), blocks);
+        assert_eq!(blocks[0].block_type, BlockType::Chat);
+        assert_eq!(blocks[0].content, "Hiroshi is a 21-year-old student from Japan.");
+        assert_eq!(blocks[1].block_type, BlockType::Out);
+        assert_eq!(blocks[1].target_name, Some("Output".to_string()));
+        assert!(blocks[1].content.contains("name: Hiroshi"));
+        assert!(blocks[1].content.contains("age: 21"));
+    }
 }

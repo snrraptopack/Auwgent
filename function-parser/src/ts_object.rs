@@ -504,4 +504,17 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn test_assignment_object_unquoted_string_values() {
+        // Exact schema content format from LLM output
+        let input = "name: Hiroshi\nage: 21\ncountry: Japan\nis_student: true";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse schema content: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(obj.get("name"), Some(&ASTValue::String("Hiroshi".to_string())));
+        assert_eq!(obj.get("age"), Some(&ASTValue::Number(21.0)));
+        assert_eq!(obj.get("country"), Some(&ASTValue::String("Japan".to_string())));
+        assert_eq!(obj.get("is_student"), Some(&ASTValue::Boolean(true)));
+    }
 }
