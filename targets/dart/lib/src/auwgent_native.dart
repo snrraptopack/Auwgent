@@ -510,6 +510,100 @@ final class AuwgentNative {
     }
   }
 
+  Future<void> runTextAsync(String input, {List<String>? initialStack}) {
+    _checkNotDisposed();
+    final completer = Completer<void>();
+    final inputPtr = input.toNativeUtf8();
+    final stackPtr = initialStack == null
+        ? ffi.nullptr
+        : jsonEncode(initialStack).toNativeUtf8();
+
+    late final ffi.NativeCallable<NativeRunCompleteCallback> callable;
+    callable = ffi.NativeCallable<NativeRunCompleteCallback>.listener((
+      bool success,
+      ffi.Pointer<Utf8> errorMessagePtr,
+      ffi.Pointer<ffi.Void> _,
+    ) {
+      callable.close();
+      if (success) {
+        completer.complete();
+      } else {
+        final message = errorMessagePtr == ffi.nullptr
+            ? 'Unknown async run error'
+            : errorMessagePtr.toDartString();
+        completer.completeError(StateError(message));
+      }
+    });
+
+    try {
+      final ok = _bindings.engineRunTextAsync(
+        _handle,
+        inputPtr,
+        stackPtr,
+        callable.nativeFunction,
+        ffi.nullptr,
+      );
+      if (!ok) {
+        callable.close();
+        throw StateError(_readLastError(_bindings));
+      }
+    } finally {
+      malloc.free(inputPtr);
+      if (stackPtr != ffi.nullptr) {
+        malloc.free(stackPtr);
+      }
+    }
+
+    return completer.future;
+  }
+
+  Future<void> runJsonAsync(Object? input, {List<String>? initialStack}) {
+    _checkNotDisposed();
+    final completer = Completer<void>();
+    final inputPtr = jsonEncode(input).toNativeUtf8();
+    final stackPtr = initialStack == null
+        ? ffi.nullptr
+        : jsonEncode(initialStack).toNativeUtf8();
+
+    late final ffi.NativeCallable<NativeRunCompleteCallback> callable;
+    callable = ffi.NativeCallable<NativeRunCompleteCallback>.listener((
+      bool success,
+      ffi.Pointer<Utf8> errorMessagePtr,
+      ffi.Pointer<ffi.Void> _,
+    ) {
+      callable.close();
+      if (success) {
+        completer.complete();
+      } else {
+        final message = errorMessagePtr == ffi.nullptr
+            ? 'Unknown async run error'
+            : errorMessagePtr.toDartString();
+        completer.completeError(StateError(message));
+      }
+    });
+
+    try {
+      final ok = _bindings.engineRunJsonAsync(
+        _handle,
+        inputPtr,
+        stackPtr,
+        callable.nativeFunction,
+        ffi.nullptr,
+      );
+      if (!ok) {
+        callable.close();
+        throw StateError(_readLastError(_bindings));
+      }
+    } finally {
+      malloc.free(inputPtr);
+      if (stackPtr != ffi.nullptr) {
+        malloc.free(stackPtr);
+      }
+    }
+
+    return completer.future;
+  }
+
   String processIntents() {
     _checkNotDisposed();
     return _takeRustString(_bindings.engineProcessIntents(_handle));

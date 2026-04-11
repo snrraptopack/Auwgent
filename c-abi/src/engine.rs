@@ -9,8 +9,8 @@ use crate::host_callback::{
 use crate::json::{parse_optional_json, parse_optional_stack};
 use crate::tool_callback::{
     tool_callback_error, AsyncToolCallbackRegistration, AuwgentAsyncToolCallback,
-    AuwgentFreeCallback, AuwgentToolCallback, PendingAsyncToolCalls,
-    ToolCallbackRegistration,
+    AuwgentFreeCallback, AuwgentRunCompleteCallback, AuwgentToolCallback, PendingAsyncToolCalls,
+    RunCompleteCallbackRegistration, ToolCallbackRegistration,
 };
 use ir_runtime::runtime::bridge::EngineBridge;
 use serde_json::Value;
@@ -42,7 +42,7 @@ pub extern "C" fn auwgent_engine_new(ir_json: *const c_char) -> *mut EngineHandl
 
     let result: Result<*mut EngineHandle, String> = (|| {
         let ir_json = required_cstr(ir_json, "ir_json")?;
-        let bridge = EngineBridge::new_current_thread(ir_json)?;
+        let bridge = EngineBridge::new(ir_json)?;
         Ok(Box::into_raw(Box::new(EngineHandle {
             bridge,
             pending_async_tools: Arc::new(PendingAsyncToolCalls::new()),
@@ -254,6 +254,100 @@ pub extern "C" fn auwgent_engine_run_json(
             .block_on(bridge.run_async(input, initial_stack))
             .map(|_| ())
     }) {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_run_text_async(
+    handle: *mut EngineHandle,
+    input_text: *const c_char,
+    initial_stack_json: *const c_char,
+    on_complete: Option<AuwgentRunCompleteCallback>,
+    user_data: *mut c_void,
+) -> bool {
+    clear_last_error();
+
+    if handle.is_null() {
+        set_last_error("engine handle was null".to_string());
+        return false;
+    }
+
+    let result: Result<(), String> = (|| {
+        let input = nullable_cstr(input_text)?.map(Value::String);
+        let initial_stack = parse_optional_stack(initial_stack_json)?;
+        let on_complete = on_complete.ok_or_else(|| "on_complete callback was null".to_string())?;
+        let registration = RunCompleteCallbackRegistration {
+            callback: on_complete,
+            user_data,
+        };
+
+        let handle_ref = unsafe { &*handle };
+        let bridge = handle_ref.bridge.clone();
+        let rt = bridge.rt.clone();
+
+        rt.spawn(async move {
+            match bridge.run_async(input, initial_stack).await {
+                Ok(_) => registration.invoke_success(),
+                Err(err) => registration.invoke_error(&err),
+            }
+        });
+
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_run_json_async(
+    handle: *mut EngineHandle,
+    input_json: *const c_char,
+    initial_stack_json: *const c_char,
+    on_complete: Option<AuwgentRunCompleteCallback>,
+    user_data: *mut c_void,
+) -> bool {
+    clear_last_error();
+
+    if handle.is_null() {
+        set_last_error("engine handle was null".to_string());
+        return false;
+    }
+
+    let result: Result<(), String> = (|| {
+        let input = parse_optional_json(input_json, "input")?;
+        let initial_stack = parse_optional_stack(initial_stack_json)?;
+        let on_complete = on_complete.ok_or_else(|| "on_complete callback was null".to_string())?;
+        let registration = RunCompleteCallbackRegistration {
+            callback: on_complete,
+            user_data,
+        };
+
+        let handle_ref = unsafe { &*handle };
+        let bridge = handle_ref.bridge.clone();
+        let rt = bridge.rt.clone();
+
+        rt.spawn(async move {
+            match bridge.run_async(input, initial_stack).await {
+                Ok(_) => registration.invoke_success(),
+                Err(err) => registration.invoke_error(&err),
+            }
+        });
+
+        Ok(())
+    })();
+
+    match result {
         Ok(()) => true,
         Err(err) => {
             set_last_error(err);

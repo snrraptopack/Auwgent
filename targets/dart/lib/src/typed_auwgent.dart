@@ -83,16 +83,16 @@ class TypedAuwgent<IR extends JsonMap> {
     _helperSessions.clear();
   }
 
-  SessionState run(Object? input, {List<String>? initialStack}) {
+  Future<SessionState> run(Object? input, {List<String>? initialStack}) async {
     _sharedContext = {};
     _lastTurnRawBlock = null;
     _activateListeners();
 
     try {
       if (input is String) {
-        native.runText(input, initialStack: initialStack);
+        await native.runTextAsync(input, initialStack: initialStack);
       } else {
-        native.runJson(input, initialStack: initialStack);
+        await native.runJsonAsync(input, initialStack: initialStack);
       }
       final session = exportSession();
       _agentStack = [...session.stack];

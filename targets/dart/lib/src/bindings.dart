@@ -101,6 +101,43 @@ typedef DartEngineRunJson =
       ffi.Pointer<Utf8>,
     );
 
+typedef NativeRunCompleteCallback =
+    ffi.Void Function(ffi.Bool, ffi.Pointer<Utf8>, NativeVoidPtr);
+
+typedef NativeEngineRunTextAsync =
+    ffi.Bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<ffi.NativeFunction<NativeRunCompleteCallback>>,
+      NativeVoidPtr,
+    );
+typedef DartEngineRunTextAsync =
+    bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<ffi.NativeFunction<NativeRunCompleteCallback>>,
+      NativeVoidPtr,
+    );
+
+typedef NativeEngineRunJsonAsync =
+    ffi.Bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<ffi.NativeFunction<NativeRunCompleteCallback>>,
+      NativeVoidPtr,
+    );
+typedef DartEngineRunJsonAsync =
+    bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<ffi.NativeFunction<NativeRunCompleteCallback>>,
+      NativeVoidPtr,
+    );
+
 typedef NativeEngineProcessIntents =
     ffi.Pointer<Utf8> Function(ffi.Pointer<_EngineHandle>);
 typedef DartEngineProcessIntents =
@@ -453,6 +490,16 @@ final class AuwgentBindings {
           .lookupFunction<NativeEngineRunJson, DartEngineRunJson>(
             'auwgent_engine_run_json',
           ),
+      engineRunTextAsync = library
+          .lookupFunction<
+            NativeEngineRunTextAsync,
+            DartEngineRunTextAsync
+          >('auwgent_engine_run_text_async'),
+      engineRunJsonAsync = library
+          .lookupFunction<
+            NativeEngineRunJsonAsync,
+            DartEngineRunJsonAsync
+          >('auwgent_engine_run_json_async'),
       engineProcessIntents = library
           .lookupFunction<NativeEngineProcessIntents, DartEngineProcessIntents>(
             'auwgent_engine_process_intents',
@@ -562,6 +609,8 @@ final class AuwgentBindings {
   final DartEngineClearSession engineClearSession;
   final DartEngineRunText engineRunText;
   final DartEngineRunJson engineRunJson;
+  final DartEngineRunTextAsync engineRunTextAsync;
+  final DartEngineRunJsonAsync engineRunJsonAsync;
   final DartEngineProcessIntents engineProcessIntents;
   final DartEngineWriteChunk engineWriteChunk;
   final DartEngineEndStream engineEndStream;

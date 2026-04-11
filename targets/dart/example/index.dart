@@ -3,7 +3,6 @@ import 'main.agent.dart';
 final class HelloLogger extends AuwgentBaseIntentHandler {
   @override
   Object? responseText(intent, agentName) {
-    print('text intent from $agentName');
     print(intent.text);
     return null;
   }
@@ -16,13 +15,13 @@ final class HelloLogger extends AuwgentBaseIntentHandler {
 
   @override
   Object? toolCall(intent,agentName){
-    print(" called ,${intent.args}, name $agentName");  
+    print(" called ,${intent.args}, name $agentName");
     return null;
   }
 
-   @override
+  @override
   Object? toolResult(intent,agentName){
-    print(" result, ${intent.args}, name $agentName");  
+    print(" result, ${intent.args}, name $agentName");
     return null;
   }
 }
@@ -31,19 +30,19 @@ final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<String> getDetails() async => "Theo, 24";
+  Future<String> getDetails() async => "Theo, 999";
 
   @override
-  Future<String> getLocation(args) async => "Lagos ${args.id}";
+  Future<String> getLocation(args) async => "Tarkwa ${args.id}";
 }
 
 
 Future<void> main() async {
 
 
-  final config = AuwgentConfig( 
+  final config = AuwgentConfig(
     apiKeys: AuwgentApiKeys(
-      geminiApiKey: 'AIzaSyCGodWJEMHYyPKzume13PXo6dez45W3SCY',
+      geminiApiKey: '..',
     ),
     tools: Tools()
   );

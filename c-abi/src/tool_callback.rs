@@ -19,6 +19,33 @@ pub type AuwgentAsyncToolCallback = unsafe extern "C" fn(
 pub type AuwgentFreeCallback =
     unsafe extern "C" fn(value: *mut c_char, user_data: *mut c_void);
 
+pub type AuwgentRunCompleteCallback =
+    unsafe extern "C" fn(success: bool, error_message: *const c_char, user_data: *mut c_void);
+
+#[derive(Clone, Copy)]
+pub struct RunCompleteCallbackRegistration {
+    pub callback: AuwgentRunCompleteCallback,
+    pub user_data: *mut c_void,
+}
+
+// SAFETY: host is responsible for ensuring the callback/user_data are valid
+// and safe for cross-thread invocation.
+unsafe impl Send for RunCompleteCallbackRegistration {}
+unsafe impl Sync for RunCompleteCallbackRegistration {}
+
+impl RunCompleteCallbackRegistration {
+    pub fn invoke_success(&self) {
+        unsafe { (self.callback)(true, std::ptr::null(), self.user_data) };
+    }
+
+    pub fn invoke_error(&self, message: &str) {
+        let message_c = std::ffi::CString::new(message).unwrap_or_else(|_| {
+            std::ffi::CString::new("unknown error").unwrap()
+        });
+        unsafe { (self.callback)(false, message_c.as_ptr(), self.user_data) };
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ToolCallbackRegistration {
     pub callback: AuwgentToolCallback,

@@ -138,6 +138,28 @@ bool auwgent_engine_run_json(
     const char* initial_stack_json
 );
 
+typedef void (*auwgent_run_complete_callback)(
+    bool success,
+    const char* error_message,
+    void* user_data
+);
+
+bool auwgent_engine_run_text_async(
+    auwgent_engine_handle* handle,
+    const char* input_text,
+    const char* initial_stack_json,
+    auwgent_run_complete_callback on_complete,
+    void* user_data
+);
+
+bool auwgent_engine_run_json_async(
+    auwgent_engine_handle* handle,
+    const char* input_json,
+    const char* initial_stack_json,
+    auwgent_run_complete_callback on_complete,
+    void* user_data
+);
+
 char* auwgent_engine_process_intents(auwgent_engine_handle* handle);
 
 bool auwgent_engine_write_chunk(
