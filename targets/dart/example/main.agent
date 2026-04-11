@@ -1,13 +1,11 @@
 
 
 type Person {
-     name:string,
+    name:string,
     age:number
 }
 
-type Simple {
-    simple:string
-}
+
 
 agent Hello{
     default config{
@@ -15,5 +13,8 @@ agent Hello{
         prompt: "You are a helper"
     }
 
-    output : Simple | Person
+    tool get_details():string @desc "use this to get the deatails of the user"
+    tool get_location(id:string):string @desc "use this to ge location"
+
+    output : Person
 }

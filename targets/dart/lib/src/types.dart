@@ -2,6 +2,24 @@ import 'dart:async';
 
 typedef JsonMap = Map<String, Object?>;
 
+final class NoArgs {
+  const NoArgs();
+
+  factory NoArgs.fromJson(JsonMap json) {
+    return const NoArgs();
+  }
+
+  JsonMap toJson() => const {};
+}
+
+final class NoResult {
+  const NoResult();
+
+  factory NoResult.fromJson(Object? value) {
+    return const NoResult();
+  }
+}
+
 typedef ToolHandler = FutureOr<Object?> Function(JsonMap args);
 typedef IntentHandler =
     FutureOr<Object?> Function(String name, Object? value, String agentName);

@@ -24,52 +24,51 @@ const String _HelloAgentIrJson = r'''{
   ],
   "input": null,
   "output": {
-    "__variants": {
-      "Simple": {
-        "simple": {
+    "name": {
+      "type": "string",
+      "optional": false
+    },
+    "age": {
+      "type": "number",
+      "optional": false
+    }
+  },
+  "context": null,
+  "tools": [
+    {
+      "name": "get_details",
+      "description": "use this to get the deatails of the user",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_location",
+      "description": "use this to ge location",
+      "params": {
+        "id": {
           "type": "string",
           "optional": false
         }
       },
-      "Person": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      }
+      "returns": "string",
+      "examples": []
     }
-  },
-  "context": null,
-  "tools": [],
+  ],
   "workflows": [],
   "helpers": [],
   "components": [],
   "types": {
-    "Simple": {
-      "isOutput": false,
-      "properties": {
-        "simple": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    },
     "Person": {
       "isOutput": false,
       "properties": {
-        "age": {
-          "type": "number",
+        "name": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "name": {
-          "type": "string",
+        "age": {
+          "type": "number",
           "optional": false,
           "description": null
         }

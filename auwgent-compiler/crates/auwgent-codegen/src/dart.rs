@@ -12,10 +12,12 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     );
     let required_providers = collect_required_providers(ir);
     let custom_provider_ids = collect_custom_provider_ids(ir);
+    let tools = array_at(ir, &["tools"]);
     let workflows = array_at(ir, &["workflows"]);
     let helpers = array_at(ir, &["helpers"]);
     let custom_intents = collect_custom_intents(ir);
-    let has_tools = !array_at(ir, &["tools"]).is_empty();
+    let custom_intent_defs = collect_custom_intent_defs(ir);
+    let has_tools = !tools.is_empty();
     let has_components = !array_at(ir, &["components"]).is_empty();
 
     let mut sections = vec![
@@ -61,10 +63,16 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         false,
         "sdk.JsonMap",
     ));
-    sections.push(format!(
-        "typedef {agent_name}Tools = Map<String, sdk.ToolHandler>;\n"
-    ));
+    sections.push(generate_tools_registry(agent_name, tools));
     sections.push(generate_core_intent_models(agent_name, ir.get("output")));
+    sections.push(generate_action_intent_models(
+        agent_name,
+        tools,
+        workflows,
+        helpers,
+        array_at(ir, &["components"]),
+        &custom_intent_defs,
+    ));
 
     sections.push(generate_intent_aliases(
         agent_name,
@@ -93,6 +101,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
 
     sections.push(generate_config_class(
         agent_name,
+        has_tools,
         !required_providers.is_empty() || !custom_provider_ids.is_empty(),
         matches!(ir.get("context"), Some(v) if !v.is_null()),
     ));
@@ -167,6 +176,34 @@ fn collect_custom_intents(ir: &Value) -> Vec<String> {
     }
 
     names
+}
+
+fn collect_custom_intent_defs(ir: &Value) -> Vec<(String, Value)> {
+    let mut defs = Vec::new();
+
+    if let Some(items) = ir.get("customIntents").and_then(Value::as_array) {
+        for item in items {
+            if let Some(name) = string_at(item, &["name"]) {
+                if !defs.iter().any(|(existing, _)| existing == name) {
+                    defs.push((name.to_string(), item.clone()));
+                }
+            }
+        }
+    }
+
+    for helper in array_at(ir, &["helpers"]) {
+        if let Some(items) = helper.get("customIntents").and_then(Value::as_array) {
+            for item in items {
+                if let Some(name) = string_at(item, &["name"]) {
+                    if !defs.iter().any(|(existing, _)| existing == name) {
+                        defs.push((name.to_string(), item.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    defs
 }
 
 fn generate_custom_types(types: &Map<String, Value>) -> String {
@@ -279,6 +316,12 @@ fn generate_data_class(name: &str, properties: &Map<String, Value>) -> String {
             "      {prop_name}: {},",
             decode_field_expr(prop_name, prop_info, optional)
         ));
+    }
+
+    if field_lines.is_empty() {
+        return format!(
+            "final class {name} {{\n  const {name}();\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return const {name}();\n  }}\n}}\n"
+        );
     }
 
     format!(
@@ -461,7 +504,7 @@ fn generate_intent_aliases(
     has_components: bool,
     custom_intents: &[String],
 ) -> String {
-    let mut lines = vec![
+    let lines = vec![
         format!("typedef {agent_name}IntentValue = Object?;"),
         format!("typedef {agent_name}IntentControl = Object?;"),
         format!(
@@ -471,43 +514,6 @@ fn generate_intent_aliases(
             "typedef {agent_name}PartialIntentHandler = FutureOr<void> Function(String name, Object? value, String agentName);"
         ),
     ];
-
-    if has_tools {
-        lines.extend([
-            format!("typedef {agent_name}ToolCallIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}ToolResultIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}ToolErrorIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}ToolSkippedIntent = sdk.JsonMap;"),
-        ]);
-    }
-
-    if has_workflows {
-        lines.extend([
-            format!("typedef {agent_name}WorkflowCallIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}WorkflowResultIntent = sdk.JsonMap;"),
-        ]);
-    }
-
-    if has_helpers {
-        lines.extend([
-            format!("typedef {agent_name}HelperCallIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}HelperResultIntent = sdk.JsonMap;"),
-        ]);
-    }
-
-    if has_components {
-        lines.extend([
-            format!("typedef {agent_name}ComponentIntent = sdk.JsonMap;"),
-            format!("typedef {agent_name}RenderComponentIntent = sdk.JsonMap;"),
-        ]);
-    }
-
-    for custom_intent in custom_intents {
-        lines.push(format!(
-            "typedef {} = sdk.JsonMap;",
-            custom_intent_type_name(agent_name, custom_intent)
-        ));
-    }
 
     lines.join("\n") + "\n"
 }
@@ -519,6 +525,344 @@ fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> Stri
     format!(
         "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'] as String?) ?? '',\n    );\n  }}\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'] as String?) ?? '',\n      response: {response_expr},\n    );\n  }}\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n}}\n"
     )
+}
+
+fn generate_action_intent_models(
+    agent_name: &str,
+    tools: &[Value],
+    workflows: &[Value],
+    helpers: &[Value],
+    components: &[Value],
+    custom_intents: &[(String, Value)],
+) -> String {
+    let mut blocks = Vec::new();
+
+    if !tools.is_empty() {
+        blocks.push(generate_tool_intent_models(agent_name, tools));
+    }
+    if !workflows.is_empty() {
+        blocks.push(generate_workflow_intent_models(agent_name, workflows));
+    }
+    if !helpers.is_empty() {
+        blocks.push(generate_helper_intent_models(agent_name, helpers));
+    }
+    if !components.is_empty() {
+        blocks.push(generate_component_intent_models(agent_name, components));
+    }
+    for (name, def) in custom_intents {
+        blocks.push(generate_named_shape(
+            &custom_intent_type_name(agent_name, name),
+            Some(def),
+            false,
+            "sdk.JsonMap",
+        ));
+    }
+
+    blocks.join("\n")
+}
+
+fn generate_tool_intent_models(agent_name: &str, tools: &[Value]) -> String {
+    generate_callable_intent_models(
+        agent_name,
+        "Tool",
+        "tool",
+        tools,
+        "name",
+        "params",
+        "returns",
+        true,
+    )
+}
+
+fn generate_workflow_intent_models(agent_name: &str, workflows: &[Value]) -> String {
+    generate_callable_intent_models(
+        agent_name,
+        "Workflow",
+        "workflow",
+        workflows,
+        "flowName",
+        "flowParams",
+        "returns",
+        false,
+    )
+}
+
+fn generate_helper_intent_models(agent_name: &str, helpers: &[Value]) -> String {
+    generate_callable_intent_models(
+        agent_name,
+        "Helper",
+        "helper",
+        helpers,
+        "name",
+        "input",
+        "output",
+        false,
+    )
+}
+
+fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
+    if tools.is_empty() {
+        return format!(
+            "abstract class {agent_name}Tools {{\n  const {agent_name}Tools();\n\n  Map<String, sdk.ToolHandler> toMap() => const {{}};\n}}\n\nfinal class {agent_name}ToolRegistry extends {agent_name}Tools {{\n  const {agent_name}ToolRegistry();\n}}\n"
+        );
+    }
+
+    let mut handler_typedefs = Vec::new();
+    let mut abstract_methods = Vec::new();
+    let mut ctor_fields = Vec::new();
+    let mut ctor_init_lines = Vec::new();
+    let mut registry_fields = Vec::new();
+    let mut registry_methods = Vec::new();
+    let mut map_lines = Vec::new();
+
+    for tool in tools {
+        let Some(tool_name) = string_at(tool, &["name"]) else {
+            continue;
+        };
+        let pascal = pascal_case_identifier(tool_name);
+        let method_name = dart_method_name(tool_name);
+        let args_type = if is_empty_shape(tool.get("params"), false) {
+            None
+        } else {
+            Some(format!("{agent_name}{pascal}ToolArgs"))
+        };
+        let result_type = if tool.get("returns").is_none() || tool.get("returns").is_some_and(Value::is_null) {
+            "sdk.NoResult".to_string()
+        } else {
+            format!("{agent_name}{pascal}ToolResultValue")
+        };
+        let handler_type = format!("{agent_name}{pascal}ToolHandler");
+
+        let method_signature = if let Some(args_type) = &args_type {
+            format!("FutureOr<{result_type}> {method_name}({args_type} args)")
+        } else {
+            format!("FutureOr<{result_type}> {method_name}()")
+        };
+
+        let handler_signature = if let Some(args_type) = &args_type {
+            format!("FutureOr<{result_type}> Function({args_type} args)")
+        } else {
+            format!("FutureOr<{result_type}> Function()")
+        };
+
+        handler_typedefs.push(format!("typedef {handler_type} = {handler_signature};"));
+        abstract_methods.push(format!("  {method_signature};"));
+        ctor_fields.push(format!("    required {handler_type} {method_name},"));
+        ctor_init_lines.push(format!("      _{method_name} = {method_name}"));
+        registry_fields.push(format!("  final {handler_type} _{method_name};"));
+
+        if let Some(args_type) = &args_type {
+            registry_methods.push(format!(
+                "  @override\n  FutureOr<{result_type}> {method_name}({args_type} args) => _{method_name}(args);"
+            ));
+        } else {
+            registry_methods.push(format!(
+                "  @override\n  FutureOr<{result_type}> {method_name}() => _{method_name}();"
+            ));
+        }
+
+        if let Some(args_type) = &args_type {
+            map_lines.push(format!(
+                "      '{tool_name}': (args) => {method_name}({args_type}.fromJson(Map<String, Object?>.from((args as Map?) ?? const {{}}))),"
+            ));
+        } else {
+            map_lines.push(format!(
+                "      '{tool_name}': (_) => {method_name}(),"
+            ));
+        }
+    }
+
+    format!(
+        "{}\n\nabstract class {agent_name}Tools {{\n  const {agent_name}Tools();\n\n{}\n\n  Map<String, sdk.ToolHandler> toMap() {{\n    return {{\n{}\n    }};\n  }}\n}}\n\nfinal class {agent_name}ToolRegistry extends {agent_name}Tools {{\n  const {agent_name}ToolRegistry({{\n{}\n  }}) :\n{};\n\n{}\n\n{}\n}}\n",
+        handler_typedefs.join("\n"),
+        abstract_methods.join("\n"),
+        map_lines.join("\n"),
+        ctor_fields.join("\n"),
+        ctor_init_lines
+            .iter()
+            .enumerate()
+            .map(|(index, line)| {
+                let suffix = if index + 1 == ctor_init_lines.len() { "" } else { "," };
+                format!("{line}{suffix}")
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        registry_fields.join("\n"),
+        registry_methods.join("\n"),
+    )
+}
+
+fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> String {
+    let mut blocks = Vec::new();
+    let mut component_cases = Vec::new();
+
+    for component in components {
+        let Some(component_name) = string_at(component, &["name"]) else {
+            continue;
+        };
+        let pascal = pascal_case_identifier(component_name);
+        let props_type = format!("{agent_name}{pascal}ComponentProps");
+        let action_type = format!("{agent_name}{pascal}ComponentAction");
+        let component_class = format!("{agent_name}{pascal}ComponentIntentCase");
+
+        blocks.push(generate_named_shape(
+            &props_type,
+            component.get("props"),
+            false,
+            "sdk.JsonMap",
+        ));
+
+        let _ = component.get("action");
+        blocks.push(format!("typedef {action_type} = sdk.JsonMap;\n"));
+
+        blocks.push(format!(
+            "final class {component_class} extends {agent_name}ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'] as String?) ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
+            decode_named_shape_expr(component.get("props"), &props_type, "json['props']", "const <String, Object?>{}"),
+            decode_named_shape_expr_optional(component.get("action"), &action_type, "json['action']")
+        ));
+
+        component_cases.push(format!(
+            "    if (kind == '{component_name}') {{\n      return {component_class}.fromJson(json);\n    }}"
+        ));
+    }
+
+    blocks.insert(
+        0,
+        format!(
+            "abstract class {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntent();\n\n  String get type;\n  String get cId;\n  Object? get props;\n  Object? get action;\n  List<String>? get children;\n\n  factory {agent_name}ComponentIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}ComponentIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}ComponentIntentUnknown extends {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  String get cId => (raw['c_id'] as String?) ?? '';\n\n  @override\n  Object? get props => raw['props'];\n\n  @override\n  Object? get action => raw['action'];\n\n  @override\n  List<String>? get children => (raw['children'] as List?)?.map((item) => item.toString()).toList(growable: false);\n}}\n\nfinal class {agent_name}RenderComponentIntent {{\n  const {agent_name}RenderComponentIntent({{\n    this.root,\n    this.roots,\n    this.components,\n    this.tree,\n    this.trees,\n  }});\n\n  final String? root;\n  final List<String>? roots;\n  final sdk.JsonMap? components;\n  final Object? tree;\n  final List<Object?>? trees;\n\n  factory {agent_name}RenderComponentIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}RenderComponentIntent(\n      root: json['root'] as String?,\n      roots: (json['roots'] as List?)?.map((item) => item.toString()).toList(growable: false),\n      components: json['components'] == null ? null : Map<String, Object?>.from(json['components'] as Map),\n      tree: json['tree'],\n      trees: (json['trees'] as List?)?.map((item) => item as Object?).toList(growable: false),\n    );\n  }}\n}}\n",
+            component_cases.join("\n"),
+        ),
+    );
+
+    blocks.join("\n")
+}
+
+fn generate_callable_intent_models(
+    agent_name: &str,
+    family_name: &str,
+    family_key: &str,
+    items: &[Value],
+    name_key: &str,
+    args_key: &str,
+    result_key: &str,
+    include_error_and_skipped: bool,
+) -> String {
+    let mut blocks = Vec::new();
+    let mut call_cases = Vec::new();
+    let mut result_cases = Vec::new();
+    let mut skipped_cases = Vec::new();
+
+    for item in items {
+        let Some(item_name) = string_at(item, &[name_key]) else {
+            continue;
+        };
+        let pascal = pascal_case_identifier(item_name);
+        let args_type = format!("{agent_name}{pascal}{family_name}Args");
+        let result_type = format!("{agent_name}{pascal}{family_name}ResultValue");
+        let args_shape = item.get(args_key);
+        let result_shape = item.get(result_key);
+        let args_type_ref = if is_empty_shape(args_shape, false) {
+            "sdk.NoArgs".to_string()
+        } else {
+            blocks.push(generate_named_shape(
+                &args_type,
+                args_shape,
+                false,
+                "sdk.JsonMap",
+            ));
+            args_type.clone()
+        };
+        let result_type_ref = if result_shape.is_none() || result_shape.is_some_and(Value::is_null) {
+            "sdk.NoResult".to_string()
+        } else {
+            blocks.push(generate_named_shape(
+                &result_type,
+                result_shape,
+                false,
+                "Object?",
+            ));
+            result_type.clone()
+        };
+        let args_decode_expr = if args_type_ref == "sdk.NoArgs" {
+            "const sdk.NoArgs()".to_string()
+        } else {
+            decode_named_shape_expr(args_shape, &args_type_ref, "json['args']", "json['args']")
+        };
+        let result_decode_expr = if result_type_ref == "sdk.NoResult" {
+            "const sdk.NoResult()".to_string()
+        } else {
+            decode_named_shape_expr(result_shape, &result_type_ref, "json['result']", "json['result']")
+        };
+
+        let call_class = format!("{agent_name}{pascal}{family_name}CallIntentCase");
+        let result_class = format!("{agent_name}{pascal}{family_name}ResultIntentCase");
+
+        if args_type_ref == "sdk.NoArgs" {
+            blocks.push(format!(
+                "final class {call_class} extends {agent_name}{family_name}CallIntent {{\n  const {call_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return const {call_class}();\n  }}\n}}\n",
+            ));
+        } else {
+            blocks.push(format!(
+                "final class {call_class} extends {agent_name}{family_name}CallIntent {{\n  const {call_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return {call_class}(\n      args: {args_decode_expr},\n    );\n  }}\n}}\n",
+            ));
+        }
+
+        if args_type_ref == "sdk.NoArgs" {
+            blocks.push(format!(
+                "final class {result_class} extends {agent_name}{family_name}ResultIntent {{\n  const {result_class}({{\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n}}\n",
+            ));
+        } else {
+            blocks.push(format!(
+                "final class {result_class} extends {agent_name}{family_name}ResultIntent {{\n  const {result_class}({{\n    required this.args,\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  final {args_type_ref} args;\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      args: {args_decode_expr},\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n}}\n",
+            ));
+        }
+
+        call_cases.push(format!(
+            "    if (kind == '{item_name}') {{\n      return {call_class}.fromJson(json);\n    }}"
+        ));
+        result_cases.push(format!(
+            "    if (kind == '{item_name}') {{\n      return {result_class}.fromJson(json);\n    }}"
+        ));
+
+        if include_error_and_skipped {
+            let skipped_class = format!("{agent_name}{pascal}{family_name}SkippedIntentCase");
+            if args_type_ref == "sdk.NoArgs" {
+                blocks.push(format!(
+                    "final class {skipped_class} extends {agent_name}{family_name}SkippedIntent {{\n  const {skipped_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return const {skipped_class}();\n  }}\n}}\n",
+                ));
+            } else {
+                blocks.push(format!(
+                    "final class {skipped_class} extends {agent_name}{family_name}SkippedIntent {{\n  const {skipped_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return {skipped_class}(\n      args: {args_decode_expr},\n    );\n  }}\n}}\n",
+                ));
+            }
+            skipped_cases.push(format!(
+                "    if (kind == '{item_name}') {{\n      return {skipped_class}.fromJson(json);\n    }}"
+            ));
+        }
+    }
+
+    blocks.insert(
+        0,
+        format!(
+            "abstract class {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}CallIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}CallIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nabstract class {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntent();\n\n  String get name;\n  Object? get args;\n  Object? get result;\n  bool get overridden;\n\n  factory {agent_name}{family_name}ResultIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['name'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}ResultIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n",
+            call_cases.join("\n"),
+            result_cases.join("\n"),
+        ),
+    );
+
+    blocks.push(format!(
+        "final class {agent_name}{family_name}CallIntentUnknown extends {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n}}\n\nfinal class {agent_name}{family_name}ResultIntentUnknown extends {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get name => (raw['name'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  Object? get result => raw['result'];\n\n  @override\n  bool get overridden => (raw['overridden'] as bool?) ?? false;\n}}\n"
+    ));
+
+    if include_error_and_skipped {
+        blocks.push(format!(
+            "abstract class {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}SkippedIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}SkippedIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}{family_name}SkippedIntentUnknown extends {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n}}\n\nfinal class {agent_name}{family_name}ErrorIntent {{\n  const {agent_name}{family_name}ErrorIntent({{\n    required this.tool,\n    required this.message,\n  }});\n\n  final String tool;\n  final String message;\n\n  factory {agent_name}{family_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}{family_name}ErrorIntent(\n      tool: (json['tool'] as String?) ?? '',\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n}}\n",
+            skipped_cases.join("\n"),
+        ));
+    }
+
+    let _ = family_key;
+    blocks.join("\n")
 }
 
 fn decode_named_shape_expr(
@@ -540,6 +884,8 @@ fn decode_named_shape_expr(
     }
 
     match type_to_dart_string(value, false, "Object?").as_str() {
+        "sdk.NoArgs" => "const sdk.NoArgs()".to_string(),
+        "sdk.NoResult" => "const sdk.NoResult()".to_string(),
         "String" => format!("({access_expr} as String?) ?? ''"),
         "int" => format!("(({access_expr} as num?)?.toInt()) ?? 0"),
         "double" => format!("(({access_expr} as num?)?.toDouble()) ?? 0"),
@@ -552,6 +898,58 @@ fn decode_named_shape_expr(
                 null_fallback_expr.to_string()
             } else {
                 format!("{access_expr} as {other}")
+            }
+        }
+    }
+}
+
+fn is_empty_shape(value: Option<&Value>, unwrap_input_kind: bool) -> bool {
+    if value
+        .and_then(Value::as_object)
+        .is_some_and(|obj| obj.is_empty())
+    {
+        return true;
+    }
+
+    shape_properties(value, unwrap_input_kind)
+        .map(|properties| {
+            properties
+                .iter()
+                .filter(|(name, _)| !name.starts_with('@') && !name.starts_with("__"))
+                .count()
+                == 0
+        })
+        .unwrap_or(false)
+}
+
+fn decode_named_shape_expr_optional(
+    value: Option<&Value>,
+    type_name: &str,
+    access_expr: &str,
+) -> String {
+    if value.is_none() {
+        return "null".to_string();
+    }
+
+    if shape_variants(value).is_some() || shape_properties(value, false).is_some() {
+        return format!(
+            "{access_expr} == null ? null : {type_name}.fromJson(Map<String, Object?>.from({access_expr} as Map))"
+        );
+    }
+
+    match type_to_dart_string(value, false, "Object?").as_str() {
+        "String" => format!("{access_expr} as String?"),
+        "int" => format!("({access_expr} as num?)?.toInt()"),
+        "double" => format!("({access_expr} as num?)?.toDouble()"),
+        "bool" => format!("{access_expr} as bool?"),
+        "sdk.JsonMap" => format!(
+            "{access_expr} == null ? null : Map<String, Object?>.from({access_expr} as Map)"
+        ),
+        other => {
+            if other == "Object?" {
+                access_expr.to_string()
+            } else {
+                format!("{access_expr} as {other}?")
             }
         }
     }
@@ -747,7 +1145,12 @@ fn generate_api_keys(
     )
 }
 
-fn generate_config_class(agent_name: &str, has_api_keys: bool, has_context: bool) -> String {
+fn generate_config_class(
+    agent_name: &str,
+    has_tools: bool,
+    has_api_keys: bool,
+    has_context: bool,
+) -> String {
     let api_keys_field = if has_api_keys {
         format!("  final {agent_name}ApiKeys? apiKeys;\n")
     } else {
@@ -766,6 +1169,14 @@ fn generate_config_class(agent_name: &str, has_api_keys: bool, has_context: bool
         "      apiKeys: apiKeys,"
     };
 
+    let tools_ctor = if has_tools {
+        "    required this.tools,\n".to_string()
+    } else {
+        format!("    this.tools = const {agent_name}ToolRegistry(),\n")
+    };
+
+    let tools_expr = "      tools: tools.toMap(),";
+
     let context_field = if has_context {
         format!("  final {agent_name}Context? context;\n")
     } else {
@@ -773,7 +1184,7 @@ fn generate_config_class(agent_name: &str, has_api_keys: bool, has_context: bool
     };
 
     format!(
-        "typedef {agent_name}Middleware = sdk.Middleware;\n\nfinal class {agent_name}Config {{\n  const {agent_name}Config({{\n    this.tools = const {{}},\n    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n      tools: tools,\n      middleware: middleware,\n      context: context,\n{api_keys_expr}\n      libraryPath: libraryPath,\n    );\n  }}\n}}\n"
+        "typedef {agent_name}Middleware = sdk.Middleware;\n\nfinal class {agent_name}Config {{\n  const {agent_name}Config({{\n{tools_ctor}    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n{tools_expr}\n      middleware: middleware,\n      context: context,\n{api_keys_expr}\n      libraryPath: libraryPath,\n    );\n  }}\n}}\n"
     )
 }
 
@@ -841,10 +1252,30 @@ fn generate_dispatch_cases(
 
     if has_tools {
         lines.extend([
-            dispatch_case("tool_call", "toolCall", "value as sdk.JsonMap", partial),
-            dispatch_case("tool_result", "toolResult", "value as sdk.JsonMap", partial),
-            dispatch_case("tool_error", "toolError", "value as sdk.JsonMap", partial),
-            dispatch_case("tool_skipped", "toolSkipped", "value as sdk.JsonMap", partial),
+            dispatch_case(
+                "tool_call",
+                "toolCall",
+                &format!("{agent_name}ToolCallIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
+            dispatch_case(
+                "tool_result",
+                "toolResult",
+                &format!("{agent_name}ToolResultIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
+            dispatch_case(
+                "tool_error",
+                "toolError",
+                &format!("{agent_name}ToolErrorIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
+            dispatch_case(
+                "tool_skipped",
+                "toolSkipped",
+                &format!("{agent_name}ToolSkippedIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
         ]);
     }
 
@@ -853,13 +1284,13 @@ fn generate_dispatch_cases(
             dispatch_case(
                 "workflow_call",
                 "workflowCall",
-                "value as sdk.JsonMap",
+                &format!("{agent_name}WorkflowCallIntent.fromJson(value as sdk.JsonMap)"),
                 partial,
             ),
             dispatch_case(
                 "workflow_result",
                 "workflowResult",
-                "value as sdk.JsonMap",
+                &format!("{agent_name}WorkflowResultIntent.fromJson(value as sdk.JsonMap)"),
                 partial,
             ),
         ]);
@@ -867,11 +1298,16 @@ fn generate_dispatch_cases(
 
     if has_helpers {
         lines.extend([
-            dispatch_case("helper_call", "helperCall", "value as sdk.JsonMap", partial),
+            dispatch_case(
+                "helper_call",
+                "helperCall",
+                &format!("{agent_name}HelperCallIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
             dispatch_case(
                 "helper_result",
                 "helperResult",
-                "value as sdk.JsonMap",
+                &format!("{agent_name}HelperResultIntent.fromJson(value as sdk.JsonMap)"),
                 partial,
             ),
         ]);
@@ -879,11 +1315,16 @@ fn generate_dispatch_cases(
 
     if has_components {
         lines.extend([
-            dispatch_case("component", "component", "value as sdk.JsonMap", partial),
+            dispatch_case(
+                "component",
+                "component",
+                &format!("{agent_name}ComponentIntent.fromJson(value as sdk.JsonMap)"),
+                partial,
+            ),
             dispatch_case(
                 "render_component",
                 "renderComponent",
-                "value as sdk.JsonMap",
+                &format!("{agent_name}RenderComponentIntent.fromJson(value as sdk.JsonMap)"),
                 partial,
             ),
         ]);
@@ -893,7 +1334,10 @@ fn generate_dispatch_cases(
         lines.push(dispatch_case(
             custom_intent,
             &dart_method_name(custom_intent),
-            "value as sdk.JsonMap",
+            &format!(
+                "{}.fromJson(value as sdk.JsonMap)",
+                custom_intent_type_name(agent_name, custom_intent)
+            ),
             partial,
         ));
     }
@@ -922,6 +1366,7 @@ fn generate_factory(
         format!("typedef AuwgentAgent = {agent_name}Agent;"),
         format!("typedef AuwgentConfig = {agent_name}Config;"),
         format!("typedef AuwgentTools = {agent_name}Tools;"),
+        format!("typedef AuwgentToolRegistry = {agent_name}ToolRegistry;"),
         format!("typedef AuwgentContext = {agent_name}Context;"),
         format!("typedef AuwgentMiddleware = {agent_name}Middleware;"),
         format!("typedef AuwgentIntentValue = {agent_name}IntentValue;"),
@@ -1294,5 +1739,29 @@ mod tests {
         assert!(output.contains("final class HelloOutputPerson extends HelloOutput"));
         assert!(output.contains("String get variant => 'Person';"));
         assert!(output.contains("final HelloOutput response;"));
+    }
+
+    #[test]
+    fn emits_dart_no_args_for_empty_tool_params() {
+        let ir = json!({
+            "name": "Hello",
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [{
+                "name": "get_details",
+                "params": {},
+                "returns": "string"
+            }],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "modelConfig": []
+        });
+
+        let output = generate(&ir, "hello");
+        assert!(output.contains("sdk.NoArgs get args => const sdk.NoArgs();"));
+        assert!(output.contains("return const HelloGetDetailsToolCallIntentCase();"));
+        assert!(!output.contains("final class HelloGetDetailsToolArgs"));
     }
 }
