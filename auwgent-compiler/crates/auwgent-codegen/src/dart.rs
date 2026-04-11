@@ -31,7 +31,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_type_alias(
+    sections.push(generate_named_shape(
         &format!("{agent_name}Input"),
         ir.get("input"),
         true,
@@ -40,7 +40,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
 
     for helper in &output_helpers {
         if let Some(name) = string_at(helper, &["name"]) {
-            sections.push(generate_type_alias(
+            sections.push(generate_named_shape(
                 &format!("{name}Output"),
                 helper.get("output"),
                 false,
@@ -49,13 +49,13 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         }
     }
 
-    sections.push(generate_type_alias(
+    sections.push(generate_named_shape(
         &format!("{agent_name}Output"),
         ir.get("output"),
         false,
         "sdk.JsonMap",
     ));
-    sections.push(generate_type_alias(
+    sections.push(generate_named_shape(
         &format!("{agent_name}Context"),
         ir.get("context"),
         false,
@@ -64,7 +64,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     sections.push(format!(
         "typedef {agent_name}Tools = Map<String, sdk.ToolHandler>;\n"
     ));
-    sections.push(generate_core_intent_models(agent_name));
+    sections.push(generate_core_intent_models(agent_name, ir.get("output")));
 
     sections.push(generate_intent_aliases(
         agent_name,
@@ -189,6 +189,270 @@ fn generate_type_alias(
     )
 }
 
+fn generate_named_shape(
+    name: &str,
+    value: Option<&Value>,
+    unwrap_input_kind: bool,
+    null_fallback: &str,
+) -> String {
+    if let Some(variants) = shape_variants(value) {
+        return generate_variant_class(name, &variants);
+    }
+
+    if let Some(properties) = shape_properties(value, unwrap_input_kind) {
+        return generate_data_class(name, &properties);
+    }
+
+    generate_type_alias(name, value, unwrap_input_kind, null_fallback)
+}
+
+fn shape_properties(
+    value: Option<&Value>,
+    unwrap_input_kind: bool,
+) -> Option<Map<String, Value>> {
+    let value = value?;
+    let obj = value.as_object()?;
+
+    if unwrap_input_kind {
+        if obj.get("kind").and_then(Value::as_str) == Some("properties") {
+            return obj
+                .get("fields")
+                .and_then(Value::as_object)
+                .cloned();
+        }
+    }
+
+    if obj.get("type").and_then(Value::as_str) == Some("object") {
+        return obj
+            .get("properties")
+            .and_then(Value::as_object)
+            .cloned();
+    }
+
+    if obj.contains_key("properties") {
+        return obj.get("properties").and_then(Value::as_object).cloned();
+    }
+
+    if obj.contains_key("fields") {
+        return obj.get("fields").and_then(Value::as_object).cloned();
+    }
+
+    if obj.contains_key("__variants") {
+        return None;
+    }
+
+    if !obj.contains_key("type") && !obj.contains_key("kind") {
+        return Some(obj.clone());
+    }
+
+    None
+}
+
+fn shape_variants(value: Option<&Value>) -> Option<Map<String, Value>> {
+    value?
+        .as_object()?
+        .get("__variants")
+        .and_then(Value::as_object)
+        .cloned()
+}
+
+fn generate_data_class(name: &str, properties: &Map<String, Value>) -> String {
+    let mut ctor_lines = Vec::new();
+    let mut field_lines = Vec::new();
+    let mut from_json_lines = Vec::new();
+
+    for (prop_name, prop_info) in properties {
+        if prop_name.starts_with('@') || prop_name.starts_with("__") {
+            continue;
+        }
+
+        let optional = prop_info
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let field_type = field_type_string(prop_info, optional);
+        let required_kw = if optional { "" } else { "required " };
+
+        ctor_lines.push(format!("    {required_kw}this.{prop_name},"));
+        field_lines.push(format!("  final {field_type} {prop_name};"));
+        from_json_lines.push(format!(
+            "      {prop_name}: {},",
+            decode_field_expr(prop_name, prop_info, optional)
+        ));
+    }
+
+    format!(
+        "final class {name} {{\n  const {name}({{\n{}\n  }});\n\n{}\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return {name}(\n{}\n    );\n  }}\n}}\n",
+        ctor_lines.join("\n"),
+        field_lines.join("\n"),
+        from_json_lines.join("\n"),
+    )
+}
+
+fn generate_variant_class(name: &str, variants: &Map<String, Value>) -> String {
+    let mut blocks = vec![format!(
+        "abstract class {name} {{\n  const {name}();\n\n  String get variant;\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n{}\n    return {name}Unknown(Map<String, Object?>.from(json));\n  }}\n}}\n",
+        variants
+            .iter()
+            .map(|(variant_name, variant_props)| {
+                format!(
+                    "    if (_matches{name}{variant_name}(json)) {{\n      return {name}{variant_name}.fromJson(json);\n    }}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    )];
+
+    for (variant_name, variant_props) in variants {
+        let properties = variant_props.as_object().cloned().unwrap_or_default();
+        blocks.push(generate_variant_data_class(name, variant_name, &properties));
+        blocks.push(generate_variant_matcher(name, variant_name, &properties));
+    }
+
+    blocks.push(format!(
+        "final class {name}Unknown extends {name} {{\n  const {name}Unknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get variant => 'Unknown';\n}}\n"
+    ));
+
+    blocks.join("\n")
+}
+
+fn generate_variant_data_class(
+    base_name: &str,
+    variant_name: &str,
+    properties: &Map<String, Value>,
+) -> String {
+    let class_name = format!("{base_name}{variant_name}");
+    let mut ctor_lines = Vec::new();
+    let mut field_lines = Vec::new();
+    let mut from_json_lines = Vec::new();
+
+    for (prop_name, prop_info) in properties {
+        if prop_name.starts_with('@') || prop_name.starts_with("__") {
+            continue;
+        }
+
+        let optional = prop_info
+            .get("optional")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let field_type = field_type_string(prop_info, optional);
+        let required_kw = if optional { "" } else { "required " };
+
+        ctor_lines.push(format!("    {required_kw}this.{prop_name},"));
+        field_lines.push(format!("  final {field_type} {prop_name};"));
+        from_json_lines.push(format!(
+            "      {prop_name}: {},",
+            decode_field_expr(prop_name, prop_info, optional)
+        ));
+    }
+
+    format!(
+        "final class {class_name} extends {base_name} {{\n  const {class_name}({{\n{}\n  }});\n\n{}\n\n  @override\n  String get variant => '{variant_name}';\n\n  factory {class_name}.fromJson(sdk.JsonMap json) {{\n    return {class_name}(\n{}\n    );\n  }}\n}}\n",
+        ctor_lines.join("\n"),
+        field_lines.join("\n"),
+        from_json_lines.join("\n"),
+    )
+}
+
+fn generate_variant_matcher(
+    base_name: &str,
+    variant_name: &str,
+    properties: &Map<String, Value>,
+) -> String {
+    let checks = properties
+        .iter()
+        .filter(|(name, _)| !name.starts_with('@') && !name.starts_with("__"))
+        .map(|(name, info)| {
+            if info.get("optional").and_then(Value::as_bool).unwrap_or(false) {
+                "true".to_string()
+            } else {
+                format!("json.containsKey('{name}')")
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let body = if checks.is_empty() {
+        "true".to_string()
+    } else {
+        checks.join(" && ")
+    };
+
+    format!(
+        "bool _matches{base_name}{variant_name}(sdk.JsonMap json) {{\n  return {body};\n}}\n"
+    )
+}
+
+fn field_type_string(prop_info: &Value, optional: bool) -> String {
+    let base = type_to_dart_string(Some(prop_info), false, "Object?");
+    if optional && !base.ends_with('?') {
+        format!("{base}?")
+    } else {
+        base
+    }
+}
+
+fn decode_field_expr(prop_name: &str, prop_info: &Value, optional: bool) -> String {
+    let access = format!("json['{prop_name}']");
+
+    match type_to_dart_string(Some(prop_info), false, "Object?").as_str() {
+        "String" => {
+            if optional {
+                format!("{access} as String?")
+            } else {
+                format!("({access} as String?) ?? ''")
+            }
+        }
+        "int" => {
+            if optional {
+                format!("({access} as num?)?.toInt()")
+            } else {
+                format!("(({access} as num?)?.toInt()) ?? 0")
+            }
+        }
+        "double" => {
+            if optional {
+                format!("({access} as num?)?.toDouble()")
+            } else {
+                format!("(({access} as num?)?.toDouble()) ?? 0")
+            }
+        }
+        "bool" => {
+            if optional {
+                format!("{access} as bool?")
+            } else {
+                format!("({access} as bool?) ?? false")
+            }
+        }
+        t if t.starts_with("List<") => {
+            if optional {
+                format!(
+                    "({access} as List?)?.map((item) => item as Object?).toList(growable: false)"
+                )
+            } else {
+                format!(
+                    "(({access} as List?) ?? const []).map((item) => item as Object?).toList(growable: false)"
+                )
+            }
+        }
+        "sdk.JsonMap" => {
+            if optional {
+                format!(
+                    "{access} == null ? null : Map<String, Object?>.from({access} as Map)"
+                )
+            } else {
+                format!("Map<String, Object?>.from(({access} as Map?) ?? const {{}})")
+            }
+        }
+        other => {
+            if optional {
+                format!("{access} as {other}?")
+            } else {
+                format!("{access} as {other}")
+            }
+        }
+    }
+}
+
 fn generate_intent_aliases(
     agent_name: &str,
     has_tools: bool,
@@ -248,10 +512,49 @@ fn generate_intent_aliases(
     lines.join("\n") + "\n"
 }
 
-fn generate_core_intent_models(agent_name: &str) -> String {
+fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> String {
+    let response_type = format!("{agent_name}Output");
+    let response_expr = decode_named_shape_expr(output, &response_type, "json['response']", "json['response']");
+
     format!(
-        "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'] as String?) ?? '',\n    );\n  }}\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final Object? response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'] as String?) ?? '',\n      response: json['response'],\n    );\n  }}\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n}}\n"
+        "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'] as String?) ?? '',\n    );\n  }}\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'] as String?) ?? '',\n      response: {response_expr},\n    );\n  }}\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n}}\n"
     )
+}
+
+fn decode_named_shape_expr(
+    value: Option<&Value>,
+    type_name: &str,
+    access_expr: &str,
+    null_fallback_expr: &str,
+) -> String {
+    if shape_variants(value).is_some() {
+        return format!(
+            "{type_name}.fromJson(Map<String, Object?>.from(({access_expr} as Map?) ?? const {{}}))"
+        );
+    }
+
+    if shape_properties(value, false).is_some() {
+        return format!(
+            "{type_name}.fromJson(Map<String, Object?>.from(({access_expr} as Map?) ?? const {{}}))"
+        );
+    }
+
+    match type_to_dart_string(value, false, "Object?").as_str() {
+        "String" => format!("({access_expr} as String?) ?? ''"),
+        "int" => format!("(({access_expr} as num?)?.toInt()) ?? 0"),
+        "double" => format!("(({access_expr} as num?)?.toDouble()) ?? 0"),
+        "bool" => format!("({access_expr} as bool?) ?? false"),
+        "sdk.JsonMap" => {
+            format!("Map<String, Object?>.from(({access_expr} as Map?) ?? const {{}})")
+        }
+        other => {
+            if other == "Object?" {
+                null_fallback_expr.to_string()
+            } else {
+                format!("{access_expr} as {other}")
+            }
+        }
+    }
 }
 
 fn generate_handler_classes(
@@ -950,5 +1253,46 @@ mod tests {
         assert!(output.contains("typedef AskUserIntent = UiAgentAskUserIntent;"));
         assert!(output.contains("typedef AuwgentMiddleware = UiAgentMiddleware;"));
         assert!(output.contains("UiAgentResponseTextIntent.fromJson(value as sdk.JsonMap)"));
+    }
+
+    #[test]
+    fn emits_dart_variant_output_models() {
+        let ir = json!({
+            "name": "Hello",
+            "input": null,
+            "output": {
+                "__variants": {
+                    "Simple": {
+                        "simple": {
+                            "type": "string",
+                            "optional": false
+                        }
+                    },
+                    "Person": {
+                        "name": {
+                            "type": "string",
+                            "optional": false
+                        },
+                        "age": {
+                            "type": "number",
+                            "optional": false
+                        }
+                    }
+                }
+            },
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "modelConfig": []
+        });
+
+        let output = generate(&ir, "hello");
+        assert!(output.contains("abstract class HelloOutput"));
+        assert!(output.contains("final class HelloOutputSimple extends HelloOutput"));
+        assert!(output.contains("final class HelloOutputPerson extends HelloOutput"));
+        assert!(output.contains("String get variant => 'Person';"));
+        assert!(output.contains("final HelloOutput response;"));
     }
 }

@@ -3,9 +3,81 @@
 import 'dart:async';
 import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;
 import 'main.agent.ir.dart';
+typedef Simple = sdk.JsonMap;
+
+typedef Person = sdk.JsonMap;
+
 typedef HelloInput = String;
 
-typedef HelloOutput = sdk.JsonMap;
+abstract class HelloOutput {
+  const HelloOutput();
+
+  String get variant;
+
+  factory HelloOutput.fromJson(sdk.JsonMap json) {
+    if (_matchesHelloOutputSimple(json)) {
+      return HelloOutputSimple.fromJson(json);
+    }
+    if (_matchesHelloOutputPerson(json)) {
+      return HelloOutputPerson.fromJson(json);
+    }
+    return HelloOutputUnknown(Map<String, Object?>.from(json));
+  }
+}
+
+final class HelloOutputSimple extends HelloOutput {
+  const HelloOutputSimple({
+    required this.simple,
+  });
+
+  final String simple;
+
+  @override
+  String get variant => 'Simple';
+
+  factory HelloOutputSimple.fromJson(sdk.JsonMap json) {
+    return HelloOutputSimple(
+      simple: (json['simple'] as String?) ?? '',
+    );
+  }
+}
+
+bool _matchesHelloOutputSimple(sdk.JsonMap json) {
+  return json.containsKey('simple');
+}
+
+final class HelloOutputPerson extends HelloOutput {
+  const HelloOutputPerson({
+    required this.name,
+    required this.age,
+  });
+
+  final String name;
+  final double age;
+
+  @override
+  String get variant => 'Person';
+
+  factory HelloOutputPerson.fromJson(sdk.JsonMap json) {
+    return HelloOutputPerson(
+      name: (json['name'] as String?) ?? '',
+      age: ((json['age'] as num?)?.toDouble()) ?? 0,
+    );
+  }
+}
+
+bool _matchesHelloOutputPerson(sdk.JsonMap json) {
+  return json.containsKey('name') && json.containsKey('age');
+}
+
+final class HelloOutputUnknown extends HelloOutput {
+  const HelloOutputUnknown(this.raw);
+
+  final sdk.JsonMap raw;
+
+  @override
+  String get variant => 'Unknown';
+}
 
 typedef HelloContext = sdk.JsonMap;
 
@@ -32,12 +104,12 @@ final class HelloResponseSchemaIntent {
   });
 
   final String type;
-  final Object? response;
+  final HelloOutput response;
 
   factory HelloResponseSchemaIntent.fromJson(sdk.JsonMap json) {
     return HelloResponseSchemaIntent(
       type: (json['type'] as String?) ?? '',
-      response: json['response'],
+      response: HelloOutput.fromJson(Map<String, Object?>.from((json['response'] as Map?) ?? const {})),
     );
   }
 }

@@ -1,13 +1,19 @@
 
 
+type Person {
+     name:string,
+    age:number
+}
+
+type Simple {
+    simple:string
+}
+
 agent Hello{
     default config{
         model:gemini("gemini-2.5-flash")
         prompt: "You are a helper"
     }
 
-    output {
-        name:string,
-        age:number
-    }
+    output : Simple | Person
 }

@@ -24,15 +24,23 @@ const String _HelloAgentIrJson = r'''{
   ],
   "input": null,
   "output": {
-    "name": {
-      "type": "string",
-      "optional": false,
-      "description": "no description"
-    },
-    "age": {
-      "type": "number",
-      "optional": false,
-      "description": "no description"
+    "__variants": {
+      "Simple": {
+        "simple": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "Person": {
+        "name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        }
+      }
     }
   },
   "context": null,
@@ -40,7 +48,35 @@ const String _HelloAgentIrJson = r'''{
   "workflows": [],
   "helpers": [],
   "components": [],
-  "types": null,
+  "types": {
+    "Simple": {
+      "isOutput": false,
+      "properties": {
+        "simple": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
+    },
+    "Person": {
+      "isOutput": false,
+      "properties": {
+        "age": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
+    }
+  },
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],

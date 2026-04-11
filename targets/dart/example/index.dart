@@ -1,6 +1,6 @@
 import 'main.agent.dart';
 
-final class HelloLogger extends HelloBaseIntentHandler {
+final class HelloLogger extends AuwgentBaseIntentHandler {
   @override
   Object? responseText(ResponseText intent, String agentName) {
     print('text intent from $agentName');
@@ -8,9 +8,12 @@ final class HelloLogger extends HelloBaseIntentHandler {
     return null;
   }
 
-  @override
-  Object? response_schema(ResponseSchema intent, String agentname){
-    intent.response.
+
+   @override
+  Object ? responseSchema(ResponseSchema intent, String agentName) {
+    final output = intent.response;
+
+    return null;
   }
 
 }
@@ -38,7 +41,7 @@ Future<void> main() async {
 
   try {
 
-    final session = agent.run('Hello there');
+    final session = await agent.run('Hello there');
     print(session.turns.toString());
   } finally {
     agent.dispose();
