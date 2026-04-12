@@ -161,17 +161,58 @@ fn parse_nested_value(
     index: &mut usize,
     parent_indent: usize,
 ) -> Result<ASTValue, String> {
-    if *index >= lines.len() || lines[*index].indent <= parent_indent {
+    if *index >= lines.len() {
         return Ok(ASTValue::Null);
     }
 
-    let child_indent = lines[*index].indent;
-    if lines[*index].text.starts_with('-') {
+    let next_line = &lines[*index];
+
+    // Lines at lower indent than parent → no nested value
+    if next_line.indent < parent_indent {
+        return Ok(ASTValue::Null);
+    }
+
+    // Lines at same indent as parent → only allow [ or { as value start
+    // (anything else is the next sibling key, not a nested value)
+    if next_line.indent == parent_indent {
+        if next_line.text.starts_with('[') || next_line.text.starts_with('{') {
+            // JSON-style array/object at same indent level
+            let anchor_indent = next_line.indent;
+            let mut collected = String::new();
+            while *index < lines.len() && lines[*index].indent >= anchor_indent {
+                if !collected.is_empty() {
+                    collected.push('\n');
+                }
+                collected.push_str(&lines[*index].text);
+                *index += 1;
+            }
+            return parse_ts_object(&collected)
+                .map_err(|e| format!("Failed to parse nested JSON value: {}", e));
+        }
+        return Ok(ASTValue::Null);
+    }
+
+    // Child indent > parent indent
+    let child_indent = next_line.indent;
+    if next_line.text.starts_with('-') {
         Ok(ASTValue::Array(parse_indented_array(
             lines,
             index,
             child_indent,
         )?))
+    } else if next_line.text.starts_with('[') || next_line.text.starts_with('{') {
+        // JSON-style array/object spanning multiple indented lines.
+        // Collect all lines at child indent or deeper, then parse as one value.
+        let mut collected = String::new();
+        while *index < lines.len() && lines[*index].indent >= child_indent {
+            if !collected.is_empty() {
+                collected.push('\n');
+            }
+            collected.push_str(&lines[*index].text);
+            *index += 1;
+        }
+        parse_ts_object(&collected)
+            .map_err(|e| format!("Failed to parse nested JSON value: {}", e))
     } else {
         Ok(ASTValue::Object(parse_indented_object(
             lines,
@@ -315,11 +356,24 @@ impl TSObjectParser {
                     // Concatenate consecutive identifiers into a multi-word string.
                     // LLMs often output unquoted multi-word values like:
                     //   title: Write documentation
-                    // which tokenizes as [Identifier("Write"), Identifier("documentation")]
+                    // But stop if the next identifier is followed by : or = (it's a key).
                     while let TokenKind::Identifier(next) = &self.current {
+                        let next_word = next.clone();
+                        // Peek ahead: if this identifier is followed by : or =,
+                        // it's the next key, not a continuation of this value.
+                        let saved = self.tokenizer.save_state();
+                        let saved_current = self.current.clone();
+                        self.advance(); // consume the identifier
+                        if self.current == TokenKind::Equals {
+                            // It's a key — restore and stop concatenating
+                            self.tokenizer.restore_state(saved);
+                            self.current = saved_current;
+                            break;
+                        }
+                        // Not a key — it's part of the multi-word value
                         ident.push(' ');
-                        ident.push_str(next);
-                        self.advance();
+                        ident.push_str(&next_word);
+                        // self.current is already advanced past the identifier
                     }
                     Ok(ASTValue::String(ident))
                 }
@@ -614,6 +668,42 @@ mod tests {
             assert_eq!(tasks.len(), 3, "Expected 3 tasks, got {}", tasks.len());
         } else {
             panic!("tasks should be an array, got {:?}", obj.get("tasks"));
+        }
+    }
+
+    #[test]
+    fn test_assignment_object_nested_array_on_next_line() {
+        // LLM puts the array value on the next indented line after "key:"
+        let input = "company_name: SnrRaptoPack\ncompany_departments:\n  [\n    {\n      dept_name: Engineering,\n      employees:\n        [\n          { name: Alice, role: Lead Developer, salary: 95000 },\n          { name: Bob, role: Backend Engineer, salary: null }\n        ]\n    },\n    {\n      dept_name: Design,\n      employees:\n        [\n          { name: Clara, role: UI Designer, salary: 72000 }\n        ]\n    }\n  ]";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse nested array: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(
+            obj.get("company_name"),
+            Some(&ASTValue::String("SnrRaptoPack".to_string()))
+        );
+        if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
+            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
+        } else {
+            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+        }
+    }
+
+    #[test]
+    fn test_assignment_object_same_indent_array_on_next_line() {
+        // Exact model output pattern: [ at same indent as key (indent=0)
+        let input = "company_name: SnrRaptoPack\ncompany_departments:\n[\n  {\n    dept_name: Engineering\n    employees:\n    [\n      {\n        name: Alice\n        role: Lead Developer\n        salary: 95000\n      }\n      {\n        name: Bob\n        role: Backend Engineer\n        salary: null\n      }\n    ]\n  }\n  {\n    dept_name: Design\n    employees:\n    [\n      {\n        name: Clara\n        role: UI Designer\n        salary: 72000\n      }\n    ]\n  }\n]";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse same-indent array: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(
+            obj.get("company_name"),
+            Some(&ASTValue::String("SnrRaptoPack".to_string()))
+        );
+        if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
+            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
+        } else {
+            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
         }
     }
 }

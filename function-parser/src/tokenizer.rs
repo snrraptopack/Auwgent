@@ -7,6 +7,14 @@ pub struct Tokenizer {
     column: usize,
 }
 
+/// Saved position state for lookahead/backtracking.
+#[derive(Clone)]
+pub struct TokenizerState {
+    pos: usize,
+    line: usize,
+    column: usize,
+}
+
 impl Tokenizer {
     pub fn new(input: &str) -> Self {
         Self {
@@ -15,6 +23,20 @@ impl Tokenizer {
             line: 1,
             column: 0,
         }
+    }
+
+    pub fn save_state(&self) -> TokenizerState {
+        TokenizerState {
+            pos: self.pos,
+            line: self.line,
+            column: self.column,
+        }
+    }
+
+    pub fn restore_state(&mut self, state: TokenizerState) {
+        self.pos = state.pos;
+        self.line = state.line;
+        self.column = state.column;
     }
 
     fn peek(&self) -> Option<char> {
