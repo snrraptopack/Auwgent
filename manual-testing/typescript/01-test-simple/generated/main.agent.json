@@ -1,122 +1,110 @@
 {
-  "name": "MainAgent",
+  "name": "TestProject",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "custom",
-          "id": "my-groq-api",
-          "url": "https://api.groq.com/openai/v1/chat/completions",
+          "id": "groq-api",
+          "url": "https://api.groq.com/openai/v1",
           "modelName": "llama-3.3-70b-versatile",
-          "config": {
-            "type": "object",
-            "value": {
-              "enable_thinking": {
-                "type": "literal",
-                "value": false
-              },
-              "temperature": {
-                "type": "literal",
-                "value": 0.7
-              }
-            }
-          }
+          "config": null
         },
         "embedding": null,
         "prompt": {
-          "type": "inlinePrompt",
-          "parts": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n                You are a helpful assistant, if user asks a question or query that can be modeled with a component use it\r\n                Try to give the user variety of options if possible even if their request seems affirmative\r\n\r\n                if you want to add a children you can do it like\r\n\r\n                [component: type, c_id:\"your root id\"]\r\n                    name: \"value\"\r\n                    children: [of all the component references in order of how you want it to appear]\r\n                [/component]\r\n\r\n                you can define two component of the same kind with different id's as the distiction for more options\r\n\r\n\r\n                current items available:\r\n                    biscuit id 20 price of 30\r\n                    book id 30 price 40\r\n            "
-                }
-              ]
-            }
-          ]
+          "value": "Be polite and concise",
+          "type": "literal"
         }
       },
       "namedConfig": []
     }
   ],
   "input": null,
-  "output": null,
+  "output": {
+    "project_name": {
+      "type": "string",
+      "optional": false
+    },
+    "tasks": {
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "optional": false
+            },
+            "priority": {
+              "type": {
+                "type": "union",
+                "options": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "optional": false
+            },
+            "completed": {
+              "type": "boolean",
+              "optional": true
+            }
+          }
+        }
+      },
+      "optional": false
+    }
+  },
   "context": null,
   "tools": [],
   "workflows": [],
   "helpers": [],
-  "components": [
-    {
-      "name": "Product",
-      "props": {
-        "product_id": {
-          "type": "string",
-          "optional": false
-        },
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "price": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "action": null,
-      "children": {
-        "kind": "only",
-        "components": [
-          "Button"
-        ]
-      }
-    },
-    {
-      "name": "Button",
-      "props": {
-        "variant": {
+  "components": [],
+  "types": {
+    "Project": {
+      "isOutput": false,
+      "properties": {
+        "tasks": {
           "type": {
-            "type": "union",
-            "options": [
-              "red",
-              "green",
-              "gray"
-            ]
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "optional": false
+                },
+                "priority": {
+                  "type": {
+                    "type": "union",
+                    "options": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  },
+                  "optional": false
+                },
+                "completed": {
+                  "type": "boolean",
+                  "optional": true
+                }
+              }
+            }
           },
-          "optional": false
+          "optional": false,
+          "description": null
+        },
+        "project_name": {
+          "type": "string",
+          "optional": false,
+          "description": null
         }
       },
-      "action": {
-        "onclick": [
-          {
-            "name": "delete",
-            "params": {
-              "id": {
-                "type": "string",
-                "optional": false
-              }
-            }
-          },
-          {
-            "name": "purchase",
-            "params": {
-              "id": {
-                "type": "string",
-                "optional": false
-              }
-            }
-          },
-          {
-            "name": "decline",
-            "params": null
-          }
-        ]
-      },
-      "children": null
+      "@examples": []
     }
-  ],
-  "types": null,
+  },
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],

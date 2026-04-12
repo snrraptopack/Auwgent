@@ -149,9 +149,30 @@ impl BlockScanner {
         None
     }
 
+    /// Returns the raw (untrimmed) character count between `[` and `]`.
+    fn raw_header_len(&self) -> usize {
+        if self.peek() != Some('[') {
+            return 0;
+        }
+        let mut idx = self.pos + 1;
+        let mut count = 0;
+        while let Some(ch) = self.chars.get(idx) {
+            if *ch == ']' {
+                return count;
+            }
+            count += 1;
+            idx += 1;
+        }
+        0
+    }
+
     fn consume_header(&mut self) -> Option<String> {
         let header = self.try_read_header()?;
-        self.pos += header.chars().count() + 2;
+        // Use the raw (untrimmed) length between [ and ] for accurate advancement.
+        // try_read_header trims whitespace from the header, but we must advance
+        // past the full raw header including any trailing spaces before `]`.
+        let raw_len = self.raw_header_len();
+        self.pos += raw_len + 2; // +2 for '[' and ']'
         Some(header)
     }
 

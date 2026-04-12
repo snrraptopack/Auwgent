@@ -71,6 +71,11 @@ fn parse_indented_object(
         if line.indent > indent {
             return Err(format!("Unexpected indentation near '{}'", line.text));
         }
+        // Standalone closing brackets/braces are end-of-object markers, not keys
+        if line.text == "]" || line.text == "}" {
+            *index += 1;
+            break;
+        }
         if line.text.starts_with('-') {
             return Err(format!("Unexpected array item near '{}'", line.text));
         }
@@ -94,8 +99,29 @@ fn parse_object_entry(
 
     let value = if value_text.is_empty() {
         parse_nested_value(lines, index, current_indent)?
+    } else if value_text.starts_with('[') || value_text.starts_with('{') {
+        // Multi-line array/object: collect indented continuation lines
+        let mut full_value = value_text.clone();
+        while *index < lines.len() && lines[*index].indent > current_indent {
+            full_value.push_str(&format!("\n{}", &lines[*index].text));
+            *index += 1;
+        }
+        // Grab a closing bracket/brace at the same indent level
+        if *index < lines.len()
+            && lines[*index].indent == current_indent
+            && (lines[*index].text == "]" || lines[*index].text == "}")
+        {
+            full_value.push_str(&format!("\n{}", &lines[*index].text));
+            *index += 1;
+        }
+        parse_ts_object(&full_value)
+            .unwrap_or_else(|_| ASTValue::String(full_value))
     } else {
-        parse_ts_object(&value_text)?
+        // For simple values, fall back to treating entire value as a string
+        // if structured parsing fails (handles multi-word unquoted strings
+        // like "Auwgent SDK Launch")
+        parse_ts_object(&value_text)
+            .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
     };
 
     Ok((key, value))
@@ -516,5 +542,40 @@ mod tests {
         assert_eq!(obj.get("age"), Some(&ASTValue::Number(21.0)));
         assert_eq!(obj.get("country"), Some(&ASTValue::String("Japan".to_string())));
         assert_eq!(obj.get("is_student"), Some(&ASTValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_assignment_object_multi_word_unquoted_strings() {
+        // LLM often outputs unquoted multi-word strings
+        let input = "project_name: Auwgent SDK Launch\nstatus: active";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(
+            obj.get("project_name"),
+            Some(&ASTValue::String("Auwgent SDK Launch".to_string()))
+        );
+        assert_eq!(
+            obj.get("status"),
+            Some(&ASTValue::String("active".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_assignment_object_multiline_array() {
+        // LLM outputs arrays across multiple indented lines
+        let input = "project_name: Auwgent SDK Launch\ntasks: [\n  { title: Write documentation, priority: high, completed: false },\n  { title: Fix buffer bugs, priority: medium, completed: true },\n  { title: Publish to npm, priority: low, completed: false }\n]";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse multi-line array: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(
+            obj.get("project_name"),
+            Some(&ASTValue::String("Auwgent SDK Launch".to_string()))
+        );
+        if let Some(ASTValue::Array(tasks)) = obj.get("tasks") {
+            assert_eq!(tasks.len(), 3, "Expected 3 tasks, got {}", tasks.len());
+        } else {
+            panic!("tasks should be an array, got {:?}", obj.get("tasks"));
+        }
     }
 }

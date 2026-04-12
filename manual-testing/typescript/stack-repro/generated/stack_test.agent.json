@@ -195,8 +195,8 @@
   "types": null,
   "helperToolGrants": null,
   "helperHandoff": {
-    "Analyzer": "thenContinue",
-    "StoryTeller": "user"
+    "StoryTeller": "user",
+    "Analyzer": "thenContinue"
   },
   "tests": [],
   "lifecycle": null,

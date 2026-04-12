@@ -1,45 +1,26 @@
-import { auwgent, AuwgentConfig, AuwgentMiddleware } from "./generated/main.agent.types"
+import { auwgent, type AuwgentConfig } from "./generated/main.agent.types"
 import { GROQ_API_KEY } from "@snrraptopack/auwgent-sdk/secrets"
-
 
 const config: AuwgentConfig = {
   apiKeys: {
-    my_groq_apiApiKey: GROQ_API_KEY
-  },
-
-  tools: {
-    user_name: async(args:{id})=> "Theo"
+    groq_apiApiKey: GROQ_API_KEY || ""
   }
-
 }
-
 const agent = auwgent(config)
-agent.onIntentPartial((name, value, age) => {
-  if (name == "response_text") {
-    process.stdout.write(value.delta ?? "")
-  }
-
-  if (name === "tool_call") {
-      console.log(value.args)
-  }
-
-})
-
-agent.onIntent((name, value, agentname) => {
-  if (name === "render_component") {
-    console.log(JSON.stringify(value,null,2))
-  }
-})
-
-agent.onWarning((warning) => {
-  console.log(warning)
-})
 
 console.log(agent.generatePrompt())
+agent.onIntent((intent, value, name) => {
+  if (intent === "response_text") {
+    console.log("text", value)
+  }
+  if (intent === "response_schema") {
+    console.log("json output", JSON.stringify(value.response, null, 2))
+  }
+})
 
-const session = await agent.run(`let me look at the product biscuit`)
-
-//console.log(JSON.stringify(session,null,2))
-
-
-console.log(agent.getMetadata().aggregate)
+const session = await agent.run(`Create a project called 'Auwgent SDK Launch'. Include these three tasks:
+'Write documentation' with high priority.
+'Fix buffer bugs' with medium priority, which is already completed.
+'Publish to npm' with low priority`)
+console.log(JSON.stringify(session.turns, null, 2))
+console.log(agent.getMetadata())

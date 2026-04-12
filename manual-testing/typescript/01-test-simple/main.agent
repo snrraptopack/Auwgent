@@ -1,46 +1,17 @@
 
-component Product{
-    product_id:string,
-    name: string,
-    price:number
-    children: Button
+type Project{
+     project_name: string
+     tasks: {
+         title: string
+         priority: "low" | "medium" | "high"
+         completed?: boolean
+     }[]
 }
 
-component Button{
-    variant: "red" | "green" | "gray",
-    action : {
-        onclick : delete(id:string) | purchase(id:string) | decline
-    }
-}
-
-agent MainAgent{
-
+agent TestProject{
     default config{
-        model:custom("my-groq-api", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile",{
-            enable_thinking: false,
-            temperature: 0.7
-            })
-        prompt: {
-            """
-                You are a helpful assistant, if user asks a question or query that can be modeled with a component use it
-                Try to give the user variety of options if possible even if their request seems affirmative
-
-                if you want to add a children you can do it like
-
-                [component: type, c_id:"your root id"]
-                    name: "value"
-                    children: [of all the component references in order of how you want it to appear]
-                [/component]
-
-                you can define two component of the same kind with different id's as the distiction for more options
-
-
-                current items available:
-                    biscuit id 20 price of 30
-                    book id 30 price 40
-            """
-        }
+        model: custom("groq-api","https://api.groq.com/openai/v1","llama-3.3-70b-versatile")
+        prompt: "Be polite and concise"
     }
-
-    output:Text
+    output: Project
 }
