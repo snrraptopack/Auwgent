@@ -125,31 +125,40 @@ fn parse_object_entry(
         parse_ts_object(&full_value)
             .unwrap_or_else(|_| ASTValue::String(full_value))
     } else {
-        // For simple values: if the value text contains spaces and isn't a
-        // quoted string, number, boolean, or null, treat as a raw string.
-        // This handles multi-word unquoted strings like "Auwgent SDK Launch"
-        // that LLMs commonly produce, which parse_ts_object would silently
-        // truncate to just the first word.
+        // Parse the value while avoiding tokenizer corruption of special chars
+        // like @ (emails) and . (URLs/domains). Only route through parse_ts_object
+        // when the value clearly looks like a structured or primitive type.
         let trimmed = value_text.trim();
         if trimmed.starts_with('"') || trimmed.starts_with('\'') {
-            // Quoted string — parse normally
+            // Quoted string — parse normally to handle escapes
             parse_ts_object(&value_text)
                 .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
-        } else if trimmed.contains(' ') {
-            // Contains spaces and isn't quoted — likely multi-word text.
-            // Try structured parse first (could be a call expression like "delete(id: 1)"),
-            // but verify it consumed the full text by checking the raw word count.
-            match parse_ts_object(&value_text) {
-                Ok(ASTValue::Call { .. }) => parse_ts_object(&value_text).unwrap(),
-                Ok(ASTValue::Array(_)) | Ok(ASTValue::Object(_)) => {
-                    parse_ts_object(&value_text).unwrap()
-                }
-                _ => ASTValue::String(value_text.to_string()),
-            }
+        } else if trimmed.starts_with('[') || trimmed.starts_with('{') || trimmed.starts_with('(') {
+            // Structural value — parse normally
+            parse_ts_object(&value_text)
+                .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+        } else if trimmed == "true" {
+            ASTValue::Boolean(true)
+        } else if trimmed == "false" {
+            ASTValue::Boolean(false)
+        } else if trimmed == "null" {
+            ASTValue::Null
+        } else if trimmed.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) {
+            // Starts with digit or minus — try as number, fall back to string
+            parse_ts_object(&value_text)
+                .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
         } else {
-            // Single word or simple value — parse normally
-            parse_ts_object(&value_text)
-                .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+            // Raw string — preserve as-is to avoid tokenizer mangling
+            // special characters like @ in emails or . in URLs.
+            // But if it looks like a call expression (contains '('), try parsing it.
+            if trimmed.contains('(') {
+                match parse_ts_object(&value_text) {
+                    Ok(val @ ASTValue::Call { .. }) => val,
+                    _ => ASTValue::String(value_text.to_string()),
+                }
+            } else {
+                ASTValue::String(value_text.to_string())
+            }
         }
     };
 
@@ -705,5 +714,30 @@ mod tests {
         } else {
             panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
         }
+    }
+
+    #[test]
+    fn test_assignment_object_preserves_emails_and_urls() {
+        // Emails and URLs contain @ and . which the tokenizer would mangle
+        let input = "person_email: shawn@example.com\nperson_id: usr_777\naccount_active: true\naccount_plan: pro";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        let obj = result.unwrap();
+        assert_eq!(
+            obj.get("person_email"),
+            Some(&ASTValue::String("shawn@example.com".to_string()))
+        );
+        assert_eq!(
+            obj.get("person_id"),
+            Some(&ASTValue::String("usr_777".to_string()))
+        );
+        assert_eq!(
+            obj.get("account_active"),
+            Some(&ASTValue::Boolean(true))
+        );
+        assert_eq!(
+            obj.get("account_plan"),
+            Some(&ASTValue::String("pro".to_string()))
+        );
     }
 }

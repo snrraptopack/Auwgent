@@ -1,21 +1,21 @@
-type Company {
-     company: {
-         name: string
-         departments: {
-             dept_name: string
-             employees: {
-                 name: string
-                 role: string
-                 salary?: number
-             }[]
-         }[]
-     }
+
+
+type UserAccount{
+    person: {
+        id: string
+        email: string
+  }
+  account: {
+        plan: "free" | "pro" | "enterprise"
+        active: boolean
+    }
  }
+
 
 agent TestCompany{
     default config{
         model: custom("groq-api","https://api.groq.com/openai/v1","llama-3.3-70b-versatile")
         prompt: "Be polite and concise"
     }
-    output: Company
+    output: UserAccount
 }

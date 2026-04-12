@@ -10,15 +10,17 @@ type TestCompanyIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as TestCompanyIR;
-export type Company = {
-    company: { name: string; departments: { dept_name: string; employees: { name: string; role: string; salary: number }[] }[] };
+export type UserAccount = {
+    person: { id: string; email: string };
+    account: { plan: "free" | "pro" | "enterprise"; active: boolean };
 }
 export type TestCompanyInput = {
 
 }
 
 export type TestCompanyOutput = {
-    company: { name: string; departments: { dept_name: string; employees: { name: string; role: string; salary: number }[] }[] };
+    person: { id: string; email: string };
+    account: { plan: "free" | "pro" | "enterprise"; active: boolean };
 }
 
 export type TestCompanyContext = {

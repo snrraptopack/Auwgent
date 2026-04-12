@@ -21,50 +21,39 @@
   ],
   "input": null,
   "output": {
-    "company": {
+    "person": {
       "type": {
         "type": "object",
         "properties": {
-          "name": {
+          "id": {
             "type": "string",
             "optional": false
           },
-          "departments": {
+          "email": {
+            "type": "string",
+            "optional": false
+          }
+        }
+      },
+      "optional": false
+    },
+    "account": {
+      "type": {
+        "type": "object",
+        "properties": {
+          "plan": {
             "type": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "dept_name": {
-                    "type": "string",
-                    "optional": false
-                  },
-                  "employees": {
-                    "type": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "name": {
-                            "type": "string",
-                            "optional": false
-                          },
-                          "role": {
-                            "type": "string",
-                            "optional": false
-                          },
-                          "salary": {
-                            "type": "number",
-                            "optional": true
-                          }
-                        }
-                      }
-                    },
-                    "optional": false
-                  }
-                }
-              }
+              "type": "union",
+              "options": [
+                "free",
+                "pro",
+                "enterprise"
+              ]
             },
+            "optional": false
+          },
+          "active": {
+            "type": "boolean",
             "optional": false
           }
         }
@@ -78,53 +67,43 @@
   "helpers": [],
   "components": [],
   "types": {
-    "Company": {
+    "UserAccount": {
       "isOutput": false,
       "properties": {
-        "company": {
+        "person": {
           "type": {
             "type": "object",
             "properties": {
-              "name": {
+              "id": {
                 "type": "string",
                 "optional": false
               },
-              "departments": {
+              "email": {
+                "type": "string",
+                "optional": false
+              }
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "account": {
+          "type": {
+            "type": "object",
+            "properties": {
+              "plan": {
                 "type": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "dept_name": {
-                        "type": "string",
-                        "optional": false
-                      },
-                      "employees": {
-                        "type": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "name": {
-                                "type": "string",
-                                "optional": false
-                              },
-                              "role": {
-                                "type": "string",
-                                "optional": false
-                              },
-                              "salary": {
-                                "type": "number",
-                                "optional": true
-                              }
-                            }
-                          }
-                        },
-                        "optional": false
-                      }
-                    }
-                  }
+                  "type": "union",
+                  "options": [
+                    "free",
+                    "pro",
+                    "enterprise"
+                  ]
                 },
+                "optional": false
+              },
+              "active": {
+                "type": "boolean",
                 "optional": false
               }
             }
