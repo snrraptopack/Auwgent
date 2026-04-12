@@ -10,6 +10,14 @@ pub fn parse_ts_object(input: &str) -> Result<ASTValue, String> {
 }
 
 pub fn parse_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>, String> {
+    // For multi-line input, prefer the indented parser which correctly handles
+    // LLM output patterns like multi-word unquoted strings and multi-line arrays.
+    // The TS-style parser silently truncates "Auwgent SDK Launch" to "Auwgent".
+    if input.contains('\n') {
+        if let Ok(obj) = parse_indented_assignment_object(input) {
+            return Ok(obj);
+        }
+    }
     match parse_ts_object(&format!("{{{}}}", input)) {
         Ok(ASTValue::Object(obj)) => Ok(obj),
         Ok(_) => Err("Expected assignment object".to_string()),
@@ -117,11 +125,32 @@ fn parse_object_entry(
         parse_ts_object(&full_value)
             .unwrap_or_else(|_| ASTValue::String(full_value))
     } else {
-        // For simple values, fall back to treating entire value as a string
-        // if structured parsing fails (handles multi-word unquoted strings
-        // like "Auwgent SDK Launch")
-        parse_ts_object(&value_text)
-            .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+        // For simple values: if the value text contains spaces and isn't a
+        // quoted string, number, boolean, or null, treat as a raw string.
+        // This handles multi-word unquoted strings like "Auwgent SDK Launch"
+        // that LLMs commonly produce, which parse_ts_object would silently
+        // truncate to just the first word.
+        let trimmed = value_text.trim();
+        if trimmed.starts_with('"') || trimmed.starts_with('\'') {
+            // Quoted string — parse normally
+            parse_ts_object(&value_text)
+                .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+        } else if trimmed.contains(' ') {
+            // Contains spaces and isn't quoted — likely multi-word text.
+            // Try structured parse first (could be a call expression like "delete(id: 1)"),
+            // but verify it consumed the full text by checking the raw word count.
+            match parse_ts_object(&value_text) {
+                Ok(ASTValue::Call { .. }) => parse_ts_object(&value_text).unwrap(),
+                Ok(ASTValue::Array(_)) | Ok(ASTValue::Object(_)) => {
+                    parse_ts_object(&value_text).unwrap()
+                }
+                _ => ASTValue::String(value_text.to_string()),
+            }
+        } else {
+            // Single word or simple value — parse normally
+            parse_ts_object(&value_text)
+                .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+        }
     };
 
     Ok((key, value))
@@ -272,7 +301,7 @@ impl TSObjectParser {
                 Ok(ASTValue::Array(arr))
             }
             TokenKind::Identifier(s) => {
-                let ident = s.clone();
+                let mut ident = s.clone();
                 self.advance();
 
                 if self.current == TokenKind::OpenParen {
@@ -283,6 +312,15 @@ impl TSObjectParser {
                     }
                     Ok(ASTValue::Call { name: ident, args })
                 } else {
+                    // Concatenate consecutive identifiers into a multi-word string.
+                    // LLMs often output unquoted multi-word values like:
+                    //   title: Write documentation
+                    // which tokenizes as [Identifier("Write"), Identifier("documentation")]
+                    while let TokenKind::Identifier(next) = &self.current {
+                        ident.push(' ');
+                        ident.push_str(next);
+                        self.advance();
+                    }
                     Ok(ASTValue::String(ident))
                 }
             }

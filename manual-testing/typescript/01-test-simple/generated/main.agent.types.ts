@@ -1,70 +1,68 @@
-// Auto-generated types for TestProject
+// Auto-generated types for TestCompany
 // Do not edit manually
 // Core Runtime Imports
 import { createAuwgent } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './main.agent.json' with { type: 'json' };
-type TestProjectIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
-  name: "TestProject";
+type TestCompanyIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & {
+  name: "TestCompany";
   workflows: undefined;
   helpers: undefined;
 };
-const agentIR = _importedIR as unknown as TestProjectIR;
-export type Project = {
-    tasks: { title: string; priority: "low" | "medium" | "high"; completed: boolean }[];
-    project_name: string;
+const agentIR = _importedIR as unknown as TestCompanyIR;
+export type Company = {
+    company: { name: string; departments: { dept_name: string; employees: { name: string; role: string; salary: number }[] }[] };
 }
-export type TestProjectInput = {
+export type TestCompanyInput = {
 
 }
 
-export type TestProjectOutput = {
-    project_name: string;
-    tasks: { title: string; priority: "low" | "medium" | "high"; completed: boolean }[];
+export type TestCompanyOutput = {
+    company: { name: string; departments: { dept_name: string; employees: { name: string; role: string; salary: number }[] }[] };
 }
 
-export type TestProjectContext = {
+export type TestCompanyContext = {
 
 }
 
 /** Custom intents defined in the DSL (if any) */
-export type TestProjectCustomIntents =
+export type TestCompanyCustomIntents =
     | never;
 
 /**
- * API keys required for TestProject
+ * API keys required for TestCompany
  */
-export type TestProjectApiKeys = {
+export type TestCompanyApiKeys = {
     groq_apiApiKey: string;  // API key for custom provider 'groq-api'
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
-export type TestProjectAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
+export type TestCompanyAgent = import("@snrraptopack/auwgent-sdk").TypedAuwgent<
     typeof agentIR,
-    TestProjectCustomIntents,
-    TestProjectOutput,
+    TestCompanyCustomIntents,
+    TestCompanyOutput,
     Record<string, never>
 >;
 
-/** Middleware object type — consistent with `TestProjectAgent.onIntent` intent narrowing */
-export type TestProjectMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
+/** Middleware object type — consistent with `TestCompanyAgent.onIntent` intent narrowing */
+export type TestCompanyMiddleware<T extends import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent'] = import("@snrraptopack/auwgent-sdk").MiddlewareContext<typeof agentIR>['activeAgent']> = import("@snrraptopack/auwgent-sdk").Middleware<
     typeof agentIR,
-    TestProjectCustomIntents,
-    TestProjectOutput,
+    TestCompanyCustomIntents,
+    TestCompanyOutput,
     Record<string, never>,
     T
 >;
 
-export type TestProjectConfig = {
-    middleware?: TestProjectMiddleware[];
-    apiKeys: TestProjectApiKeys;
+export type TestCompanyConfig = {
+    middleware?: TestCompanyMiddleware[];
+    apiKeys: TestCompanyApiKeys;
 }
 
-export function createTestProject(config: TestProjectConfig): TestProjectAgent {
+export function createTestCompany(config: TestCompanyConfig): TestCompanyAgent {
     return createAuwgent<
         typeof agentIR,
-        TestProjectCustomIntents,
-        TestProjectOutput,
+        TestCompanyCustomIntents,
+        TestCompanyOutput,
         Record<string, never>
     >(agentIR, {
         tools: {} as Record<string, never>,
@@ -73,9 +71,9 @@ export function createTestProject(config: TestProjectConfig): TestProjectAgent {
     });
 }
 
-export const auwgent = createTestProject;
+export const auwgent = createTestCompany;
 export type AuwgentTools = Record<string, never>;
-export type AuwgentConfig = TestProjectConfig;
-export type AuwgentAgent = TestProjectAgent;
-export type AuwgentMiddleware = TestProjectMiddleware;
-export type AuwgentContext = TestProjectContext;
+export type AuwgentConfig = TestCompanyConfig;
+export type AuwgentAgent = TestCompanyAgent;
+export type AuwgentMiddleware = TestCompanyMiddleware;
+export type AuwgentContext = TestCompanyContext;

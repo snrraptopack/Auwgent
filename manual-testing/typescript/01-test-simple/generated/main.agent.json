@@ -1,5 +1,5 @@
 {
-  "name": "TestProject",
+  "name": "TestCompany",
   "modelConfig": [
     {
       "defaultConfig": {
@@ -21,35 +21,51 @@
   ],
   "input": null,
   "output": {
-    "project_name": {
-      "type": "string",
-      "optional": false
-    },
-    "tasks": {
+    "company": {
       "type": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "title": {
-              "type": "string",
-              "optional": false
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "optional": false
+          },
+          "departments": {
+            "type": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "dept_name": {
+                    "type": "string",
+                    "optional": false
+                  },
+                  "employees": {
+                    "type": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "optional": false
+                          },
+                          "role": {
+                            "type": "string",
+                            "optional": false
+                          },
+                          "salary": {
+                            "type": "number",
+                            "optional": true
+                          }
+                        }
+                      }
+                    },
+                    "optional": false
+                  }
+                }
+              }
             },
-            "priority": {
-              "type": {
-                "type": "union",
-                "options": [
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              },
-              "optional": false
-            },
-            "completed": {
-              "type": "boolean",
-              "optional": true
-            }
+            "optional": false
           }
         }
       },
@@ -62,42 +78,57 @@
   "helpers": [],
   "components": [],
   "types": {
-    "Project": {
+    "Company": {
       "isOutput": false,
       "properties": {
-        "tasks": {
+        "company": {
           "type": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "optional": false
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "optional": false
+              },
+              "departments": {
+                "type": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "dept_name": {
+                        "type": "string",
+                        "optional": false
+                      },
+                      "employees": {
+                        "type": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "optional": false
+                              },
+                              "role": {
+                                "type": "string",
+                                "optional": false
+                              },
+                              "salary": {
+                                "type": "number",
+                                "optional": true
+                              }
+                            }
+                          }
+                        },
+                        "optional": false
+                      }
+                    }
+                  }
                 },
-                "priority": {
-                  "type": {
-                    "type": "union",
-                    "options": [
-                      "low",
-                      "medium",
-                      "high"
-                    ]
-                  },
-                  "optional": false
-                },
-                "completed": {
-                  "type": "boolean",
-                  "optional": true
-                }
+                "optional": false
               }
             }
           },
-          "optional": false,
-          "description": null
-        },
-        "project_name": {
-          "type": "string",
           "optional": false,
           "description": null
         }

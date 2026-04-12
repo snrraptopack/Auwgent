@@ -18,9 +18,6 @@ agent.onIntent((intent, value, name) => {
   }
 })
 
-const session = await agent.run(`Create a project called 'Auwgent SDK Launch'. Include these three tasks:
-'Write documentation' with high priority.
-'Fix buffer bugs' with medium priority, which is already completed.
-'Publish to npm' with low priority`)
+const session = await agent.run(`Create a company called 'SnrRaptoPack'. It has two departments: 'Engineering' with employees 'Alice' (Lead Developer, salary 95000) and 'Bob' (Backend Engineer). The second department is 'Design' with one employee 'Clara' (UI Designer, salary 72000).`)
 console.log(JSON.stringify(session.turns, null, 2))
 console.log(agent.getMetadata())
