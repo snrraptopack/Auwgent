@@ -33,6 +33,10 @@ const String _HelloAgentIrJson = r'''{
     "age": {
       "type": "number",
       "optional": false
+    },
+    "location": {
+      "type": "string",
+      "optional": true
     }
   },
   "context": null,
@@ -67,6 +71,11 @@ const String _HelloAgentIrJson = r'''{
         "age": {
           "type": "number",
           "optional": false,
+          "description": null
+        },
+        "location": {
+          "type": "string",
+          "optional": true,
           "description": null
         },
         "name": {

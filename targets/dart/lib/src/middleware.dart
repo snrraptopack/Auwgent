@@ -18,7 +18,7 @@ abstract interface class Middleware {
     return null;
   }
 
-  FutureOr<IntentControl> onIntent(
+  FutureOr<IntentControl?> onIntent(
     String name,
     Object? value,
     MiddlewareContext ctx,
@@ -64,4 +64,8 @@ final class MiddlewareContext {
   String? rawBlock;
   String? systemPrompt;
   final void Function(JsonMap value) setContext;
+
+  @override
+  String toString() =>
+      'MiddlewareContext(activeAgent: $activeAgent, stack: $stack, rootAgent: $rootAgent, rawBlock: $rawBlock, systemPrompt: $systemPrompt)';
 }

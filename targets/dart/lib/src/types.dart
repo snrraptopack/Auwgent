@@ -22,9 +22,10 @@ final class NoResult {
 
 typedef ToolHandler = FutureOr<Object?> Function(JsonMap args);
 typedef IntentHandler =
-    FutureOr<Object?> Function(String name, Object? value, String agentName);
+    FutureOr<IntentControl?> Function(String name, Object? value, String agentName);
 typedef PartialIntentHandler =
     FutureOr<void> Function(String name, Object? value, String agentName);
+typedef StructuredIntentDecoder<T> = T Function(JsonMap json);
 typedef MiddlewareEventHandler = FutureOr<String?> Function(String eventJson);
 typedef SessionTransformHandler =
     FutureOr<String?> Function(String primaryName, String sessionJson);
@@ -45,7 +46,340 @@ typedef ErrorHandler =
       JsonMap context,
     );
 
-typedef IntentControl = Object?;
+sealed class IntentControl {
+  const IntentControl();
+
+  JsonMap toJson();
+}
+
+final class SkipIntentControl extends IntentControl {
+  const SkipIntentControl();
+
+  @override
+  JsonMap toJson() => const {'skip': true};
+
+  @override
+  String toString() => 'SkipIntentControl()';
+}
+
+final class ResultIntentControl extends IntentControl {
+  const ResultIntentControl(this.result);
+
+  final Object? result;
+
+  @override
+  JsonMap toJson() => {'result': result};
+
+  @override
+  String toString() => 'ResultIntentControl(result: $result)';
+}
+
+final class TokenUsage {
+  const TokenUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+  });
+
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
+
+  factory TokenUsage.fromJson(JsonMap json) {
+    return TokenUsage(
+      promptTokens: ((json['prompt_tokens'] as num?)?.toInt()) ?? 0,
+      completionTokens: ((json['completion_tokens'] as num?)?.toInt()) ?? 0,
+      totalTokens: ((json['total_tokens'] as num?)?.toInt()) ?? 0,
+    );
+  }
+
+  JsonMap toJson() => {
+    'prompt_tokens': promptTokens,
+    'completion_tokens': completionTokens,
+    'total_tokens': totalTokens,
+  };
+
+  @override
+  String toString() =>
+      'TokenUsage(promptTokens: $promptTokens, completionTokens: $completionTokens, totalTokens: $totalTokens)';
+}
+
+sealed class FinishReason {
+  const FinishReason();
+
+  factory FinishReason.fromJson(Object? value) {
+    if (value == null) return const NullFinishReason();
+    if (value is String) {
+      switch (value) {
+        case 'stop':
+          return const StopFinishReason();
+        case 'length':
+          return const LengthFinishReason();
+        case 'tool_calls':
+          return const ToolCallsFinishReason();
+        case 'content_filter':
+          return const ContentFilterFinishReason();
+        default:
+          return OtherFinishReason(value);
+      }
+    }
+    return OtherFinishReason(value.toString());
+  }
+}
+
+final class NullFinishReason extends FinishReason {
+  const NullFinishReason();
+
+  @override
+  String toString() => 'null';
+}
+
+final class StopFinishReason extends FinishReason {
+  const StopFinishReason();
+
+  @override
+  String toString() => 'stop';
+}
+
+final class LengthFinishReason extends FinishReason {
+  const LengthFinishReason();
+
+  @override
+  String toString() => 'length';
+}
+
+final class ToolCallsFinishReason extends FinishReason {
+  const ToolCallsFinishReason();
+
+  @override
+  String toString() => 'tool_calls';
+}
+
+final class ContentFilterFinishReason extends FinishReason {
+  const ContentFilterFinishReason();
+
+  @override
+  String toString() => 'content_filter';
+}
+
+final class OtherFinishReason extends FinishReason {
+  const OtherFinishReason(this.value);
+
+  final String value;
+
+  @override
+  String toString() => value;
+}
+
+final class TurnMetadata {
+  const TurnMetadata({
+    required this.turnIndex,
+    required this.usage,
+    required this.finishReason,
+    required this.model,
+  });
+
+  final int turnIndex;
+  final TokenUsage usage;
+  final FinishReason? finishReason;
+  final String model;
+
+  factory TurnMetadata.fromJson(JsonMap json) {
+    return TurnMetadata(
+      turnIndex: ((json['turn_index'] as num?)?.toInt()) ?? 0,
+      usage: TokenUsage.fromJson(
+        Map<String, Object?>.from((json['usage'] as Map?) ?? const {}),
+      ),
+      finishReason: json.containsKey('finish_reason')
+          ? FinishReason.fromJson(json['finish_reason'])
+          : null,
+      model: (json['model'] as String?) ?? '',
+    );
+  }
+
+  JsonMap toJson() => {
+    'turn_index': turnIndex,
+    'usage': usage.toJson(),
+    'finish_reason': finishReason?.toString(),
+    'model': model,
+  };
+
+  @override
+  String toString() =>
+      'TurnMetadata(turnIndex: $turnIndex, usage: $usage, finishReason: $finishReason, model: $model)';
+}
+
+final class AggregateUsage {
+  const AggregateUsage({
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+  });
+
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
+
+  factory AggregateUsage.fromJson(JsonMap json) {
+    return AggregateUsage(
+      promptTokens: ((json['prompt_tokens'] as num?)?.toInt()) ?? 0,
+      completionTokens: ((json['completion_tokens'] as num?)?.toInt()) ?? 0,
+      totalTokens: ((json['total_tokens'] as num?)?.toInt()) ?? 0,
+    );
+  }
+
+  JsonMap toJson() => {
+    'prompt_tokens': promptTokens,
+    'completion_tokens': completionTokens,
+    'total_tokens': totalTokens,
+  };
+
+  @override
+  String toString() =>
+      'AggregateUsage(promptTokens: $promptTokens, completionTokens: $completionTokens, totalTokens: $totalTokens)';
+}
+
+final class RunMetadata {
+  const RunMetadata({
+    required this.aggregate,
+    required this.turns,
+  });
+
+  final AggregateUsage aggregate;
+  final List<TurnMetadata> turns;
+
+  factory RunMetadata.fromJson(JsonMap json) {
+    final turnsRaw = (json['turns'] as List?) ?? const [];
+    return RunMetadata(
+      aggregate: AggregateUsage.fromJson(
+        Map<String, Object?>.from((json['aggregate'] as Map?) ?? const {}),
+      ),
+      turns: turnsRaw
+          .whereType<Map>()
+          .map((turn) => TurnMetadata.fromJson(Map<String, Object?>.from(turn)))
+          .toList(growable: false),
+    );
+  }
+
+  JsonMap toJson() => {
+    'aggregate': aggregate.toJson(),
+    'turns': turns.map((turn) => turn.toJson()).toList(growable: false),
+  };
+
+  @override
+  String toString() => 'RunMetadata(aggregate: $aggregate, turns: $turns)';
+}
+
+final class PartialIntentEnvelope {
+  const PartialIntentEnvelope({
+    required this.partial,
+    required this.complete,
+    required this.mode,
+    required this.segment,
+    required this.raw,
+  });
+
+  final bool partial;
+  final bool complete;
+  final String mode;
+  final int segment;
+  final String raw;
+
+  factory PartialIntentEnvelope.fromJson(JsonMap json) {
+    return PartialIntentEnvelope(
+      partial: (json['partial'] as bool?) ?? true,
+      complete: (json['complete'] as bool?) ?? false,
+      mode: (json['mode'] as String?) ?? 'structured',
+      segment: ((json['segment'] as num?)?.toInt()) ?? 0,
+      raw: (json['raw'] as String?) ?? '',
+    );
+  }
+
+  JsonMap toJson() => {
+    'partial': partial,
+    'complete': complete,
+    'mode': mode,
+    'segment': segment,
+    'raw': raw,
+  };
+
+  @override
+  String toString() =>
+      'PartialIntentEnvelope(partial: $partial, complete: $complete, mode: $mode, segment: $segment, raw: $raw)';
+}
+
+final class PartialTextIntentValue {
+  const PartialTextIntentValue({
+    required this.envelope,
+    required this.text,
+    this.delta,
+  });
+
+  final PartialIntentEnvelope envelope;
+  final String text;
+  final String? delta;
+
+  bool get partial => envelope.partial;
+  bool get complete => envelope.complete;
+  String get mode => envelope.mode;
+  int get segment => envelope.segment;
+  String get raw => envelope.raw;
+
+  factory PartialTextIntentValue.fromJson(JsonMap json) {
+    return PartialTextIntentValue(
+      envelope: PartialIntentEnvelope.fromJson(json),
+      text: (json['text'] as String?) ?? '',
+      delta: json['delta'] as String?,
+    );
+  }
+
+  JsonMap toJson() => {
+    ...envelope.toJson(),
+    'text': text,
+    if (delta != null) 'delta': delta,
+  };
+
+  @override
+  String toString() =>
+      'PartialTextIntentValue(text: $text, delta: $delta, envelope: $envelope)';
+}
+
+final class PartialStructuredIntentValue<T> {
+  const PartialStructuredIntentValue({
+    required this.envelope,
+    required this.value,
+  });
+
+  final PartialIntentEnvelope envelope;
+  final T value;
+
+  bool get partial => envelope.partial;
+  bool get complete => envelope.complete;
+  String get mode => envelope.mode;
+  int get segment => envelope.segment;
+  String get raw => envelope.raw;
+
+  factory PartialStructuredIntentValue.fromJson(
+    JsonMap json,
+    StructuredIntentDecoder<T> decode,
+  ) {
+    final payload = Map<String, Object?>.from(json)
+      ..remove('partial')
+      ..remove('complete')
+      ..remove('mode')
+      ..remove('segment')
+      ..remove('raw');
+
+    return PartialStructuredIntentValue(
+      envelope: PartialIntentEnvelope.fromJson(json),
+      value: decode(payload),
+    );
+  }
+
+  @override
+  String toString() =>
+      'PartialStructuredIntentValue(value: $value, envelope: $envelope)';
+}
 
 enum AuwgentWarningSource {
   onIntent,
@@ -89,6 +423,10 @@ final class SessionTurn {
   }
 
   JsonMap toJson() => {'input': input, 'model_response': modelResponse};
+
+  @override
+  String toString() =>
+      'SessionTurn(input: $input, modelResponse: $modelResponse)';
 }
 
 final class SessionState {
@@ -125,6 +463,10 @@ final class SessionState {
     'stack': stack,
     if (initialInput != null) 'initialInput': initialInput,
   };
+
+  @override
+  String toString() =>
+      'SessionState(systemPrompt: $systemPrompt, turns: $turns, stack: $stack, initialInput: $initialInput)';
 }
 
 final class AuwgentConfig {

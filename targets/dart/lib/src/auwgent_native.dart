@@ -223,7 +223,7 @@ final class AuwgentNative {
   }
 
   void onIntent(
-    FutureOr<Object?> Function(String name, Object? value, String agentName)
+    FutureOr<IntentControl?> Function(String name, Object? value, String agentName)
     handler,
   ) {
     _checkNotDisposed();
@@ -792,6 +792,9 @@ final class AuwgentNative {
     }
     if (value == null) {
       return ffi.nullptr;
+    }
+    if (value is IntentControl) {
+      return jsonEncode(value.toJson()).toNativeUtf8(allocator: malloc);
     }
     return jsonEncode(value).toNativeUtf8(allocator: malloc);
   }

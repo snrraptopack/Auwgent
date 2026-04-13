@@ -138,8 +138,10 @@ class TypedAuwgent<IR extends JsonMap> {
     return decoded.map((line) => line.toString()).toList(growable: false);
   }
 
-  JsonMap getMetadata() {
-    return Map<String, Object?>.from(jsonDecode(native.getMetadata()) as Map);
+  RunMetadata getMetadata() {
+    return RunMetadata.fromJson(
+      Map<String, Object?>.from(jsonDecode(native.getMetadata()) as Map),
+    );
   }
 
   void clearListeners() => native.clearListeners();

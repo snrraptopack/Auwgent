@@ -1,26 +1,42 @@
 import 'main.agent.dart';
 
-final class HelloLogger extends AuwgentBaseIntentHandler {
+
+final class ML extends AuwgentMiddleware{
+  
+
+}
+
+final class Logger extends AuwgentBasePartialIntentHandler{
+
   @override
-  Object? responseText(intent, agentName) {
+  Object? responseText(intent,name){
+    return null;
+  }
+
+  
+  responseSchema(intent,name){
+    return null;
+  }
+}
+
+final class HelloLogger extends AuwgentBaseIntentHandler {
+  responseText(intent, agentName) {
     print(intent.text);
     return null;
   }
-  @override
-  Object? responseSchema(intent, agentName) {
+  
+  responseSchema(intent, agentName) {
     print('schema intent from $agentName');
     print(intent.response);
     return null;
   }
 
-  @override
-  Object? toolCall(intent,agentName){
+  toolCall(intent,agentName){
     print(" called ,${intent.args}, name $agentName");
     return null;
   }
 
-  @override
-  Object? toolResult(intent,agentName){
+  toolResult(intent,agentName){
     print(" result, ${intent.args}, name $agentName");
     return null;
   }
@@ -59,7 +75,14 @@ Future<void> main() async {
 
   try {
 
-    final _session = await agent.run('Hello there what my name and age');
+    final session = await agent.run('Hello there what my name and age and my location');
+
+    print(agent.getMetadata());
+
+    session.turns.map((s)=>{
+      print(" user input ${s.input}  model output ${s.modelResponse}")
+    });
+
   } finally {
     agent.dispose();
   }
