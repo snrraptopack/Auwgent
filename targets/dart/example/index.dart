@@ -40,7 +40,7 @@ final class Tools extends AuwgentTools {
 Future<void> main() async {
   final config = AuwgentConfig(
     apiKeys: AuwgentApiKeys(
-      geminiApiKey: '..',
+      groq_apiApiKey: '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',
     ),
     tools: Tools()
   );
@@ -59,8 +59,7 @@ Future<void> main() async {
 
   try {
 
-    final session = await agent.run('Hello there what my name and age');
-    print(session.turns.toString());
+    final _session = await agent.run('Hello there what my name and age');
   } finally {
     agent.dispose();
   }

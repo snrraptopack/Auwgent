@@ -29,7 +29,6 @@ class TypedAuwgent<IR extends JsonMap> {
 
   IntentHandler? _storedIntentHandler;
   PartialIntentHandler? _storedPartialIntentHandler;
-  final Map<String, SessionState> _helperSessions = {};
   final List<AuwgentWarning> _warnings = [];
   void Function(AuwgentWarning warning)? _warningHandler;
 
@@ -80,22 +79,35 @@ class TypedAuwgent<IR extends JsonMap> {
 
   void clearSession() {
     native.clearSession();
-    _helperSessions.clear();
   }
 
   Future<SessionState> run(Object? input, {List<String>? initialStack}) async {
     _sharedContext = {};
     _lastTurnRawBlock = null;
-    _activateListeners();
 
     try {
+      final initialSession = exportSession();
+      _runMiddlewareStart(initialSession);
+      if (_storedPartialIntentHandler != null) {
+        _reportWarning(
+          AuwgentWarningSource.onIntentPartial,
+          'async FFI currently dispatches final intents only; partial intent handlers are not invoked during run()',
+          agentName: ir['name']?.toString(),
+        );
+      }
+
       if (input is String) {
-        await native.runTextAsync(input, initialStack: initialStack);
+        await _awaitRunWithStructuredPolling(
+          native.runTextAsync(input, initialStack: initialStack),
+        );
       } else {
-        await native.runJsonAsync(input, initialStack: initialStack);
+        await _awaitRunWithStructuredPolling(
+          native.runJsonAsync(input, initialStack: initialStack),
+        );
       }
       final session = exportSession();
       _agentStack = [...session.stack];
+      _runMiddlewareComplete(session);
       return session;
     } catch (error) {
       _reportWarning(
@@ -104,8 +116,6 @@ class TypedAuwgent<IR extends JsonMap> {
         error: error,
       );
       rethrow;
-    } finally {
-      native.clearListeners();
     }
   }
 
@@ -211,194 +221,156 @@ class TypedAuwgent<IR extends JsonMap> {
     }
   }
 
-  void _activateListeners() {
-    native.onIntent((name, value, agentName) {
-      try {
-        if (value is Map && value.containsKey('_raw')) {
-          _lastTurnRawBlock = value['_raw']?.toString();
-          value.remove('_raw');
-        }
+  Future<void> _awaitRunWithStructuredPolling(Future<void> runFuture) async {
+    Object? failure;
+    StackTrace? failureStack;
+    var done = false;
 
-        final handler = _storedIntentHandler;
-        if (handler == null) {
-          return null;
-        }
-        final result = handler(name, value, agentName);
-        return _requireSync(result, 'intent callbacks');
+    unawaited(
+      runFuture.then((_) {
+        done = true;
+      }, onError: (Object error, StackTrace stackTrace) {
+        failure = error;
+        failureStack = stackTrace;
+        done = true;
+      }),
+    );
+
+    while (!done) {
+      _drainStructuredEvents();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+
+    _drainStructuredEvents();
+
+    if (failure != null) {
+      Error.throwWithStackTrace(failure!, failureStack!);
+    }
+  }
+
+  void _drainStructuredEvents() {
+    for (final line in drainJsonlLines()) {
+      if (line.trim().isEmpty) {
+        continue;
+      }
+
+      try {
+        final event = Map<String, Object?>.from(jsonDecode(line) as Map);
+        _dispatchStructuredEvent(event);
       } catch (error) {
         _reportWarning(
           AuwgentWarningSource.onIntent,
-          'intent callback failed',
+          'failed to decode structured event',
           error: error,
-          agentName: agentName,
-        );
-        return null;
-      }
-    });
-
-    native.onIntentPartial((name, value, agentName) {
-      try {
-        final handler = _storedPartialIntentHandler;
-        if (handler != null) {
-          _requireSync(
-            handler(name, value, agentName),
-            'partial intent callbacks',
-          );
-        }
-
-        final ctx = _getBuildContext()..activeAgent = agentName;
-        for (final item in _getMiddleware(ctx)) {
-          _requireSync(
-            item.onIntentPartial(name, value, ctx),
-            'middleware onIntentPartial hooks',
-          );
-        }
-        _persistMiddlewareContext(ctx);
-      } catch (error) {
-        _reportWarning(
-          AuwgentWarningSource.onIntentPartial,
-          'partial intent callback failed',
-          error: error,
-          agentName: agentName,
         );
       }
-    });
-
-    native.onMiddlewareEvent((eventJson) => _handleMiddlewareEvent(eventJson));
-
-    native.onSubEngineStart((helperName, emptySessionJson) {
-      try {
-        final session =
-            _helperSessions[helperName] ??
-            SessionState.fromJson(
-              Map<String, Object?>.from(jsonDecode(emptySessionJson) as Map),
-            );
-        _agentStack = [...session.stack];
-        return jsonEncode(session.toJson());
-      } catch (error) {
-        _reportWarning(
-          AuwgentWarningSource.onSubEngineStart,
-          'sub-engine start callback failed',
-          error: error,
-          agentName: helperName,
-        );
-        return emptySessionJson;
-      }
-    });
-
-    native.onSubEngineComplete((helperName, completedSessionJson) {
-      try {
-        final session = SessionState.fromJson(
-          Map<String, Object?>.from(jsonDecode(completedSessionJson) as Map),
-        );
-        _helperSessions[helperName] = session;
-        _agentStack = [...session.stack];
-      } catch (error) {
-        _reportWarning(
-          AuwgentWarningSource.onSubEngineComplete,
-          'sub-engine complete callback failed',
-          error: error,
-          agentName: helperName,
-        );
-      }
-    });
+    }
   }
 
-  String? _handleMiddlewareEvent(String eventJson) {
-    try {
-      final event = Map<String, Object?>.from(jsonDecode(eventJson) as Map);
-      final ctx = _buildContextFromRuntimeEvent(event);
+  void _dispatchStructuredEvent(JsonMap event) {
+    final eventType = event['event']?.toString();
+    switch (eventType) {
+      case 'intent':
+        final name = event['name']?.toString();
+        if (name == null || name.isEmpty) {
+          return;
+        }
+        final agentName =
+            event['agent']?.toString() ??
+            ir['name']?.toString() ??
+            'unknown_agent';
+        final payload = event['payload'];
+        _dispatchIntent(name, payload, agentName);
+        return;
+      case 'stream_error':
+        _reportWarning(
+          AuwgentWarningSource.run,
+          'structured stream reported an error',
+          error: event['error'],
+          agentName: event['agent']?.toString(),
+        );
+        return;
+      default:
+        return;
+    }
+  }
 
-      switch (event['type']) {
-        case 'intent':
-          final value = event['value'];
-          for (final item in _getMiddleware(ctx)) {
-            final control = _requireSync(
-              item.onIntent(event['name'].toString(), value, ctx),
-              'middleware onIntent hooks',
-            );
-            if (control != null) {
-              _persistMiddlewareContext(ctx);
-              return jsonEncode(control);
-            }
-          }
-          _persistMiddlewareContext(ctx);
-          return null;
-        case 'llm_start':
-          var currentPrompt = event['prompt']?.toString() ?? '';
-          for (final item in _getMiddleware(ctx)) {
-            final modified = _requireSync(
-              item.onLLMStart(currentPrompt, ctx),
-              'middleware onLLMStart hooks',
-            );
-            if (modified is String) {
-              currentPrompt = modified;
-            }
-          }
-          _persistMiddlewareContext(ctx);
-          return jsonEncode({'prompt': currentPrompt, 'stack': ctx.stack});
-        case 'llm_end':
-          for (final item in _getMiddleware(ctx)) {
-            _requireSync(
-              item.onLLMEnd(event['response'], ctx),
-              'middleware onLLMEnd hooks',
-            );
-          }
-          _persistMiddlewareContext(ctx);
-          return null;
-        case 'run_start':
-          var session = SessionState.fromJson(
-            Map<String, Object?>.from(event['session'] as Map),
-          );
-          for (final item in _getMiddleware(ctx)) {
-            session = _requireSync(
-              item.onRunStart(session, ctx),
-              'middleware onRunStart hooks',
-            );
-          }
-          _agentStack = [...session.stack];
-          _persistMiddlewareContext(ctx);
-          return jsonEncode({'session': session.toJson()});
-        case 'run_complete':
-          final session = SessionState.fromJson(
-            Map<String, Object?>.from(event['session'] as Map),
-          );
-          for (final item in _getMiddleware(ctx)) {
-            _requireSync(
-              item.onRunComplete(session, ctx),
-              'middleware onRunComplete hooks',
-            );
-          }
-          _persistMiddlewareContext(ctx);
-          return null;
-        case 'error':
-          final sessionRaw = event['session'];
-          final session = sessionRaw is Map
-              ? SessionState.fromJson(Map<String, Object?>.from(sessionRaw))
-              : null;
-          final error = event['error'] ?? {'message': 'Unknown runtime error'};
-          for (final item in _getMiddleware(ctx)) {
-            final swallow = _requireSync(
-              item.onError(error, session, ctx),
-              'middleware onError hooks',
-            );
-            if (swallow == true) {
-              _persistMiddlewareContext(ctx);
-              return jsonEncode({'swallow': true});
-            }
-          }
-          _persistMiddlewareContext(ctx);
-          return null;
-        default:
-          return null;
+  void _dispatchIntent(String name, Object? payload, String agentName) {
+    try {
+      Object? value = payload;
+      if (value is Map) {
+        final mapValue = Map<String, Object?>.from(value);
+        if (mapValue.containsKey('_raw')) {
+          _lastTurnRawBlock = mapValue['_raw']?.toString();
+          mapValue.remove('_raw');
+        }
+        value = mapValue;
       }
+
+      final handler = _storedIntentHandler;
+      if (handler != null) {
+        final result = handler(name, value, agentName);
+        _requireSync(result, 'intent callbacks');
+      }
+
+      final ctx = _getBuildContext()..activeAgent = agentName;
+      for (final item in _getMiddleware(ctx)) {
+        _requireSync(
+          item.onIntent(name, value, ctx),
+          'middleware onIntent hooks',
+        );
+      }
+      _persistMiddlewareContext(ctx);
     } catch (error) {
       _reportWarning(
-        AuwgentWarningSource.onMiddlewareEvent,
-        'failed to handle middleware event',
+        AuwgentWarningSource.onIntent,
+        'intent callback failed',
         error: error,
+        agentName: agentName,
       );
-      return null;
+    }
+  }
+
+  void _runMiddlewareStart(SessionState session) {
+    try {
+      var currentSession = session;
+      final ctx = _getBuildContext()..activeAgent = ir['name']?.toString() ?? '';
+      for (final item in _getMiddleware(ctx)) {
+        currentSession = _requireSync(
+          item.onRunStart(currentSession, ctx),
+          'middleware onRunStart hooks',
+        );
+      }
+      _persistMiddlewareContext(ctx);
+      importSession(currentSession);
+      _agentStack = [...currentSession.stack];
+    } catch (error) {
+      _reportWarning(
+        AuwgentWarningSource.run,
+        'run start middleware failed',
+        error: error,
+        agentName: ir['name']?.toString(),
+      );
+    }
+  }
+
+  void _runMiddlewareComplete(SessionState session) {
+    try {
+      final ctx = _getBuildContext()..activeAgent = ir['name']?.toString() ?? '';
+      for (final item in _getMiddleware(ctx)) {
+        _requireSync(
+          item.onRunComplete(session, ctx),
+          'middleware onRunComplete hooks',
+        );
+      }
+      _persistMiddlewareContext(ctx);
+    } catch (error) {
+      _reportWarning(
+        AuwgentWarningSource.run,
+        'run complete middleware failed',
+        error: error,
+        agentName: ir['name']?.toString(),
+      );
     }
   }
 
@@ -414,34 +386,6 @@ class TypedAuwgent<IR extends JsonMap> {
       systemPrompt: null,
       setContext: native.setContext,
     );
-  }
-
-  MiddlewareContext _buildContextFromRuntimeEvent(JsonMap event) {
-    final ctx = _getBuildContext();
-    final runtimeCtx = event['context'];
-    if (runtimeCtx is Map) {
-      final map = Map<String, Object?>.from(runtimeCtx);
-      if (map['activeAgent'] is String) {
-        ctx.activeAgent = map['activeAgent'] as String;
-      }
-      if (map['stack'] is List) {
-        ctx.stack = (map['stack'] as List)
-            .map((item) => item.toString())
-            .toList(growable: false);
-        _agentStack = [...ctx.stack];
-      }
-      if (map['rootAgent'] is String) {
-        ctx.rootAgent = map['rootAgent'] as String;
-      }
-      if (map['rawBlock'] is String) {
-        ctx.rawBlock = map['rawBlock'] as String;
-        _lastTurnRawBlock = ctx.rawBlock;
-      }
-      if (map['systemPrompt'] is String) {
-        ctx.systemPrompt = map['systemPrompt'] as String;
-      }
-    }
-    return ctx;
   }
 
   void _persistMiddlewareContext(MiddlewareContext ctx) {

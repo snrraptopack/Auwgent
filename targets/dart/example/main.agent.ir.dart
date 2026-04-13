@@ -9,8 +9,10 @@ const String _HelloAgentIrJson = r'''{
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash",
+          "type": "custom",
+          "id": "groq-api",
+          "url": "https://api.groq.com/openai/v1",
+          "modelName": "openai/gpt-oss-120b",
           "config": null
         },
         "embedding": null,
@@ -62,13 +64,13 @@ const String _HelloAgentIrJson = r'''{
     "Person": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
+        "age": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "age": {
-          "type": "number",
+        "name": {
+          "type": "string",
           "optional": false,
           "description": null
         }

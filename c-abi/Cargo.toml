@@ -5,7 +5,7 @@ edition = "2024"
 
 [lib]
 name = "auwgent_c_abi"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 ir-runtime = { path = "../ir-runtime" }

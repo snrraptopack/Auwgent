@@ -9,7 +9,7 @@ type Person {
 
 agent Hello{
     default config{
-        model:gemini("gemini-2.5-flash")
+        model:custom("groq-api","https://api.groq.com/openai/v1","openai/gpt-oss-120b")
         prompt: "You are a helper"
     }
 

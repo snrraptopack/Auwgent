@@ -75,7 +75,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         blocks.push("[schema: name] key: value per line [/schema]".to_string());
     }
 
-    blocks.push("Values: string, number, boolean, null, [array], {object}".to_string());
+    blocks.push("Values: string, number, boolean, null, [list of items], {object}".to_string());
 
     sections.push(format!("\nBlocks:\n- {}", blocks.join("\n- ")));
 
@@ -338,7 +338,9 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     if has_custom {
         blocks.push("[custom: name] key: value per line [/custom]".to_string());
     }
-    blocks.push("Values: string, number, boolean, null, [the list], {the object} array and object are like regular ts".to_string());
+    blocks.push(
+        "Values: string, number, boolean, null, [list of items], {object}".to_string(),
+    );
 
     sections.push(format!("\nBlocks:\n- {}", blocks.join("\n- ")));
 

@@ -379,14 +379,14 @@ abstract class HelloBasePartialIntentHandler {
 
 final class HelloApiKeys {
   const HelloApiKeys({
-    this.geminiApiKey,
+    this.groq_apiApiKey,
   });
 
-  final String? geminiApiKey;
+  final String? groq_apiApiKey;
 
   Map<String, String> toMap() {
     return {
-      if (geminiApiKey != null && geminiApiKey!.isNotEmpty) 'geminiApiKey': geminiApiKey!,
+      if (groq_apiApiKey != null && groq_apiApiKey!.isNotEmpty) 'groq_apiApiKey': groq_apiApiKey!,
     };
   }
 }

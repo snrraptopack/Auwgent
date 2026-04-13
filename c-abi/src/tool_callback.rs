@@ -1,4 +1,5 @@
 use crate::error::set_last_error;
+use crate::ffi_string::into_c_string;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
@@ -39,10 +40,8 @@ impl RunCompleteCallbackRegistration {
     }
 
     pub fn invoke_error(&self, message: &str) {
-        let message_c = std::ffi::CString::new(message).unwrap_or_else(|_| {
-            std::ffi::CString::new("unknown error").unwrap()
-        });
-        unsafe { (self.callback)(false, message_c.as_ptr(), self.user_data) };
+        let message_ptr = into_c_string(message.to_string());
+        unsafe { (self.callback)(false, message_ptr, self.user_data) };
     }
 }
 
@@ -163,17 +162,20 @@ impl AsyncToolCallbackRegistration {
         args_json: &str,
     ) -> Result<(), String> {
         let request_id_c = CString::new(request_id)
-            .map_err(|_| "request id contained interior null byte".to_string())?;
+            .map_err(|_| "request id contained interior null byte".to_string())?
+            .into_raw();
         let tool_name_c = CString::new(tool_name)
-            .map_err(|_| "tool name contained interior null byte".to_string())?;
+            .map_err(|_| "tool name contained interior null byte".to_string())?
+            .into_raw();
         let args_json_c = CString::new(args_json)
-            .map_err(|_| "tool args json contained interior null byte".to_string())?;
+            .map_err(|_| "tool args json contained interior null byte".to_string())?
+            .into_raw();
 
         unsafe {
             (self.callback)(
-                request_id_c.as_ptr(),
-                tool_name_c.as_ptr(),
-                args_json_c.as_ptr(),
+                request_id_c,
+                tool_name_c,
+                args_json_c,
                 self.user_data,
             )
         };

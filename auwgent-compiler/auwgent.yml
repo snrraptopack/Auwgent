@@ -1,6 +1,5 @@
 # auwgent.yml (Root)
-source: "../manual-testing"  #default ../manual-testing change later
+source: "../targets/dart/example"  #default ../manual-testing change later
 development: true
 targets:
-  - py
-  - ts
+  - dart

@@ -141,12 +141,13 @@ final class AuwgentNative {
     final toolNamePtr = name.toNativeUtf8();
     final callable = ffi.NativeCallable<NativeAsyncToolCallback>.listener((
       ffi.Pointer<Utf8> requestIdPtr,
-      ffi.Pointer<Utf8> _toolNamePtr,
+      ffi.Pointer<Utf8> toolNamePtr,
       ffi.Pointer<Utf8> argsJsonPtr,
       ffi.Pointer<ffi.Void> _,
     ) {
-      final requestId = requestIdPtr.toDartString();
       try {
+        final requestId = requestIdPtr.toDartString();
+        final toolName = toolNamePtr.toDartString();
         final decoded = jsonDecode(argsJsonPtr.toDartString());
         final args = decoded is Map
             ? Map<String, Object?>.from(decoded)
@@ -154,10 +155,23 @@ final class AuwgentNative {
         Future.sync(() => handler(args)).then((result) {
           _completeToolCall(requestId, result);
         }, onError: (Object error, StackTrace stackTrace) {
-          _failToolCall(requestId, '$error\n$stackTrace');
+          _failToolCall(requestId, 'tool `$toolName` failed: $error\n$stackTrace');
         });
       } catch (error, stackTrace) {
+        final requestId = requestIdPtr == ffi.nullptr
+            ? ''
+            : requestIdPtr.toDartString();
         _failToolCall(requestId, '$error\n$stackTrace');
+      } finally {
+        if (requestIdPtr != ffi.nullptr) {
+          _bindings.stringFree(requestIdPtr, ffi.nullptr);
+        }
+        if (toolNamePtr != ffi.nullptr) {
+          _bindings.stringFree(toolNamePtr, ffi.nullptr);
+        }
+        if (argsJsonPtr != ffi.nullptr) {
+          _bindings.stringFree(argsJsonPtr, ffi.nullptr);
+        }
       }
     });
 
@@ -524,14 +538,20 @@ final class AuwgentNative {
       ffi.Pointer<Utf8> errorMessagePtr,
       ffi.Pointer<ffi.Void> _,
     ) {
-      callable.close();
-      if (success) {
-        completer.complete();
-      } else {
-        final message = errorMessagePtr == ffi.nullptr
-            ? 'Unknown async run error'
-            : errorMessagePtr.toDartString();
-        completer.completeError(StateError(message));
+      try {
+        callable.close();
+        if (success) {
+          completer.complete();
+        } else {
+          final message = errorMessagePtr == ffi.nullptr
+              ? 'Unknown async run error'
+              : errorMessagePtr.toDartString();
+          completer.completeError(StateError(message));
+        }
+      } finally {
+        if (errorMessagePtr != ffi.nullptr) {
+          _bindings.stringFree(errorMessagePtr, ffi.nullptr);
+        }
       }
     });
 
@@ -571,14 +591,20 @@ final class AuwgentNative {
       ffi.Pointer<Utf8> errorMessagePtr,
       ffi.Pointer<ffi.Void> _,
     ) {
-      callable.close();
-      if (success) {
-        completer.complete();
-      } else {
-        final message = errorMessagePtr == ffi.nullptr
-            ? 'Unknown async run error'
-            : errorMessagePtr.toDartString();
-        completer.completeError(StateError(message));
+      try {
+        callable.close();
+        if (success) {
+          completer.complete();
+        } else {
+          final message = errorMessagePtr == ffi.nullptr
+              ? 'Unknown async run error'
+              : errorMessagePtr.toDartString();
+          completer.completeError(StateError(message));
+        }
+      } finally {
+        if (errorMessagePtr != ffi.nullptr) {
+          _bindings.stringFree(errorMessagePtr, ffi.nullptr);
+        }
       }
     });
 
