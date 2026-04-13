@@ -18,6 +18,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tokio::time::{sleep, Duration};
 
 mod execution;
 
@@ -40,6 +41,23 @@ fn empty_response_marker(finish_reason: Option<&FinishReason>) -> String {
         None => "(no response: stream completed without content)".to_string(),
     }
 }
+
+fn should_retry_empty_completion(
+    raw_response: &str,
+    actions_performed: bool,
+    terminal_emitted: bool,
+    final_emitted: bool,
+    finish_reason: Option<&FinishReason>,
+) -> bool {
+    if !raw_response.trim().is_empty() || actions_performed || terminal_emitted || final_emitted {
+        return false;
+    }
+
+    matches!(finish_reason, Some(FinishReason::Stop) | None)
+}
+
+const MAX_EMPTY_COMPLETION_RETRIES: usize = 2;
+const EMPTY_COMPLETION_RETRY_DELAY_MS: u64 = 250;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUWGENT ENGINE
@@ -718,6 +736,7 @@ impl AuwgentEngine {
         *self.last_run_metadata.lock().unwrap() = RunMetadata::default();
 
         let mut loop_count = 0;
+        let mut empty_completion_retries = 0usize;
 
         let run_result = async {
             loop {
@@ -1026,6 +1045,24 @@ impl AuwgentEngine {
                 self.session.lock().unwrap().set_model_response(&raw_resp);
             }
 
+            let emitted_terminal = *self.terminal_response_emitted.lock().unwrap();
+            let emitted_final = *self.final_response_emitted.lock().unwrap();
+            let should_retry_empty = should_retry_empty_completion(
+                &raw_resp,
+                actions_performed,
+                emitted_terminal,
+                emitted_final,
+                turn_finish_reason.as_ref(),
+            );
+            if should_retry_empty && empty_completion_retries < MAX_EMPTY_COMPLETION_RETRIES {
+                empty_completion_retries += 1;
+                sleep(Duration::from_millis(EMPTY_COMPLETION_RETRY_DELAY_MS)).await;
+                continue;
+            }
+            if !should_retry_empty {
+                empty_completion_retries = 0;
+            }
+
             // Decide if we loop or stop
             if hard_stop {
                 break;
@@ -1222,9 +1259,61 @@ impl AuwgentEngine {
                     if let Ok(yaml) = serde_yaml::to_string(&Value::Object(filtered_ctx)) {
                         prompt.push_str("\n\n# ADDITIONAL CONTEXT\n");
                         prompt.push_str(yaml.trim());
-                    }
-                }
-            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retries_empty_stop_completion_without_actions() {
+        assert!(should_retry_empty_completion(
+            "",
+            false,
+            false,
+            false,
+            Some(&FinishReason::Stop),
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_when_raw_text_exists() {
+        assert!(!should_retry_empty_completion(
+            "hello",
+            false,
+            false,
+            false,
+            Some(&FinishReason::Stop),
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_when_actions_or_terminal_emitted() {
+        assert!(!should_retry_empty_completion(
+            "",
+            true,
+            false,
+            false,
+            Some(&FinishReason::Stop),
+        ));
+        assert!(!should_retry_empty_completion(
+            "",
+            false,
+            true,
+            false,
+            Some(&FinishReason::Stop),
+        ));
+        assert!(!should_retry_empty_completion(
+            "",
+            false,
+            false,
+            true,
+            Some(&FinishReason::Stop),
+        ));
+    }
+}
         }
 
         let intents = crate::intents::generate_block_protocol_prompt(&self.ir);
