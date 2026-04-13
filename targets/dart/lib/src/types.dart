@@ -1,6 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 
 typedef JsonMap = Map<String, Object?>;
+
+String prettyJson(Object? value) {
+  const encoder = JsonEncoder.withIndent('  ');
+  return encoder.convert(value);
+}
 
 final class NoArgs {
   const NoArgs();
@@ -10,6 +16,9 @@ final class NoArgs {
   }
 
   JsonMap toJson() => const {};
+
+  @override
+  String toString() => prettyJson(toJson());
 }
 
 final class NoResult {
@@ -18,6 +27,11 @@ final class NoResult {
   factory NoResult.fromJson(Object? value) {
     return const NoResult();
   }
+
+  JsonMap toJson() => const {};
+
+  @override
+  String toString() => prettyJson(toJson());
 }
 
 typedef ToolHandler = FutureOr<Object?> Function(JsonMap args);
@@ -59,7 +73,7 @@ final class SkipIntentControl extends IntentControl {
   JsonMap toJson() => const {'skip': true};
 
   @override
-  String toString() => 'SkipIntentControl()';
+  String toString() => prettyJson(toJson());
 }
 
 final class ResultIntentControl extends IntentControl {
@@ -71,7 +85,7 @@ final class ResultIntentControl extends IntentControl {
   JsonMap toJson() => {'result': result};
 
   @override
-  String toString() => 'ResultIntentControl(result: $result)';
+  String toString() => prettyJson(toJson());
 }
 
 final class TokenUsage {
@@ -100,8 +114,7 @@ final class TokenUsage {
   };
 
   @override
-  String toString() =>
-      'TokenUsage(promptTokens: $promptTokens, completionTokens: $completionTokens, totalTokens: $totalTokens)';
+  String toString() => prettyJson(toJson());
 }
 
 sealed class FinishReason {
@@ -205,8 +218,7 @@ final class TurnMetadata {
   };
 
   @override
-  String toString() =>
-      'TurnMetadata(turnIndex: $turnIndex, usage: $usage, finishReason: $finishReason, model: $model)';
+  String toString() => prettyJson(toJson());
 }
 
 final class AggregateUsage {
@@ -235,8 +247,7 @@ final class AggregateUsage {
   };
 
   @override
-  String toString() =>
-      'AggregateUsage(promptTokens: $promptTokens, completionTokens: $completionTokens, totalTokens: $totalTokens)';
+  String toString() => prettyJson(toJson());
 }
 
 final class RunMetadata {
@@ -267,7 +278,7 @@ final class RunMetadata {
   };
 
   @override
-  String toString() => 'RunMetadata(aggregate: $aggregate, turns: $turns)';
+  String toString() => prettyJson(toJson());
 }
 
 final class PartialIntentEnvelope {
@@ -304,8 +315,7 @@ final class PartialIntentEnvelope {
   };
 
   @override
-  String toString() =>
-      'PartialIntentEnvelope(partial: $partial, complete: $complete, mode: $mode, segment: $segment, raw: $raw)';
+  String toString() => prettyJson(toJson());
 }
 
 final class PartialTextIntentValue {
@@ -340,8 +350,7 @@ final class PartialTextIntentValue {
   };
 
   @override
-  String toString() =>
-      'PartialTextIntentValue(text: $text, delta: $delta, envelope: $envelope)';
+  String toString() => prettyJson(toJson());
 }
 
 final class PartialStructuredIntentValue<T> {
@@ -376,9 +385,13 @@ final class PartialStructuredIntentValue<T> {
     );
   }
 
+  JsonMap toJson() => {
+    ...envelope.toJson(),
+    'value': value,
+  };
+
   @override
-  String toString() =>
-      'PartialStructuredIntentValue(value: $value, envelope: $envelope)';
+  String toString() => prettyJson(toJson());
 }
 
 enum AuwgentWarningSource {
@@ -425,8 +438,7 @@ final class SessionTurn {
   JsonMap toJson() => {'input': input, 'model_response': modelResponse};
 
   @override
-  String toString() =>
-      'SessionTurn(input: $input, modelResponse: $modelResponse)';
+  String toString() => prettyJson(toJson());
 }
 
 final class SessionState {
@@ -465,8 +477,7 @@ final class SessionState {
   };
 
   @override
-  String toString() =>
-      'SessionState(systemPrompt: $systemPrompt, turns: $turns, stack: $stack, initialInput: $initialInput)';
+  String toString() => prettyJson(toJson());
 }
 
 final class AuwgentConfig {

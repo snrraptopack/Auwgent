@@ -2,33 +2,34 @@ import 'main.agent.dart';
 
 
 final class ML extends AuwgentMiddleware{
-  
+
+  onRunStart(session,ctx){
+    print("The context $ctx");
+    return session;
+  }  
 
 }
 
 final class Logger extends AuwgentBasePartialIntentHandler{
 
-  @override
-  Object? responseText(intent,name){
+  responseText(intent,name){
     return null;
   }
 
   
   responseSchema(intent,name){
-    return null;
+    
   }
 }
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
   responseText(intent, agentName) {
     print(intent.text);
-    return null;
   }
   
   responseSchema(intent, agentName) {
     print('schema intent from $agentName');
     print(intent.response);
-    return null;
   }
 
   toolCall(intent,agentName){
@@ -38,7 +39,6 @@ final class HelloLogger extends AuwgentBaseIntentHandler {
 
   toolResult(intent,agentName){
     print(" result, ${intent.args}, name $agentName");
-    return null;
   }
 }
 
@@ -58,7 +58,8 @@ Future<void> main() async {
     apiKeys: AuwgentApiKeys(
       groq_apiApiKey: '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',
     ),
-    tools: Tools()
+    tools: Tools(),
+    middleware: [ML()]
   );
 
   final agent = auwgent(config);
@@ -75,13 +76,11 @@ Future<void> main() async {
 
   try {
 
-    final session = await agent.run('Hello there what my name and age and my location');
+    final session = await agent.run('Hello there what my name and age and my location, you can call two tools at the same time and wait for their result');
 
     print(agent.getMetadata());
 
-    session.turns.map((s)=>{
-      print(" user input ${s.input}  model output ${s.modelResponse}")
-    });
+    print("${session.turns}");
 
   } finally {
     agent.dispose();

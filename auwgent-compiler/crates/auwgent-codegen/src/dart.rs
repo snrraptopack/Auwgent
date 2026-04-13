@@ -298,7 +298,6 @@ fn generate_data_class(name: &str, properties: &Map<String, Value>) -> String {
     let mut field_lines = Vec::new();
     let mut from_json_lines = Vec::new();
     let mut to_json_lines = Vec::new();
-    let mut to_string_parts = Vec::new();
 
     for (prop_name, prop_info) in properties {
         if prop_name.starts_with('@') || prop_name.starts_with("__") {
@@ -319,22 +318,20 @@ fn generate_data_class(name: &str, properties: &Map<String, Value>) -> String {
             decode_field_expr(prop_name, prop_info, optional)
         ));
         to_json_lines.push(format!("      '{prop_name}': {prop_name},"));
-        to_string_parts.push(format!("{prop_name}: ${{{prop_name}}}"));
     }
 
     if field_lines.is_empty() {
         return format!(
-            "final class {name} {{\n  const {name}();\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return const {name}();\n  }}\n\n  sdk.JsonMap toJson() => const {{}};\n\n  @override\n  String toString() => '{name}()';\n}}\n"
+            "final class {name} {{\n  const {name}();\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return const {name}();\n  }}\n\n  sdk.JsonMap toJson() => const {{}};\n\n  @override\n  String toString() => sdk.prettyJson(toJson());\n}}\n"
         );
     }
 
     format!(
-        "final class {name} {{\n  const {name}({{\n{}\n  }});\n\n{}\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return {name}(\n{}\n    );\n  }}\n\n  sdk.JsonMap toJson() {{\n    return {{\n{}\n    }};\n  }}\n\n  @override\n  String toString() => '{name}({})';\n}}\n",
+        "final class {name} {{\n  const {name}({{\n{}\n  }});\n\n{}\n\n  factory {name}.fromJson(sdk.JsonMap json) {{\n    return {name}(\n{}\n    );\n  }}\n\n  sdk.JsonMap toJson() {{\n    return {{\n{}\n    }};\n  }}\n\n  @override\n  String toString() => sdk.prettyJson(toJson());\n}}\n",
         ctor_lines.join("\n"),
         field_lines.join("\n"),
         from_json_lines.join("\n"),
         to_json_lines.join("\n"),
-        to_string_parts.join(", "),
     )
 }
 
@@ -375,7 +372,6 @@ fn generate_variant_data_class(
     let mut field_lines = Vec::new();
     let mut from_json_lines = Vec::new();
     let mut to_json_lines = Vec::new();
-    let mut to_string_parts = Vec::new();
 
     for (prop_name, prop_info) in properties {
         if prop_name.starts_with('@') || prop_name.starts_with("__") {
@@ -396,16 +392,14 @@ fn generate_variant_data_class(
             decode_field_expr(prop_name, prop_info, optional)
         ));
         to_json_lines.push(format!("      '{prop_name}': {prop_name},"));
-        to_string_parts.push(format!("{prop_name}: ${{{prop_name}}}"));
     }
 
     format!(
-        "final class {class_name} extends {base_name} {{\n  const {class_name}({{\n{}\n  }});\n\n{}\n\n  @override\n  String get variant => '{variant_name}';\n\n  factory {class_name}.fromJson(sdk.JsonMap json) {{\n    return {class_name}(\n{}\n    );\n  }}\n\n  sdk.JsonMap toJson() {{\n    return {{\n      'type': '{variant_name}',\n{}\n    }};\n  }}\n\n  @override\n  String toString() => '{class_name}(variant: {variant_name}, {})';\n}}\n",
+        "final class {class_name} extends {base_name} {{\n  const {class_name}({{\n{}\n  }});\n\n{}\n\n  @override\n  String get variant => '{variant_name}';\n\n  factory {class_name}.fromJson(sdk.JsonMap json) {{\n    return {class_name}(\n{}\n    );\n  }}\n\n  sdk.JsonMap toJson() {{\n    return {{\n      'type': '{variant_name}',\n{}\n    }};\n  }}\n\n  @override\n  String toString() => sdk.prettyJson(toJson());\n}}\n",
         ctor_lines.join("\n"),
         field_lines.join("\n"),
         from_json_lines.join("\n"),
         to_json_lines.join("\n"),
-        to_string_parts.join(", "),
     )
 }
 
@@ -977,13 +971,13 @@ fn generate_handler_classes(
 ) -> String {
     let mut intent_methods = vec![
         format!(
-            "  FutureOr<sdk.IntentControl?> responseText({agent_name}ResponseTextIntent intent, String agentName) => null;"
+            "  FutureOr<void> responseText({agent_name}ResponseTextIntent intent, String agentName) {{}}"
         ),
         format!(
-            "  FutureOr<sdk.IntentControl?> responseSchema({agent_name}ResponseSchemaIntent intent, String agentName) => null;"
+            "  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, String agentName) {{}}"
         ),
         format!(
-            "  FutureOr<sdk.IntentControl?> error({agent_name}ErrorIntent intent, String agentName) => null;"
+            "  FutureOr<void> error({agent_name}ErrorIntent intent, String agentName) {{}}"
         ),
     ];
 
@@ -1005,13 +999,13 @@ fn generate_handler_classes(
                 "  FutureOr<sdk.IntentControl?> toolCall({agent_name}ToolCallIntent intent, String agentName) => null;"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> toolResult({agent_name}ToolResultIntent intent, String agentName) => null;"
+                "  FutureOr<void> toolResult({agent_name}ToolResultIntent intent, String agentName) {{}}"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> toolError({agent_name}ToolErrorIntent intent, String agentName) => null;"
+                "  FutureOr<void> toolError({agent_name}ToolErrorIntent intent, String agentName) {{}}"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> toolSkipped({agent_name}ToolSkippedIntent intent, String agentName) => null;"
+                "  FutureOr<void> toolSkipped({agent_name}ToolSkippedIntent intent, String agentName) {{}}"
             ),
         ]);
 
@@ -1034,10 +1028,10 @@ fn generate_handler_classes(
     if has_workflows {
         intent_methods.extend([
             format!(
-                "  FutureOr<sdk.IntentControl?> workflowCall({agent_name}WorkflowCallIntent intent, String agentName) => null;"
+                "  FutureOr<void> workflowCall({agent_name}WorkflowCallIntent intent, String agentName) {{}}"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> workflowResult({agent_name}WorkflowResultIntent intent, String agentName) => null;"
+                "  FutureOr<void> workflowResult({agent_name}WorkflowResultIntent intent, String agentName) {{}}"
             ),
         ]);
         partial_methods.extend([
@@ -1053,10 +1047,10 @@ fn generate_handler_classes(
     if has_helpers {
         intent_methods.extend([
             format!(
-                "  FutureOr<sdk.IntentControl?> helperCall({agent_name}HelperCallIntent intent, String agentName) => null;"
+                "  FutureOr<void> helperCall({agent_name}HelperCallIntent intent, String agentName) {{}}"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> helperResult({agent_name}HelperResultIntent intent, String agentName) => null;"
+                "  FutureOr<void> helperResult({agent_name}HelperResultIntent intent, String agentName) {{}}"
             ),
         ]);
         partial_methods.extend([
@@ -1072,10 +1066,10 @@ fn generate_handler_classes(
     if has_components {
         intent_methods.extend([
             format!(
-                "  FutureOr<sdk.IntentControl?> component({agent_name}ComponentIntent intent, String agentName) => null;"
+                "  FutureOr<void> component({agent_name}ComponentIntent intent, String agentName) {{}}"
             ),
             format!(
-                "  FutureOr<sdk.IntentControl?> renderComponent({agent_name}RenderComponentIntent intent, String agentName) => null;"
+                "  FutureOr<void> renderComponent({agent_name}RenderComponentIntent intent, String agentName) {{}}"
             ),
         ]);
         partial_methods.extend([
@@ -1092,7 +1086,7 @@ fn generate_handler_classes(
         let type_name = custom_intent_type_name(agent_name, custom_intent);
         let method_name = dart_method_name(custom_intent);
         intent_methods.push(format!(
-            "  FutureOr<sdk.IntentControl?> {method_name}({type_name} intent, String agentName) => null;"
+            "  FutureOr<void> {method_name}({type_name} intent, String agentName) {{}}"
         ));
         partial_methods.push(format!(
             "  FutureOr<void> {method_name}(sdk.PartialStructuredIntentValue<{type_name}> intent, String agentName) {{}}"
@@ -1100,7 +1094,7 @@ fn generate_handler_classes(
     }
 
     format!(
-        "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<sdk.IntentControl?> responseText({agent_name}ResponseTextIntent intent, sdk.MiddlewareContext ctx) => null;\n  FutureOr<sdk.IntentControl?> responseSchema({agent_name}ResponseSchemaIntent intent, sdk.MiddlewareContext ctx) => null;\n  FutureOr<sdk.IntentControl?> errorIntent({agent_name}ErrorIntent intent, sdk.MiddlewareContext ctx) => null;\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
+        "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText({agent_name}ResponseTextIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent({agent_name}ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
         intent_methods.join("\n"),
         partial_methods.join("\n"),
         generate_middleware_intent_methods(agent_name, has_tools, has_workflows, has_helpers, has_components, custom_intents),
@@ -1120,34 +1114,34 @@ fn generate_middleware_intent_methods(
     if has_tools {
         lines.extend([
             format!("  FutureOr<sdk.IntentControl?> toolCall({agent_name}ToolCallIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> toolResult({agent_name}ToolResultIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> toolError({agent_name}ToolErrorIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> toolSkipped({agent_name}ToolSkippedIntent intent, sdk.MiddlewareContext ctx) => null;"),
+            format!("  FutureOr<void> toolResult({agent_name}ToolResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            format!("  FutureOr<void> toolError({agent_name}ToolErrorIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            format!("  FutureOr<void> toolSkipped({agent_name}ToolSkippedIntent intent, sdk.MiddlewareContext ctx) {{}}"),
         ]);
     }
     if has_workflows {
         lines.extend([
-            format!("  FutureOr<sdk.IntentControl?> workflowCall({agent_name}WorkflowCallIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> workflowResult({agent_name}WorkflowResultIntent intent, sdk.MiddlewareContext ctx) => null;"),
+            format!("  FutureOr<void> workflowCall({agent_name}WorkflowCallIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            format!("  FutureOr<void> workflowResult({agent_name}WorkflowResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
         ]);
     }
     if has_helpers {
         lines.extend([
-            format!("  FutureOr<sdk.IntentControl?> helperCall({agent_name}HelperCallIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> helperResult({agent_name}HelperResultIntent intent, sdk.MiddlewareContext ctx) => null;"),
+            format!("  FutureOr<void> helperCall({agent_name}HelperCallIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            format!("  FutureOr<void> helperResult({agent_name}HelperResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
         ]);
     }
     if has_components {
         lines.extend([
-            format!("  FutureOr<sdk.IntentControl?> component({agent_name}ComponentIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<sdk.IntentControl?> renderComponent({agent_name}RenderComponentIntent intent, sdk.MiddlewareContext ctx) => null;"),
+            format!("  FutureOr<void> component({agent_name}ComponentIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            format!("  FutureOr<void> renderComponent({agent_name}RenderComponentIntent intent, sdk.MiddlewareContext ctx) {{}}"),
         ]);
     }
     for custom_intent in custom_intents {
         let type_name = custom_intent_type_name(agent_name, custom_intent);
         let method_name = dart_method_name(custom_intent);
         lines.push(format!(
-            "  FutureOr<sdk.IntentControl?> {method_name}({type_name} intent, sdk.MiddlewareContext ctx) => null;"
+            "  FutureOr<void> {method_name}({type_name} intent, sdk.MiddlewareContext ctx) {{}}"
         ));
     }
     if lines.is_empty() { String::new() } else { format!("{}\n", lines.join("\n")) }
@@ -1718,16 +1712,20 @@ fn generate_middleware_dispatch_cases(
 fn middleware_dispatch_case(intent_name: &str, method_name: &str, value_expr: String, partial: bool) -> String {
     if partial {
         format!("    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return;")
-    } else {
+    } else if intent_name == "tool_call" {
         format!("    case '{intent_name}':\n      return middleware.{method_name}({value_expr}, ctx);")
+    } else {
+        format!("    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return null;")
     }
 }
 
 fn dispatch_case(intent_name: &str, method_name: &str, value_expr: &str, partial: bool) -> String {
     if partial {
         format!("    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return;")
-    } else {
+    } else if intent_name == "tool_call" {
         format!("    case '{intent_name}':\n      return handler.{method_name}({value_expr}, agentName);")
+    } else {
+        format!("    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return null;")
     }
 }
 

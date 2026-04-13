@@ -67,5 +67,11 @@ final class MiddlewareContext {
 
   @override
   String toString() =>
-      'MiddlewareContext(activeAgent: $activeAgent, stack: $stack, rootAgent: $rootAgent, rawBlock: $rawBlock, systemPrompt: $systemPrompt)';
+      prettyJson({
+        'activeAgent': activeAgent,
+        'stack': stack,
+        'rootAgent': rootAgent,
+        'rawBlock': rawBlock,
+        'systemPrompt': systemPrompt,
+      });
 }
