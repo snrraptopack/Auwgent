@@ -1,7 +1,7 @@
 
 agent TestAccount{
     default config{
-        model: custom("groq-api","https://api.groq.com/openai/v1","openai/gpt-oss-120b")
+        model:groq("openai/gpt-oss-120b")
         prompt: "Be polite and concise when you call a tool,it will return a result, wait and use it"
     }
    tool read_todo(id:string):string

@@ -127,11 +127,12 @@ impl ModelDriver for GeminiDriver {
                     if let Some(data) = trimmed.strip_prefix("data: ")
                         && let Ok(json_val) = serde_json::from_str::<Value>(data)
                     {
+
                         if let Some(candidate) = json_val["candidates"].get(0) {
                                 if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
                                     result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(t.to_string()));
                                 }
-                                
+
                                 if let Some(finish_reason_str) = candidate["finishReason"].as_str() {
                                     let finish_reason = match finish_reason_str {
                                         "STOP" => Some(crate::runtime::drivers::FinishReason::Stop),
@@ -140,13 +141,13 @@ impl ModelDriver for GeminiDriver {
                                         "OTHER" => Some(crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string())),
                                         _ => Some(crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string())),
                                     };
-                                    
+
                                     // Normally usage data is in the same JSON object as STOP
                                     if let Some(usage) = json_val.get("usageMetadata") {
                                         let prompt_tokens = usage["promptTokenCount"].as_u64().unwrap_or(0) as u32;
                                         let completion_tokens = usage["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
                                         let total_tokens = usage["totalTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        
+
                                         result_events.push(crate::runtime::drivers::ModelEvent::Metadata(crate::runtime::drivers::ModelMetadata {
                                             usage: crate::runtime::drivers::TokenUsage {
                                                 prompt_tokens,

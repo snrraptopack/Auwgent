@@ -28,6 +28,11 @@ typedef NativeEngineSetGeminiDriver =
 typedef DartEngineSetGeminiDriver =
     bool Function(ffi.Pointer<_EngineHandle>, ffi.Pointer<Utf8>);
 
+typedef NativeEngineSetGroqDriver =
+    ffi.Bool Function(ffi.Pointer<_EngineHandle>, ffi.Pointer<Utf8>);
+typedef DartEngineSetGroqDriver =
+    bool Function(ffi.Pointer<_EngineHandle>, ffi.Pointer<Utf8>);
+
 typedef NativeEngineSetOpenaiDriver =
     ffi.Bool Function(
       ffi.Pointer<_EngineHandle>,
@@ -456,6 +461,11 @@ final class AuwgentBindings {
             NativeEngineSetGeminiDriver,
             DartEngineSetGeminiDriver
           >('auwgent_engine_set_gemini_driver'),
+      engineSetGroqDriver = library
+          .lookupFunction<
+            NativeEngineSetGroqDriver,
+            DartEngineSetGroqDriver
+          >('auwgent_engine_set_groq_driver'),
       engineSetOpenaiDriver = library
           .lookupFunction<
             NativeEngineSetOpenaiDriver,
@@ -602,6 +612,7 @@ final class AuwgentBindings {
   final DartEngineSetContext engineSetContext;
   final DartEngineSetGeminiDriver engineSetGeminiDriver;
   final DartEngineSetOpenaiDriver engineSetOpenaiDriver;
+  final DartEngineSetGroqDriver engineSetGroqDriver;
   final DartEngineSetCustomDriver engineSetCustomDriver;
   final DartEngineGeneratePrompt engineGeneratePrompt;
   final DartEngineExportSession engineExportSession;

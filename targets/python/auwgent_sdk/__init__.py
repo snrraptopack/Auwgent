@@ -190,7 +190,7 @@ class AuwgentConfig(TypedDict, total=False):
 class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     """
     Production-grade, type-safe wrapper around the Native Rust Engine (PyO3).
-    
+
     Mirrors the TypeScript SDK's full feature set:
     - Deferred listener registration (activate/deactivate around each run)
     - Middleware pipeline with onIntent, onLLMStart/End, onRunStart/Complete
@@ -231,7 +231,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             self.set_gemini_driver(api_keys["geminiApiKey"])
         if "openaiApiKey" in api_keys:
             self.set_openai_driver(api_keys["openaiApiKey"])
-        
+        if "groqApiKey" in api_keys:
+            self.set_groq_driver(api_keys["groqApiKey"])
+
         self._register_custom_drivers(api_keys)
 
         # ── 3. Tools ──
@@ -260,7 +262,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                         key = api_keys.get(f"{id.replace('-', '_')}ApiKey")
                         if key:
                             self.set_custom_driver(id, key, url)
-            
+
             named_configs = entry.get("namedConfig")
             if named_configs and isinstance(named_configs, list):
                 for named in named_configs:
@@ -278,7 +280,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         if model_config:
             for entry in model_config:
                 collect_from_entry(entry)
-        
+
         helpers = self.ir.get("helpers")
         if helpers:
             for helper in helpers:
@@ -725,7 +727,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 input_str = json.dumps(input_val)
 
             res_json = await self._native.run(
-                input_str, 
+                input_str,
                 None
             )
             current_session = json.loads(res_json)

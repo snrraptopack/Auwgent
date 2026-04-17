@@ -33,6 +33,11 @@ impl AuwgentNative {
         Ok(())
     }
 
+    pub fn set_groq_driver(&self, api_key: String) -> PyResult<()> {
+        self.bridge.set_groq_driver(api_key);
+        Ok(())
+    }
+
     pub fn set_openai_driver(&self, api_key: String, base_url: Option<String>) -> PyResult<()> {
         self.bridge.set_openai_driver(api_key, base_url);
         Ok(())

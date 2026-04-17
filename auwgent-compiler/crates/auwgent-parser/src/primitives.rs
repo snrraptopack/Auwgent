@@ -127,6 +127,7 @@ pub(crate) fn property_name(
             TokenKind::Provider => "provider",
             TokenKind::Gemini => "gemini",
             TokenKind::Openai => "openai",
+            TokenKind::Groq => "groq",
             TokenKind::Custom => "custom",
             TokenKind::MaxTokens => "maxTokens",
             TokenKind::MaxMessages => "maxMessages",

@@ -372,15 +372,18 @@ fn generate_api_keys(
     custom_ids: &std::collections::BTreeSet<String>,
 ) -> String {
     let mut keys = Vec::new();
-    
+
     if providers.contains("gemini") {
         keys.push("    geminiApiKey: string;".to_string());
     }
-    
+
     if providers.contains("openai") {
         keys.push("    openaiApiKey: string;".to_string());
     }
-    
+    if providers.contains("groq") {
+        keys.push("    groqApiKey: string;".to_string());
+    }
+
     // Generate individual API key fields for each custom provider (URL is in the IR, not needed here)
     for custom_id in custom_ids {
         // Sanitize the provider ID into a valid TS identifier: replace non-alphanumeric chars with '_'.

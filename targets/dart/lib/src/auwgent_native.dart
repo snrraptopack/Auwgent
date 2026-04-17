@@ -107,6 +107,23 @@ final class AuwgentNative {
     }
   }
 
+
+  void setGroqDriver(String apiKey) {
+    _checkNotDisposed();
+    final apiKeyPtr = apiKey.toNativeUtf8();
+    try {
+      final ok = _bindings.engineSetGroqDriver(
+        _handle,
+        apiKeyPtr
+      );
+      if (!ok) {
+        throw StateError(_readLastError(_bindings));
+      }
+    } finally {
+      malloc.free(apiKeyPtr);
+    }
+  }
+
   void setCustomDriver({
     required String id,
     required String apiKey,

@@ -38,6 +38,13 @@ impl Auwgent {
         Ok(())
     }
 
+    /// Set the Groq driver with the given API key.
+    #[napi]
+    pub fn set_groq_driver(&self, api_key: String) -> Result<()> {
+        self.bridge.set_groq_driver(api_key);
+        Ok(())
+    }
+
     /// Set the OpenAI driver with the given API key.
     #[napi]
     pub fn set_openai_driver(&self, api_key: String) -> Result<()> {
@@ -76,7 +83,7 @@ impl Auwgent {
                 let js_val = ctx.env.to_js_value(&ctx.value)?;
                 Ok(vec![js_val])
             })?;
-        
+
         // Unref the Tool TSFN so it doesn't hold the Node.js event loop open infinitely.
         // It will only activate when explicitly called by the rust async runtime during run().
         let _ = tsfn.unref(&env);

@@ -335,6 +335,12 @@ pub enum ModelProviderIR {
         model_name: String,
         config: Option<Box<JsonValue>>,
     },
+    #[serde(rename = "groq")]
+    Groq {
+        #[serde(rename = "modelName")]
+        model_name: String,
+        config: Option<Box<JsonValue>>,
+    },
     #[serde(rename = "custom")]
     Custom {
         id: String,

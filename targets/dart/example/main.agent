@@ -10,7 +10,7 @@ type Person {
 
 agent Hello{
     default config{
-        model:custom("groq-api","https://api.groq.com/openai/v1","openai/gpt-oss-120b")
+        model:groq("openai/gpt-oss-120b")
         prompt: "You are a helper"
     }
 
@@ -19,4 +19,17 @@ agent Hello{
     tool get_location(id:string):string @desc "use this to ge location"
 
     output : Person
+    helpers{Joker}
+}
+
+
+
+helper Joker{
+    description: "Good at cracking jokes"
+
+    default config{
+        model:custom("groq-api","https://api.groq.com/openai/v1","openai/gpt-oss-120b")
+        prompt: "You are a joker try to joke to the user"
+    }
+    input{ joker_prompt:string}
 }

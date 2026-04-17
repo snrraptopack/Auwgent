@@ -41,6 +41,18 @@ pub(crate) fn model_provider_parser(
             span: s(span),
         });
 
+    let groq = tok(TokenKind::Groq)
+        .ignore_then(
+            string_lit()
+                .then(tok(TokenKind::Comma).ignore_then(obj_arg.clone()).or_not())
+                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+        )
+        .map_with_span(|(name, config), span| ModelProvider::Groq {
+            model_name: name,
+            config,
+            span: s(span),
+        });
+
     let custom = tok(TokenKind::Custom)
         .ignore_then(
             string_lit() // id
@@ -61,7 +73,7 @@ pub(crate) fn model_provider_parser(
             },
         );
 
-    choice((gemini, openai, custom))
+    choice((gemini, openai, custom,groq))
 }
 
 // ── Prompt Statement ─────────────────────────────────────────────────────

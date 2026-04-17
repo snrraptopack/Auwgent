@@ -9,9 +9,7 @@ const String _HelloAgentIrJson = r'''{
     {
       "defaultConfig": {
         "model": {
-          "type": "custom",
-          "id": "groq-api",
-          "url": "https://api.groq.com/openai/v1",
+          "type": "groq",
           "modelName": "openai/gpt-oss-120b",
           "config": null
         },
@@ -62,12 +60,56 @@ const String _HelloAgentIrJson = r'''{
     }
   ],
   "workflows": [],
-  "helpers": [],
+  "helpers": [
+    {
+      "name": "Joker",
+      "description": "Good at cracking jokes",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "custom",
+              "id": "groq-api",
+              "url": "https://api.groq.com/openai/v1",
+              "modelName": "openai/gpt-oss-120b",
+              "config": null
+            },
+            "embedding": null,
+            "prompt": {
+              "value": "You are a joker try to joke to the user",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "kind": "properties",
+        "fields": {
+          "joker_prompt": {
+            "type": "string",
+            "optional": false
+          }
+        }
+      },
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
+    }
+  ],
   "components": [],
   "types": {
     "Person": {
       "isOutput": false,
       "properties": {
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "age": {
           "type": "number",
           "optional": false,
@@ -76,11 +118,6 @@ const String _HelloAgentIrJson = r'''{
         "location": {
           "type": "string",
           "optional": true,
-          "description": null
-        },
-        "name": {
-          "type": "string",
-          "optional": false,
           "description": null
         }
       },

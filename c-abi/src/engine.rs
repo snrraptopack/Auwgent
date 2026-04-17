@@ -130,6 +130,26 @@ pub extern "C" fn auwgent_engine_set_openai_driver(
     }
 }
 
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_set_groq_driver(
+    handle: *mut EngineHandle,
+    api_key: *const c_char,
+) -> bool {
+    clear_last_error();
+    match with_bridge(handle, |bridge| {
+        let api_key = required_cstr(api_key, "api_key")?;
+        bridge.set_groq_driver(api_key);
+        Ok(())
+    }) {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_set_custom_driver(
     handle: *mut EngineHandle,

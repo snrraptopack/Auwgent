@@ -822,7 +822,10 @@ fn generate_api_keys(
     if providers.contains("openai") {
         keys.push("    openaiApiKey: str".to_string());
     }
-    
+    if providers.contains("groq") {
+        keys.push("    groqApiKey: str".to_string());
+    }
+
     // Generate individual API key fields for each custom provider
     for custom_id in custom_ids {
         let sanitized: String = custom_id

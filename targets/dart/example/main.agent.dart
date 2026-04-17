@@ -414,6 +414,147 @@ final class HelloToolErrorIntent {
   String toString() => 'HelloToolErrorIntent(tool: $tool, message: $message)';
 }
 
+abstract class HelloHelperCallIntent {
+  const HelloHelperCallIntent();
+
+  String get type;
+  Object? get args;
+
+  factory HelloHelperCallIntent.fromJson(sdk.JsonMap json) {
+    final kind = (json['type'] as String?) ?? '';
+    if (kind == 'Joker') {
+      return HelloJokerHelperCallIntentCase.fromJson(json);
+    }
+    return HelloHelperCallIntentUnknown(Map<String, Object?>.from(json));
+  }
+}
+
+abstract class HelloHelperResultIntent {
+  const HelloHelperResultIntent();
+
+  String get name;
+  Object? get args;
+  Object? get result;
+  bool get overridden;
+
+  factory HelloHelperResultIntent.fromJson(sdk.JsonMap json) {
+    final kind = (json['name'] as String?) ?? '';
+    if (kind == 'Joker') {
+      return HelloJokerHelperResultIntentCase.fromJson(json);
+    }
+    return HelloHelperResultIntentUnknown(Map<String, Object?>.from(json));
+  }
+}
+
+final class HelloJokerHelperArgs {
+  const HelloJokerHelperArgs({
+    required this.joker_prompt,
+  });
+
+  final String joker_prompt;
+
+  factory HelloJokerHelperArgs.fromJson(sdk.JsonMap json) {
+    return HelloJokerHelperArgs(
+      joker_prompt: (json['joker_prompt'] as String?) ?? '',
+    );
+  }
+
+  sdk.JsonMap toJson() {
+    return {
+      'joker_prompt': joker_prompt,
+    };
+  }
+
+  @override
+  String toString() => sdk.prettyJson(toJson());
+}
+
+final class HelloJokerHelperCallIntentCase extends HelloHelperCallIntent {
+  const HelloJokerHelperCallIntentCase({
+    required this.args,
+  });
+
+  @override
+  final HelloJokerHelperArgs args;
+
+  @override
+  String get type => 'Joker';
+
+  factory HelloJokerHelperCallIntentCase.fromJson(sdk.JsonMap json) {
+    return HelloJokerHelperCallIntentCase(
+      args: HelloJokerHelperArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
+    );
+  }
+
+  @override
+  String toString() => 'HelloJokerHelperCallIntentCase(type: Joker, args: $args)';
+}
+
+final class HelloJokerHelperResultIntentCase extends HelloHelperResultIntent {
+  const HelloJokerHelperResultIntentCase({
+    required this.args,
+    required this.result,
+    this.overridden = false,
+  });
+
+  @override
+  final HelloJokerHelperArgs args;
+  @override
+  final sdk.NoResult result;
+  @override
+  final bool overridden;
+
+  @override
+  String get name => 'Joker';
+
+  factory HelloJokerHelperResultIntentCase.fromJson(sdk.JsonMap json) {
+    return HelloJokerHelperResultIntentCase(
+      args: HelloJokerHelperArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
+      result: const sdk.NoResult(),
+      overridden: (json['overridden'] as bool?) ?? false,
+    );
+  }
+
+  @override
+  String toString() => 'HelloJokerHelperResultIntentCase(name: Joker, args: $args, result: $result, overridden: $overridden)';
+}
+
+final class HelloHelperCallIntentUnknown extends HelloHelperCallIntent {
+  const HelloHelperCallIntentUnknown(this.raw);
+
+  final sdk.JsonMap raw;
+
+  @override
+  String get type => (raw['type'] as String?) ?? '';
+
+  @override
+  Object? get args => raw['args'];
+
+  @override
+  String toString() => 'HelloHelperCallIntentUnknown(raw: $raw)';
+}
+
+final class HelloHelperResultIntentUnknown extends HelloHelperResultIntent {
+  const HelloHelperResultIntentUnknown(this.raw);
+
+  final sdk.JsonMap raw;
+
+  @override
+  String get name => (raw['name'] as String?) ?? '';
+
+  @override
+  Object? get args => raw['args'];
+
+  @override
+  Object? get result => raw['result'];
+
+  @override
+  bool get overridden => (raw['overridden'] as bool?) ?? false;
+
+  @override
+  String toString() => 'HelloHelperResultIntentUnknown(raw: $raw)';
+}
+
 typedef HelloIntentValue = Object?;
 typedef HelloIntentControl = sdk.IntentControl?;
 typedef HelloIntentHandler = FutureOr<sdk.IntentControl?> Function(String name, Object? value, String agentName);
@@ -427,6 +568,8 @@ abstract class HelloBaseIntentHandler {
   FutureOr<void> toolResult(HelloToolResultIntent intent, String agentName) {}
   FutureOr<void> toolError(HelloToolErrorIntent intent, String agentName) {}
   FutureOr<void> toolSkipped(HelloToolSkippedIntent intent, String agentName) {}
+  FutureOr<void> helperCall(HelloHelperCallIntent intent, String agentName) {}
+  FutureOr<void> helperResult(HelloHelperResultIntent intent, String agentName) {}
 }
 
 abstract class HelloBasePartialIntentHandler {
@@ -437,6 +580,8 @@ abstract class HelloBasePartialIntentHandler {
   FutureOr<void> toolResult(sdk.PartialStructuredIntentValue<HelloToolResultIntent> intent, String agentName) {}
   FutureOr<void> toolError(sdk.PartialStructuredIntentValue<HelloToolErrorIntent> intent, String agentName) {}
   FutureOr<void> toolSkipped(sdk.PartialStructuredIntentValue<HelloToolSkippedIntent> intent, String agentName) {}
+  FutureOr<void> helperCall(sdk.PartialStructuredIntentValue<HelloHelperCallIntent> intent, String agentName) {}
+  FutureOr<void> helperResult(sdk.PartialStructuredIntentValue<HelloHelperResultIntent> intent, String agentName) {}
 }
 
 abstract class HelloMiddleware implements sdk.Middleware {
@@ -470,6 +615,8 @@ abstract class HelloMiddleware implements sdk.Middleware {
   FutureOr<void> toolResult(HelloToolResultIntent intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> toolError(HelloToolErrorIntent intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> toolSkipped(HelloToolSkippedIntent intent, sdk.MiddlewareContext ctx) {}
+  FutureOr<void> helperCall(HelloHelperCallIntent intent, sdk.MiddlewareContext ctx) {}
+  FutureOr<void> helperResult(HelloHelperResultIntent intent, sdk.MiddlewareContext ctx) {}
 
   FutureOr<void> partialResponseText(sdk.PartialTextIntentValue intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> partialResponseSchema(sdk.PartialStructuredIntentValue<HelloResponseSchemaIntent> intent, sdk.MiddlewareContext ctx) {}
@@ -478,6 +625,8 @@ abstract class HelloMiddleware implements sdk.Middleware {
   FutureOr<void> partialToolResult(sdk.PartialStructuredIntentValue<HelloToolResultIntent> intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> partialToolError(sdk.PartialStructuredIntentValue<HelloToolErrorIntent> intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> partialToolSkipped(sdk.PartialStructuredIntentValue<HelloToolSkippedIntent> intent, sdk.MiddlewareContext ctx) {}
+  FutureOr<void> partialHelperCall(sdk.PartialStructuredIntentValue<HelloHelperCallIntent> intent, sdk.MiddlewareContext ctx) {}
+  FutureOr<void> partialHelperResult(sdk.PartialStructuredIntentValue<HelloHelperResultIntent> intent, sdk.MiddlewareContext ctx) {}
   @override
   FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);
 
@@ -489,13 +638,16 @@ abstract class HelloMiddleware implements sdk.Middleware {
 
 final class HelloApiKeys {
   const HelloApiKeys({
+    this.groqApiKey,
     this.groq_apiApiKey,
   });
 
+  final String? groqApiKey;
   final String? groq_apiApiKey;
 
   Map<String, String> toMap() {
     return {
+      if (groqApiKey != null && groqApiKey!.isNotEmpty) 'groqApiKey': groqApiKey!,
       if (groq_apiApiKey != null && groq_apiApiKey!.isNotEmpty) 'groq_apiApiKey': groq_apiApiKey!,
     };
   }
@@ -564,6 +716,12 @@ FutureOr<sdk.IntentControl?> _dispatchIntent(HelloBaseIntentHandler handler, Str
     case 'tool_skipped':
       handler.toolSkipped(HelloToolSkippedIntent.fromJson(value as sdk.JsonMap), agentName);
       return null;
+    case 'helper_call':
+      handler.helperCall(HelloHelperCallIntent.fromJson(value as sdk.JsonMap), agentName);
+      return null;
+    case 'helper_result':
+      handler.helperResult(HelloHelperResultIntent.fromJson(value as sdk.JsonMap), agentName);
+      return null;
     default:
       return null;
   }
@@ -592,6 +750,12 @@ void _dispatchPartialIntent(HelloBasePartialIntentHandler handler, String name, 
     case 'tool_skipped':
       handler.toolSkipped(sdk.PartialStructuredIntentValue<HelloToolSkippedIntent>.fromJson(value as sdk.JsonMap, HelloToolSkippedIntent.fromJson), agentName);
       return;
+    case 'helper_call':
+      handler.helperCall(sdk.PartialStructuredIntentValue<HelloHelperCallIntent>.fromJson(value as sdk.JsonMap, HelloHelperCallIntent.fromJson), agentName);
+      return;
+    case 'helper_result':
+      handler.helperResult(sdk.PartialStructuredIntentValue<HelloHelperResultIntent>.fromJson(value as sdk.JsonMap, HelloHelperResultIntent.fromJson), agentName);
+      return;
     default:
       return;
   }
@@ -618,6 +782,12 @@ FutureOr<sdk.IntentControl?> _dispatchMiddlewareIntent(HelloMiddleware middlewar
       return null;
     case 'tool_skipped':
       middleware.toolSkipped(HelloToolSkippedIntent.fromJson(value as sdk.JsonMap), ctx);
+      return null;
+    case 'helper_call':
+      middleware.helperCall(HelloHelperCallIntent.fromJson(value as sdk.JsonMap), ctx);
+      return null;
+    case 'helper_result':
+      middleware.helperResult(HelloHelperResultIntent.fromJson(value as sdk.JsonMap), ctx);
       return null;
     default:
       return null;
@@ -646,6 +816,12 @@ void _dispatchMiddlewarePartialIntent(HelloMiddleware middleware, String name, O
       return;
     case 'tool_skipped':
       middleware.partialToolSkipped(sdk.PartialStructuredIntentValue<HelloToolSkippedIntent>.fromJson(value as sdk.JsonMap, HelloToolSkippedIntent.fromJson), ctx);
+      return;
+    case 'helper_call':
+      middleware.partialHelperCall(sdk.PartialStructuredIntentValue<HelloHelperCallIntent>.fromJson(value as sdk.JsonMap, HelloHelperCallIntent.fromJson), ctx);
+      return;
+    case 'helper_result':
+      middleware.partialHelperResult(sdk.PartialStructuredIntentValue<HelloHelperResultIntent>.fromJson(value as sdk.JsonMap, HelloHelperResultIntent.fromJson), ctx);
       return;
     default:
       return;
@@ -678,3 +854,5 @@ typedef ToolCall = HelloToolCallIntent;
 typedef ToolResult = HelloToolResultIntent;
 typedef ToolError = HelloToolErrorIntent;
 typedef ToolSkipped = HelloToolSkippedIntent;
+typedef HelperCall = HelloHelperCallIntent;
+typedef HelperResult = HelloHelperResultIntent;

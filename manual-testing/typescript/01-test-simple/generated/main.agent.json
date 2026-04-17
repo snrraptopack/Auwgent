@@ -4,10 +4,8 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "custom",
-          "id": "groq-api",
-          "url": "https://api.groq.com/openai/v1",
-          "modelName": "openai/gpt-oss-120b",
+          "type": "groq",
+          "modelName": "Llama-3.3-70B-Versatile",
           "config": null
         },
         "embedding": null,

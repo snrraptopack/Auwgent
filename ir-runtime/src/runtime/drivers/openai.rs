@@ -122,6 +122,7 @@ impl ModelDriver for OpenAIDriver {
                     if let Some(data) = trimmed.strip_prefix("data: ")
                         && let Ok(json_val) = serde_json::from_str::<Value>(data)
                     {
+
                         if let Some(choices) = json_val.get("choices").and_then(|v| v.as_array())
                             && !choices.is_empty()
                         {

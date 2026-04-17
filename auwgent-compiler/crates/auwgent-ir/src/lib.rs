@@ -200,7 +200,7 @@ fn lower_input(ic: &InputConfig) -> Value {
             if matches!(ty, TypeExpr::String(_) | TypeExpr::Text(_)) {
                 return Value::Null;
             }
-            
+
             json!({
                 "kind": "direct",
                 "type": lower_type_expr_value(ty)
@@ -259,18 +259,18 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: 
         OutputShape::Union(types) => {
             // Check if this is a Text | Object union
             let has_text = types.iter().any(|t| t.value == "Text" || t.value == "string");
-            
+
             if has_text {
                 // Filter out Text from the union
                 let non_text_types: Vec<_> = types.iter()
                     .filter(|t| t.value != "Text" && t.value != "string")
                     .collect();
-                
+
                 if non_text_types.is_empty() {
                     // Only Text in union → return null
                     return Value::Null;
                 }
-                
+
                 // Text | SomeObject → create variants with only the object types
                 let mut variants = Map::new();
                 let mut all_variants_resolved = true;
@@ -290,12 +290,12 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: 
                 if all_variants_resolved && !variants.is_empty() {
                     return json!({ "__variants": variants });
                 }
-                
+
                 // Fallback to union format
                 let names: Vec<Value> = non_text_types.iter().map(|t| json!(t.value)).collect();
                 return json!({ "type": "union", "options": names });
             }
-            
+
             // No Text in union → process normally
             let mut variants = Map::new();
             let mut all_variants_resolved = true;
@@ -645,6 +645,17 @@ fn lower_model_provider(mp: &ModelProvider) -> Value {
         } => {
             let mut obj = Map::new();
             obj.insert("type".into(), json!("openai"));
+            obj.insert("modelName".into(), json!(model_name.value));
+            if let Some(c) = config {
+                obj.insert("config".into(), lower_model_provider_config(c));
+            }
+            Value::Object(obj)
+        }
+        ModelProvider::Groq {
+            model_name, config, ..
+        } => {
+            let mut obj = Map::new();
+            obj.insert("type".into(), json!("groq"));
             obj.insert("modelName".into(), json!(model_name.value));
             if let Some(c) = config {
                 obj.insert("config".into(), lower_model_provider_config(c));
@@ -1384,7 +1395,7 @@ fn lower_intent_decl(decl: &IntentDeclaration) -> Value {
         obj.insert("description".into(), json!(desc.value));
     }
     obj.insert("fields".into(), lower_properties(&decl.fields));
-    
+
     // Examples
     if !decl.examples.is_empty() {
         let examples: Vec<Value> = decl.examples.iter().map(|obj_lit| {
@@ -1392,7 +1403,7 @@ fn lower_intent_decl(decl: &IntentDeclaration) -> Value {
         }).collect();
         obj.insert("examples".into(), Value::Array(examples));
     }
-    
+
     Value::Object(obj)
 }
 
@@ -1545,7 +1556,7 @@ mod tests {
             }
              "#,
          );
- 
+
          assert_eq!(ir["input"], Value::Null);  // input: Text compiles to null
          assert_eq!(ir["output"]["name"]["type"], json!("string"));
         assert_eq!(ir["output"]["age"]["type"], json!("number"));

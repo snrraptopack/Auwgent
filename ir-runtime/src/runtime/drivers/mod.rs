@@ -7,6 +7,8 @@ use crate::runtime::session::Message;
 
 pub mod gemini;
 pub mod openai;
+pub mod groq;
+
 
 use serde::{Deserialize, Serialize};
 

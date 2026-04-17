@@ -1,44 +1,47 @@
 import 'main.agent.dart';
+import "dart:io";
 
-
-final class ML extends AuwgentMiddleware{
-
-  onRunStart(session,ctx){
+final class ML extends AuwgentMiddleware {
+  onRunStart(session, ctx) {
     print("The context $ctx");
     return session;
-  }  
-
+  }
 }
 
-final class Logger extends AuwgentBasePartialIntentHandler{
-
-  responseText(intent,name){
-    return null;
+final class Logger extends AuwgentBasePartialIntentHandler {
+  responseText(intent, name) {
+    stdout.write(intent.delta ?? "");
   }
 
-  
-  responseSchema(intent,name){
-    
-  }
+  responseSchema(intent, name) {}
 }
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
   responseText(intent, agentName) {
     print(intent.text);
-  }
-  
-  responseSchema(intent, agentName) {
-    print('schema intent from $agentName');
-    print(intent.response);
+    print("${intent.text} by $agentName");
   }
 
-  toolCall(intent,agentName){
+  responseSchema(intent, agentName) {
+    print('schema intent from $agentName');
+    print("${intent.response} by ");
+  }
+
+  toolCall(intent, agentName) {
     print(" called ,${intent.args}, name $agentName");
     return null;
   }
 
-  toolResult(intent,agentName){
+  toolResult(intent, agentName) {
     print(" result, ${intent.args}, name $agentName");
+  }
+
+  helperCall(intent, name) {
+    print("called helper ${intent.args} by $name");
+  }
+
+  helperResult(intent, name) {
+    print("result ${intent.result}, by $name");
   }
 }
 
@@ -52,20 +55,22 @@ final class Tools extends AuwgentTools {
   Future<String> getLocation(args) async => "Tarkwa ${args.id}";
 }
 
-
 Future<void> main() async {
   final config = AuwgentConfig(
     apiKeys: AuwgentApiKeys(
-      groq_apiApiKey: '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',
+      groqApiKey:
+          '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',
     ),
     tools: Tools(),
-    middleware: [ML()]
+    middleware: [ML()],
   );
 
   final agent = auwgent(config);
+
   print(agent.generatePrompt());
 
   agent.onIntentHandler(HelloLogger());
+  //agent.onIntentPartialHandler(Logger());
 
   // agent.onIntent((name, value, agentName) {
   //   print('intent: $name');
@@ -74,15 +79,57 @@ Future<void> main() async {
   //   return null;
   // });
 
-  try {
+  final session = await agent.run('Hello tell me a story about ghana');
 
-    final session = await agent.run('Hello there what my name and age and my location, you can call two tools at the same time and wait for their result');
+  print(agent.getMetadata());
 
-    print(agent.getMetadata());
-
-    print("${session.turns}");
-
-  } finally {
-    agent.dispose();
-  }
+  print("${session.turns}");
 }
+
+/**
+ *
+ *   "systemPrompt": null
+}
+called helper {
+  "joker_prompt": "Tell me a joke"
+} by Hello
+Why don&#39;t scientists trust atoms? Because they make up everything!
+Why don&#39;t scientists trust atoms? Because they make up everything! by Hello
+{
+  "aggregate": {
+    "prompt_tokens": 816,
+    "completion_tokens": 323,
+    "total_tokens": 1139
+  },
+  "turns": [
+    {
+      "turn_index": 0,
+      "usage": {
+        "prompt_tokens": 370,
+        "completion_tokens": 112,
+        "total_tokens": 482
+      },
+      "finish_reason": "stop",
+      "model": "openai/gpt-oss-120b"
+    },
+    {
+      "turn_index": 1,
+      "usage": {
+        "prompt_tokens": 446,
+        "completion_tokens": 211,
+        "total_tokens": 657
+      },
+      "finish_reason": "stop",
+      "model": "openai/gpt-oss-120b"
+    }
+  ]
+}
+[{
+  "input": "Hello please tell me a joke",
+  "model_response": "[helper_call: Joker]\njoker_prompt: Tell me a joke\n[/helper]"
+}, {
+  "input": "[result]\nname: helper:Joker\nargs:\n  joker_prompt: Tell me a joke\nresult:\n  result: '[response_text]Why don''t scientists trust atoms? Because they make up everything![/response_text]'\n[/result]",
+  "model_response": "[response_text]Why don&#39;t scientists trust atoms? Because they make up everything![/response_text]"
+}]
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\dart\example>
+ */

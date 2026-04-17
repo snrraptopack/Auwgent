@@ -109,7 +109,7 @@ impl AuwgentEngine {
     pub fn new(ir: AgentIR) -> Self {
         let mut orchestrator = Orchestrator::new();
 
-        // Register standard Auwgent intentsn
+        // Register standard Auwgent intents
         orchestrator.register_intent("tool_call");
         orchestrator.register_intent("workflow_call");
         orchestrator.register_intent("response_schema");
@@ -319,7 +319,7 @@ impl AuwgentEngine {
 
     /// Register a partial intent callback.
     ///
-    /// This fires as <reponse_text> or [block] data streams in, BEFORE the intent block is
+    /// This fires as [reponse_text] or [block] data streams in, BEFORE the intent block is
     /// complete. Useful for:
     /// - Streaming partial `response_text` to the UI as tokens arrive
     /// - Showing tool call args as they're being typed by the LLM
@@ -596,6 +596,8 @@ impl AuwgentEngine {
             if let Some(stack) = initial_stack {
                 session.stack = stack;
             }
+
+
 
             // 3. Set fast-forward focus based on session stack
             // Root agent (index 0) is US, so we skip it for teleportation logic

@@ -268,6 +268,11 @@ pub enum ModelProvider {
         config: Option<ObjectLiteral>,
         span: Span,
     },
+    Groq {
+        model_name: Spanned<String>,
+        config: Option<ObjectLiteral>,
+        span: Span,
+    },
     Custom {
         id: Spanned<String>,
         url: Spanned<String>,

@@ -116,6 +116,8 @@ pub enum TokenKind {
     Gemini,
     #[token("openai")]
     Openai,
+    #[token("groq")]
+    Groq,
     #[token("custom")]
     Custom,
     #[token("maxTokens")]
@@ -298,6 +300,7 @@ impl fmt::Display for TokenKind {
             Self::Provider => write!(f, "'provider'"),
             Self::Gemini => write!(f, "'gemini'"),
             Self::Openai => write!(f, "'openai'"),
+            Self::Groq => write!(f, "'groq'"),
             Self::Custom => write!(f, "'custom'"),
             Self::MaxTokens => write!(f, "'maxTokens'"),
             Self::MaxMessages => write!(f, "'maxMessages'"),

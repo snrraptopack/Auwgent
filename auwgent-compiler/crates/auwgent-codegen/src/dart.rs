@@ -1219,6 +1219,14 @@ fn generate_api_keys(
                 .to_string(),
         );
     }
+    if providers.contains("groq") {
+        fields.push("  final String? groqApiKey;".to_string());
+        map_lines.push(
+            "      if (groqApiKey != null && groqApiKey!.isNotEmpty) 'groqApiKey': groqApiKey!,"
+                .to_string(),
+        );
+    }
+
     for custom_id in custom_ids {
         let field_name = format!("{}ApiKey", sanitize_identifier(custom_id, true));
         fields.push(format!("  final String? {field_name};"));

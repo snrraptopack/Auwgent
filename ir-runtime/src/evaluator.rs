@@ -684,6 +684,23 @@ impl<'a> Evaluator<'a> {
 
                 Ok(Value::Object(res))
             }
+            crate::types::ModelProvider::Groq { model_name, config } => {
+                let mut res = serde_json::Map::new();
+                res.insert("provider".to_string(), Value::String("groq".to_string()));
+                res.insert(
+                    "url".to_string(),
+                    Value::String("https://api.groq.com/openai/v1".to_string()),
+                );
+                res.insert("modelName".to_string(), Value::String(model_name.clone()));
+
+                if let Some(expr) = config {
+                    let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
+                    let evaluated_config = self.evaluate(&parsed, scope)?;
+                    res.insert("config".to_string(), evaluated_config);
+                }
+
+                Ok(Value::Object(res))
+            }
             crate::types::ModelProvider::Custom {
                 id,
                 url,

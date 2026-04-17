@@ -157,6 +157,11 @@ class TypedAuwgent<IR extends JsonMap> {
       native.setOpenaiDriver(openaiKey);
     }
 
+    final groqKey = apiKeys['groqApiKey'];
+    if (groqKey != null && groqKey.isNotEmpty) {
+      native.setGroqDriver(groqKey);
+    }
+
     final modelConfig = ir['modelConfig'];
     if (modelConfig is List) {
       for (final entry in modelConfig.whereType<Map>()) {

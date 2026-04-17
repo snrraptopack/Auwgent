@@ -96,6 +96,10 @@ export class TypedAuwgent<
             this.native.setOpenaiDriver(apiKeys.openaiApiKey);
         }
 
+      if (apiKeys?.groqApiKey) {
+            this.native.setGroqDriver(apiKeys.groqApiKey);
+        }
+
         // Register custom drivers from IR
         this.registerCustomDrivers(apiKeys);
 
