@@ -997,14 +997,6 @@ impl AuwgentEngine {
                 model: model_name.to_string(),
             };
 
-            {
-                let mut meta_lock = self.last_run_metadata.lock().unwrap();
-                meta_lock.aggregate.prompt_tokens += turn_usage.prompt_tokens;
-                meta_lock.aggregate.completion_tokens += turn_usage.completion_tokens;
-                meta_lock.aggregate.total_tokens += turn_usage.total_tokens;
-                meta_lock.turns.push(turn_metadata.clone());
-            }
-
             // Finalize parsing
             let _final_val = self.orchestrator.lock().unwrap().end();
 
@@ -1075,6 +1067,16 @@ impl AuwgentEngine {
             }
             if !should_retry_empty {
                 empty_completion_retries = 0;
+            }
+
+            {
+                let mut meta_lock = self.last_run_metadata.lock().unwrap();
+                meta_lock.aggregate.prompt_tokens += turn_usage.prompt_tokens;
+                meta_lock.aggregate.completion_tokens += turn_usage.completion_tokens;
+                meta_lock.aggregate.total_tokens += turn_usage.total_tokens;
+                meta_lock.aggregate.reasoning_tokens += turn_usage.reasoning_tokens;
+                meta_lock.aggregate.cached_tokens += turn_usage.cached_tokens;
+                meta_lock.turns.push(turn_metadata.clone());
             }
 
             // Decide if we loop or stop

@@ -15,7 +15,7 @@ agent Hello{
     }
 
 
-    tool get_details():string @desc "use this to get the deatails of the user"
+    tool get_details():Person @desc "use this to get the deatails of the user"
     tool get_location(id:string):string @desc "use this to ge location"
 
     output : Person

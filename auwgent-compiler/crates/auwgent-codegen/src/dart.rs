@@ -446,9 +446,9 @@ fn decode_field_expr(prop_name: &str, prop_info: &Value, optional: bool) -> Stri
     match type_to_dart_string(Some(prop_info), false, "Object?").as_str() {
         "String" => {
             if optional {
-                format!("{access} as String?")
+                format!("{access}?.toString()")
             } else {
-                format!("({access} as String?) ?? ''")
+                format!("({access})?.toString() ?? ''")
             }
         }
         "int" => {
@@ -892,7 +892,7 @@ fn decode_named_shape_expr(
     match type_to_dart_string(value, false, "Object?").as_str() {
         "sdk.NoArgs" => "const sdk.NoArgs()".to_string(),
         "sdk.NoResult" => "const sdk.NoResult()".to_string(),
-        "String" => format!("({access_expr} as String?) ?? ''"),
+        "String" => format!("({access_expr})?.toString() ?? ''"),
         "int" => format!("(({access_expr} as num?)?.toInt()) ?? 0"),
         "double" => format!("(({access_expr} as num?)?.toDouble()) ?? 0"),
         "bool" => format!("({access_expr} as bool?) ?? false"),
@@ -944,7 +944,7 @@ fn decode_named_shape_expr_optional(
     }
 
     match type_to_dart_string(value, false, "Object?").as_str() {
-        "String" => format!("{access_expr} as String?"),
+        "String" => format!("{access_expr}?.toString()"),
         "int" => format!("({access_expr} as num?)?.toInt()"),
         "double" => format!("({access_expr} as num?)?.toDouble()"),
         "bool" => format!("{access_expr} as bool?"),
@@ -2147,5 +2147,39 @@ mod tests {
         assert!(output.contains("sdk.NoArgs get args => const sdk.NoArgs();"));
         assert!(output.contains("return const HelloGetDetailsToolCallIntentCase();"));
         assert!(!output.contains("final class HelloGetDetailsToolArgs"));
+    }
+
+    #[test]
+    fn emits_string_decoders_that_coerce_scalars_via_to_string() {
+        let ir = json!({
+            "name": "Hello",
+            "input": null,
+            "output": {
+                "name": {
+                    "type": "string",
+                    "optional": false
+                }
+            },
+            "context": null,
+            "tools": [{
+                "name": "get_location",
+                "params": {
+                    "id": {
+                        "type": "string",
+                        "optional": false
+                    }
+                },
+                "returns": "string"
+            }],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "modelConfig": []
+        });
+
+        let output = generate(&ir, "hello");
+        assert!(output.contains("id: (json['id'])?.toString() ?? ''"));
+        assert!(output.contains("result: (json['result'])?.toString() ?? ''"));
+        assert!(output.contains("name: (json['name'])?.toString() ?? ''"));
     }
 }

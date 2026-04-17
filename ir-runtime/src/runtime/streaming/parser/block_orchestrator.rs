@@ -190,7 +190,8 @@ impl BlockOrchestrator {
 
         if blocks.is_empty() {
             // Fallback: treat entire buffer as implicit chat
-            let trimmed = self.buffer.trim();
+            let sanitized = strip_protocol_fragments(&self.buffer);
+            let trimmed = sanitized.trim();
             if !trimmed.is_empty()
                 && self.intent_keys.contains("response_text")
                 && !is_incomplete_response_text_open(trimmed)
@@ -213,11 +214,12 @@ impl BlockOrchestrator {
         for (block_index, block) in blocks.iter().enumerate() {
             match &block.block_type {
                 BlockType::Chat => {
-                    if !block.content.is_empty() {
+                    let sanitized = strip_protocol_fragments(&block.content);
+                    if !sanitized.is_empty() {
                         let intent = if is_final {
-                            serde_json::json!({ "text": block.content })
+                            serde_json::json!({ "text": sanitized })
                         } else {
-                            build_partial_text_payload(&block.content, block_index)
+                            build_partial_text_payload(&sanitized, block_index)
                         };
 
                         if terminal_types.contains("response_text") {
@@ -681,30 +683,132 @@ fn is_incomplete_response_text_open(input: &str) -> bool {
 
 fn is_incomplete_protocol_header(input: &str) -> bool {
     const HEADER_PREFIXES: &[&str] = &[
+        "[response_text",
         "[response_text]",
+        "[/response_text",
         "[/response_text]",
+        "[tool_call",
         "[tool_call:",
+        "[/tool",
         "[/tool]",
+        "[workflow_call",
         "[workflow_call:",
+        "[/workflow",
         "[/workflow]",
+        "[helper_call",
         "[helper_call:",
+        "[/helper",
         "[/helper]",
+        "[component",
         "[component:",
+        "[/component",
         "[/component]",
+        "[render_component",
         "[render_component]",
+        "[/render_component",
         "[/render_component]",
+        "[schema",
         "[schema:",
+        "[/schema",
         "[/schema]",
+        "[custom",
         "[custom:",
+        "[/custom",
         "[/custom]",
+        "[result",
         "[result]",
+        "[/result",
         "[/result]",
+        "[error",
         "[error]",
+        "[/error",
         "[/error]",
     ];
 
     let trimmed = input.trim_start();
     !trimmed.is_empty() && HEADER_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
+}
+
+fn strip_protocol_fragments(input: &str) -> String {
+    const FRAGMENTS: &[&str] = &[
+        "[/render_component",
+        "[render_component",
+        "[/response_text",
+        "[response_text",
+        "[/workflow_call",
+        "[workflow_call",
+        "[/helper_call",
+        "[helper_call",
+        "[/component",
+        "[component",
+        "[/tool_call",
+        "[tool_call",
+        "[/workflow",
+        "[workflow",
+        "[/response",
+        "[/helper",
+        "[helper",
+        "[/schema",
+        "[schema",
+        "[/result",
+        "[result",
+        "[/custom",
+        "[custom",
+        "[/error",
+        "[error",
+        "[/tool",
+        "[tool",
+    ];
+
+    let mut out = String::with_capacity(input.len());
+    let mut cursor = 0;
+
+    while cursor < input.len() {
+        let rest = &input[cursor..];
+        if let Some(fragment) = FRAGMENTS.iter().find(|fragment| rest.starts_with(**fragment)) {
+            cursor += protocol_fragment_skip_len(rest, fragment);
+            continue;
+        }
+
+        if let Some(ch) = rest.chars().next() {
+            out.push(ch);
+            cursor += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    out
+}
+
+fn protocol_fragment_skip_len(rest: &str, fragment: &str) -> usize {
+    let mut consumed = fragment.len();
+    let tail = &rest[fragment.len()..];
+
+    // Bare prefixes such as `[tool_callAwaiting...` should only strip the prefix
+    // so ordinary text that follows without a real header separator is preserved.
+    let Some(first) = tail.chars().next() else {
+        return consumed;
+    };
+
+    let is_header_tail = matches!(first, ':' | ']' | '\n' | '\r' | ' ' | '\t');
+    if !is_header_tail {
+        return consumed;
+    }
+
+    for ch in tail.chars() {
+        if ch == '[' {
+            break;
+        }
+
+        consumed += ch.len_utf8();
+
+        if matches!(ch, ']' | '\n' | '\r') {
+            break;
+        }
+    }
+
+    consumed
 }
 
 fn build_partial_text_payload(text: &str, segment: usize) -> Value {
@@ -1288,6 +1392,88 @@ mod tests {
             emitted_during_streaming.is_empty(),
             "Incomplete tool headers should not leak into response_text partials: {:?}",
             emitted_during_streaming
+        );
+    }
+
+    #[test]
+    fn bare_incomplete_protocol_prefix_is_not_emitted_as_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call");
+        orch.write("[schema");
+
+        let emitted_during_streaming = emitted.lock().unwrap().clone();
+        assert!(
+            emitted_during_streaming.is_empty(),
+            "Bare incomplete protocol prefixes should not leak into response_text partials: {:?}",
+            emitted_during_streaming
+        );
+    }
+
+    #[test]
+    fn mixed_protocol_fragments_are_stripped_from_partial_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let partials = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let partials_for_handler = Arc::clone(&partials);
+        orch.on_intent_partial(Arc::new(move |name, value| {
+            partials_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call[tool_callAwaiting location result...[tool_call[schema");
+
+        let partials = partials.lock().unwrap().clone();
+        assert_eq!(partials.len(), 1);
+        assert_eq!(partials[0].0, "response_text");
+        assert_eq!(
+            partials[0].1["text"].as_str().unwrap(),
+            "Awaiting location result..."
+        );
+    }
+
+    #[test]
+    fn malformed_named_tool_headers_do_not_leak_header_tail_into_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let partials = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let partials_for_handler = Arc::clone(&partials);
+        orch.on_intent_partial(Arc::new(move |name, value| {
+            partials_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: get_details][tool_call: get_location]");
+
+        let partials = partials.lock().unwrap().clone();
+        assert!(
+            partials.is_empty(),
+            "Malformed named tool headers should not leak as response_text partials: {:?}",
+            partials
+        );
+    }
+
+    #[test]
+    fn malformed_schema_header_does_not_leak_header_tail_into_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let partials = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let partials_for_handler = Arc::clone(&partials);
+        orch.on_intent_partial(Arc::new(move |name, value| {
+            partials_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[schema: Output");
+
+        let partials = partials.lock().unwrap().clone();
+        assert!(
+            partials.is_empty(),
+            "Malformed schema header tails should not leak as response_text partials: {:?}",
+            partials
         );
     }
 

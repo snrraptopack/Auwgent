@@ -20,9 +20,9 @@ final class HelloOutput {
 
   factory HelloOutput.fromJson(sdk.JsonMap json) {
     return HelloOutput(
-      name: (json['name'] as String?) ?? '',
+      name: (json['name'])?.toString() ?? '',
       age: ((json['age'] as num?)?.toDouble()) ?? 0,
-      location: json['location'] as String?,
+      location: json['location']?.toString(),
     );
   }
 
@@ -166,7 +166,7 @@ abstract class HelloToolResultIntent {
   }
 }
 
-typedef HelloGetDetailsToolResultValue = String;
+typedef HelloGetDetailsToolResultValue = Person;
 
 final class HelloGetDetailsToolCallIntentCase extends HelloToolCallIntent {
   const HelloGetDetailsToolCallIntentCase();
@@ -203,7 +203,7 @@ final class HelloGetDetailsToolResultIntentCase extends HelloToolResultIntent {
 
   factory HelloGetDetailsToolResultIntentCase.fromJson(sdk.JsonMap json) {
     return HelloGetDetailsToolResultIntentCase(
-      result: (json['result'] as String?) ?? '',
+      result: json['result'] as Person,
       overridden: (json['overridden'] as bool?) ?? false,
     );
   }
@@ -238,7 +238,7 @@ final class HelloGetLocationToolArgs {
 
   factory HelloGetLocationToolArgs.fromJson(sdk.JsonMap json) {
     return HelloGetLocationToolArgs(
-      id: (json['id'] as String?) ?? '',
+      id: (json['id'])?.toString() ?? '',
     );
   }
 
@@ -295,7 +295,7 @@ final class HelloGetLocationToolResultIntentCase extends HelloToolResultIntent {
   factory HelloGetLocationToolResultIntentCase.fromJson(sdk.JsonMap json) {
     return HelloGetLocationToolResultIntentCase(
       args: HelloGetLocationToolArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
-      result: (json['result'] as String?) ?? '',
+      result: (json['result'])?.toString() ?? '',
       overridden: (json['overridden'] as bool?) ?? false,
     );
   }
@@ -455,7 +455,7 @@ final class HelloJokerHelperArgs {
 
   factory HelloJokerHelperArgs.fromJson(sdk.JsonMap json) {
     return HelloJokerHelperArgs(
-      joker_prompt: (json['joker_prompt'] as String?) ?? '',
+      joker_prompt: (json['joker_prompt'])?.toString() ?? '',
     );
   }
 

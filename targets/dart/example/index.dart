@@ -49,7 +49,10 @@ final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<String> getDetails() async => "Theo, 999";
+  Future<Person> getDetails() async => {
+        'name': 'Theo',
+        'age': 25,
+      };
 
   @override
   Future<String> getLocation(args) async => "Tarkwa ${args.id}";

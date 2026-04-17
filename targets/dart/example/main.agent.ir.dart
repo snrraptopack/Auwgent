@@ -43,7 +43,10 @@ const String _HelloAgentIrJson = r'''{
       "name": "get_details",
       "description": "use this to get the deatails of the user",
       "params": {},
-      "returns": "string",
+      "returns": {
+        "type": "typeRef",
+        "name": "Person"
+      },
       "examples": []
     },
     {
@@ -108,14 +111,14 @@ const String _HelloAgentIrJson = r'''{
           "optional": false,
           "description": null
         },
-        "location": {
-          "type": "string",
-          "optional": true,
-          "description": null
-        },
         "age": {
           "type": "number",
           "optional": false,
+          "description": null
+        },
+        "location": {
+          "type": "string",
+          "optional": true,
           "description": null
         }
       },
