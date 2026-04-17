@@ -90,6 +90,22 @@ pub fn collect_custom_provider_ids(ir: &Value) -> BTreeSet<String> {
         custom_ids.extend(collect_custom_ids_from_model_config(helper.get("modelConfig")));
     }
     custom_ids
+        .into_iter()
+        .filter(|id| !is_builtin_provider_alias(id))
+        .collect()
+}
+
+fn is_builtin_provider_alias(id: &str) -> bool {
+    let normalized: String = id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect();
+
+    matches!(
+        normalized.as_str(),
+        "gemini" | "geminiapi" | "openai" | "openaiapi" | "groq" | "groqapi"
+    )
 }
 
 fn collect_providers_from_model_config(model_config: Option<&Value>) -> BTreeSet<String> {
@@ -231,5 +247,46 @@ fn collect_transfer_targets_from_statements(statements: Option<&Value>, found: &
             collect_transfer_targets_from_statements(statement.get("then"), found);
             collect_transfer_targets_from_statements(statement.get("else"), found);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn filters_builtin_provider_aliases_from_custom_ids() {
+        let ir = json!({
+            "modelConfig": [
+                {
+                    "defaultConfig": {
+                        "model": {
+                            "type": "custom",
+                            "id": "groq-api"
+                        }
+                    }
+                }
+            ],
+            "helpers": [
+                {
+                    "modelConfig": [
+                        {
+                            "defaultConfig": {
+                                "model": {
+                                    "type": "custom",
+                                    "id": "my-groq"
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let custom_ids = collect_custom_provider_ids(&ir);
+
+        assert!(!custom_ids.contains("groq-api"));
+        assert!(custom_ids.contains("my-groq"));
     }
 }

@@ -42,6 +42,20 @@ impl StructuredOutputEvent {
         }
     }
 
+    pub fn partial_intent(seq: u64, agent: String, name: String, payload: Value) -> Self {
+        Self {
+            seq,
+            ts_ms: now_ms(),
+            event: "partial_intent".to_string(),
+            phase: StructuredOutputPhase::Partial,
+            agent,
+            name: Some(name),
+            payload: Some(payload),
+            done: None,
+            error: None,
+        }
+    }
+
     pub fn lifecycle_start(seq: u64, agent: String) -> Self {
         Self {
             seq,

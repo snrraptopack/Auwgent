@@ -639,16 +639,13 @@ abstract class HelloMiddleware implements sdk.Middleware {
 final class HelloApiKeys {
   const HelloApiKeys({
     this.groqApiKey,
-    this.groq_apiApiKey,
   });
 
   final String? groqApiKey;
-  final String? groq_apiApiKey;
 
   Map<String, String> toMap() {
     return {
       if (groqApiKey != null && groqApiKey!.isNotEmpty) 'groqApiKey': groqApiKey!,
-      if (groq_apiApiKey != null && groq_apiApiKey!.isNotEmpty) 'groq_apiApiKey': groq_apiApiKey!,
     };
   }
 }

@@ -194,6 +194,7 @@ impl BlockOrchestrator {
             if !trimmed.is_empty()
                 && self.intent_keys.contains("response_text")
                 && !is_incomplete_response_text_open(trimmed)
+                && !is_incomplete_protocol_header(trimmed)
             {
                 let intent = serde_json::json!({ "text": trimmed });
                 self.emit_intent("response_text", intent, is_final, true);
@@ -676,6 +677,34 @@ fn is_incomplete_response_text_open(input: &str) -> bool {
     !trimmed.is_empty()
         && trimmed.len() < OPEN_TAG.len()
         && OPEN_TAG.starts_with(trimmed)
+}
+
+fn is_incomplete_protocol_header(input: &str) -> bool {
+    const HEADER_PREFIXES: &[&str] = &[
+        "[response_text]",
+        "[/response_text]",
+        "[tool_call:",
+        "[/tool]",
+        "[workflow_call:",
+        "[/workflow]",
+        "[helper_call:",
+        "[/helper]",
+        "[component:",
+        "[/component]",
+        "[render_component]",
+        "[/render_component]",
+        "[schema:",
+        "[/schema]",
+        "[custom:",
+        "[/custom]",
+        "[result]",
+        "[/result]",
+        "[error]",
+        "[/error]",
+    ];
+
+    let trimmed = input.trim_start();
+    !trimmed.is_empty() && HEADER_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
 }
 
 fn build_partial_text_payload(text: &str, segment: usize) -> Value {
@@ -1240,6 +1269,26 @@ mod tests {
         assert_eq!(final_emitted.len(), 1);
         assert_eq!(final_emitted[0].0, "response_text");
         assert_eq!(final_emitted[0].1["text"].as_str().unwrap(), "Hello world!");
+    }
+
+    #[test]
+    fn incomplete_tool_header_is_not_emitted_as_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: get_details");
+
+        let emitted_during_streaming = emitted.lock().unwrap().clone();
+        assert!(
+            emitted_during_streaming.is_empty(),
+            "Incomplete tool headers should not leak into response_text partials: {:?}",
+            emitted_during_streaming
+        );
     }
 
     #[test]

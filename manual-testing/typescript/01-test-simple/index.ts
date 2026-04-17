@@ -34,7 +34,7 @@ agent.onIntent((intent, value, name) => {
 })
 
 const session = await agent.run(`
- I need you to execute a system diagnostic workflow. First, use search_web to look up 'Latest TypeScript version'. Second, get the weather summary for 'San Francisco' in celsius. Third, run a shell command saying 'echo diagnostic complete' in '/tmp'. Fourth, write that exact shell command output to a file located at '/tmp/log.txt'. Fifth, create a high-priority to-do due on '2024-05-30' titled 'System Diagnostic Complete'. Finally, send an email to 'admin@example.com' with the subject 'Diagnostic Logs' and the body matching the completed status. make sure your steps are logical, dont call a tool when you know it not time to use it, dont come up with your own tool results
+ I need you to execute a system diagnostic workflow. First, use search_web to look up 'Latest TypeScript version'. Second, get the weather summary for 'San Francisco' in celsius. Third, run a shell command saying 'echo diagnostic complete' in '/tmp'. Fourth, write that exact shell command output to a file located at '/tmp/log.txt'. Fifth, create a high-priority to-do due on '2024-05-30' titled 'System Diagnostic Complete'. Finally, send an email to 'admin@example.com' with the subject 'Diagnostic Logs' and the body matching the completed status. make sure your steps are logical, dont call a tool when you know it not time to use it, dont come up with your own tool results,you can run more than one tool in single turn
 `)
 console.log(JSON.stringify(agent.getMetadata(), null, 2))
 console.log(JSON.stringify(session.turns, null, 2))

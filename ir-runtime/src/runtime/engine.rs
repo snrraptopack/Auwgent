@@ -108,6 +108,11 @@ pub struct AuwgentEngine {
 impl AuwgentEngine {
     pub fn new(ir: AgentIR) -> Self {
         let mut orchestrator = Orchestrator::new();
+        let streaming_partials = Arc::new(Mutex::new(PartialIntentState::default()));
+        let streaming_jsonl = Arc::new(Mutex::new(JsonlEventBuffer::default()));
+        let partial_intent_handler: Arc<
+            Mutex<Option<Arc<dyn Fn(String, Value, String) + Send + Sync>>>,
+        > = Arc::new(Mutex::new(None));
 
         // Register standard Auwgent intents
         orchestrator.register_intent("tool_call");
@@ -174,6 +179,51 @@ impl AuwgentEngine {
             }
         }));
 
+        let partial_state_for_handler = Arc::clone(&streaming_partials);
+        let jsonl_for_handler = Arc::clone(&streaming_jsonl);
+        let partial_handler_for_handler = Arc::clone(&partial_intent_handler);
+        let agent_name_for_handler = ir.name.clone();
+        orchestrator.on_intent_partial(Arc::new(move |name, value| {
+            let value = if name == "response_text" {
+                if let Some(text) = value.get("text").and_then(Value::as_str) {
+                    let segment = value.get("segment").and_then(Value::as_u64).unwrap_or(0);
+                    let delta = partial_state_for_handler
+                        .lock()
+                        .map(|mut state| {
+                            state.response_text_delta(&agent_name_for_handler, &name, segment, text)
+                        })
+                        .unwrap_or_else(|_| text.to_string());
+                    let mut updated = value.clone();
+                    if let Value::Object(ref mut map) = updated {
+                        map.insert("delta".to_string(), Value::String(delta));
+                    }
+                    updated
+                } else {
+                    value
+                }
+            } else {
+                value
+            };
+
+            if let Ok(mut buffer) = jsonl_for_handler.lock() {
+                let seq = buffer.next_seq();
+                buffer.push_event(StructuredOutputEvent::partial_intent(
+                    seq,
+                    agent_name_for_handler.clone(),
+                    name.clone(),
+                    value.clone(),
+                ));
+            }
+
+            if let Some(handler) = partial_handler_for_handler
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone())
+            {
+                handler(name, value, agent_name_for_handler.clone());
+            }
+        }));
+
         Self {
             ir,
             session: Arc::new(Mutex::new(SessionState::new())),
@@ -182,13 +232,13 @@ impl AuwgentEngine {
             drivers: Arc::new(Mutex::new(HashMap::new())),
             context: Arc::new(Mutex::new(None)),
             pending_intents,
-            streaming_partials: Arc::new(Mutex::new(PartialIntentState::default())),
-            streaming_jsonl: Arc::new(Mutex::new(JsonlEventBuffer::default())),
+            streaming_partials,
+            streaming_jsonl,
             pending_tool_results: Arc::new(Mutex::new(Vec::new())),
             current_raw_response: Arc::new(Mutex::new(String::new())),
             last_turn_response_value: Arc::new(Mutex::new(Value::Null)),
             intent_handler: Arc::new(Mutex::new(None)),
-            partial_intent_handler: Arc::new(Mutex::new(None)),
+            partial_intent_handler,
             session_preload_handler: Arc::new(Mutex::new(None)),
             session_save_handler: Arc::new(Mutex::new(None)),
             llm_start_handler: Arc::new(Mutex::new(None)),
@@ -327,52 +377,12 @@ impl AuwgentEngine {
     ///
     /// Register a partial intent callback.
     pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
-        // Wire into the orchestrator's partial handler
-        let user_handler = handler.clone();
-        let partial_state = Arc::clone(&self.streaming_partials);
-        let agent_name = self.ir.name.clone();
-
-        self.orchestrator
-            .lock()
-            .unwrap()
-            .on_intent_partial(Arc::new(move |name, value| {
-                let value = if name == "response_text" {
-                    if let Some(text) = value
-                        .get("text")
-                        .and_then(Value::as_str)
-                    {
-                        let segment = value
-                            .get("segment")
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0);
-                        let delta = partial_state
-                            .lock()
-                            .map(|mut state| {
-                                state.response_text_delta(&agent_name, &name, segment, text)
-                            })
-                            .unwrap_or_else(|_| text.to_string());
-                        let mut updated = value.clone();
-                        if let Value::Object(ref mut map) = updated {
-                            map.insert("delta".to_string(), Value::String(delta));
-                        }
-                        updated
-                    } else {
-                        value
-                    }
-                } else {
-                    value
-                };
-
-                // Call user handler with current agent name
-                user_handler(name, value, agent_name.clone());
-            }));
         *self.partial_intent_handler.lock().unwrap() = Some(handler);
     }
 
     pub fn clear_intent_handlers(&self) {
         *self.intent_handler.lock().unwrap() = None;
         *self.partial_intent_handler.lock().unwrap() = None;
-        self.orchestrator.lock().unwrap().on_intent_partial(Arc::new(|_, _| {}));
     }
 
     pub fn clear_sub_engine_handlers(&self) {
@@ -661,7 +671,7 @@ impl AuwgentEngine {
         let config_params = model_info.get("config").cloned();
 
         // 2. Generate system prompt and set it on the session
-        let system_prompt = self.generate_prompt(None)?;
+        let mut system_prompt = self.generate_prompt(None)?;
         self.session
             .lock()
             .unwrap()
@@ -682,6 +692,8 @@ impl AuwgentEngine {
         }
 
         let run_start_handler = self.run_start_handler.lock().unwrap().clone();
+        let should_regenerate_prompt =
+            run_start_handler.is_some() || self.middleware_event_handler.lock().unwrap().is_some();
         if let Some(h) = run_start_handler {
             let session_json = self.export_session()?;
             let context_json = self.serialize_host_context()?;
@@ -691,14 +703,14 @@ impl AuwgentEngine {
             }
         }
 
-        // Regenerate the system prompt now that run_start middleware has had a chance
-        // to call setContext(). This ensures any context injected during onRunStart
-        // is reflected in the current run's system prompt, not just the next one.
-        let system_prompt = self.generate_prompt(None)?;
-        self.session
-            .lock()
-            .unwrap()
-            .set_system_prompt(&system_prompt);
+        // Regenerate only when a native run-start hook could have mutated context/session.
+        if should_regenerate_prompt {
+            system_prompt = self.generate_prompt(None)?;
+            self.session
+                .lock()
+                .unwrap()
+                .set_system_prompt(&system_prompt);
+        }
 
         // 3. Build the initial user input
         let initial_user_input = match input.as_ref() {

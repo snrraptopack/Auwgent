@@ -147,12 +147,16 @@ impl ModelDriver for GeminiDriver {
                                         let prompt_tokens = usage["promptTokenCount"].as_u64().unwrap_or(0) as u32;
                                         let completion_tokens = usage["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
                                         let total_tokens = usage["totalTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let cached_tokens = usage["cachedTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let reasoning_tokens = usage["thoughtsTokenCount"].as_u64().unwrap_or(0) as u32;
 
                                         result_events.push(crate::runtime::drivers::ModelEvent::Metadata(crate::runtime::drivers::ModelMetadata {
                                             usage: crate::runtime::drivers::TokenUsage {
                                                 prompt_tokens,
                                                 completion_tokens,
                                                 total_tokens,
+                                                reasoning_tokens,
+                                                cached_tokens,
                                             },
                                             finish_reason,
                                         }));

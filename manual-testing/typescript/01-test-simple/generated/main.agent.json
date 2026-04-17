@@ -5,7 +5,7 @@
       "defaultConfig": {
         "model": {
           "type": "groq",
-          "modelName": "Llama-3.3-70B-Versatile",
+          "modelName": "openai/gpt-oss-120b",
           "config": null
         },
         "embedding": null,

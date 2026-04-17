@@ -69,8 +69,8 @@ Future<void> main() async {
 
   print(agent.generatePrompt());
 
-  agent.onIntentHandler(HelloLogger());
-  //agent.onIntentPartialHandler(Logger());
+  //agent.onIntentHandler(HelloLogger());
+  agent.onIntentPartialHandler(Logger());
 
   // agent.onIntent((name, value, agentName) {
   //   print('intent: $name');
@@ -79,11 +79,15 @@ Future<void> main() async {
   //   return null;
   // });
 
-  final session = await agent.run('Hello tell me a story about ghana');
+  try {
+    final session = await agent.run('Hello get my name and my location with id 10');
 
-  print(agent.getMetadata());
+    print(agent.getMetadata());
 
-  print("${session.turns}");
+    print("${session.turns}");
+  } finally {
+    agent.dispose();
+  }
 }
 
 /**

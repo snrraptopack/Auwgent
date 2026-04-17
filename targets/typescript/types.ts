@@ -196,7 +196,7 @@ type ExtractHelperInput<H> =
 type ExtractHelperOutput<H> =
     H extends { output: infer O } ? ResolveShape<O, { text: string }> : { text: string };
 
-/** 
+/**
  * Collects all possible output shapes from the root agent AND all its helpers.
  * Used to ensure `response_schema` autocompletion works for everything.
  */
@@ -460,7 +460,7 @@ export type AuwgentModelValue<
 > =
     Extract<AuwgentModelIntent<IR, Custom, Output, Tools>, { name: AuwgentModelIntent<IR, Custom, Output, Tools>['name'] }>['value'];
 
-/** 
+/**
  * Narrowed response value for a specific target agent.
  * If target is the root agent, returns full Output-aware value.
  * If target is a helper, returns helper's specific output or {text: string}.
@@ -563,13 +563,15 @@ export interface TokenUsage {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    reasoning_tokens: number;
+    cached_tokens: number;
 }
 
-export type FinishReason = 
-    | 'stop' 
-    | 'length' 
-    | 'tool_calls' 
-    | 'content_filter' 
+export type FinishReason =
+    | 'stop'
+    | 'length'
+    | 'tool_calls'
+    | 'content_filter'
     | { other: string };
 
 export interface TurnMetadata {
@@ -583,6 +585,8 @@ export interface AggregateUsage {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    reasoning_tokens: number;
+    cached_tokens: number;
 }
 
 export interface RunMetadata {

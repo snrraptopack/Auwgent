@@ -93,17 +93,23 @@ final class TokenUsage {
     required this.promptTokens,
     required this.completionTokens,
     required this.totalTokens,
+    required this.reasoningTokens,
+    required this.cachedTokens,
   });
 
   final int promptTokens;
   final int completionTokens;
   final int totalTokens;
+  final int reasoningTokens;
+  final int cachedTokens;
 
   factory TokenUsage.fromJson(JsonMap json) {
     return TokenUsage(
       promptTokens: ((json['prompt_tokens'] as num?)?.toInt()) ?? 0,
       completionTokens: ((json['completion_tokens'] as num?)?.toInt()) ?? 0,
       totalTokens: ((json['total_tokens'] as num?)?.toInt()) ?? 0,
+      reasoningTokens: ((json['reasoning_tokens'] as num?)?.toInt()) ?? 0,
+      cachedTokens: ((json['cached_tokens'] as num?)?.toInt()) ?? 0,
     );
   }
 
@@ -111,6 +117,8 @@ final class TokenUsage {
     'prompt_tokens': promptTokens,
     'completion_tokens': completionTokens,
     'total_tokens': totalTokens,
+    'reasoning_tokens': reasoningTokens,
+    'cached_tokens': cachedTokens,
   };
 
   @override
@@ -226,17 +234,23 @@ final class AggregateUsage {
     required this.promptTokens,
     required this.completionTokens,
     required this.totalTokens,
+    required this.reasoningTokens,
+    required this.cachedTokens,
   });
 
   final int promptTokens;
   final int completionTokens;
   final int totalTokens;
+  final int reasoningTokens;
+  final int cachedTokens;
 
   factory AggregateUsage.fromJson(JsonMap json) {
     return AggregateUsage(
       promptTokens: ((json['prompt_tokens'] as num?)?.toInt()) ?? 0,
       completionTokens: ((json['completion_tokens'] as num?)?.toInt()) ?? 0,
       totalTokens: ((json['total_tokens'] as num?)?.toInt()) ?? 0,
+      reasoningTokens: ((json['reasoning_tokens'] as num?)?.toInt()) ?? 0,
+      cachedTokens: ((json['cached_tokens'] as num?)?.toInt()) ?? 0,
     );
   }
 
@@ -244,6 +258,8 @@ final class AggregateUsage {
     'prompt_tokens': promptTokens,
     'completion_tokens': completionTokens,
     'total_tokens': totalTokens,
+    'reasoning_tokens': reasoningTokens,
+    'cached_tokens': cachedTokens,
   };
 
   @override

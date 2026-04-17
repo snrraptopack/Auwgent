@@ -10,6 +10,8 @@ import 'types.dart';
 
 typedef _EngineHandle = ffi.Opaque;
 
+final Map<String, AuwgentBindings> _bindingsCache = <String, AuwgentBindings>{};
+
 void _freeCallbackString(ffi.Pointer<Utf8> ptr, ffi.Pointer<ffi.Void> _) {
   malloc.free(ptr);
 }
@@ -17,6 +19,16 @@ void _freeCallbackString(ffi.Pointer<Utf8> ptr, ffi.Pointer<ffi.Void> _) {
 final _freeCallbackStringPtr = ffi.Pointer.fromFunction<NativeFreeString>(
   _freeCallbackString,
 );
+
+AuwgentBindings _bindingsForLibrary(String? libraryPath) {
+  final cacheKey = libraryPath?.trim().isNotEmpty == true
+      ? libraryPath!.trim()
+      : '__default__';
+  return _bindingsCache.putIfAbsent(
+    cacheKey,
+    () => AuwgentBindings(openAuwgentLibrary(libraryPath)),
+  );
+}
 
 final class _RegisteredCallable {
   _RegisteredCallable(this._close);
@@ -33,7 +45,7 @@ final class AuwgentNative {
     required String irJson,
     String? libraryPath,
   }) {
-    final bindings = AuwgentBindings(openAuwgentLibrary(libraryPath));
+    final bindings = _bindingsForLibrary(libraryPath);
     final irPtr = irJson.toNativeUtf8();
     try {
       final handle = bindings.engineNew(irPtr);
@@ -107,15 +119,11 @@ final class AuwgentNative {
     }
   }
 
-
   void setGroqDriver(String apiKey) {
     _checkNotDisposed();
     final apiKeyPtr = apiKey.toNativeUtf8();
     try {
-      final ok = _bindings.engineSetGroqDriver(
-        _handle,
-        apiKeyPtr
-      );
+      final ok = _bindings.engineSetGroqDriver(_handle, apiKeyPtr);
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
@@ -169,11 +177,17 @@ final class AuwgentNative {
         final args = decoded is Map
             ? Map<String, Object?>.from(decoded)
             : <String, Object?>{};
-        Future.sync(() => handler(args)).then((result) {
-          _completeToolCall(requestId, result);
-        }, onError: (Object error, StackTrace stackTrace) {
-          _failToolCall(requestId, 'tool `$toolName` failed: $error\n$stackTrace');
-        });
+        Future.sync(() => handler(args)).then(
+          (result) {
+            _completeToolCall(requestId, result);
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            _failToolCall(
+              requestId,
+              'tool `$toolName` failed: $error\n$stackTrace',
+            );
+          },
+        );
       } catch (error, stackTrace) {
         final requestId = requestIdPtr == ffi.nullptr
             ? ''
@@ -240,7 +254,11 @@ final class AuwgentNative {
   }
 
   void onIntent(
-    FutureOr<IntentControl?> Function(String name, Object? value, String agentName)
+    FutureOr<IntentControl?> Function(
+      String name,
+      Object? value,
+      String agentName,
+    )
     handler,
   ) {
     _checkNotDisposed();
@@ -282,7 +300,7 @@ final class AuwgentNative {
     handler,
   ) {
     _checkNotDisposed();
-    final callable = ffi.NativeCallable<NativePartialIntentCallback>.isolateLocal((
+    final callable = ffi.NativeCallable<NativePartialIntentCallback>.listener((
       ffi.Pointer<Utf8> namePtr,
       ffi.Pointer<Utf8> valueJsonPtr,
       ffi.Pointer<Utf8> agentNamePtr,
@@ -865,7 +883,11 @@ final class AuwgentNative {
     final requestIdPtr = requestId.toNativeUtf8();
     final messagePtr = message.toNativeUtf8();
     try {
-      final ok = _bindings.engineFailToolCall(_handle, requestIdPtr, messagePtr);
+      final ok = _bindings.engineFailToolCall(
+        _handle,
+        requestIdPtr,
+        messagePtr,
+      );
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }

@@ -8,7 +8,7 @@ use crate::runtime::engine::{
 };
 use crate::types::AgentIR;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// EngineBridge provides a language-agnostic facade for the Auwgent engine.
 /// It encapsulates the Tokio runtime and engine state, reducing duplication
@@ -25,7 +25,11 @@ impl EngineBridge {
         let ir: AgentIR = serde_json::from_str(&ir_json)
             .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;
 
-        Self::with_runtime(ir, tokio::runtime::Builder::new_multi_thread())
+        Ok(Self {
+            engine: Arc::new(AuwgentEngine::new(ir.clone())),
+            ir: Arc::new(ir),
+            rt: shared_runtime()?.clone(),
+        })
     }
 
     pub fn new_current_thread(ir_json: String) -> Result<Self, String> {
@@ -222,4 +226,19 @@ impl EngineBridge {
             .await
             .map_err(|e| format!("{}", e))
     }
+}
+
+fn shared_runtime() -> Result<&'static Arc<tokio::runtime::Runtime>, String> {
+    static SHARED_RUNTIME: OnceLock<Result<Arc<tokio::runtime::Runtime>, String>> = OnceLock::new();
+
+    SHARED_RUNTIME
+        .get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .map(Arc::new)
+                .map_err(|e| format!("Failed to create tokio runtime: {}", e))
+        })
+        .as_ref()
+        .map_err(|err| err.clone())
 }

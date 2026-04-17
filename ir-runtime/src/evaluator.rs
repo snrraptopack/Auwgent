@@ -636,6 +636,43 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    fn evaluate_model_config_expr(
+        &self,
+        expr: &Expression,
+        scope: &mut HashMap<String, Value>,
+    ) -> AuwgentResult<Value> {
+        match self.evaluate(expr, scope) {
+            Ok(value) => Ok(value),
+            Err(AuwgentError::VariableNotFound(_)) => self.evaluate_json_like_expr(expr, scope),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn evaluate_json_like_expr(
+        &self,
+        expr: &Expression,
+        scope: &mut HashMap<String, Value>,
+    ) -> AuwgentResult<Value> {
+        match expr {
+            Expression::VarRef { value } => Ok(Value::String(value.clone())),
+            Expression::Object { value } => {
+                let mut map = serde_json::Map::new();
+                for (key, child) in value {
+                    map.insert(key.clone(), self.evaluate_json_like_expr(child, scope)?);
+                }
+                Ok(Value::Object(map))
+            }
+            Expression::Array { value } => {
+                let mut items = Vec::with_capacity(value.len());
+                for child in value {
+                    items.push(self.evaluate_json_like_expr(child, scope)?);
+                }
+                Ok(Value::Array(items))
+            }
+            _ => self.evaluate(expr, scope),
+        }
+    }
+
     pub fn evaluate_model(
         &self,
         config: &crate::types::ModelConfig,
@@ -661,7 +698,7 @@ impl<'a> Evaluator<'a> {
 
                 if let Some(expr) = config {
                     let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
-                    let evaluated_config = self.evaluate(&parsed, scope)?;
+                    let evaluated_config = self.evaluate_model_config_expr(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -678,7 +715,7 @@ impl<'a> Evaluator<'a> {
 
                 if let Some(expr) = config {
                     let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
-                    let evaluated_config = self.evaluate(&parsed, scope)?;
+                    let evaluated_config = self.evaluate_model_config_expr(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -695,7 +732,7 @@ impl<'a> Evaluator<'a> {
 
                 if let Some(expr) = config {
                     let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
-                    let evaluated_config = self.evaluate(&parsed, scope)?;
+                    let evaluated_config = self.evaluate_model_config_expr(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -715,7 +752,7 @@ impl<'a> Evaluator<'a> {
 
                 if let Some(expr) = config {
                     let parsed: Expression = serde_json::from_value(expr.0.clone()).unwrap();
-                    let evaluated_config = self.evaluate(&parsed, scope)?;
+                    let evaluated_config = self.evaluate_model_config_expr(&parsed, scope)?;
                     res.insert("config".to_string(), evaluated_config);
                 }
 
@@ -926,5 +963,49 @@ impl<'a> Evaluator<'a> {
         }
 
         dedented
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn model_config_allows_json_like_bare_identifiers() {
+        let ir: AgentIR = serde_json::from_value(json!({
+            "name": "Hello",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "tests": []
+        }))
+        .unwrap();
+        let evaluator = Evaluator::new(&ir);
+        let expr: Expression = serde_json::from_value(json!({
+            "type": "object",
+            "value": {
+                "somefield": {
+                    "type": "object",
+                    "value": {
+                        "another": {
+                            "type": "varRef",
+                            "value": "value"
+                        }
+                    }
+                }
+            }
+        }))
+        .unwrap();
+
+        let mut scope = HashMap::new();
+        let result = evaluator.evaluate_model_config_expr(&expr, &mut scope).unwrap();
+
+        assert_eq!(result, json!({ "somefield": { "another": "value" } }));
     }
 }

@@ -22,6 +22,22 @@ impl OpenAIDriver {
             base_url: base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string()),
         }
     }
+
+    fn merge_request_config(body: &mut Value, cfg: &Value) {
+        let Some(cfg_obj) = cfg.as_object() else {
+            return;
+        };
+        let Some(body_obj) = body.as_object_mut() else {
+            return;
+        };
+
+        for (key, value) in cfg_obj {
+            if matches!(key.as_str(), "model" | "messages" | "stream" | "stream_options") {
+                continue;
+            }
+            body_obj.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 #[async_trait]
@@ -71,20 +87,8 @@ impl ModelDriver for OpenAIDriver {
         });
 
         // Apply generation config params if provided
-        if let Some(cfg) = config {
-            let body_obj = body.as_object_mut().expect("body is always an object");
-            for key in &[
-                "temperature",
-                "top_p",
-                "max_tokens",
-                "stop",
-                "frequency_penalty",
-                "presence_penalty",
-            ] {
-                if let Some(val) = cfg.get(*key) {
-                    body_obj.insert(key.to_string(), val.clone());
-                }
-            }
+        if let Some(cfg) = config.as_ref() {
+            Self::merge_request_config(&mut body, cfg);
         }
 
         // ── Send request ──────────────────────────────────────────────────
@@ -146,11 +150,33 @@ impl ModelDriver for OpenAIDriver {
                             let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                             let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
                             let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                            let prompt_tokens_details = usage
+                                .get("prompt_tokens_details")
+                                .or_else(|| usage.get("input_tokens_details"))
+                                .and_then(|v| v.as_object());
+                            let completion_tokens_details = usage
+                                .get("completion_tokens_details")
+                                .and_then(|v| v.as_object());
+
+                            let cached_tokens = prompt_tokens_details
+                                .and_then(|details| details.get("cached_tokens"))
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            let reasoning_tokens = completion_tokens_details
+                                .and_then(|details| details.get("reasoning_tokens"))
+                                .or_else(|| {
+                                    prompt_tokens_details
+                                        .and_then(|details| details.get("reasoning_tokens"))
+                                })
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
 
                             result_events.push(crate::runtime::drivers::ModelEvent::Usage(crate::runtime::drivers::TokenUsage {
                                 prompt_tokens,
                                 completion_tokens,
                                 total_tokens,
+                                reasoning_tokens,
+                                cached_tokens,
                             }));
                         }
                     }
@@ -339,5 +365,76 @@ mod tests {
             format!("{}/chat/completions", base3)
         };
         assert_eq!(url3, "https://api.openai.com/v1/chat/completions");
+    }
+
+    #[test]
+    fn merges_arbitrary_request_config_fields() {
+        let mut body = json!({
+            "model": "demo",
+            "messages": [],
+            "stream": true,
+            "stream_options": { "include_usage": true }
+        });
+        let cfg = json!({
+            "temperature": 0.1,
+            "somefield": { "another": "value" },
+            "stream": false
+        });
+
+        OpenAIDriver::merge_request_config(&mut body, &cfg);
+
+        assert_eq!(body["temperature"], json!(0.1));
+        assert_eq!(body["somefield"], json!({ "another": "value" }));
+        assert_eq!(body["stream"], json!(true));
+    }
+
+    #[test]
+    fn reads_cached_and_reasoning_tokens_from_openai_usage_shape() {
+        let usage = json!({
+            "prompt_tokens": 2006,
+            "completion_tokens": 300,
+            "total_tokens": 2306,
+            "prompt_tokens_details": {
+                "cached_tokens": 1920
+            },
+            "completion_tokens_details": {
+                "reasoning_tokens": 17
+            }
+        });
+
+        let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let prompt_tokens_details = usage
+            .get("prompt_tokens_details")
+            .or_else(|| usage.get("input_tokens_details"))
+            .and_then(|v| v.as_object());
+        let completion_tokens_details = usage
+            .get("completion_tokens_details")
+            .and_then(|v| v.as_object());
+
+        let cached_tokens = prompt_tokens_details
+            .and_then(|details| details.get("cached_tokens"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let reasoning_tokens = completion_tokens_details
+            .and_then(|details| details.get("reasoning_tokens"))
+            .or_else(|| {
+                prompt_tokens_details
+                    .and_then(|details| details.get("reasoning_tokens"))
+            })
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let token_usage = crate::runtime::drivers::TokenUsage {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            reasoning_tokens,
+            cached_tokens,
+        };
+
+        assert_eq!(token_usage.cached_tokens, 1920);
+        assert_eq!(token_usage.reasoning_tokens, 17);
     }
 }

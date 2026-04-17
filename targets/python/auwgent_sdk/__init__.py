@@ -101,6 +101,8 @@ class TokenUsage(TypedDict):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    reasoning_tokens: int
+    cached_tokens: int
 
 class TurnMetadata(TypedDict):
     turn_index: int
@@ -112,6 +114,8 @@ class AggregateUsage(TypedDict):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    reasoning_tokens: int
+    cached_tokens: int
 
 class RunMetadata(TypedDict):
     aggregate: AggregateUsage

@@ -88,13 +88,6 @@ class TypedAuwgent<IR extends JsonMap> {
     try {
       final initialSession = exportSession();
       _runMiddlewareStart(initialSession);
-      if (_storedPartialIntentHandler != null) {
-        _reportWarning(
-          AuwgentWarningSource.onIntentPartial,
-          'async FFI currently dispatches final intents only; partial intent handlers are not invoked during run()',
-          agentName: ir['name']?.toString(),
-        );
-      }
 
       if (input is String) {
         await _awaitRunWithStructuredPolling(
@@ -206,7 +199,9 @@ class TypedAuwgent<IR extends JsonMap> {
       if (id is! String || url is! String) return;
 
       final keyName = '${id.replaceAll('-', '_')}ApiKey';
-      final apiKey = apiKeys[keyName];
+      final apiKey =
+          apiKeys[keyName] ??
+          _builtinApiKeyForCustomEndpoint(id: id, url: url, apiKeys: apiKeys);
       if (apiKey == null || apiKey.isEmpty) return;
 
       native.setCustomDriver(id: id, apiKey: apiKey, baseUrl: url);
@@ -222,6 +217,37 @@ class TypedAuwgent<IR extends JsonMap> {
     }
   }
 
+  String? _builtinApiKeyForCustomEndpoint({
+    required String id,
+    required String url,
+    required Map<String, String> apiKeys,
+  }) {
+    final normalizedId = id
+        .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+        .toLowerCase();
+    final normalizedUrl = url.toLowerCase();
+
+    if (normalizedId == 'groq' ||
+        normalizedId == 'groqapi' ||
+        normalizedUrl.contains('api.groq.com')) {
+      return apiKeys['groqApiKey'];
+    }
+
+    if (normalizedId == 'openai' ||
+        normalizedId == 'openaiapi' ||
+        normalizedUrl.contains('api.openai.com')) {
+      return apiKeys['openaiApiKey'];
+    }
+
+    if (normalizedId == 'gemini' ||
+        normalizedId == 'geminiapi' ||
+        normalizedUrl.contains('generativelanguage.googleapis.com')) {
+      return apiKeys['geminiApiKey'];
+    }
+
+    return null;
+  }
+
   void _registerTools(Map<String, ToolHandler> tools) {
     for (final entry in tools.entries) {
       native.registerTool(entry.key, entry.value);
@@ -234,13 +260,16 @@ class TypedAuwgent<IR extends JsonMap> {
     var done = false;
 
     unawaited(
-      runFuture.then((_) {
-        done = true;
-      }, onError: (Object error, StackTrace stackTrace) {
-        failure = error;
-        failureStack = stackTrace;
-        done = true;
-      }),
+      runFuture.then(
+        (_) {
+          done = true;
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          failure = error;
+          failureStack = stackTrace;
+          done = true;
+        },
+      ),
     );
 
     while (!done) {
@@ -277,6 +306,18 @@ class TypedAuwgent<IR extends JsonMap> {
   void _dispatchStructuredEvent(JsonMap event) {
     final eventType = event['event']?.toString();
     switch (eventType) {
+      case 'partial_intent':
+        final name = event['name']?.toString();
+        if (name == null || name.isEmpty) {
+          return;
+        }
+        final agentName =
+            event['agent']?.toString() ??
+            ir['name']?.toString() ??
+            'unknown_agent';
+        final payload = event['payload'];
+        _dispatchPartialIntent(name, payload, agentName);
+        return;
       case 'intent':
         final name = event['name']?.toString();
         if (name == null || name.isEmpty) {
@@ -338,10 +379,44 @@ class TypedAuwgent<IR extends JsonMap> {
     }
   }
 
+  void _dispatchPartialIntent(String name, Object? payload, String agentName) {
+    try {
+      Object? value = payload;
+      if (value is Map) {
+        value = Map<String, Object?>.from(value);
+      }
+
+      final handler = _storedPartialIntentHandler;
+      if (handler != null) {
+        _requireSync(
+          handler(name, value, agentName),
+          'partial intent callbacks',
+        );
+      }
+
+      final ctx = _getBuildContext()..activeAgent = agentName;
+      for (final item in _getMiddleware(ctx)) {
+        _requireSync(
+          item.onIntentPartial(name, value, ctx),
+          'middleware onIntentPartial hooks',
+        );
+      }
+      _persistMiddlewareContext(ctx);
+    } catch (error) {
+      _reportWarning(
+        AuwgentWarningSource.onIntentPartial,
+        'partial intent callback failed',
+        error: error,
+        agentName: agentName,
+      );
+    }
+  }
+
   void _runMiddlewareStart(SessionState session) {
     try {
       var currentSession = session;
-      final ctx = _getBuildContext()..activeAgent = ir['name']?.toString() ?? '';
+      final ctx = _getBuildContext()
+        ..activeAgent = ir['name']?.toString() ?? '';
       for (final item in _getMiddleware(ctx)) {
         currentSession = _requireSync(
           item.onRunStart(currentSession, ctx),
@@ -363,7 +438,8 @@ class TypedAuwgent<IR extends JsonMap> {
 
   void _runMiddlewareComplete(SessionState session) {
     try {
-      final ctx = _getBuildContext()..activeAgent = ir['name']?.toString() ?? '';
+      final ctx = _getBuildContext()
+        ..activeAgent = ir['name']?.toString() ?? '';
       for (final item in _getMiddleware(ctx)) {
         _requireSync(
           item.onRunComplete(session, ctx),

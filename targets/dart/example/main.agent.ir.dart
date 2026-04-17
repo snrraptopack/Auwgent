@@ -68,9 +68,7 @@ const String _HelloAgentIrJson = r'''{
         {
           "defaultConfig": {
             "model": {
-              "type": "custom",
-              "id": "groq-api",
-              "url": "https://api.groq.com/openai/v1",
+              "type": "groq",
               "modelName": "openai/gpt-oss-120b",
               "config": null
             },
@@ -110,14 +108,14 @@ const String _HelloAgentIrJson = r'''{
           "optional": false,
           "description": null
         },
-        "age": {
-          "type": "number",
-          "optional": false,
-          "description": null
-        },
         "location": {
           "type": "string",
           "optional": true,
+          "description": null
+        },
+        "age": {
+          "type": "number",
+          "optional": false,
           "description": null
         }
       },
