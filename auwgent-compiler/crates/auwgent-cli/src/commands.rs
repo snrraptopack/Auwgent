@@ -182,8 +182,9 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
         "ts" | "typescript" => auwgent_codegen::generate_typescript(&ir, &stem),
         "py" | "python" => auwgent_codegen::generate_python(&ir, &stem),
         "dart" => auwgent_codegen::generate_dart(&ir, &stem),
+        "rs" | "rust" => auwgent_codegen::generate_rust(&ir, &stem),
         _ => {
-            eprintln!("Unknown target '{}'. Use 'ts', 'python', 'dart', or 'both'.", target);
+            eprintln!("Unknown target '{}'. Use 'ts', 'python', 'dart', 'rust', or 'both'.", target);
             return false;
         }
     };
@@ -192,6 +193,7 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
         "ts" | "typescript" => format!("{}.agent.types.ts", stem),
         "py" | "python" => format!("{}_types.py", stem),
         "dart" => format!("{}.agent.dart", stem),
+        "rs" | "rust" => format!("{}.agent.rs", stem),
         _ => unreachable!(),
     };
     let out_dir = resolve_out_dir(file, output);

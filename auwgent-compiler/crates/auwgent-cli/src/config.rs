@@ -8,7 +8,7 @@ pub struct Config {
     pub source: Option<String>,
     /// Shared output directory for generated code and compiled IR.
     pub output: Option<String>,
-    /// Target languages: ts, python, or both (e.g. ["ts", "python"])
+    /// Target languages: ts, python, dart, rust, or both (e.g. ["ts", "rust"])
     #[serde(default)]
     pub targets: Vec<String>,
     /// When true, enables dev-mode scaffolding (local SDK links).
