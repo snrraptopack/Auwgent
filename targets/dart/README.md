@@ -84,7 +84,7 @@ Future<void> main() async {
   agent.onIntentHandler(_DemoIntentLogger());
 
   try {
-    final session = agent.run('what is my name');
+    final session = await agent.run('what is my name');
     print(session.turns.last.modelResponse);
   } finally {
     agent.dispose();
@@ -124,6 +124,35 @@ final agent = createDemo(
 ```
 
 The Dart wrapper now routes tools through the async C ABI callback path, so tool completion is resolved back into Rust when the `Future` completes.
+
+## Protocol Model
+
+Auwgent currently uses a compiler-driven block protocol for model control.
+
+- Model-facing output is emitted as protocol text such as `[tool_call: ...]`, `[response_text]`, and `[schema: Output]`.
+- The runtime parses those protocol blocks into structured intents and typed SDK models.
+- Session history keeps the raw model transcript in `model_response` so debugging, replay, and follow-up turns see the exact protocol the model produced.
+- User-facing code should generally consume the parsed structured layer rather than manually parsing `model_response`.
+
+Example raw transcript stored in session state:
+
+```json
+{
+  "model_response": "[schema: Output]\nage: 25\nlocation: \"Tarkwa\"\nname: \"Theo\"\n[/schema]"
+}
+```
+
+This is intentional. The raw transcript is the internal control representation; typed intents and structured output are the app-facing representation.
+
+## Provider Tool Calling
+
+OpenAI and Gemini are currently used as text-generation transports for the block protocol. Auwgent does not yet rely on provider-native tool calling for normal user-defined tools.
+
+- Today, the compiler teaches models to emit protocol blocks and the runtime executes tools itself.
+- Future built-in tools may use provider-native tool APIs directly.
+- Until that built-in/native-tools work lands, targets and drivers should be understood as protocol-first rather than native-tool-first.
+
+This distinction matters when reading runtime behavior: a provider may support native tools, but the current Auwgent execution model is intentionally provider-agnostic and protocol-driven.
 
 ## Current Direction
 

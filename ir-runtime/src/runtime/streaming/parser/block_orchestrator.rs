@@ -683,50 +683,33 @@ fn is_incomplete_response_text_open(input: &str) -> bool {
 
 fn is_incomplete_protocol_header(input: &str) -> bool {
     const HEADER_PREFIXES: &[&str] = &[
-        "[response_text",
         "[response_text]",
-        "[/response_text",
         "[/response_text]",
-        "[tool_call",
-        "[tool_call:",
-        "[/tool",
+        "[tool_call:]",
         "[/tool]",
-        "[workflow_call",
-        "[workflow_call:",
-        "[/workflow",
+        "[workflow_call:]",
         "[/workflow]",
-        "[helper_call",
-        "[helper_call:",
-        "[/helper",
+        "[helper_call:]",
         "[/helper]",
-        "[component",
-        "[component:",
-        "[/component",
+        "[component:]",
         "[/component]",
-        "[render_component",
         "[render_component]",
-        "[/render_component",
         "[/render_component]",
-        "[schema",
-        "[schema:",
-        "[/schema",
+        "[schema:]",
         "[/schema]",
-        "[custom",
-        "[custom:",
-        "[/custom",
+        "[custom:]",
         "[/custom]",
-        "[result",
         "[result]",
-        "[/result",
         "[/result]",
-        "[error",
         "[error]",
-        "[/error",
         "[/error]",
     ];
 
     let trimmed = input.trim_start();
-    !trimmed.is_empty() && HEADER_PREFIXES.iter().any(|prefix| trimmed.starts_with(prefix))
+    !trimmed.is_empty()
+        && HEADER_PREFIXES
+            .iter()
+            .any(|prefix| prefix.starts_with(trimmed) || trimmed.starts_with(prefix))
 }
 
 fn strip_protocol_fragments(input: &str) -> String {
@@ -1413,6 +1396,27 @@ mod tests {
             emitted_during_streaming.is_empty(),
             "Bare incomplete protocol prefixes should not leak into response_text partials: {:?}",
             emitted_during_streaming
+        );
+    }
+
+    #[test]
+    fn ultra_short_protocol_prefixes_are_not_emitted_as_response_text() {
+        let mut orch = setup_orchestrator();
+
+        let partials = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let partials_for_handler = Arc::clone(&partials);
+        orch.on_intent_partial(Arc::new(move |name, value| {
+            partials_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[");
+        orch.write("s");
+
+        let partials = partials.lock().unwrap().clone();
+        assert!(
+            partials.is_empty(),
+            "Ultra-short protocol prefixes like `[` or `[s` should not leak as response_text partials: {:?}",
+            partials
         );
     }
 

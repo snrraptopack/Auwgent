@@ -106,13 +106,13 @@ const String _HelloAgentIrJson = r'''{
     "Person": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
+        "age": {
+          "type": "number",
           "optional": false,
           "description": null
         },
-        "age": {
-          "type": "number",
+        "name": {
+          "type": "string",
           "optional": false,
           "description": null
         },

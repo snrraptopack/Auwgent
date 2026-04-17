@@ -13,7 +13,9 @@ final class Logger extends AuwgentBasePartialIntentHandler {
     stdout.write(intent.delta ?? "");
   }
 
-  responseSchema(intent, name) {}
+  responseSchema(value, name) {
+    
+  }
 }
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
@@ -49,10 +51,7 @@ final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<Person> getDetails() async => {
-        'name': 'Theo',
-        'age': 25,
-      };
+  Future<Person> getDetails() async => Person(age: 10, name: "ama");
 
   @override
   Future<String> getLocation(args) async => "Tarkwa ${args.id}";

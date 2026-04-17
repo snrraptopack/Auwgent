@@ -3,7 +3,36 @@
 import 'dart:async';
 import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;
 import 'main.agent.ir.dart';
-typedef Person = sdk.JsonMap;
+final class Person {
+  const Person({
+    required this.age,
+    required this.name,
+    this.location,
+  });
+
+  final double age;
+  final String name;
+  final String? location;
+
+  factory Person.fromJson(sdk.JsonMap json) {
+    return Person(
+      age: ((json['age'] as num?)?.toDouble()) ?? 0,
+      name: (json['name'])?.toString() ?? '',
+      location: json['location']?.toString(),
+    );
+  }
+
+  sdk.JsonMap toJson() {
+    return {
+      'age': age,
+      'name': name,
+      'location': location,
+    };
+  }
+
+  @override
+  String toString() => sdk.prettyJson(toJson());
+}
 
 typedef HelloInput = String;
 
@@ -83,7 +112,7 @@ final class HelloResponseTextIntent {
 
   factory HelloResponseTextIntent.fromJson(sdk.JsonMap json) {
     return HelloResponseTextIntent(
-      text: (json['text'] as String?) ?? '',
+      text: (json['text'])?.toString() ?? '',
     );
   }
 
@@ -102,7 +131,7 @@ final class HelloResponseSchemaIntent {
 
   factory HelloResponseSchemaIntent.fromJson(sdk.JsonMap json) {
     return HelloResponseSchemaIntent(
-      type: (json['type'] as String?) ?? '',
+      type: (json['type'])?.toString() ?? '',
       response: HelloOutput.fromJson(Map<String, Object?>.from((json['response'] as Map?) ?? const {})),
     );
   }
@@ -120,7 +149,7 @@ final class HelloErrorIntent {
 
   factory HelloErrorIntent.fromJson(sdk.JsonMap json) {
     return HelloErrorIntent(
-      message: (json['message'] as String?) ?? '',
+      message: (json['message'])?.toString() ?? '',
     );
   }
 
@@ -135,7 +164,7 @@ abstract class HelloToolCallIntent {
   Object? get args;
 
   factory HelloToolCallIntent.fromJson(sdk.JsonMap json) {
-    final kind = (json['type'] as String?) ?? '';
+    final kind = (json['type'])?.toString() ?? '';
     if (kind == 'get_details') {
       return HelloGetDetailsToolCallIntentCase.fromJson(json);
     }
@@ -155,7 +184,7 @@ abstract class HelloToolResultIntent {
   bool get overridden;
 
   factory HelloToolResultIntent.fromJson(sdk.JsonMap json) {
-    final kind = (json['name'] as String?) ?? '';
+    final kind = (json['name'])?.toString() ?? '';
     if (kind == 'get_details') {
       return HelloGetDetailsToolResultIntentCase.fromJson(json);
     }
@@ -331,7 +360,7 @@ final class HelloToolCallIntentUnknown extends HelloToolCallIntent {
   final sdk.JsonMap raw;
 
   @override
-  String get type => (raw['type'] as String?) ?? '';
+  String get type => (raw['type'])?.toString() ?? '';
 
   @override
   Object? get args => raw['args'];
@@ -346,7 +375,7 @@ final class HelloToolResultIntentUnknown extends HelloToolResultIntent {
   final sdk.JsonMap raw;
 
   @override
-  String get name => (raw['name'] as String?) ?? '';
+  String get name => (raw['name'])?.toString() ?? '';
 
   @override
   Object? get args => raw['args'];
@@ -368,7 +397,7 @@ abstract class HelloToolSkippedIntent {
   Object? get args;
 
   factory HelloToolSkippedIntent.fromJson(sdk.JsonMap json) {
-    final kind = (json['type'] as String?) ?? '';
+    final kind = (json['type'])?.toString() ?? '';
     if (kind == 'get_details') {
       return HelloGetDetailsToolSkippedIntentCase.fromJson(json);
     }
@@ -385,7 +414,7 @@ final class HelloToolSkippedIntentUnknown extends HelloToolSkippedIntent {
   final sdk.JsonMap raw;
 
   @override
-  String get type => (raw['type'] as String?) ?? '';
+  String get type => (raw['type'])?.toString() ?? '';
 
   @override
   Object? get args => raw['args'];
@@ -405,8 +434,8 @@ final class HelloToolErrorIntent {
 
   factory HelloToolErrorIntent.fromJson(sdk.JsonMap json) {
     return HelloToolErrorIntent(
-      tool: (json['tool'] as String?) ?? '',
-      message: (json['message'] as String?) ?? '',
+      tool: (json['tool'])?.toString() ?? '',
+      message: (json['message'])?.toString() ?? '',
     );
   }
 
@@ -421,7 +450,7 @@ abstract class HelloHelperCallIntent {
   Object? get args;
 
   factory HelloHelperCallIntent.fromJson(sdk.JsonMap json) {
-    final kind = (json['type'] as String?) ?? '';
+    final kind = (json['type'])?.toString() ?? '';
     if (kind == 'Joker') {
       return HelloJokerHelperCallIntentCase.fromJson(json);
     }
@@ -438,7 +467,7 @@ abstract class HelloHelperResultIntent {
   bool get overridden;
 
   factory HelloHelperResultIntent.fromJson(sdk.JsonMap json) {
-    final kind = (json['name'] as String?) ?? '';
+    final kind = (json['name'])?.toString() ?? '';
     if (kind == 'Joker') {
       return HelloJokerHelperResultIntentCase.fromJson(json);
     }
@@ -525,7 +554,7 @@ final class HelloHelperCallIntentUnknown extends HelloHelperCallIntent {
   final sdk.JsonMap raw;
 
   @override
-  String get type => (raw['type'] as String?) ?? '';
+  String get type => (raw['type'])?.toString() ?? '';
 
   @override
   Object? get args => raw['args'];
@@ -540,7 +569,7 @@ final class HelloHelperResultIntentUnknown extends HelloHelperResultIntent {
   final sdk.JsonMap raw;
 
   @override
-  String get name => (raw['name'] as String?) ?? '';
+  String get name => (raw['name'])?.toString() ?? '';
 
   @override
   Object? get args => raw['args'];

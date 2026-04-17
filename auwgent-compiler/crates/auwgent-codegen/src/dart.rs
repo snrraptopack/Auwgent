@@ -209,7 +209,7 @@ fn collect_custom_intent_defs(ir: &Value) -> Vec<(String, Value)> {
 fn generate_custom_types(types: &Map<String, Value>) -> String {
     let mut blocks = Vec::new();
     for (type_name, type_def) in types {
-        blocks.push(generate_type_alias(type_name, Some(type_def), false, "sdk.JsonMap"));
+        blocks.push(generate_named_shape(type_name, Some(type_def), false, "sdk.JsonMap"));
     }
     blocks.join("\n")
 }
@@ -529,7 +529,7 @@ fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> Stri
     let response_expr = decode_named_shape_expr(output, &response_type, "json['response']", "json['response']");
 
     format!(
-        "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'] as String?) ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseTextIntent(text: $text)';\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'] as String?) ?? '',\n      response: {response_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseSchemaIntent(type: $type, response: $response)';\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ErrorIntent(message: $message)';\n}}\n"
+        "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseTextIntent(text: $text)';\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'])?.toString() ?? '',\n      response: {response_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseSchemaIntent(type: $type, response: $response)';\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ErrorIntent(message: $message)';\n}}\n"
     )
 }
 
@@ -722,7 +722,7 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
         blocks.push(format!("typedef {action_type} = sdk.JsonMap;\n"));
 
         blocks.push(format!(
-            "final class {component_class} extends {agent_name}ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'] as String?) ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
+            "final class {component_class} extends {agent_name}ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'])?.toString() ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
             decode_named_shape_expr(component.get("props"), &props_type, "json['props']", "const <String, Object?>{}"),
             decode_named_shape_expr_optional(component.get("action"), &action_type, "json['action']")
         ));
@@ -735,7 +735,7 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
     blocks.insert(
         0,
         format!(
-            "abstract class {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntent();\n\n  String get type;\n  String get cId;\n  Object? get props;\n  Object? get action;\n  List<String>? get children;\n\n  factory {agent_name}ComponentIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}ComponentIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}ComponentIntentUnknown extends {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  String get cId => (raw['c_id'] as String?) ?? '';\n\n  @override\n  Object? get props => raw['props'];\n\n  @override\n  Object? get action => raw['action'];\n\n  @override\n  List<String>? get children => (raw['children'] as List?)?.map((item) => item.toString()).toList(growable: false);\n}}\n\nfinal class {agent_name}RenderComponentIntent {{\n  const {agent_name}RenderComponentIntent({{\n    this.root,\n    this.roots,\n    this.components,\n    this.tree,\n    this.trees,\n  }});\n\n  final String? root;\n  final List<String>? roots;\n  final sdk.JsonMap? components;\n  final Object? tree;\n  final List<Object?>? trees;\n\n  factory {agent_name}RenderComponentIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}RenderComponentIntent(\n      root: json['root'] as String?,\n      roots: (json['roots'] as List?)?.map((item) => item.toString()).toList(growable: false),\n      components: json['components'] == null ? null : Map<String, Object?>.from(json['components'] as Map),\n      tree: json['tree'],\n      trees: (json['trees'] as List?)?.map((item) => item as Object?).toList(growable: false),\n    );\n  }}\n}}\n",
+            "abstract class {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntent();\n\n  String get type;\n  String get cId;\n  Object? get props;\n  Object? get action;\n  List<String>? get children;\n\n  factory {agent_name}ComponentIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}ComponentIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}ComponentIntentUnknown extends {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  String get cId => (raw['c_id'])?.toString() ?? '';\n\n  @override\n  Object? get props => raw['props'];\n\n  @override\n  Object? get action => raw['action'];\n\n  @override\n  List<String>? get children => (raw['children'] as List?)?.map((item) => item.toString()).toList(growable: false);\n}}\n\nfinal class {agent_name}RenderComponentIntent {{\n  const {agent_name}RenderComponentIntent({{\n    this.root,\n    this.roots,\n    this.components,\n    this.tree,\n    this.trees,\n  }});\n\n  final String? root;\n  final List<String>? roots;\n  final sdk.JsonMap? components;\n  final Object? tree;\n  final List<Object?>? trees;\n\n  factory {agent_name}RenderComponentIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}RenderComponentIntent(\n      root: json['root']?.toString(),\n      roots: (json['roots'] as List?)?.map((item) => item.toString()).toList(growable: false),\n      components: json['components'] == null ? null : Map<String, Object?>.from(json['components'] as Map),\n      tree: json['tree'],\n      trees: (json['trees'] as List?)?.map((item) => item as Object?).toList(growable: false),\n    );\n  }}\n}}\n",
             component_cases.join("\n"),
         ),
     );
@@ -850,19 +850,19 @@ fn generate_callable_intent_models(
     blocks.insert(
         0,
         format!(
-            "abstract class {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}CallIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}CallIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nabstract class {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntent();\n\n  String get name;\n  Object? get args;\n  Object? get result;\n  bool get overridden;\n\n  factory {agent_name}{family_name}ResultIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['name'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}ResultIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n",
+            "abstract class {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}CallIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}CallIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nabstract class {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntent();\n\n  String get name;\n  Object? get args;\n  Object? get result;\n  bool get overridden;\n\n  factory {agent_name}{family_name}ResultIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['name'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}ResultIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n",
             call_cases.join("\n"),
             result_cases.join("\n"),
         ),
     );
 
     blocks.push(format!(
-        "final class {agent_name}{family_name}CallIntentUnknown extends {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}CallIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ResultIntentUnknown extends {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get name => (raw['name'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  Object? get result => raw['result'];\n\n  @override\n  bool get overridden => (raw['overridden'] as bool?) ?? false;\n\n  @override\n  String toString() => '{agent_name}{family_name}ResultIntentUnknown(raw: $raw)';\n}}\n"
+        "final class {agent_name}{family_name}CallIntentUnknown extends {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}CallIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ResultIntentUnknown extends {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get name => (raw['name'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  Object? get result => raw['result'];\n\n  @override\n  bool get overridden => (raw['overridden'] as bool?) ?? false;\n\n  @override\n  String toString() => '{agent_name}{family_name}ResultIntentUnknown(raw: $raw)';\n}}\n"
     ));
 
     if include_error_and_skipped {
         blocks.push(format!(
-            "abstract class {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}SkippedIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'] as String?) ?? '';\n{}\n    return {agent_name}{family_name}SkippedIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}{family_name}SkippedIntentUnknown extends {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'] as String?) ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}SkippedIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ErrorIntent {{\n  const {agent_name}{family_name}ErrorIntent({{\n    required this.tool,\n    required this.message,\n  }});\n\n  final String tool;\n  final String message;\n\n  factory {agent_name}{family_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}{family_name}ErrorIntent(\n      tool: (json['tool'] as String?) ?? '',\n      message: (json['message'] as String?) ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}{family_name}ErrorIntent(tool: $tool, message: $message)';\n}}\n",
+            "abstract class {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}SkippedIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}SkippedIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}{family_name}SkippedIntentUnknown extends {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}SkippedIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ErrorIntent {{\n  const {agent_name}{family_name}ErrorIntent({{\n    required this.tool,\n    required this.message,\n  }});\n\n  final String tool;\n  final String message;\n\n  factory {agent_name}{family_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}{family_name}ErrorIntent(\n      tool: (json['tool'])?.toString() ?? '',\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}{family_name}ErrorIntent(tool: $tool, message: $message)';\n}}\n",
             skipped_cases.join("\n"),
         ));
     }
@@ -2181,5 +2181,52 @@ mod tests {
         assert!(output.contains("id: (json['id'])?.toString() ?? ''"));
         assert!(output.contains("result: (json['result'])?.toString() ?? ''"));
         assert!(output.contains("name: (json['name'])?.toString() ?? ''"));
+        assert!(output.contains("text: (json['text'])?.toString() ?? ''"));
+        assert!(output.contains("type: (json['type'])?.toString() ?? ''"));
+        assert!(output.contains("message: (json['message'])?.toString() ?? ''"));
+    }
+
+    #[test]
+    fn emits_named_object_types_as_data_classes_instead_of_json_map_aliases() {
+        let ir = json!({
+            "name": "Hello",
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [{
+                "name": "get_details",
+                "params": {},
+                "returns": {
+                    "type": "typeRef",
+                    "name": "Person"
+                }
+            }],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "types": {
+                "Person": {
+                    "isOutput": false,
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "optional": false
+                        },
+                        "age": {
+                            "type": "number",
+                            "optional": false
+                        }
+                    }
+                }
+            },
+            "modelConfig": []
+        });
+
+        let output = generate(&ir, "hello");
+        assert!(output.contains("final class Person {"));
+        assert!(output.contains("final String name;"));
+        assert!(output.contains("final double age;"));
+        assert!(output.contains("typedef HelloGetDetailsToolResultValue = Person;"));
+        assert!(!output.contains("typedef Person = sdk.JsonMap;"));
     }
 }
