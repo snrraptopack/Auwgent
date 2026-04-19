@@ -25,7 +25,14 @@ Each scenario/case contains:
 
 - the `.agent` source files used to define the test scenario
 - a committed `generated/` directory produced by the CLI
-- deterministic Rust-side tests that use the generated Rust factory API
+- one or more Rust-side test variants that use the generated Rust factory API
+
+At minimum, a case should support two execution variants:
+
+- **deterministic** — the test injects known runtime input/stream chunks itself and validates parsing/execution deterministically
+- **live** — the test uses a real provider/API and validates how real model streaming is parsed and executed
+
+These variants share the same scenario source and generated artifacts.
 
 We **do not regenerate fixtures on every test run**.
 
@@ -123,7 +130,7 @@ In other words:
 
 ## What This Testing Layer Covers
 
-This directory is intended to cover core behavior through the Rust path in two styles:
+This directory is intended to cover core behavior through the Rust path in three styles:
 
 ### 1. Static / Fixture Validation
 
@@ -141,11 +148,11 @@ These tests are fast and structural.
 
 ### 2. Deterministic Runtime Validation
 
-These tests execute behavior through the generated Rust API and the Rust SDK/runtime path.
+These tests execute behavior through the generated Rust API and the Rust SDK/runtime path using controlled, known inputs.
 
 Examples:
 
-- tool calls behave correctly
+- tool calls behave correctly when the test injects known stream blocks
 - workflow calls and results behave correctly
 - helper transfer and handoff behavior works correctly
 - middleware fires in the expected order
@@ -154,6 +161,19 @@ Examples:
 - runtime behavior is stable for known scenarios
 
 These tests should avoid live model variability whenever possible.
+
+### 3. Live Provider Validation
+
+These tests use the same case source and generated fixture, but run through a real model/provider.
+
+Examples:
+
+- validating how actual provider streaming is parsed
+- validating whether real model output respects tool/workflow/helper contracts
+- validating that real streaming still produces the expected runtime intents
+- checking behavioral drift between deterministic expectations and real model output
+
+These tests should be opt-in and should usually require explicit API configuration.
 
 ## What This Testing Layer Does Not Replace
 
@@ -194,13 +214,26 @@ cases/my-new-case/
   generated/
 ```
 
-2. Generate artifacts for the case:
+2. Generate artifacts for the case using the case-local `auwgent.yml`
+
+3. Add or update test variants in `testing/tests/`
+
+A scenario should typically have shared fixture/setup plus separate test variants, for example:
 
 ```text
-cargo run --manifest-path auwgent-compiler/Cargo.toml -p auwgent-cli -- generate testing/cases/my-new-case/main.agent --target rust --output testing/cases/my-new-case/generated
+tests/
+  my_new_case.rs
+  my_new_case/
+    shared.rs
+    deterministic.rs
+    live.rs
 ```
 
-3. Add or update tests in `testing/tests/`
+Where:
+
+- `shared.rs` contains common setup for the case
+- `deterministic.rs` contains controlled runtime tests
+- `live.rs` contains real-provider tests for the same case
 
 4. Run the centralized tests
 
@@ -230,6 +263,7 @@ Possible additions later:
 - a fixture consistency checker
 - grouped scenario suites
 - richer reporting
+- deterministic/live variant reporting side by side for the same case
 - optional live-provider verification that still uses scenario fixtures
 - cross-target comparisons using the same scenario source
 
@@ -244,4 +278,4 @@ This centralized testing area is designed to give Auwgent:
 
 The key principle is simple:
 
-**write `.agent` source once, generate fixtures intentionally, and test against the committed generated Rust surface.**
+**write `.agent` source once, generate fixtures intentionally, and run multiple test variants against the same committed generated Rust surface.**

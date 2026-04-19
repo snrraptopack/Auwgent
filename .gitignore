@@ -18,3 +18,4 @@ targets/typescript/target/
 targets/python/target/
 function-parser/target/
 targets/rust/target/
+testing/target

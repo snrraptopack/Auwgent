@@ -1,5 +1,0 @@
-# manual-testing/stack-repro/auwgent.yml
-source: "main.agent"
-output: "generated"
-targets:
-  - py

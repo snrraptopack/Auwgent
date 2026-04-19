@@ -1,30 +1,7 @@
-   4.260918400s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint: fingerprint error for auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing)/Check { test: true }/TargetInner { kind: "test", name: "simple_tool", benched: false, ..: with_path("C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\tests\\simple_tool.rs", Edition2024) }
-   4.263594700s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint:     err: failed to read `C:\Users\babyface\Desktop\auwgent\Auwgent\testing\target\debug\.fingerprint\auwgent-testing-d37dba1ba4c21972\test-integration-test-simple_tool`
-
-Caused by:
-    The system cannot find the file specified. (os error 2)
-
-Stack backtrace:
-   0: git_midx_writer_dump
-   1: git_midx_writer_dump
-   2: git_midx_writer_dump
-   3: git_midx_writer_dump
-   4: git_filter_source_repo
-   5: git_filter_source_repo
-   6: git_filter_source_repo
-   7: git_filter_source_repo
-   8: git_filter_source_repo
-   9: git_filter_source_repo
-  10: git_filter_source_repo
-  11: git_libgit2_prerelease
-  12: <unknown>
-  13: <unknown>
-  14: <unknown>
-  15: <unknown>
-  16: git_midx_writer_dump
-  17: git_filter_source_repo
-  18: git_midx_writer_dump
-  19: BaseThreadInitThunk
-  20: RtlUserThreadStart
+   3.267031200s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint: stale: changed "C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\tests\\simple_tool\\live.rs"
+   3.267207500s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint:           (vs) "C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\target\\debug\\.fingerprint\\auwgent-testing-d37dba1ba4c21972\\dep-test-integration-test-simple_tool"
+   3.267239000s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 13421095480, nanos: 976105500 } < FileTime { seconds: 13421095860, nanos: 965394000 }
+   3.269358600s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint: fingerprint dirty for auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing)/Check { test: true }/TargetInner { kind: "test", name: "simple_tool", benched: false, ..: with_path("C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\tests\\simple_tool.rs", Edition2024) }
+   3.269811100s  INFO prepare_target{force=false package_id=auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing) target="simple_tool"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\target\\debug\\.fingerprint\\auwgent-testing-d37dba1ba4c21972\\dep-test-integration-test-simple_tool", reference_mtime: FileTime { seconds: 13421095480, nanos: 976105500 }, stale: "C:\\Users\\babyface\\Desktop\\auwgent\\Auwgent\\testing\\tests\\simple_tool\\live.rs", stale_mtime: FileTime { seconds: 13421095860, nanos: 965394000 } }))
     Checking auwgent-testing v0.1.0 (C:\Users\babyface\Desktop\auwgent\Auwgent\testing)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.96s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.65s
