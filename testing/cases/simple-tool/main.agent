@@ -1,0 +1,9 @@
+agent SimpleTool {
+    default config {
+        model: groq("openai/gpt-oss-120b")
+        prompt: "You are a helpful assistant. When the user asks for their location, call the available tool and wait for the result before replying."
+    }
+
+    tool get_location(): string
+    @desc "Return the current location for the active user"
+}
