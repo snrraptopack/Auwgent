@@ -1,30 +1,21 @@
-use crate::common::{
-    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_helper_tools,
-    collect_required_providers, collect_transferred_helpers, collect_workflow_tools, join_sections,
-    merge_helpers, merge_tool_defs, object_at, string_at,
+use crate::{
+    common::{join_sections, object_at, string_at},
+    generation_plan::CodegenPlan,
 };
 use serde_json::{Map, Value};
 
-pub fn generate(ir: &Value, base_name: &str) -> String {
-    let agent_name = string_at(ir, &["name"]).unwrap_or("Agent");
-    let workflow_tools = collect_workflow_tools(ir);
-    let helper_tools = collect_helper_tools(ir);
-    let all_tools = merge_tool_defs(
-        array_at(ir, &["tools"]),
-        workflow_tools.into_iter().chain(helper_tools.into_iter()).collect()
-    );
-    let has_tools = !all_tools.is_empty();
-    let has_context = ir
-        .get("context")
-        .and_then(Value::as_object)
-        .map(|context| !context.is_empty())
-        .unwrap_or(false);
-    let required_providers = collect_required_providers(ir);
-    let custom_provider_ids = collect_custom_provider_ids(ir);
-    let output_helpers = merge_helpers(collect_transferred_helpers(ir), collect_handoff_helpers(ir));
+pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
+    let ir = plan.ir();
+    let agent_name = plan.agent_name();
+    let all_tools = plan.tools();
+    let has_tools = plan.has_tools();
+    let has_context = plan.has_context();
+    let required_providers = plan.required_providers();
+    let custom_provider_ids = plan.custom_provider_ids();
+    let output_helpers = plan.output_helpers();
 
-    let workflow_types = match ir.get("workflows").and_then(Value::as_array) {
-        Some(workflows) if !workflows.is_empty() => workflows
+    let workflow_types = match plan.workflows() {
+        workflows if !workflows.is_empty() => workflows
             .iter()
             .map(|workflow| {
                 let flow_name = string_at(workflow, &["flowName"]).unwrap_or_default();
@@ -42,8 +33,8 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         _ => "undefined".to_string(),
     };
 
-    let helper_types = match ir.get("helpers").and_then(Value::as_array) {
-        Some(helpers) if !helpers.is_empty() => helpers
+    let helper_types = match plan.helpers() {
+        helpers if !helpers.is_empty() => helpers
             .iter()
             .filter_map(|helper| {
                 let name = string_at(helper, &["name"])?;
@@ -103,28 +94,28 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     }
 
     sections.push(generate_object_alias(agent_name, "Input", unwrap_input_fields(ir.get("input")).as_ref()));
-    for helper in &output_helpers {
+    for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
-    sections.push(generate_output_interface(ir, agent_name, &output_helpers));
+    sections.push(generate_output_interface(ir, agent_name, output_helpers));
     sections.push(generate_object_alias(agent_name, "Context", ir.get("context")));
 
     if has_tools {
-        sections.push(generate_tools_interface(agent_name, &all_tools));
+        sections.push(generate_tools_interface(agent_name, all_tools));
     }
 
-    sections.push(generate_custom_intents_union(ir, agent_name));
+    sections.push(generate_custom_intents_union(plan, agent_name));
 
-    if !required_providers.is_empty() {
-        sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
+    if plan.has_api_keys() {
+        sections.push(generate_api_keys(agent_name, required_providers, custom_provider_ids));
     }
 
     sections.push(generate_agent_factory(
-        ir,
+        plan,
         agent_name,
         has_tools,
         has_context,
-        !required_providers.is_empty(),
+        plan.has_api_keys(),
     ));
 
     join_sections(&sections)
@@ -178,37 +169,17 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
     blocks.join("\n\n")
 }
 
-fn generate_custom_intents_union(ir: &Value, agent_name: &str) -> String {
+fn generate_custom_intents_union(plan: &CodegenPlan, agent_name: &str) -> String {
     let mut intents = Vec::new();
 
-    // 1. Collect from main agent
-    if let Some(custom) = ir.get("customIntents").and_then(Value::as_array) {
-        for ci in custom {
-            let name = string_at(ci, &["name"]).unwrap_or_default();
-            let fields = ci.get("fields").unwrap_or(&Value::Null);
-            intents.push(format!(
-                "{{ name: \"{}\"; value: {} }}",
-                name,
-                generate_raw_object_type(fields)
-            ));
-        }
-    }
-
-    // 2. Collect from all helpers (since they can trigger intents too)
-    if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
-        for helper in helpers {
-            if let Some(custom) = helper.get("customIntents").and_then(Value::as_array) {
-                for ci in custom {
-                    let name = string_at(ci, &["name"]).unwrap_or_default();
-                    let fields = ci.get("fields").unwrap_or(&Value::Null);
-                    let intent_type =
-                        format!("{{ name: \"{}\"; value: {} }}", name, generate_raw_object_type(fields));
-                    if !intents.contains(&intent_type) {
-                        intents.push(intent_type);
-                    }
-                }
-            }
-        }
+    for (_, ci) in plan.custom_intent_defs() {
+        let name = string_at(ci, &["name"]).unwrap_or_default();
+        let fields = ci.get("fields").unwrap_or(&Value::Null);
+        intents.push(format!(
+            "{{ name: \"{}\"; value: {} }}",
+            name,
+            generate_raw_object_type(fields)
+        ));
     }
 
     let union_type = if intents.is_empty() {
@@ -402,7 +373,7 @@ fn generate_api_keys(
 }
 
 fn generate_agent_factory(
-    _ir: &Value,
+    _plan: &CodegenPlan,
     agent_name: &str,
     has_tools: bool,
     has_context: bool,
@@ -625,6 +596,7 @@ fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::generate;
+    use crate::generation_plan::CodegenPlan;
     use serde_json::json;
 
     #[test]
@@ -643,7 +615,7 @@ mod tests {
             "helpers": []
         });
 
-        let output = generate(&ir, "main");
+        let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("./main.agent.json"));
         assert!(output.contains("my_groqApiKey: string;"));
         assert!(!output.contains("customUrl?: string;"));
@@ -688,7 +660,7 @@ mod tests {
             }]
         });
 
-        let output = generate(&ir, "main");
+        let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("flowName: \"deleteAccount\"; flowParams: { id: string }; returns: { delete: boolean; reason: string }"));
         assert!(output.contains("name: \"Reviewer\"; input: { text: string }; output: { approved: boolean }"));
     }

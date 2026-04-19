@@ -1,24 +1,17 @@
-﻿use crate::common::{
-    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_helper_tools,
-    collect_required_providers, collect_transferred_helpers, collect_workflow_tools, join_sections,
-    merge_helpers, merge_tool_defs, object_at, string_at,
+﻿use crate::{
+    common::{join_sections, object_at, string_at},
+    generation_plan::CodegenPlan,
 };
 use serde_json::{Map, Value};
 
-pub fn generate(ir: &Value, base_name: &str) -> String {
-    let agent_name = string_at(ir, &["name"]).unwrap_or("Agent");
-    let workflow_tools = collect_workflow_tools(ir);
-    let helper_tools = collect_helper_tools(ir);
-    let all_tools = merge_tool_defs(
-        array_at(ir, &["tools"]),
-        workflow_tools.into_iter().chain(helper_tools.into_iter()).collect()
-    );
-    let has_tools = !all_tools.is_empty();
-    let transferred_helpers = collect_transferred_helpers(ir);
-    let handoff_helpers = collect_handoff_helpers(ir);
-    let output_helpers = merge_helpers(transferred_helpers, handoff_helpers);
-    let required_providers = collect_required_providers(ir);
-    let custom_provider_ids = collect_custom_provider_ids(ir);
+pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
+    let ir = plan.ir();
+    let agent_name = plan.agent_name();
+    let all_tools = plan.tools();
+    let output_helpers = plan.output_helpers();
+    let has_tools = plan.has_tools();
+    let required_providers = plan.required_providers();
+    let custom_provider_ids = plan.custom_provider_ids();
 
     let imports = [
         "import os",
@@ -54,24 +47,24 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
     }
 
     sections.push(generate_typed_dict(agent_name, "Input", unwrap_input_fields(ir.get("input")).as_ref()));
-    for helper in &output_helpers {
+    for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
-    sections.push(generate_output_interface(ir, agent_name, &output_helpers));
+    sections.push(generate_output_interface(ir, agent_name, output_helpers));
     sections.push(generate_typed_dict(agent_name, "Context", ir.get("context")));
-    sections.push(generate_tools_protocol(agent_name, &all_tools));
-    sections.push(generate_custom_intents_union(ir, agent_name));
-    sections.push(generate_intent_typing(ir, agent_name));
+    sections.push(generate_tools_protocol(agent_name, all_tools));
+    sections.push(generate_custom_intents_union(plan, agent_name));
+    sections.push(generate_intent_typing(plan, agent_name));
 
-    if !required_providers.is_empty() {
-        sections.push(generate_api_keys(agent_name, &required_providers, &custom_provider_ids));
+    if plan.has_api_keys() {
+        sections.push(generate_api_keys(agent_name, required_providers, custom_provider_ids));
     }
 
     sections.push(generate_factory_function(
-        ir,
+        plan,
         agent_name,
         has_tools,
-        !required_providers.is_empty(),
+        plan.has_api_keys(),
         base_name,
     ));
 
@@ -116,41 +109,20 @@ fn generate_helper_output_interface(helper: &Value) -> String {
     generate_typed_dict(helper_name, "Output", helper.get("output"))
 }
 
-fn generate_custom_intents_union(ir: &Value, agent_name: &str) -> String {
+fn generate_custom_intents_union(plan: &CodegenPlan, agent_name: &str) -> String {
     let mut intent_types: Vec<String> = Vec::new();
 
-    // Collect from main agent
-    if let Some(custom) = ir.get("customIntents").and_then(Value::as_array) {
-        for ci in custom {
-            let name = string_at(ci, &["name"]).unwrap_or_default();
-            let fields = ci.get("fields").unwrap_or(&Value::Null);
-            intent_types.push(format!(
-                "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
-                name,
-                name,
-                generate_raw_typed_dict_inline(fields)
-            ));
-        }
-    }
-
-    // Collect from helpers
-    if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
-        for helper in helpers {
-            if let Some(custom) = helper.get("customIntents").and_then(Value::as_array) {
-                for ci in custom {
-                    let name = string_at(ci, &["name"]).unwrap_or_default();
-                    let fields = ci.get("fields").unwrap_or(&Value::Null);
-                    let ty = format!(
-                        "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
-                        name,
-                        name,
-                        generate_raw_typed_dict_inline(fields)
-                    );
-                    if !intent_types.contains(&ty) {
-                        intent_types.push(ty);
-                    }
-                }
-            }
+    for (_, ci) in plan.custom_intent_defs() {
+        let name = string_at(ci, &["name"]).unwrap_or_default();
+        let fields = ci.get("fields").unwrap_or(&Value::Null);
+        let ty = format!(
+            "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
+            name,
+            name,
+            generate_raw_typed_dict_inline(fields)
+        );
+        if !intent_types.contains(&ty) {
+            intent_types.push(ty);
         }
     }
 
@@ -283,17 +255,10 @@ fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
     lines.join("\n") + "\n"
 }
 
-fn generate_intent_typing(ir: &Value, agent_name: &str) -> String {
-    let has_declared_tools = ir
-        .get("tools")
-        .and_then(Value::as_array)
-        .map(|tools| !tools.is_empty())
-        .unwrap_or(false);
-    let has_components = ir
-        .get("components")
-        .and_then(Value::as_array)
-        .map(|components| !components.is_empty())
-        .unwrap_or(false);
+fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
+    let ir = plan.ir();
+    let has_declared_tools = plan.has_tools();
+    let has_components = plan.has_components();
 
     let mut blocks = vec![];
     let mut value_types = vec![
@@ -839,7 +804,13 @@ fn generate_api_keys(
     format!("class {agent_name}ApiKeys(TypedDict, total=False):\n{}\n", keys.join("\n"))
 }
 
-fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_api_keys: bool, base_name: &str) -> String {
+fn generate_factory_function(
+    plan: &CodegenPlan,
+    agent_name: &str,
+    has_tools: bool,
+    has_api_keys: bool,
+    base_name: &str,
+) -> String {
     let mut config_keys = Vec::new();
     if has_tools {
         config_keys.push(format!("    tools: NotRequired[Union['{agent_name}Tools', {agent_name}ToolsDict]]"));
@@ -847,7 +818,7 @@ fn generate_factory_function(ir: &Value, agent_name: &str, has_tools: bool, has_
     config_keys.push(format!("    middleware: NotRequired[List[Union['{agent_name}Middleware', 'type[{agent_name}Middleware]']]]"));
 
 
-    if matches!(ir.get("context"), Some(context) if !context.is_null()) {
+    if plan.has_context() {
         config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));
     }
     if has_api_keys {
@@ -1002,6 +973,7 @@ fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::generate;
+    use crate::generation_plan::CodegenPlan;
     use serde_json::json;
 
     #[test]
@@ -1020,7 +992,7 @@ mod tests {
             "helpers": []
         });
 
-        let output = generate(&ir, "main");
+        let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("my_groqApiKey: str"));
         assert!(!output.contains("customUrl: NotRequired[str]"));
         assert!(output.contains("main.agent.json"));
@@ -1066,7 +1038,7 @@ mod tests {
             }]
         });
 
-        let output = generate(&ir, "main");
+        let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
         assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
         assert!(output.contains("ManagerIntentHandlerReturn = Optional[Union[SessionState, ManagerIntentControl]]"));
@@ -1101,7 +1073,7 @@ mod tests {
             }]
         });
 
-        let output = generate(&ir, "main");
+        let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("class UiAgentComponentIntent(TypedDict):"));
         assert!(output.contains("class UiAgentRenderComponentIntent(TypedDict):"));
         assert!(output.contains("UiAgentIntentName = Literal[\"response_text\", \"response_schema\", \"error\", \"component\", \"render_component\"]"));

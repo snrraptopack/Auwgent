@@ -1,24 +1,20 @@
-use crate::common::{
-    array_at, collect_custom_provider_ids, collect_handoff_helpers, collect_required_providers,
-    collect_transferred_helpers, join_sections, merge_helpers, object_at, string_at,
-};
+use crate::common::{join_sections, object_at, string_at};
+use crate::generation_plan::CodegenPlan;
 use serde_json::{Map, Value};
 
-pub fn generate(ir: &Value, base_name: &str) -> String {
-    let agent_name = string_at(ir, &["name"]).unwrap_or("Agent");
-    let output_helpers = merge_helpers(
-        collect_transferred_helpers(ir),
-        collect_handoff_helpers(ir),
-    );
-    let required_providers = collect_required_providers(ir);
-    let custom_provider_ids = collect_custom_provider_ids(ir);
-    let tools = array_at(ir, &["tools"]);
-    let workflows = array_at(ir, &["workflows"]);
-    let helpers = array_at(ir, &["helpers"]);
-    let custom_intents = collect_custom_intents(ir);
-    let custom_intent_defs = collect_custom_intent_defs(ir);
-    let has_tools = !tools.is_empty();
-    let has_components = !array_at(ir, &["components"]).is_empty();
+pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
+    let ir = plan.ir();
+    let agent_name = plan.agent_name();
+    let output_helpers = plan.output_helpers();
+    let required_providers = plan.required_providers();
+    let custom_provider_ids = plan.custom_provider_ids();
+    let tools = plan.tools();
+    let workflows = plan.workflows();
+    let helpers = plan.helpers();
+    let custom_intents = plan.custom_intents();
+    let custom_intent_defs = plan.custom_intent_defs();
+    let has_tools = plan.has_tools();
+    let has_components = plan.has_components();
 
     let mut sections = vec![
         format!("// Auto-generated Dart bindings for {agent_name}"),
@@ -40,7 +36,7 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         "String",
     ));
 
-    for helper in &output_helpers {
+    for helper in output_helpers {
         if let Some(name) = string_at(helper, &["name"]) {
             sections.push(generate_named_shape(
                 &format!("{name}Output"),
@@ -70,7 +66,12 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         tools,
         workflows,
         helpers,
-        array_at(ir, &["components"]),
+        plan
+            .ir()
+            .get("components")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
         &custom_intent_defs,
     ));
 
@@ -78,49 +79,49 @@ pub fn generate(ir: &Value, base_name: &str) -> String {
         agent_name,
         has_tools,
         !workflows.is_empty(),
-        !helpers.is_empty(),
+        plan.has_helpers(),
         has_components,
-        &custom_intents,
+        custom_intents,
     ));
     sections.push(generate_handler_classes(
         agent_name,
         has_tools,
         !workflows.is_empty(),
-        !helpers.is_empty(),
+        plan.has_helpers(),
         has_components,
-        &custom_intents,
+        custom_intents,
     ));
 
-    if !required_providers.is_empty() || !custom_provider_ids.is_empty() {
+    if plan.has_api_keys() {
         sections.push(generate_api_keys(
             agent_name,
-            &required_providers,
-            &custom_provider_ids,
+            required_providers,
+            custom_provider_ids,
         ));
     }
 
     sections.push(generate_config_class(
         agent_name,
         has_tools,
-        !required_providers.is_empty() || !custom_provider_ids.is_empty(),
-        matches!(ir.get("context"), Some(v) if !v.is_null()),
+        plan.has_api_keys(),
+        plan.has_context(),
     ));
     sections.push(generate_agent_class(
         agent_name,
         has_tools,
-        !workflows.is_empty(),
-        !helpers.is_empty(),
+        plan.has_workflows(),
+        plan.has_helpers(),
         has_components,
-        &custom_intents,
+        custom_intents,
     ));
     sections.push(generate_factory(
         agent_name,
-        !required_providers.is_empty() || !custom_provider_ids.is_empty(),
+        plan.has_api_keys(),
         has_tools,
-        !workflows.is_empty(),
-        !helpers.is_empty(),
+        plan.has_workflows(),
+        plan.has_helpers(),
         has_components,
-        &custom_intents,
+        custom_intents,
     ));
 
     join_sections(&sections)
@@ -150,61 +151,7 @@ pub fn generate_ir_module(ir: &Value) -> String {
     .join("\n")
 }
 
-fn collect_custom_intents(ir: &Value) -> Vec<String> {
-    let mut names = Vec::new();
 
-    if let Some(items) = ir.get("customIntents").and_then(Value::as_array) {
-        for item in items {
-            if let Some(name) = string_at(item, &["name"]) {
-                if !names.iter().any(|existing| existing == name) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-
-    for helper in array_at(ir, &["helpers"]) {
-        if let Some(items) = helper.get("customIntents").and_then(Value::as_array) {
-            for item in items {
-                if let Some(name) = string_at(item, &["name"]) {
-                    if !names.iter().any(|existing| existing == name) {
-                        names.push(name.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    names
-}
-
-fn collect_custom_intent_defs(ir: &Value) -> Vec<(String, Value)> {
-    let mut defs = Vec::new();
-
-    if let Some(items) = ir.get("customIntents").and_then(Value::as_array) {
-        for item in items {
-            if let Some(name) = string_at(item, &["name"]) {
-                if !defs.iter().any(|(existing, _)| existing == name) {
-                    defs.push((name.to_string(), item.clone()));
-                }
-            }
-        }
-    }
-
-    for helper in array_at(ir, &["helpers"]) {
-        if let Some(items) = helper.get("customIntents").and_then(Value::as_array) {
-            for item in items {
-                if let Some(name) = string_at(item, &["name"]) {
-                    if !defs.iter().any(|(existing, _)| existing == name) {
-                        defs.push((name.to_string(), item.clone()));
-                    }
-                }
-            }
-        }
-    }
-
-    defs
-}
 
 fn generate_custom_types(types: &Map<String, Value>) -> String {
     let mut blocks = Vec::new();
@@ -1974,6 +1921,7 @@ fn pascal_case_identifier(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{generate, generate_ir_module};
+    use crate::generation_plan::CodegenPlan;
     use serde_json::json;
 
     #[test]
@@ -1990,7 +1938,7 @@ mod tests {
             "modelConfig": []
         });
 
-        let output = generate(&ir, "demo");
+        let output = generate(&CodegenPlan::new(ir), "demo");
         assert!(output.contains("import 'dart:async';"));
         assert!(output.contains("import 'demo.agent.ir.dart';"));
         assert!(output.contains("import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;"));
@@ -2035,7 +1983,7 @@ mod tests {
             }]
         });
 
-        let output = generate(&ir, "billing");
+        let output = generate(&CodegenPlan::new(ir), "billing");
         assert!(output.contains("final class BillingApiKeys"));
         assert!(output.contains("final String? my_groqApiKey;"));
     }
@@ -2067,7 +2015,7 @@ mod tests {
             }]
         });
 
-        let output = generate(&ir, "ui");
+        let output = generate(&CodegenPlan::new(ir), "ui");
         assert!(output.contains("abstract class UiAgentBaseIntentHandler"));
         assert!(output.contains("toolCall(UiAgentToolCallIntent intent, String agentName)"));
         assert!(output.contains("component(UiAgentComponentIntent intent, String agentName)"));
@@ -2117,7 +2065,7 @@ mod tests {
             "modelConfig": []
         });
 
-        let output = generate(&ir, "hello");
+        let output = generate(&CodegenPlan::new(ir), "hello");
         assert!(output.contains("abstract class HelloOutput"));
         assert!(output.contains("final class HelloOutputSimple extends HelloOutput"));
         assert!(output.contains("final class HelloOutputPerson extends HelloOutput"));
@@ -2143,7 +2091,7 @@ mod tests {
             "modelConfig": []
         });
 
-        let output = generate(&ir, "hello");
+        let output = generate(&CodegenPlan::new(ir), "hello");
         assert!(output.contains("sdk.NoArgs get args => const sdk.NoArgs();"));
         assert!(output.contains("return const HelloGetDetailsToolCallIntentCase();"));
         assert!(!output.contains("final class HelloGetDetailsToolArgs"));
@@ -2177,7 +2125,7 @@ mod tests {
             "modelConfig": []
         });
 
-        let output = generate(&ir, "hello");
+        let output = generate(&CodegenPlan::new(ir), "hello");
         assert!(output.contains("id: (json['id'])?.toString() ?? ''"));
         assert!(output.contains("result: (json['result'])?.toString() ?? ''"));
         assert!(output.contains("name: (json['name'])?.toString() ?? ''"));
@@ -2222,7 +2170,7 @@ mod tests {
             "modelConfig": []
         });
 
-        let output = generate(&ir, "hello");
+        let output = generate(&CodegenPlan::new(ir), "hello");
         assert!(output.contains("final class Person {"));
         assert!(output.contains("final String name;"));
         assert!(output.contains("final double age;"));

@@ -1,43 +1,45 @@
-use crate::common::{array_at,collect_custom_provider_ids,collect_helper_tools,collect_required_providers,collect_workflow_tools,join_sections,merge_tool_defs,string_at};
+use crate::common::{join_sections,string_at};
+use crate::generation_plan::CodegenPlan;
 use serde_json::{Map,Value};
 use std::collections::BTreeSet;
 
-pub fn generate(ir:&Value,_base_name:&str)->String{
- let agent_name=string_at(ir,&["name"]).unwrap_or("Agent");
- let workflow_tools=collect_workflow_tools(ir);
- let helper_tools=collect_helper_tools(ir);
- let all_tools=merge_tool_defs(array_at(ir,&["tools"]),workflow_tools.into_iter().chain(helper_tools.into_iter()).collect());
- let has_tools=!all_tools.is_empty();
- let workflows=array_at(ir,&["workflows"]);
- let helpers=array_at(ir,&["helpers"]);
- let custom_intents=collect_custom_intents(ir);
- let has_workflows=!workflows.is_empty();
- let has_helpers=!helpers.is_empty();
- let has_components=!array_at(ir,&["components"]).is_empty();
- let has_context=ir.get("context").and_then(Value::as_object).map(|c|!c.is_empty()).unwrap_or(false);
- let required_providers=collect_required_providers(ir);
- let custom_provider_ids=collect_custom_provider_ids(ir);
+pub fn generate(plan:&CodegenPlan,_base_name:&str)->String{
+ let ir=plan.ir();
+ let agent_name=plan.agent_name();
+ let all_tools=plan.tools();
+ let workflows=plan.workflows();
+ let helpers=plan.helpers();
+ let output_helpers=plan.output_helpers();
+ let custom_intents=plan.custom_intents();
+ let has_tools=plan.has_tools();
+ let has_workflows=plan.has_workflows();
+ let has_helpers=plan.has_helpers();
+ let has_components=plan.has_components();
+ let has_context=plan.has_context();
+ let required_providers=plan.required_providers();
+ let custom_provider_ids=plan.custom_provider_ids();
  let mut sections=vec![format!("// Auto-generated Rust bindings for {agent_name}"),"// Do not edit manually".to_string(),String::new(),"use serde_json::{Map as JsonMap, Value as JsonValue};".to_string(),"use std::marker::PhantomData;".to_string(),String::new(),generate_runtime_support()];
  if let Some(types)=ir.get("types").and_then(Value::as_object){sections.push(generate_custom_types(types));}
  sections.push(generate_named_shape(&format!("{agent_name}Input"),unwrap_input_fields(ir.get("input")).as_ref()));
- sections.push(generate_output_type(agent_name,ir.get("output")));
+ for helper in output_helpers{sections.push(generate_helper_output_type(helper));}
+ sections.push(generate_output_type(agent_name,ir.get("output"),output_helpers));
  if has_context{sections.push(generate_named_shape(&format!("{agent_name}Context"),ir.get("context")));}
- if has_tools{sections.push(generate_tools(agent_name,&all_tools));}
- sections.push(generate_intent_name_enum(agent_name,has_tools,has_workflows,has_helpers,has_components,&custom_intents));
- sections.push(generate_custom_intent_types(agent_name,ir));
+ if has_tools{sections.push(generate_tools(agent_name,all_tools));}
+ sections.push(generate_intent_name_enum(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
+ sections.push(generate_custom_intent_types(agent_name,plan));
  sections.push(generate_core_intents(agent_name,ir.get("output")));
- if has_tools{sections.push(generate_callable_family(agent_name,"Tool",&all_tools,"name","params","returns",true));}
+ if has_tools{sections.push(generate_callable_family(agent_name,"Tool",all_tools,"name","params","returns",true));}
  if has_workflows{sections.push(generate_callable_family(agent_name,"Workflow",workflows,"flowName","flowParams","returns",false));}
  if has_helpers{sections.push(generate_callable_family(agent_name,"Helper",helpers,"name","input","output",false));}
  if has_components{sections.push(generate_component_intents(agent_name));}
- sections.push(generate_top_level_intent_enums(agent_name,has_tools,has_workflows,has_helpers,has_components,&custom_intents));
- sections.push(generate_decode_functions(agent_name,has_tools,has_workflows,has_helpers,has_components,&custom_intents));
+ sections.push(generate_top_level_intent_enums(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
+ sections.push(generate_decode_functions(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
  sections.push(generate_handler_traits(agent_name));
- sections.push(generate_api_keys(agent_name,&required_providers,&custom_provider_ids));
+ sections.push(generate_api_keys(agent_name,required_providers,custom_provider_ids));
  sections.push(generate_middleware_trait(agent_name));
- sections.push(generate_config(agent_name,has_tools,has_context,!required_providers.is_empty()));
+ sections.push(generate_config(agent_name,has_tools,has_context,plan.has_api_keys()));
  sections.push(generate_agent(agent_name));
- sections.push(generate_aliases(agent_name,has_tools,has_context,!required_providers.is_empty()));
+ sections.push(generate_aliases(agent_name,has_tools,has_context,plan.has_api_keys()));
  join_sections(&sections)
 }
 
@@ -51,8 +53,24 @@ fn generate_runtime_support()->String{[
 
 fn generate_custom_types(types:&Map<String,Value>)->String{let mut blocks=Vec::new();for(type_name,type_def)in types{blocks.push(generate_named_shape(type_name,Some(type_def)));}blocks.join("\n")}
 
-fn generate_output_type(agent_name:&str,value:Option<&Value>)->String{
- let Some(value)=value else{return format!("pub type {agent_name}Output = JsonValue;\n");};
+fn generate_helper_output_type(helper:&Value)->String{
+ let helper_name=string_at(helper,&["name"]).unwrap_or("Helper");
+ generate_named_shape(&format!("{helper_name}Output"),helper.get("output"))
+}
+
+fn generate_output_type(agent_name:&str,value:Option<&Value>,output_helpers:&[Value])->String{
+ let Some(value)=value else{
+  if output_helpers.is_empty(){return format!("pub type {agent_name}Output = JsonValue;\n");}
+  let base_name=format!("{agent_name}BaseOutput");
+  let mut enum_variants=vec![format!("    Base({base_name}),")];
+  for helper in output_helpers{
+   if let Some(helper_name)=string_at(helper,&["name"]){
+    let helper_output=format!("{}Output",helper_name);
+    enum_variants.push(format!("    {}({helper_output}),",to_rust_type_name(helper_name)));
+   }
+  }
+  return format!("#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct {base_name};\n\n#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(untagged)]\npub enum {agent_name}Output {{\n{}\n}}\n",enum_variants.join("\n"));
+ };
  if let Some(variants)=value.get("__variants").and_then(Value::as_object){
   let mut blocks=Vec::new();let mut enum_variants=Vec::new();
   for(variant_name,variant_props)in variants{
@@ -64,7 +82,23 @@ fn generate_output_type(agent_name:&str,value:Option<&Value>)->String{
   blocks.push(format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"type\")]\npub enum {agent_name}Output {{\n{}\n}}\n",enum_variants.join("\n")));
   return blocks.join("\n");
  }
- generate_named_shape(&format!("{agent_name}Output"),Some(value))
+ if output_helpers.is_empty(){return generate_named_shape(&format!("{agent_name}Output"),Some(value));}
+ let mut blocks=Vec::new();
+ let base_name=format!("{agent_name}BaseOutput");
+ if value.is_null(){
+  blocks.push(format!("#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct {base_name};\n"));
+ }else{
+  blocks.push(generate_named_shape(&base_name,Some(value)));
+ }
+ let mut enum_variants=vec![format!("    Base({base_name}),")];
+ for helper in output_helpers{
+  if let Some(helper_name)=string_at(helper,&["name"]){
+   let helper_output=format!("{}Output",helper_name);
+   enum_variants.push(format!("    {}({helper_output}),",to_rust_type_name(helper_name)));
+  }
+ }
+ blocks.push(format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(untagged)]\npub enum {agent_name}Output {{\n{}\n}}\n",enum_variants.join("\n")));
+ blocks.join("\n")
 }
 
 fn generate_named_shape(name:&str,value:Option<&Value>)->String{if let Some(properties)=shape_properties(value,false){return generate_struct(name,&properties);}format!("pub type {name} = {};\n",rust_type(value,false,"JsonValue"))}
@@ -107,9 +141,9 @@ fn generate_intent_name_enum(agent_name:&str,has_tools:bool,has_workflows:bool,h
  format!("#[derive(Debug, Clone, Copy, PartialEq, Eq)]\npub enum {agent_name}IntentName {{\n{variants}\n}}\n")
 }
 
-fn generate_custom_intent_types(agent_name:&str,ir:&Value)->String{
+fn generate_custom_intent_types(agent_name:&str,plan:&CodegenPlan)->String{
  let mut blocks=Vec::new();
- if let Some(items)=ir.get("customIntents").and_then(Value::as_array){for item in items{let Some(name)=string_at(item,&["name"]) else{continue;};blocks.push(generate_named_shape(&format!("{agent_name}{}Intent",to_rust_type_name(name)),item.get("fields")));}}
+ for (name,item) in plan.custom_intent_defs(){blocks.push(generate_named_shape(&format!("{agent_name}{}Intent",to_rust_type_name(name)),item.get("fields")));}
  blocks.join("\n")
 }
 
@@ -224,9 +258,7 @@ fn generate_aliases(agent_name:&str,has_tools:bool,has_context:bool,has_api_keys
  aliases.join("\n")
 }
 
-fn collect_custom_intents(ir:&Value)->Vec<String>{let mut intents=BTreeSet::new();if let Some(items)=ir.get("customIntents").and_then(Value::as_array){for item in items{if let Some(name)=string_at(item,&["name"]){intents.insert(name.to_string());}}}intents.into_iter().collect()}
-
-fn unwrap_input_fields(value:Option<&Value>)->Option<Value>{let value=value?;if value.get("kind").and_then(Value::as_str)==Some("properties"){return value.get("fields").cloned();}Some(value.clone())}
+fn unwrap_input_fields(value:Option<&Value>)->Option<Value>{let value=value?;if value.get("kind").and_then(Value::as_str)==Some("properties"){return value.get("fields").cloned();}match value.get("kind").and_then(Value::as_str){Some("direct")=>None,_=>Some(value.clone())}}
 
 fn shape_properties(value:Option<&Value>,unwrap_input_kind:bool)->Option<Map<String,Value>>{
  let value=value?;let obj=value.as_object()?;
@@ -261,9 +293,9 @@ fn to_rust_field_name(name:&str)->String{let mut out=String::new();let mut under
 
 #[cfg(test)]
 mod tests {
- use super::*;use serde_json::json;
+ use super::*;use crate::generation_plan::CodegenPlan;use serde_json::json;
  #[test]
- fn emits_typed_intents_and_conditional_config(){let ir=json!({"name":"Hello","context":{"user_id":{"type":"string","optional":false}},"tools":[{"name":"get_details","params":{},"returns":{"type":"typeRef","name":"Person"}},{"name":"get_location","params":{"id":{"type":"string","optional":false}},"returns":{"type":"string"}}],"helpers":[{"name":"Joker","input":null,"output":null}],"output":{"__variants":{"Output":{"name":{"type":"string","optional":false}},"Fallback":{"message":{"type":"string","optional":false}}}},"types":{"Person":{"properties":{"name":{"type":"string","optional":false},"age":{"type":"number","optional":false}}}},"customIntents":[{"name":"ask_user","fields":{"question":{"type":"string","optional":false}}}],"modelConfig":[{"defaultConfig":{"model":{"type":"openai","modelName":"gpt-4.1"}}}]});let output=generate(&ir,"hello");assert!(output.contains("pub enum HelloIntent"));assert!(output.contains("pub enum HelloIntentPartial"));assert!(output.contains("ToolCall(HelloToolCallIntent)"));assert!(output.contains("ResponseSchema(HelloResponseSchemaIntent)"));assert!(output.contains("pub fn decode_intent"));assert!(output.contains("FnMut(HelloIntent, &str) -> Option<IntentControl>"));assert!(output.contains("pub enum HelloToolCallIntent"));assert!(output.contains("GetLocation {"));assert!(output.contains("pub enum HelloResponseSchemaIntent"));assert!(output.contains("#[serde(tag = \"type\", content = \"response\")]") );assert!(output.contains("pub struct HelloConfig"));assert!(output.contains("pub tools: HelloToolsRegistry,"));assert!(output.contains("pub middleware: Vec<HelloMiddlewareRegistry>,"));assert!(output.contains("pub context: HelloContext,"));assert!(output.contains("pub api_keys: HelloApiKeys,"));assert!(output.contains("pub use HelloIntent as AuwgentIntent;"));assert!(output.contains("pub use HelloIntentPartial as AuwgentIntentPartial;"));assert!(output.contains("pub use HelloTools as AuwgentTools;"));}
+ fn emits_typed_intents_and_conditional_config(){let ir=json!({"name":"Hello","context":{"user_id":{"type":"string","optional":false}},"tools":[{"name":"get_details","params":{},"returns":{"type":"typeRef","name":"Person"}},{"name":"get_location","params":{"id":{"type":"string","optional":false}},"returns":{"type":"string"}}],"helpers":[{"name":"Joker","input":null,"output":null,"customIntents":[{"name":"helper_prompt","fields":{"message":{"type":"string","optional":false}}}]}],"output":{"__variants":{"Output":{"name":{"type":"string","optional":false}},"Fallback":{"message":{"type":"string","optional":false}}}},"types":{"Person":{"properties":{"name":{"type":"string","optional":false},"age":{"type":"number","optional":false}}}},"customIntents":[{"name":"ask_user","fields":{"question":{"type":"string","optional":false}}}],"modelConfig":[{"defaultConfig":{"model":{"type":"openai","modelName":"gpt-4.1"}}}]});let output=generate(&CodegenPlan::new(ir),"hello");assert!(output.contains("pub enum HelloIntent"));assert!(output.contains("pub enum HelloIntentPartial"));assert!(output.contains("ToolCall(HelloToolCallIntent)"));assert!(output.contains("ResponseSchema(HelloResponseSchemaIntent)"));assert!(output.contains("pub fn decode_intent"));assert!(output.contains("FnMut(HelloIntent, &str) -> Option<IntentControl>"));assert!(output.contains("pub enum HelloToolCallIntent"));assert!(output.contains("GetLocation {"));assert!(output.contains("pub enum HelloResponseSchemaIntent"));assert!(output.contains("#[serde(tag = \"type\", content = \"response\")]") );assert!(output.contains("pub struct HelloConfig"));assert!(output.contains("pub tools: HelloToolsRegistry,"));assert!(output.contains("pub middleware: Vec<HelloMiddlewareRegistry>,"));assert!(output.contains("pub context: HelloContext,"));assert!(output.contains("pub api_keys: HelloApiKeys,"));assert!(output.contains("pub use HelloIntent as AuwgentIntent;"));assert!(output.contains("pub use HelloIntentPartial as AuwgentIntentPartial;"));assert!(output.contains("pub use HelloTools as AuwgentTools;"));assert!(output.contains("pub struct HelloHelperPromptIntent"));}
  #[test]
- fn omits_conditional_fields_when_not_needed(){let ir=json!({"name":"Mini","tools":[],"helpers":[],"components":[],"modelConfig":[]});let output=generate(&ir,"mini");assert!(output.contains("pub struct MiniConfig"));assert!(output.contains("pub middleware: Vec<MiniMiddlewareRegistry>,"));assert!(!output.contains("pub tools: MiniToolsRegistry,"));assert!(!output.contains("pub context: MiniContext,"));assert!(!output.contains("pub api_keys: MiniApiKeys,"));assert!(output.contains("FnMut(MiniIntent, &str) -> Option<IntentControl>"));}
+ fn omits_conditional_fields_when_not_needed(){let ir=json!({"name":"Mini","tools":[],"helpers":[],"components":[],"modelConfig":[]});let output=generate(&CodegenPlan::new(ir),"mini");assert!(output.contains("pub struct MiniConfig"));assert!(output.contains("pub middleware: Vec<MiniMiddlewareRegistry>,"));assert!(!output.contains("pub tools: MiniToolsRegistry,"));assert!(!output.contains("pub context: MiniContext,"));assert!(!output.contains("pub api_keys: MiniApiKeys,"));assert!(output.contains("FnMut(MiniIntent, &str) -> Option<IntentControl>"));}
 }
