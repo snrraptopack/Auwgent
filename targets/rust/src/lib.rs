@@ -3,10 +3,9 @@ use futures_util::future::BoxFuture;
 use ir_runtime::runtime::bridge::EngineBridge;
 use ir_runtime::runtime::engine::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
-    IntentControl, RunMetadata, SessionSaveCallback, ToolImplementation,
+    SessionSaveCallback, ToolImplementation,
 };
 use ir_runtime::runtime::middleware::parse_intent_control_response;
-use ir_runtime::runtime::session::SessionState;
 use ir_runtime::{AgentIR, ModelConfigEntry, ModelProvider};
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -661,11 +660,12 @@ pub fn to_value<T: Serialize>(value: T) -> AuwgentResult<Value> {
     serde_json::to_value(value).map_err(|e| e.to_string())
 }
 
+pub use ir_runtime::runtime::engine::{IntentControl, RunMetadata};
 pub use ir_runtime::runtime::engine_types::{
     AggregateUsage, AsyncErrorCallback, AsyncLlmEndCallback, AsyncLlmStartCallback,
     AsyncRunCompleteCallback, AsyncRunStartCallback,
 };
-pub use ir_runtime::runtime::session::{Message, Role, Turn};
+pub use ir_runtime::runtime::session::{Message, Role, SessionState, Turn};
 pub use ir_runtime::{
     Comparison, ComponentChildrenConstraint, ComponentDefinition, Condition, CustomIntentDef,
     ExamplePair, Expression, Helper, HandoffMode, JsonValue, ModelConfig, NamedModelConfig,
