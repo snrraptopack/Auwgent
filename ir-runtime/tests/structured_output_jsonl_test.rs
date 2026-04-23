@@ -55,7 +55,7 @@ fn structured_output_emits_jsonl_for_multiple_intent_shapes() {
         r#"
 [tool_call: fetch_session]
 session_id: "sess_123"
-[/tool]
+[/tool_call]
 [workflow_call: process_data]
 input: "hello"
 [/workflow]
@@ -161,7 +161,7 @@ fn structured_output_ignores_terminal_text_when_action_exists_in_same_turn() {
         r#"
 [tool_call: user_name]
 name: null
-[/tool]
+[/tool_call]
 [response_text]I don't have your name.[/response_text]
 "#,
     );

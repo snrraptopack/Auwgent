@@ -45,7 +45,7 @@ impl BlockScanner {
         "[response_text]",
         "[/response_text]",
         "[tool_call:",
-        "[/tool]",
+        "[/tool_call]",
         "[workflow_call:",
         "[/workflow]",
         "[helper_call:",
@@ -179,7 +179,7 @@ impl BlockScanner {
     fn is_known_closing_header(&self, header: &str) -> bool {
         matches!(
             header.trim(),
-            "/tool"
+            "/tool_call"
                 | "/workflow"
                 | "/helper"
                 | "/component"
@@ -255,7 +255,7 @@ impl BlockScanner {
                 {
                     return None;
                 }
-                Some((BlockType::Tool, Some(target.to_string()), None, "[/tool]"))
+                Some((BlockType::Tool, Some(target.to_string()), None, "[/tool_call]"))
             }
             "workflow_call" => {
                 if target
@@ -328,7 +328,7 @@ impl BlockScanner {
         }
 
         match header.split_once(':').map(|(kind, _)| kind.trim()) {
-            Some("tool_call") => Some("[/tool]"),
+            Some("tool_call") => Some("[/tool_call]"),
             Some("workflow_call") => Some("[/workflow]"),
             Some("helper_call") => Some("[/helper]"),
             Some("component") => Some("[/component]"),
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_tool_block() {
-        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
+        let input = "[tool_call: fetch_user]\nid: \"123\"\n[/tool_call]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -564,7 +564,7 @@ mod tests {
 
     #[test]
     fn test_implicit_chat() {
-        let input = "Hello\n[tool_call: fetch]\nid: \"123\"\n[/tool]\nGoodbye";
+        let input = "Hello\n[tool_call: fetch]\nid: \"123\"\n[/tool_call]\nGoodbye";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -590,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_auto_closes_when_next_block_starts() {
-        let input = "[response_text]Hello\n[tool_call: fetch_user]\nid: \"123\"\n[/tool]";
+        let input = "[response_text]Hello\n[tool_call: fetch_user]\nid: \"123\"\n[/tool_call]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     fn test_rejects_malformed_tool_header_with_whitespace_in_target() {
-        let input = "[tool_call: user_name To get your name]\n[/tool]";
+        let input = "[tool_call: user_name To get your name]\n[/tool_call]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
@@ -719,5 +719,18 @@ mod tests {
         assert_eq!(blocks[1].target_name, Some("Output".to_string()));
         assert!(blocks[1].content.contains("name: Hiroshi"));
         assert!(blocks[1].content.contains("age: 21"));
+    }
+
+    #[test]
+    fn test_tool_call_llama_reproduce(){
+        let input = " \n[tool_call: get_user_name_age] \n[/tool_call]\n[tool_call: get_location] \n[/tool_call]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 2, "expected 2 tools got {} : {:?}", blocks.len(), blocks);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[1].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].target_name, Some("get_user_name_age".to_string()));
+        assert_eq!(blocks[1].target_name, Some("get_location".to_string()));
     }
 }

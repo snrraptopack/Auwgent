@@ -1,30 +1,32 @@
 {
-  "name": "Test",
+  "name": "Hello",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "custom",
-          "url": "anymodel",
-          "modelName": "www.the url"
+          "type": "groq",
+          "modelName": "llama-3.3-70b-versatile",
+          "config": null
         },
+        "embedding": null,
         "prompt": {
-          "value": "Hello",
-          "type": "literal"
+          "type": "template",
+          "value": [
+            {
+              "type": "literal",
+              "value": "\r\n        Be polite helpful accurate.\r\n        tools are avaialble for your use, use them to exute task effectively\r\n        "
+            }
+          ]
         }
       },
       "namedConfig": []
     }
   ],
-  "input": {
-    "text": {
-      "type": "string",
-      "optional": false
-    }
-  },
+  "input": null,
   "output": {
-    "__variants": {
-      "Hey": {
+    "type": {
+      "type": "object",
+      "properties": {
         "name": {
           "type": "string",
           "optional": false
@@ -32,10 +34,8 @@
         "age": {
           "type": "number",
           "optional": false
-        }
-      },
-      "A": {
-        "wow": {
+        },
+        "location": {
           "type": "string",
           "optional": false
         }
@@ -43,32 +43,49 @@
     }
   },
   "context": null,
-  "tools": [],
+  "tools": [
+    {
+      "name": "get_user_name_age",
+      "description": "use this to get the user's name and age",
+      "params": {},
+      "returns": {
+        "type": "typeRef",
+        "name": "Person"
+      },
+      "examples": []
+    },
+    {
+      "name": "get_location",
+      "description": "use this to ge location",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    }
+  ],
   "workflows": [],
   "helpers": [],
-  "tests": [],
+  "components": [],
   "types": {
-    "Hey": {
+    "Person": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
         "age": {
           "type": "number",
-          "optional": false
-        }
-      }
-    },
-    "A": {
-      "isOutput": false,
-      "properties": {
-        "wow": {
+          "optional": false,
+          "description": null
+        },
+        "name": {
           "type": "string",
-          "optional": false
+          "optional": false,
+          "description": null
         }
-      }
+      },
+      "@examples": []
     }
-  }
+  },
+  "helperToolGrants": null,
+  "helperHandoff": null,
+  "tests": [],
+  "lifecycle": null,
+  "customIntents": null
 }

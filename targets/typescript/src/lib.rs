@@ -38,6 +38,7 @@ impl Auwgent {
         Ok(())
     }
 
+
     /// Set the Groq driver with the given API key.
     #[napi]
     pub fn set_groq_driver(&self, api_key: String) -> Result<()> {

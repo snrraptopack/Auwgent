@@ -12,7 +12,7 @@ pub enum HandoffMode {
     Return,
     /// Helper streams directly to the user, then the parent stops.
     User,
-    /// Helper streams directly to the user, then the parent continues.
+    /// Helper streams directly to the user, then the parent agent  continues when it done.
     ThenContinue,
 }
 

@@ -1,5 +1,6 @@
+import 'dart:async';
+
 import 'main.agent.dart';
-import "dart:io";
 
 final class ML extends AuwgentMiddleware {
   onRunStart(session, ctx) {
@@ -8,60 +9,43 @@ final class ML extends AuwgentMiddleware {
   }
 }
 
-final class Logger extends AuwgentBasePartialIntentHandler {
-  responseText(intent, name) {
-    stdout.write(intent.delta ?? "");
-  }
-
-  responseSchema(value, name) {
-    
-  }
-}
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
-  responseText(intent, agentName) {
-    print(intent.text);
-    print("${intent.text} by $agentName");
+  responseText(value, agentName) {
+     print("text");
+    print("${value.text} by $agentName");
   }
 
-  responseSchema(intent, agentName) {
-    print('schema intent from $agentName');
-    print("${intent.response} by ");
+  responseSchema(value, agentName) {
+    print("schema");
+    print("${value.response} by $agentName ");
   }
 
-  toolCall(intent, agentName) {
-    print(" called ,${intent.args}, name $agentName");
+  toolCall(value, agentName) {
+    print(" tool called: $agentName ,${value}");
     return null;
   }
 
-  toolResult(intent, agentName) {
-    print(" result, ${intent.args}, name $agentName");
+  toolResult(value, agentName) {
+    print(" tool result name $agentName , ${value}");
   }
 
-  helperCall(intent, name) {
-    print("called helper ${intent.args} by $name");
-  }
-
-  helperResult(intent, name) {
-    print("result ${intent.result}, by $name");
-  }
 }
 
 final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<Person> getDetails() async => Person(age: 10, name: "ama");
+  Future<Person> getUserNameAge() async => Person(age: 10, name: "ama");
 
   @override
-  Future<String> getLocation(args) async => "Tarkwa ${args.id}";
+  Future<String> getLocation() async => "Tarkwa";
 }
 
 Future<void> main() async {
   final config = AuwgentConfig(
     apiKeys: AuwgentApiKeys(
-      groqApiKey:
-          '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',
+      groqApiKey: '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',
     ),
     tools: Tools(),
     middleware: [ML()],
@@ -69,10 +53,10 @@ Future<void> main() async {
 
   final agent = auwgent(config);
 
-  print(agent.generatePrompt());
+  //print(agent.generatePrompt());
 
-  //agent.onIntentHandler(HelloLogger());
-  agent.onIntentPartialHandler(Logger());
+  agent.onIntentHandler(HelloLogger());
+  //agent.onIntentPartialHandler(Logger());
 
   // agent.onIntent((name, value, agentName) {
   //   print('intent: $name');
@@ -82,15 +66,61 @@ Future<void> main() async {
   // });
 
   try {
-    final session = await agent.run('Hello get my name and my location with id 10');
+    final session = await agent.run(
+      'Hello get my name and my location',
+    );
 
     print(agent.getMetadata());
+    print(session.turns);
 
-    print("${session.turns}");
   } finally {
     agent.dispose();
   }
 }
+
+
+/** issues
+ * 
+ * The context {
+  "activeAgent": "Hello",
+  "stack": [],
+  "rootAgent": "Hello",
+  "rawBlock": null,
+  "systemPrompt": null
+}
+{
+  "aggregate": {
+    "prompt_tokens": 329,
+    "completion_tokens": 28,
+    "total_tokens": 357,
+    "reasoning_tokens": 0,
+    "cached_tokens": 0
+  },
+  "turns": [
+    {
+      "turn_index": 0,
+      "usage": {
+        "prompt_tokens": 329,
+        "completion_tokens": 28,
+        "total_tokens": 357,
+        "reasoning_tokens": 0,
+        "cached_tokens": 0
+      },
+      "finish_reason": "stop",
+      "model": "llama-3.3-70b-versatile"
+    }
+  ]
+}
+[{
+  "input": "Hello get my name and my location",
+  "model_response": " \n[tool_call: get_user_name_age] \n[/tool_call]\n[tool_call: get_location] \n[/tool_call]"
+}]
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\dart\example> 
+
+
+ * 
+ */
+
 
 /**
  *

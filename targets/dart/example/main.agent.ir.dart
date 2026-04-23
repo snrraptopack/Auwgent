@@ -15,8 +15,13 @@ const String _HelloAgentIrJson = r'''{
         },
         "embedding": null,
         "prompt": {
-          "value": "You are a helper",
-          "type": "literal"
+          "type": "template",
+          "value": [
+            {
+              "type": "literal",
+              "value": "\r\n        Be polite and helpful.\r\n        "
+            }
+          ]
         }
       },
       "namedConfig": []
@@ -34,14 +39,15 @@ const String _HelloAgentIrJson = r'''{
     },
     "location": {
       "type": "string",
-      "optional": true
+      "optional": true,
+      "description": "can be null"
     }
   },
   "context": null,
   "tools": [
     {
-      "name": "get_details",
-      "description": "use this to get the deatails of the user",
+      "name": "get_user_name_age",
+      "description": "use this to get the user's name and age",
       "params": {},
       "returns": {
         "type": "typeRef",
@@ -52,12 +58,7 @@ const String _HelloAgentIrJson = r'''{
     {
       "name": "get_location",
       "description": "use this to ge location",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false
-        }
-      },
+      "params": {},
       "returns": "string",
       "examples": []
     }
@@ -106,20 +107,20 @@ const String _HelloAgentIrJson = r'''{
     "Person": {
       "isOutput": false,
       "properties": {
-        "age": {
-          "type": "number",
+        "name": {
+          "type": "string",
           "optional": false,
           "description": null
         },
-        "name": {
-          "type": "string",
+        "age": {
+          "type": "number",
           "optional": false,
           "description": null
         },
         "location": {
           "type": "string",
           "optional": true,
-          "description": null
+          "description": "can be null"
         }
       },
       "@examples": []

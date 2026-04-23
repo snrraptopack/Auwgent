@@ -281,7 +281,12 @@ type RequiredKeyFields<IR extends AgentIRShape> =
 /** Dynamic ApiKeys – only demands the keys the IR needs */
 export type ApiKeys<IR extends AgentIRShape = AgentIRShape> =
     string extends CollectProviders<IR>
-    ? { [key: string]: string | undefined } & { geminiApiKey?: string; openaiApiKey?: string; customUrl?: string }
+  ? { [key: string]: string | undefined } & {
+    geminiApiKey?: string;
+    openaiApiKey?: string;
+    groqApiKey?: string;
+    customUrl?: string
+  }
     : { [K in RequiredKeyFields<IR>]: string } & { [K in CollectCustomIds<IR>]: string };
 
 // ── Intent Types ─────────────────────────────────────────────────────────

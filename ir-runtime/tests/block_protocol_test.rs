@@ -38,7 +38,7 @@ fn test_tool_to_tool_call() {
     }));
 
     orch.write(
-        "[tool_call: fetch_session]\nsession_id: \"sess_123\"\n[/tool]\n[tool_call: get_user]\nuser_id: \"usr_456\"\n[/tool]",
+        "[tool_call: fetch_session]\nsession_id: \"sess_123\"\n[/tool_call]\n[tool_call: get_user]\nuser_id: \"usr_456\"\n[/tool_call]",
     );
     orch.end();
 
@@ -158,10 +158,10 @@ Let me fetch that data.
 
 [tool_call: fetch_session]
 session_id: "sess_123"
-[/tool]
+[/tool_call]
 [tool_call: get_user]
 user_id: "usr_456"
-[/tool]
+[/tool_call]
 
 [response_text]
 Here's the result.
@@ -197,7 +197,7 @@ Let me help you.
 
 [tool_call: fetch]
 id: "123"
-[/tool]
+[/tool_call]
 
 Here's the result.
 "#;
@@ -237,7 +237,7 @@ fn test_auto_close() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("[response_text]\nHello\n[tool_call: fetch]\nid: \"123\"\n[/tool]");
+    orch.write("[response_text]\nHello\n[tool_call: fetch]\nid: \"123\"\n[/tool_call]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -457,7 +457,7 @@ fn test_tool_call_unflattens_nested_args_from_aliases() {
     }));
 
     orch.write(
-        "[tool_call: create_user]\nprofile_name: \"Ada\"\nprofile_contact_email: \"ada@test.com\"\n[/tool]",
+        "[tool_call: create_user]\nprofile_name: \"Ada\"\nprofile_contact_email: \"ada@test.com\"\n[/tool_call]",
     );
     orch.end();
 
@@ -586,7 +586,7 @@ fn test_tool_call_preserves_integer_numbers() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("[tool_call: user_name]\nid: 123\n[/tool]");
+    orch.write("[tool_call: user_name]\nid: 123\n[/tool_call]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -629,7 +629,7 @@ fn test_malformed_tool_header_is_not_emitted_as_tool_call() {
         emitted_clone.lock().unwrap().push((name, value));
     }));
 
-    orch.write("[tool_call: user_name To get your name][/tool][response_text]Hello Theo[/response_text]");
+    orch.write("[tool_call: user_name To get your name][/tool_call][response_text]Hello Theo[/response_text]");
     orch.end();
 
     let results = emitted.lock().unwrap();
@@ -686,7 +686,7 @@ fn test_partial_tool_call_does_not_reemit_same_payload_on_close() {
     }));
 
     orch.write("[tool_call: create_user]\nname: \"Ama\"");
-    orch.write("\n[/tool]");
+    orch.write("\n[/tool_call]");
 
     let partials = partials.lock().unwrap();
     assert_eq!(partials.len(), 1);

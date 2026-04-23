@@ -28,6 +28,10 @@ classifiers = [
     "Programming Language :: Rust",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+dependencies = [
+    "maturin>=1.13.1",
+    "python-env>=1.0.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/snrraptopack/Auwgent"

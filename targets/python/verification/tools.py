@@ -1,10 +1,10 @@
-from main_types import Student
+from main_types import AuwgentTools, Person
 
 
-async def getStudentDetails(id: str) -> Student:
-    return {
-        "user_name": "Babyface",
-        "age": 22,
-        "id": id,
-        "grades": ["A", "A+"]
-    }
+class Tools(AuwgentTools):
+
+    async def get_location(self) -> str:
+        return "Tarkwa"
+
+    async def get_user_name_age(self) -> "Person":
+        return Person(name="Theophlilus", age=99)

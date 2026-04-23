@@ -1,4 +1,4 @@
-/// Block-based orchestrator for @@marker protocol
+/// Block-based orchestrator for [] protocol #edit
 /// Handles both predefined intents (tool_call, response_text, etc.) and custom intents
 use crate::flat_args::{
     alias_map_from_specs, flatten_helper_input_specs, flatten_named_field_specs,
@@ -686,7 +686,7 @@ fn is_incomplete_protocol_header(input: &str) -> bool {
         "[response_text]",
         "[/response_text]",
         "[tool_call:]",
-        "[/tool]",
+        "[/tool_call]",
         "[workflow_call:]",
         "[/workflow]",
         "[helper_call:]",

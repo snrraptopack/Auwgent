@@ -301,6 +301,9 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def set_openai_driver(self, api_key: str, base_url: Optional[str] = None) -> None:
         self._native.set_openai_driver(api_key, base_url)
 
+    def set_groq_driver(self, api_key: str) -> None:
+        self._native.set_groq_driver(api_key)
+
     def set_custom_driver(self, id: str, api_key: str, base_url: str) -> None:
         self._native.set_custom_driver(id, api_key, base_url)
 
@@ -572,11 +575,17 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 return None
 
             if event_type == "run_start":
-                session = cast(SessionState, event.get("session", {}))
+                session = event.get("session")
+                if session is None:
+                    session = {}
+                session = cast(SessionState, session)
+
                 for middleware in self._get_middleware(ctx):
                     if hasattr(middleware, "onRunStart"):
                         try:
-                            session = await middleware.onRunStart(session, ctx)
+                            result = await middleware.onRunStart(session, ctx)
+                            if result is not None:
+                                session = result
                             self._persist_middleware_context(ctx)
                         except Exception as error:
                             self._report_warning("middleware", "middleware onRunStart threw", error, cast(str, ctx.get("activeAgent", "")))
@@ -627,6 +636,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
             return None
         except Exception as error:
+            import traceback
+            traceback.print_exc()
             self._report_warning("onMiddlewareEvent", "failed to handle middleware event", error)
             return None
 

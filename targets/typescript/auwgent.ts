@@ -670,7 +670,7 @@ export class TypedAuwgent<
     }
 
     /** Access the raw native binding for advanced usage. */
-    get raw(): InstanceType<typeof AuwgentNative> {
+  get raw(): InstanceType<typeof AuwgentNative> {
         return this.native;
     }
 }

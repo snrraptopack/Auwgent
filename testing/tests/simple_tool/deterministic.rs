@@ -39,7 +39,7 @@ async fn generated_rust_fixture_can_process_a_deterministic_tool_call() {
         None
     });
 
-    agent.write_chunk("[tool_call: get_location]\n[/tool]".to_string());
+    agent.write_chunk("[tool_call: get_location]\n[/tool_call]".to_string());
 
     let terminal = agent
         .end_stream()

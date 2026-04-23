@@ -5,27 +5,27 @@ import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;
 import 'main.agent.ir.dart';
 final class Person {
   const Person({
-    required this.age,
     required this.name,
+    required this.age,
     this.location,
   });
 
-  final double age;
   final String name;
+  final double age;
   final String? location;
 
   factory Person.fromJson(sdk.JsonMap json) {
     return Person(
-      age: ((json['age'] as num?)?.toDouble()) ?? 0,
       name: (json['name'])?.toString() ?? '',
+      age: ((json['age'] as num?)?.toDouble()) ?? 0,
       location: json['location']?.toString(),
     );
   }
 
   sdk.JsonMap toJson() {
     return {
-      'age': age,
       'name': name,
+      'age': age,
       'location': location,
     };
   }
@@ -69,38 +69,38 @@ final class HelloOutput {
 
 typedef HelloContext = sdk.JsonMap;
 
-typedef HelloGetDetailsToolHandler = FutureOr<HelloGetDetailsToolResultValue> Function();
-typedef HelloGetLocationToolHandler = FutureOr<HelloGetLocationToolResultValue> Function(HelloGetLocationToolArgs args);
+typedef HelloGetUserNameAgeToolHandler = FutureOr<HelloGetUserNameAgeToolResultValue> Function();
+typedef HelloGetLocationToolHandler = FutureOr<HelloGetLocationToolResultValue> Function();
 
 abstract class HelloTools {
   const HelloTools();
 
-  FutureOr<HelloGetDetailsToolResultValue> getDetails();
-  FutureOr<HelloGetLocationToolResultValue> getLocation(HelloGetLocationToolArgs args);
+  FutureOr<HelloGetUserNameAgeToolResultValue> getUserNameAge();
+  FutureOr<HelloGetLocationToolResultValue> getLocation();
 
   Map<String, sdk.ToolHandler> toMap() {
     return {
-      'get_details': (_) => getDetails(),
-      'get_location': (args) => getLocation(HelloGetLocationToolArgs.fromJson(Map<String, Object?>.from((args as Map?) ?? const {}))),
+      'get_user_name_age': (_) => getUserNameAge(),
+      'get_location': (_) => getLocation(),
     };
   }
 }
 
 final class HelloToolRegistry extends HelloTools {
   const HelloToolRegistry({
-    required HelloGetDetailsToolHandler getDetails,
+    required HelloGetUserNameAgeToolHandler getUserNameAge,
     required HelloGetLocationToolHandler getLocation,
   }) :
-      _getDetails = getDetails,
+      _getUserNameAge = getUserNameAge,
       _getLocation = getLocation;
 
-  final HelloGetDetailsToolHandler _getDetails;
+  final HelloGetUserNameAgeToolHandler _getUserNameAge;
   final HelloGetLocationToolHandler _getLocation;
 
   @override
-  FutureOr<HelloGetDetailsToolResultValue> getDetails() => _getDetails();
+  FutureOr<HelloGetUserNameAgeToolResultValue> getUserNameAge() => _getUserNameAge();
   @override
-  FutureOr<HelloGetLocationToolResultValue> getLocation(HelloGetLocationToolArgs args) => _getLocation(args);
+  FutureOr<HelloGetLocationToolResultValue> getLocation() => _getLocation();
 }
 
 final class HelloResponseTextIntent {
@@ -165,8 +165,8 @@ abstract class HelloToolCallIntent {
 
   factory HelloToolCallIntent.fromJson(sdk.JsonMap json) {
     final kind = (json['type'])?.toString() ?? '';
-    if (kind == 'get_details') {
-      return HelloGetDetailsToolCallIntentCase.fromJson(json);
+    if (kind == 'get_user_name_age') {
+      return HelloGetUserNameAgeToolCallIntentCase.fromJson(json);
     }
     if (kind == 'get_location') {
       return HelloGetLocationToolCallIntentCase.fromJson(json);
@@ -185,8 +185,8 @@ abstract class HelloToolResultIntent {
 
   factory HelloToolResultIntent.fromJson(sdk.JsonMap json) {
     final kind = (json['name'])?.toString() ?? '';
-    if (kind == 'get_details') {
-      return HelloGetDetailsToolResultIntentCase.fromJson(json);
+    if (kind == 'get_user_name_age') {
+      return HelloGetUserNameAgeToolResultIntentCase.fromJson(json);
     }
     if (kind == 'get_location') {
       return HelloGetLocationToolResultIntentCase.fromJson(json);
@@ -195,27 +195,27 @@ abstract class HelloToolResultIntent {
   }
 }
 
-typedef HelloGetDetailsToolResultValue = Person;
+typedef HelloGetUserNameAgeToolResultValue = Person;
 
-final class HelloGetDetailsToolCallIntentCase extends HelloToolCallIntent {
-  const HelloGetDetailsToolCallIntentCase();
+final class HelloGetUserNameAgeToolCallIntentCase extends HelloToolCallIntent {
+  const HelloGetUserNameAgeToolCallIntentCase();
 
   @override
   sdk.NoArgs get args => const sdk.NoArgs();
 
   @override
-  String get type => 'get_details';
+  String get type => 'get_user_name_age';
 
-  factory HelloGetDetailsToolCallIntentCase.fromJson(sdk.JsonMap json) {
-    return const HelloGetDetailsToolCallIntentCase();
+  factory HelloGetUserNameAgeToolCallIntentCase.fromJson(sdk.JsonMap json) {
+    return const HelloGetUserNameAgeToolCallIntentCase();
   }
 
   @override
-  String toString() => 'HelloGetDetailsToolCallIntentCase(type: get_details, args: $args)';
+  String toString() => 'HelloGetUserNameAgeToolCallIntentCase(type: get_user_name_age, args: $args)';
 }
 
-final class HelloGetDetailsToolResultIntentCase extends HelloToolResultIntent {
-  const HelloGetDetailsToolResultIntentCase({
+final class HelloGetUserNameAgeToolResultIntentCase extends HelloToolResultIntent {
+  const HelloGetUserNameAgeToolResultIntentCase({
     required this.result,
     this.overridden = false,
   });
@@ -223,81 +223,54 @@ final class HelloGetDetailsToolResultIntentCase extends HelloToolResultIntent {
   @override
   sdk.NoArgs get args => const sdk.NoArgs();
   @override
-  final HelloGetDetailsToolResultValue result;
+  final HelloGetUserNameAgeToolResultValue result;
   @override
   final bool overridden;
 
   @override
-  String get name => 'get_details';
+  String get name => 'get_user_name_age';
 
-  factory HelloGetDetailsToolResultIntentCase.fromJson(sdk.JsonMap json) {
-    return HelloGetDetailsToolResultIntentCase(
+  factory HelloGetUserNameAgeToolResultIntentCase.fromJson(sdk.JsonMap json) {
+    return HelloGetUserNameAgeToolResultIntentCase(
       result: json['result'] as Person,
       overridden: (json['overridden'] as bool?) ?? false,
     );
   }
 
   @override
-  String toString() => 'HelloGetDetailsToolResultIntentCase(name: get_details, result: $result, overridden: $overridden)';
+  String toString() => 'HelloGetUserNameAgeToolResultIntentCase(name: get_user_name_age, result: $result, overridden: $overridden)';
 }
 
-final class HelloGetDetailsToolSkippedIntentCase extends HelloToolSkippedIntent {
-  const HelloGetDetailsToolSkippedIntentCase();
+final class HelloGetUserNameAgeToolSkippedIntentCase extends HelloToolSkippedIntent {
+  const HelloGetUserNameAgeToolSkippedIntentCase();
 
   @override
   sdk.NoArgs get args => const sdk.NoArgs();
 
   @override
-  String get type => 'get_details';
+  String get type => 'get_user_name_age';
 
-  factory HelloGetDetailsToolSkippedIntentCase.fromJson(sdk.JsonMap json) {
-    return const HelloGetDetailsToolSkippedIntentCase();
+  factory HelloGetUserNameAgeToolSkippedIntentCase.fromJson(sdk.JsonMap json) {
+    return const HelloGetUserNameAgeToolSkippedIntentCase();
   }
 
   @override
-  String toString() => 'HelloGetDetailsToolSkippedIntentCase(type: get_details, args: $args)';
-}
-
-final class HelloGetLocationToolArgs {
-  const HelloGetLocationToolArgs({
-    required this.id,
-  });
-
-  final String id;
-
-  factory HelloGetLocationToolArgs.fromJson(sdk.JsonMap json) {
-    return HelloGetLocationToolArgs(
-      id: (json['id'])?.toString() ?? '',
-    );
-  }
-
-  sdk.JsonMap toJson() {
-    return {
-      'id': id,
-    };
-  }
-
-  @override
-  String toString() => sdk.prettyJson(toJson());
+  String toString() => 'HelloGetUserNameAgeToolSkippedIntentCase(type: get_user_name_age, args: $args)';
 }
 
 typedef HelloGetLocationToolResultValue = String;
 
 final class HelloGetLocationToolCallIntentCase extends HelloToolCallIntent {
-  const HelloGetLocationToolCallIntentCase({
-    required this.args,
-  });
+  const HelloGetLocationToolCallIntentCase();
 
   @override
-  final HelloGetLocationToolArgs args;
+  sdk.NoArgs get args => const sdk.NoArgs();
 
   @override
   String get type => 'get_location';
 
   factory HelloGetLocationToolCallIntentCase.fromJson(sdk.JsonMap json) {
-    return HelloGetLocationToolCallIntentCase(
-      args: HelloGetLocationToolArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
-    );
+    return const HelloGetLocationToolCallIntentCase();
   }
 
   @override
@@ -306,13 +279,12 @@ final class HelloGetLocationToolCallIntentCase extends HelloToolCallIntent {
 
 final class HelloGetLocationToolResultIntentCase extends HelloToolResultIntent {
   const HelloGetLocationToolResultIntentCase({
-    required this.args,
     required this.result,
     this.overridden = false,
   });
 
   @override
-  final HelloGetLocationToolArgs args;
+  sdk.NoArgs get args => const sdk.NoArgs();
   @override
   final HelloGetLocationToolResultValue result;
   @override
@@ -323,31 +295,26 @@ final class HelloGetLocationToolResultIntentCase extends HelloToolResultIntent {
 
   factory HelloGetLocationToolResultIntentCase.fromJson(sdk.JsonMap json) {
     return HelloGetLocationToolResultIntentCase(
-      args: HelloGetLocationToolArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
       result: (json['result'])?.toString() ?? '',
       overridden: (json['overridden'] as bool?) ?? false,
     );
   }
 
   @override
-  String toString() => 'HelloGetLocationToolResultIntentCase(name: get_location, args: $args, result: $result, overridden: $overridden)';
+  String toString() => 'HelloGetLocationToolResultIntentCase(name: get_location, result: $result, overridden: $overridden)';
 }
 
 final class HelloGetLocationToolSkippedIntentCase extends HelloToolSkippedIntent {
-  const HelloGetLocationToolSkippedIntentCase({
-    required this.args,
-  });
+  const HelloGetLocationToolSkippedIntentCase();
 
   @override
-  final HelloGetLocationToolArgs args;
+  sdk.NoArgs get args => const sdk.NoArgs();
 
   @override
   String get type => 'get_location';
 
   factory HelloGetLocationToolSkippedIntentCase.fromJson(sdk.JsonMap json) {
-    return HelloGetLocationToolSkippedIntentCase(
-      args: HelloGetLocationToolArgs.fromJson(Map<String, Object?>.from((json['args'] as Map?) ?? const {})),
-    );
+    return const HelloGetLocationToolSkippedIntentCase();
   }
 
   @override
@@ -398,8 +365,8 @@ abstract class HelloToolSkippedIntent {
 
   factory HelloToolSkippedIntent.fromJson(sdk.JsonMap json) {
     final kind = (json['type'])?.toString() ?? '';
-    if (kind == 'get_details') {
-      return HelloGetDetailsToolSkippedIntentCase.fromJson(json);
+    if (kind == 'get_user_name_age') {
+      return HelloGetUserNameAgeToolSkippedIntentCase.fromJson(json);
     }
     if (kind == 'get_location') {
       return HelloGetLocationToolSkippedIntentCase.fromJson(json);

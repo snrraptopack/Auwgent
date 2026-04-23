@@ -1,22 +1,21 @@
-
-
 type Person {
     name:string,
     age:number
-    location?:string
+    location:string @desc "location of the user"
 }
-
-
 
 agent Hello{
     default config{
         model:groq("openai/gpt-oss-120b")
-        prompt: "You are a helper"
+        prompt: """
+        Be polite helpful accurate.
+        tools are avaialble for your use, use them to exute task effectively
+        """
     }
 
 
-    tool get_details():Person @desc "use this to get the deatails of the user"
-    tool get_location(id:string):string @desc "use this to ge location"
+    tool get_user_name_age():Person @desc "use this to get the user's name and age"
+    tool get_location():string @desc "use this to ge location"
 
     output : Person
     helpers{Joker}

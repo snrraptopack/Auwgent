@@ -1,0 +1,18 @@
+type Person {
+    name:string,
+    age:number
+}
+
+agent Hello{
+    default config{
+        model:groq("llama-3.3-70b-versatile")
+        prompt: """
+        Be polite helpful accurate.
+        tools are avaialble for your use, use them to exute task effectively
+        """
+    }
+    tool get_user_name_age():Person @desc "use this to get the user's name and age"
+    tool get_location():string @desc "use this to ge location"
+
+    output : {name:string,age:number,location:string}
+}

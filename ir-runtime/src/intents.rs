@@ -56,7 +56,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     blocks.push("[response_text] plain text [/response_text]".to_string());
 
     if has_tools {
-        blocks.push("[tool_call: name] key: value per line [/tool]".to_string());
+        blocks.push("[tool_call: name] key: value per line [/tool_call]".to_string());
     }
     if has_workflows {
         blocks.push("[workflow_call: name] key: value per line [/workflow]".to_string());
@@ -325,7 +325,7 @@ pub fn generate_helper_block_protocol_prompt(ir: &AgentIR, helper_name: &str) ->
     let mut blocks = vec!["[response_text] plain text [/response_text]".to_string()];
     if has_tools {
         blocks.push(
-            "[tool_call: name] key: value per line [/tool]
+            "[tool_call: name] key: value per line [/tool_call]
             when you call a tool, it wait for the [result] every tool return that dont assume.
         "
             .to_string(),
