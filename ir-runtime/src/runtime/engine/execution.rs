@@ -488,36 +488,6 @@ impl AuwgentEngine {
                 HandoffMode::Return => {}
             }
 
-            {
-                let h = self.llm_start_handler.lock().unwrap().clone();
-                if let Some(handler) = h {
-                    sub_engine.on_llm_start(handler);
-                }
-            }
-            {
-                let h = self.llm_end_handler.lock().unwrap().clone();
-                if let Some(handler) = h {
-                    sub_engine.on_llm_end(handler);
-                }
-            }
-            {
-                let h = self.run_start_handler.lock().unwrap().clone();
-                if let Some(handler) = h {
-                    sub_engine.on_run_start(handler);
-                }
-            }
-            {
-                let h = self.run_complete_handler.lock().unwrap().clone();
-                if let Some(handler) = h {
-                    sub_engine.on_run_complete(handler);
-                }
-            }
-            {
-                let h = self.error_handler.lock().unwrap().clone();
-                if let Some(handler) = h {
-                    sub_engine.on_error(handler);
-                }
-            }
 
             if let Ok(system_prompt) = sub_engine.generate_prompt(None) {
                 sub_engine

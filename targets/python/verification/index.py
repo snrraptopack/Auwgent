@@ -17,7 +17,7 @@ class MLogger(AuwgentMiddleware):
     async def onLLMStart(self, prompt, ctx):
         simple = "my name is Theophilus Amihere Junior I come from Ghana i am 10" + prompt
         print(f"sending prompt {simple}")
-        print(json.dumps(ctx,indent=2))
+        print(f"context is {ctx}")
         return simple
 
 

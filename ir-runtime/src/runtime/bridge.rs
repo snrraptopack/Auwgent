@@ -185,9 +185,6 @@ impl EngineBridge {
     pub fn clear_listeners(&self) {
         self.engine.clear_intent_handlers();
         self.engine.clear_sub_engine_handlers();
-        self.engine.clear_llm_handlers();
-        self.engine.clear_run_handlers();
-        self.engine.clear_middleware_handler();
     }
 
     pub async fn run_async(
