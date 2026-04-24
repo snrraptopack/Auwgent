@@ -51,114 +51,6 @@ fn format_flat_schema_fields(specs: &[crate::flat_args::FlatFieldSpec]) -> Strin
         .join("\n")
 }
 
-pub fn format_schema_yaml(
-    schema: &Value,
-    indent_level: usize,
-    types: Option<&HashMap<String, TypeDefinition>>,
-) -> String {
-    let indent = " ".repeat(indent_level);
-    let mut lines = Vec::new();
-    if let Some(obj) = schema.as_object() {
-        for (name, def) in obj {
-            let is_optional = def["optional"].as_bool().unwrap_or(false);
-            let name_tag = if is_optional {
-                format!("{}?", name)
-            } else {
-                name.clone()
-            };
-
-            let mut resolved_props: Option<Value> = None;
-
-            // 1. Is the type an object describing an inline schema or typeRef?
-            if let Some(t_obj) = def.get("type").and_then(|t| t.as_object()) {
-                if t_obj.get("type").and_then(|t| t.as_str()) == Some("object") {
-                    if let Some(p) = t_obj.get("properties") {
-                        resolved_props = Some(p.clone());
-                    }
-                } else if t_obj.get("type").and_then(|t| t.as_str()) == Some("typeRef") {
-                    if let Some(ref_name) = t_obj.get("name").and_then(|n| n.as_str()) {
-                        if let Some(types_map) = types {
-                            if let Some(custom_type) = types_map.get(ref_name) {
-                                if let Ok(val) = serde_json::to_value(&custom_type.properties) {
-                                    resolved_props = Some(val);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Is the property itself a flat typeRef? (e.g., {"type": "typeRef", "name": "..."})
-            if resolved_props.is_none() {
-                if def.get("type").and_then(|t| t.as_str()) == Some("typeRef") {
-                    if let Some(ref_name) = def.get("name").and_then(|n| n.as_str()) {
-                        if let Some(types_map) = types {
-                            if let Some(custom_type) = types_map.get(ref_name) {
-                                if let Ok(val) = serde_json::to_value(&custom_type.properties) {
-                                    resolved_props = Some(val);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(props) = resolved_props {
-                let mut line = format!("{}{}:", indent, name_tag);
-                if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
-                    line.push_str(" // ");
-                    line.push_str(desc);
-                }
-                lines.push(line);
-                let nested = format_schema_yaml(&props, indent_level + 2, types);
-                if !nested.is_empty() {
-                    lines.push(nested);
-                }
-            } else {
-                let field_type = format_type_value(def, types);
-                let mut line = format!("{}{}: {}", indent, name_tag, field_type);
-                if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
-                    line.push_str(" // ");
-                    line.push_str(desc);
-                }
-                lines.push(line);
-            }
-        }
-    }
-    lines.join("\n")
-}
-
-pub fn format_schema_function(
-    schema: &Value,
-    indent_level: usize,
-    types: Option<&HashMap<String, TypeDefinition>>,
-) -> String {
-    let indent = " ".repeat(indent_level);
-    let mut lines = Vec::new();
-    if let Some(obj) = schema.as_object() {
-        for (name, def) in obj {
-            let is_optional = def["optional"].as_bool().unwrap_or(false);
-            let name_tag = if is_optional {
-                format!("{}?", name)
-            } else {
-                name.clone()
-            };
-
-            let field_type = format_type_value(def, types);
-
-            // Format as a Function Composition field assignment
-            let mut line = format!("{}{} = /* {} */", indent, name_tag, field_type);
-
-            if let Some(desc) = def.get("description").and_then(|d| d.as_str()) {
-                line.push_str(" // ");
-                line.push_str(desc);
-            }
-            lines.push(line);
-        }
-    }
-    lines.join("\n")
-}
-
 pub fn format_schema(schema: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = schema.as_object() {
         let mut fields = Vec::new();
@@ -184,31 +76,7 @@ pub fn format_schema(schema: &Value, types: Option<&HashMap<String, TypeDefiniti
     }
 }
 
-pub fn format_type_definitions_yaml(
-    types: &HashMap<String, TypeDefinition>,
-    indent_level: usize,
-) -> String {
-    let indent = " ".repeat(indent_level);
-    let mut lines = Vec::new();
-    for (name, def) in types {
-        lines.push(format!("{}{}:", indent, name));
-        for (prop_name, prop) in &def.properties {
-            let name_tag = if prop.optional {
-                format!("{}?", prop_name)
-            } else {
-                prop_name.to_string()
-            };
-            let field_type = format_type(&prop.type_value.0, Some(types));
-            let mut line = format!("{}  {}: {}", indent, name_tag, field_type);
-            if let Some(desc) = &prop.description {
-                line.push_str(" // ");
-                line.push_str(desc);
-            }
-            lines.push(line);
-        }
-    }
-    lines.join("\n")
-}
+
 
 pub fn format_type_value(def: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = def.as_object() {

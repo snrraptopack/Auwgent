@@ -64,38 +64,7 @@ pub type AsyncSessionPreloadCallback = Arc<
 pub type SessionSaveCallback =
     Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
 
-/// Async callback that fires right before the LLM generates a response.
-/// Receives (input_text, system_prompt, context_json).
-/// Returns a JSON object containing optional "prompt" (String) and "stack" (Array of Strings).
-pub type AsyncLlmStartCallback = Arc<
-    dyn Fn(String, String, String) -> futures_util::future::BoxFuture<'static, Value> + Send + Sync,
->;
 
-/// Async callback that fires right after the LLM completes its generation stream.
-/// Receives the full raw LLM response and the system prompt.
-pub type AsyncLlmEndCallback =
-    Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
-
-/// Async callback fired before an engine run begins.
-/// Receives `(session_json, context_json)` and may return a replacement session JSON.
-pub type AsyncRunStartCallback = Arc<
-    dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, Option<String>>
-        + Send
-        + Sync,
->;
-
-/// Async callback fired after an engine run completes successfully.
-/// Receives `(session_json, context_json)`.
-pub type AsyncRunCompleteCallback =
-    Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
-
-/// Async callback fired when an engine run errors.
-/// Receives `(error_json, session_json, context_json)` and returns `true` to swallow.
-pub type AsyncErrorCallback = Arc<
-    dyn Fn(String, Option<String>, String) -> futures_util::future::BoxFuture<'static, bool>
-        + Send
-        + Sync,
->;
 
 /// Generic middleware event callback.
 /// Receives an event JSON payload and may return an optional response JSON payload.
