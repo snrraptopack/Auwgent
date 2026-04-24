@@ -8,6 +8,7 @@ pub use crate::runtime::engine_types::{
     ToolImplementation, TurnMetadata,
 };
 use crate::runtime::middleware;
+use crate::runtime::middleware_event::{ErrorPayload, EventContext, IntentPayload, LlmStartPayload, RunCompletePayload, RunStartPayload};
 use crate::runtime::session::SessionState;
 use crate::runtime::streaming::{
     JsonlEventBuffer, PartialIntentState, StructuredOutputEvent,
@@ -510,15 +511,16 @@ impl AuwgentEngine {
         active_agent: &str,
         raw_block: Option<String>,
         system_prompt: Option<String>,
-    ) -> Value {
+    ) -> EventContext {
         let session = self.session.lock().unwrap();
-        serde_json::json!({
-            "activeAgent": active_agent,
-            "stack": session.stack,
-            "rootAgent": session.stack.first().cloned().unwrap_or_else(|| self.ir.name.clone()),
-            "systemPrompt": system_prompt.or_else(|| session.system_prompt.clone()),
-            "rawBlock": raw_block,
-        })
+        let context = EventContext{
+            active_agent: active_agent.to_string(),
+            raw_block:raw_block,
+            stack:session.stack.clone(),
+            root_agent: session.stack.first().cloned().unwrap_or_else(|| self.ir.name.clone()),
+            system_prompt:system_prompt,
+        };
+        return context
     }
 
     async fn fire_middleware_event(&self, event: Value) -> Option<Value> {
@@ -536,14 +538,13 @@ impl AuwgentEngine {
             .get("_raw")
             .and_then(Value::as_str)
             .map(|value| value.to_string());
-        let event = serde_json::json!({
-            "type": "intent",
-            "name": name,
-            "value": value,
-            "context": self.build_event_context(active_agent, raw_block, None),
-        });
         let handler = self.middleware_event_handler.lock().unwrap().clone();
-        middleware::apply_intent_middleware(handler, event).await
+        let payload = IntentPayload{
+            name:name.to_string(),
+            value:value.clone(),
+            context: self.build_event_context(active_agent, raw_block.clone(), None),
+        };
+        middleware::apply_intent_middleware(handler, payload).await
     }
 
     async fn apply_llm_start_middleware(
@@ -553,11 +554,11 @@ impl AuwgentEngine {
         active_agent: &str,
     ) -> Option<Value> {
         let handler = self.middleware_event_handler.lock().unwrap().clone();
-        middleware::apply_llm_start_middleware(handler, serde_json::json!({
-            "type": "llm_start",
-            "prompt": prompt,
-            "context": self.build_event_context(active_agent, None, Some(system_prompt.to_string())),
-        }))
+        let payload = LlmStartPayload{
+            prompt:prompt.to_string(),
+            context:self.build_event_context(active_agent, None, Some(system_prompt.to_string())),
+        };
+        middleware::apply_llm_start_middleware(handler,payload)
         .await
     }
 
@@ -677,14 +678,14 @@ impl AuwgentEngine {
             .unwrap()
             .set_system_prompt(&system_prompt);
 
-        if let Some(response) = self
-            .fire_middleware_event(serde_json::json!({
-                "type": "run_start",
-                "session": serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
-                "context": self.build_event_context(&self.ir.name, None, Some(system_prompt.clone())),
-            }))
-            .await
-        {
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+
+        let payload = RunStartPayload{
+            session:serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
+            context: self.build_event_context(&self.ir.name, None, Some(system_prompt.clone())),
+        };
+
+        if let Some(response) = middleware::apply_run_start_middleware(handler, payload).await {
             if let Some(updated_session) = response.get("session") {
                 self.import_session(&serde_json::to_string(updated_session).map_err(AuwgentError::Serialization)?)?;
                 self.sync_fast_forward_from_session();
@@ -1112,15 +1113,13 @@ impl AuwgentEngine {
         match run_result {
             Ok(()) => {
                 self.emit_structured_stream_finish();
-                if let Some(_) = self
-                    .fire_middleware_event(serde_json::json!({
-                        "type": "run_complete",
-                        "session": serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
-                        "context": self.build_event_context(&self.ir.name, None, None),
-                    }))
-                    .await
-                {
-                }
+                let handler = self.middleware_event_handler.lock().unwrap().clone();
+                let payload = RunCompletePayload {
+                    session: serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)?,
+                    context: self.build_event_context(&self.ir.name, None, None),
+                };
+                if let Some(_) = middleware::apply_run_complete_middleware(handler, payload).await {}
+
                 let run_complete_handler = self.run_complete_handler.lock().unwrap().clone();
                 if let Some(h) = run_complete_handler {
                     let session_json = self.export_session()?;
@@ -1143,14 +1142,15 @@ impl AuwgentEngine {
                     }
                 }
 
-                let middleware_response = self
-                    .fire_middleware_event(serde_json::json!({
-                        "type": "error",
-                        "error": { "message": err.to_string() },
-                        "session": self.export_session().ok().and_then(|session| serde_json::from_str::<Value>(&session).ok()),
-                        "context": self.build_event_context(&self.ir.name, None, None),
-                    }))
-                    .await;
+                let handler = self.middleware_event_handler.lock().unwrap().clone();
+                let payload = ErrorPayload{
+                    context: self.build_event_context(&self.ir.name, None, None),
+                    session: self.export_session().ok().and_then(|session| serde_json::from_str::<Value>(&session).ok()),
+                    error: serde_json::json!({"message":err.to_string()}),
+                };
+
+                let middleware_response = middleware::apply_error_middleware(handler, payload).await;
+
                 let error_handler = self.error_handler.lock().unwrap().clone();
                 if let Some(h) = error_handler {
                     let error_json = serde_json::json!({ "message": err.to_string() }).to_string();

@@ -10,3 +10,5 @@ pub mod streaming;
 pub use engine::*;
 pub use engine_types::*;
 pub use session::*;
+
+pub mod middleware_event;
