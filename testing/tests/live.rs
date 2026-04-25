@@ -1,17 +1,14 @@
-use auwgent_testing::{build_agent, 
-    fixture::{
-        AuwgentConfig, 
-        AuwgentContext,
-        AuwgentTools,
-        NoArgs,
-        SimpleToolGetLocationToolResultValue,
-        SimpleToolGetMarksToolArgs,
-        SimpleToolGetMarksToolResultValue
-    }, live_guard};
+use auwgent_testing::fixture::*;
+
 use serde_json::json;
-
-
 struct Tools;
+struct Logger;
+
+impl  AuwgentMiddleware for Logger{
+    fn name(&self) ->  &'static str {
+        "logger"
+    }
+}
 
 impl AuwgentTools for Tools {
     fn get_location(&self,_args:NoArgs) -> SimpleToolGetLocationToolResultValue {
@@ -27,30 +24,54 @@ impl AuwgentTools for Tools {
     }
 }
 
+struct MyHandler;
+
+impl SimpleToolIntentHandler for MyHandler {
+    fn response_text(&self, intent: &SimpleToolIntentView, _agent: &str) {
+        println!("LLM text: {}", intent.text());
+    }
+
+    fn tool_call(&self, intent: &SimpleToolIntentView, _agent: &str) {
+        let call: SimpleToolToolCallIntent = intent.args();
+        match call {
+            SimpleToolToolCallIntent::GetLocation => println!("tool call: get_location"),
+            SimpleToolToolCallIntent::GetMarks { args } => println!("tool call: get_marks id={}", args.id),
+        }
+    }
+
+    fn tool_result(&self, intent: &SimpleToolIntentView, _agent: &str) {
+        let res: SimpleToolToolResultIntent = intent.args();
+        match res {
+            SimpleToolToolResultIntent::GetLocation { result, .. } => println!("tool result: location = {}", result),
+            SimpleToolToolResultIntent::GetMarks { args, result, .. } => println!("marks for {} = {}", args.id, result),
+        }
+    }
+
+    fn any(&self, intent: &SimpleToolIntentView, agent: &str) {
+        // runs for every intent
+        println!("intent {} from {}", intent.name(), agent);
+    }
+}
+
 
 #[tokio::test]
 #[ignore = "requires a real provider key"]
 async fn live_run_smoke() {
-    if let Err(reason) = live_guard() {
-        eprintln!("skipping live test: {reason}");
-        return;
-    }
 
     let config = AuwgentConfig{
-        api_keys:auwgent_testing::fixture::AuwgentApiKeys { groq_api_key: Some("helo".to_string()) },
+        api_keys:AuwgentApiKeys { groq_api_key: Some("helo".to_string()) },
         context:AuwgentContext{
             user_name: "A".to_string(),
             age: 10.0,
             id: "123".to_string()
         },
-        middleware: vec![],
+        middleware: vec![Logger],
         tools:Tools
     };
 
+    let agent = auwgent(config).unwrap();
+    agent.on_intent_handler(MyHandler);
 
-    let agent = build_agent::<auwgent_testing::fixture::SimpleToolMiddlewareRegistry>(vec![]);
-    let _session = agent
-        .run(Some(json!("Call get_marks for user id user_42 and summarize it.")))
-        .await
-        .expect("live run should complete");
+    let _session = agent.run(Some(json!("hello"))).await.unwrap();
+
 }
