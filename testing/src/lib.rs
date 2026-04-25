@@ -45,21 +45,18 @@ pub enum RecordedIntent {
 #[derive(Debug, Clone)]
 pub struct TestTools;
 
-impl fixture::SimpleToolTools for TestTools {
-    fn get_location(&self, _args: fixture::NoArgs) -> fixture::SimpleToolGetLocationToolResultValue {
+impl fixture::AuwgentTools for TestTools {
+    fn get_location(&self) -> fixture::GetLocationResult {
         "Accra".to_string()
     }
 
-    fn get_marks(
-        &self,
-        args: fixture::SimpleToolGetMarksToolArgs,
-    ) -> fixture::SimpleToolGetMarksToolResultValue {
+    fn get_marks(&self, args: fixture::GetMarksArgs) -> fixture::GetMarksResult {
         format!("marks:{}", args.id)
     }
 }
 
-pub fn base_context() -> fixture::SimpleToolContext {
-    fixture::SimpleToolContext {
+pub fn base_context() -> fixture::AuwgentContext {
+    fixture::AuwgentContext {
         user_name: "Ada".into(),
         age: 42.0,
         id: "user_42".into(),
@@ -68,21 +65,21 @@ pub fn base_context() -> fixture::SimpleToolContext {
 
 pub fn build_agent<TMiddleware>(
     middleware: Vec<TMiddleware>,
-) -> fixture::SimpleToolAgent
+) -> fixture::AuwgentAgent
 where
-    TMiddleware: Into<fixture::SimpleToolMiddlewareRegistry>,
+    TMiddleware: Into<fixture::AuwgentMiddlewareRegistry>,
 {
-    fixture::auwgent(fixture::SimpleToolConfig {
+    fixture::auwgent(fixture::AuwgentConfig {
         tools: TestTools,
         middleware,
         context: base_context(),
-        api_keys: fixture::SimpleToolApiKeys::default(),
+        api_keys: fixture::AuwgentApiKeys::default(),
     })
     .expect("fixture agent should build")
 }
 
 pub fn drive_chunk(
-    agent: &fixture::SimpleToolAgent,
+    agent: &fixture::AuwgentAgent,
     chunk: &str,
 ) -> auwgent_sdk_rust::AuwgentResult<Value> {
     agent.raw().write_chunk(chunk.to_string());
@@ -95,7 +92,7 @@ pub fn drive_chunk(
 }
 
 pub fn attach_intent_collector(
-    agent: &fixture::SimpleToolAgent,
+    agent: &fixture::AuwgentAgent,
 ) -> Arc<Mutex<Vec<RecordedIntent>>> {
     let events = Arc::new(Mutex::new(Vec::new()));
     let shared = Arc::clone(&events);
@@ -106,22 +103,22 @@ pub fn attach_intent_collector(
     events
 }
 
-fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
+fn record_intent(intent: fixture::AuwgentIntent) -> RecordedIntent {
     match intent {
-        fixture::SimpleToolIntent::ResponseText(value) => RecordedIntent::ResponseText(value.text),
-        fixture::SimpleToolIntent::Error(value) => RecordedIntent::Error(value.message),
-        fixture::SimpleToolIntent::ToolCall(value) => match value {
-            fixture::SimpleToolToolCallIntent::GetLocation => RecordedIntent::ToolCall {
+        fixture::AuwgentIntent::ResponseText(value) => RecordedIntent::ResponseText(value.text),
+        fixture::AuwgentIntent::Error(value) => RecordedIntent::Error(value.message),
+        fixture::AuwgentIntent::ToolCall(value) => match value {
+            fixture::SimpleToolToolCall::GetLocation => RecordedIntent::ToolCall {
                 name: "get_location".into(),
                 args: json!({}),
             },
-            fixture::SimpleToolToolCallIntent::GetMarks { args } => RecordedIntent::ToolCall {
+            fixture::SimpleToolToolCall::GetMarks { args } => RecordedIntent::ToolCall {
                 name: "get_marks".into(),
                 args: serde_json::to_value(args).unwrap(),
             },
         },
         fixture::SimpleToolIntent::ToolResult(value) => match value {
-            fixture::SimpleToolToolResultIntent::GetLocation {
+            fixture::SimpleToolToolResult::GetLocation {
                 args,
                 result,
                 overridden,
@@ -131,7 +128,7 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
                 result: json!(result),
                 overridden,
             },
-            fixture::SimpleToolToolResultIntent::GetMarks {
+            fixture::SimpleToolToolResult::GetMarks {
                 args,
                 result,
                 overridden,
@@ -143,17 +140,17 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
             },
         },
         fixture::SimpleToolIntent::ToolSkipped(value) => match value {
-            fixture::SimpleToolToolSkippedIntent::GetLocation => RecordedIntent::ToolSkipped {
+            fixture::SimpleToolToolSkipped::GetLocation => RecordedIntent::ToolSkipped {
                 name: "get_location".into(),
                 args: json!({}),
             },
-            fixture::SimpleToolToolSkippedIntent::GetMarks { args } => RecordedIntent::ToolSkipped {
+            fixture::SimpleToolToolSkipped::GetMarks { args } => RecordedIntent::ToolSkipped {
                 name: "get_marks".into(),
                 args: serde_json::to_value(args).unwrap(),
             },
         },
         fixture::SimpleToolIntent::WorkflowCall(value) => match value {
-            fixture::SimpleToolWorkflowCallIntent::MarksAndLocation { args } => {
+            fixture::SimpleToolWorkflowCall::MarksAndLocation { args } => {
                 RecordedIntent::WorkflowCall {
                     name: "marks_and_location".into(),
                     args: serde_json::to_value(args).unwrap(),
@@ -161,7 +158,7 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
             }
         },
         fixture::SimpleToolIntent::WorkflowResult(value) => match value {
-            fixture::SimpleToolWorkflowResultIntent::MarksAndLocation {
+            fixture::SimpleToolWorkflowResult::MarksAndLocation {
                 args,
                 result,
                 overridden,
@@ -173,21 +170,21 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
             },
         },
         fixture::SimpleToolIntent::HelperCall(value) => match value {
-            fixture::SimpleToolHelperCallIntent::Joker { args } => RecordedIntent::HelperCall {
+            fixture::SimpleToolHelperCall::Joker { args } => RecordedIntent::HelperCall {
                 name: "Joker".into(),
                 args,
             },
-            fixture::SimpleToolHelperCallIntent::Plan { args } => RecordedIntent::HelperCall {
+            fixture::SimpleToolHelperCall::Plan { args } => RecordedIntent::HelperCall {
                 name: "Plan".into(),
                 args,
             },
-            fixture::SimpleToolHelperCallIntent::Fact { args } => RecordedIntent::HelperCall {
+            fixture::SimpleToolHelperCall::Fact { args } => RecordedIntent::HelperCall {
                 name: "Fact".into(),
                 args,
             },
         },
         fixture::SimpleToolIntent::HelperResult(value) => match value {
-            fixture::SimpleToolHelperResultIntent::Joker {
+            fixture::SimpleToolHelperResult::Joker {
                 args,
                 overridden,
                 ..
@@ -197,7 +194,7 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
                 result: Value::Null,
                 overridden,
             },
-            fixture::SimpleToolHelperResultIntent::Plan {
+            fixture::SimpleToolHelperResult::Plan {
                 args,
                 result,
                 overridden,
@@ -207,7 +204,7 @@ fn record_intent(intent: fixture::SimpleToolIntent) -> RecordedIntent {
                 result,
                 overridden,
             },
-            fixture::SimpleToolHelperResultIntent::Fact {
+            fixture::SimpleToolHelperResult::Fact {
                 args,
                 result,
                 overridden,
@@ -282,13 +279,13 @@ impl fixture::SimpleToolMiddleware for TraceMiddleware {
             (
                 ToolControlMode::SkipGetMarks,
                 fixture::SimpleToolIntent::ToolCall(
-                    fixture::SimpleToolToolCallIntent::GetMarks { .. },
+                    fixture::SimpleToolToolCall::GetMarks { .. },
                 ),
             ) => Some(fixture::IntentControl::Skip),
             (
                 ToolControlMode::OverrideGetMarks,
                 fixture::SimpleToolIntent::ToolCall(
-                    fixture::SimpleToolToolCallIntent::GetMarks { .. },
+                    fixture::SimpleToolToolCall::GetMarks { .. },
                 ),
             ) => Some(fixture::IntentControl::Override {
                 result: json!("override:marks"),

@@ -8,14 +8,22 @@ impl  AuwgentMiddleware for Logger{
     fn name(&self) ->  &'static str {
         "logger"
     }
+
+    async fn on_run_start(&self,session:Session,_ctx:&Context) ->  Session{
+        session
+    }
+
+    async fn on_llm_end<'life0,'life1,'life2,'async_trait>(&'life0 self,_response: &'life1 serde_json::Value,_ctx: &'life2 Context) ->  ::core::pin::Pin<Box<dyn ::core::future::Future<Output = ()> + ::core::marker::Send+'async_trait> >where 'life0:'async_trait,'life1:'async_trait,'life2:'async_trait,Self:'async_trait {
+        
+    }
 }
 
 impl AuwgentTools for Tools {
-    fn get_location(&self,_args:NoArgs) -> SimpleToolGetLocationToolResultValue {
+    fn get_location(&self) -> GetLocationResult {
         return "Tarkwa".to_string();
     }
 
-    fn get_marks(&self,args:SimpleToolGetMarksToolArgs) -> SimpleToolGetMarksToolResultValue {
+    fn get_marks(&self,args:GetMarksArgs) -> GetMarksResult {
        if args.id.contains("1"){
         return "1,2,4,6".to_string()
        }
@@ -27,27 +35,25 @@ impl AuwgentTools for Tools {
 struct MyHandler;
 
 impl SimpleToolIntentHandler for MyHandler {
-    fn response_text(&self, intent: &SimpleToolIntentView, _agent: &str) {
-        println!("LLM text: {}", intent.text());
+    fn response_text(&self, value: &ResponseText, _agent: &str) {
+        println!("LLM text: {}", value.text);
     }
 
-    fn tool_call(&self, intent: &SimpleToolIntentView, _agent: &str) {
-        let call: SimpleToolToolCallIntent = intent.args();
-        match call {
-            SimpleToolToolCallIntent::GetLocation => println!("tool call: get_location"),
-            SimpleToolToolCallIntent::GetMarks { args } => println!("tool call: get_marks id={}", args.id),
+    fn tool_call(&self, value: &ToolCalls, _agent: &str) {
+        match &value.kind {
+            ToolCall::GetLocation => println!("tool call: get_location"),
+            ToolCall::GetMarks { args } => println!("tool call: get_marks id={}", args.id),
         }
     }
 
-    fn tool_result(&self, intent: &SimpleToolIntentView, _agent: &str) {
-        let res: SimpleToolToolResultIntent = intent.args();
-        match res {
-            SimpleToolToolResultIntent::GetLocation { result, .. } => println!("tool result: location = {}", result),
-            SimpleToolToolResultIntent::GetMarks { args, result, .. } => println!("marks for {} = {}", args.id, result),
+    fn tool_result(&self, value: &ToolResults, _agent: &str) {
+        match &value.kind {
+            ToolResult::GetLocation { result, .. } => println!("tool result: location = {}", result),
+            ToolResult::GetMarks { args, result, .. } => println!("marks for {} = {}", args.id, result),
         }
     }
 
-    fn any(&self, intent: &SimpleToolIntentView, agent: &str) {
+    fn any(&self, intent: &Intents, agent: &str) {
         // runs for every intent
         println!("intent {} from {}", intent.name(), agent);
     }

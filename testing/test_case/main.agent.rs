@@ -2,8 +2,7 @@
 // Do not edit manually
 use async_trait::async_trait;
 use auwgent_sdk_rust as sdk;
-use serde_json::{Map as JsonMap, Value as JsonValue};
-use std::marker::PhantomData;
+use serde_json::Value as JsonValue;
 use std::sync::Arc;
 pub type IntentControl = sdk::IntentControl;
 pub type SessionState = sdk::SessionState;
@@ -12,68 +11,87 @@ pub type Context = sdk::MiddlewareContext;
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct NoArgs {}
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PartialIntentMode {
+    Text,
+    Structured,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PartialIntentEnvelope {
+    pub partial: bool,
+    pub complete: bool,
+    pub mode: PartialIntentMode,
+    pub segment: i64,
+    pub raw: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartialTextIntentValue {
     #[serde(flatten)]
-    pub raw: JsonMap<String, JsonValue>,
+    pub envelope: PartialIntentEnvelope,
+    pub text: String,
+    #[serde(default)]
+    pub delta: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PartialStructuredIntentValue<T> {
     #[serde(flatten)]
-    pub raw: JsonMap<String, JsonValue>,
-    #[serde(skip)]
-    pub marker: PhantomData<T>,
+    pub envelope: PartialIntentEnvelope,
+    #[serde(flatten)]
+    pub value: T,
 }
 
-pub type SimpleToolInput = JsonValue;
+pub type AuwgentInput = JsonValue;
 
 pub type JokerOutput = JsonValue;
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolBaseOutput;
+pub struct AuwgentBaseOutput;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
-pub enum SimpleToolOutput {
-    Base(SimpleToolBaseOutput),
+pub enum AuwgentOutput {
+    Base(AuwgentBaseOutput),
     Joker(JokerOutput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolContext {
+pub struct AuwgentContext {
     pub user_name: String,
     pub age: f64,
     pub id: String,
 }
 
-pub type SimpleToolGetLocationToolResultValue = String;
+pub type GetLocationResult = String;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolGetMarksToolArgs {
+pub struct GetMarksArgs {
     pub id: String,
 }
 
-pub type SimpleToolGetMarksToolResultValue = String;
+pub type GetMarksResult = String;
 
-pub trait SimpleToolTools: Send + Sync + 'static {
-    fn get_location(&self, args: NoArgs) -> SimpleToolGetLocationToolResultValue;
-    fn get_marks(&self, args: SimpleToolGetMarksToolArgs) -> SimpleToolGetMarksToolResultValue;
+pub trait AuwgentTools: Send + Sync + 'static {
+    fn get_location(&self) -> GetLocationResult;
+    fn get_marks(&self, args: GetMarksArgs) -> GetMarksResult;
 }
 
 #[derive(Clone)]
-pub struct SimpleToolToolsRegistry(pub Arc<dyn SimpleToolTools>);
+pub struct AuwgentToolsRegistry(pub Arc<dyn AuwgentTools>);
 
-impl<T> From<T> for SimpleToolToolsRegistry
+impl<T> From<T> for AuwgentToolsRegistry
 where
-    T: SimpleToolTools,
+    T: AuwgentTools,
 {
     fn from(value: T) -> Self {
         Self(Arc::new(value))
     }
 }
 
-impl sdk::ToolRegistrar for SimpleToolToolsRegistry {
+impl sdk::ToolRegistrar for AuwgentToolsRegistry {
     fn tool_names(&self) -> &'static [&'static str] {
         &["get_location", "get_marks"]
     }
@@ -87,15 +105,15 @@ impl sdk::ToolRegistrar for SimpleToolToolsRegistry {
             "get_location" => {
                 let tools = Arc::clone(&self.0);
                 Box::pin(async move {
-                    let parsed: NoArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
-                    let result = tools.get_location(parsed);
+                    let _: NoArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
+                    let result = tools.get_location();
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
             },
             "get_marks" => {
                 let tools = Arc::clone(&self.0);
                 Box::pin(async move {
-                    let parsed: SimpleToolGetMarksToolArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
+                    let parsed: GetMarksArgs = serde_json::from_value(args).map_err(|e| e.to_string())?;
                     let result = tools.get_marks(parsed);
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
@@ -106,7 +124,7 @@ impl sdk::ToolRegistrar for SimpleToolToolsRegistry {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SimpleToolIntentName {
+pub enum AuwgentIntentName {
     ResponseText,
     ResponseSchema,
     Error,
@@ -121,36 +139,41 @@ pub enum SimpleToolIntentName {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolResponseTextIntent {
+pub struct ResponseText {
     pub text: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolResponseSchemaIntent {
+pub struct ResponseSchema {
     #[serde(rename = "type")]
     pub kind: String,
-    pub response: SimpleToolOutput,
+    pub response: AuwgentOutput,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolErrorIntent {
+pub struct ErrorIntent {
     pub message: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GetMarksToolArgs {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
-pub enum SimpleToolToolCallIntent {
+pub enum ToolCall {
     #[serde(rename = "get_location")]
     GetLocation,
     #[serde(rename = "get_marks")]
     GetMarks {
-        args: SimpleToolGetMarksToolArgs,
+        args: GetMarksToolArgs,
     },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "name")]
-pub enum SimpleToolToolResultIntent {
+pub enum ToolResult {
     #[serde(rename = "get_location")]
     GetLocation {
         args: NoArgs,
@@ -160,7 +183,7 @@ pub enum SimpleToolToolResultIntent {
     },
     #[serde(rename = "get_marks")]
     GetMarks {
-        args: SimpleToolGetMarksToolArgs,
+        args: GetMarksToolArgs,
         result: String,
         #[serde(default)]
         overridden: bool,
@@ -169,90 +192,90 @@ pub enum SimpleToolToolResultIntent {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
-pub enum SimpleToolToolSkippedIntent {
+pub enum ToolSkipped {
     #[serde(rename = "get_location")]
     GetLocation,
     #[serde(rename = "get_marks")]
     GetMarks {
-        args: SimpleToolGetMarksToolArgs,
+        args: GetMarksToolArgs,
     },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolToolErrorIntent {
+pub struct ToolError {
     pub tool: String,
     pub message: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SimpleToolMarksAndLocationWorkflowArgs {
+pub struct MarksAndLocationWorkflowArgs {
     pub user_id: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
-pub enum SimpleToolWorkflowCallIntent {
+pub enum WorkflowCall {
     #[serde(rename = "marks_and_location")]
     MarksAndLocation {
-        args: SimpleToolMarksAndLocationWorkflowArgs,
+        args: MarksAndLocationWorkflowArgs,
     },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "name")]
-pub enum SimpleToolWorkflowResultIntent {
+pub enum WorkflowResult {
     #[serde(rename = "marks_and_location")]
     MarksAndLocation {
-        args: SimpleToolMarksAndLocationWorkflowArgs,
+        args: MarksAndLocationWorkflowArgs,
         result: String,
         #[serde(default)]
         overridden: bool,
     },
 }
 
-pub type SimpleToolJokerHelperArgs = JsonValue;
+pub type JokerHelperArgs = JsonValue;
 
-pub type SimpleToolPlanHelperArgs = JsonValue;
+pub type PlanHelperArgs = JsonValue;
 
-pub type SimpleToolFactHelperArgs = JsonValue;
+pub type FactHelperArgs = JsonValue;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type")]
-pub enum SimpleToolHelperCallIntent {
+pub enum HelperCall {
     #[serde(rename = "Joker")]
     Joker {
-        args: SimpleToolJokerHelperArgs,
+        args: JokerHelperArgs,
     },
     #[serde(rename = "Plan")]
     Plan {
-        args: SimpleToolPlanHelperArgs,
+        args: PlanHelperArgs,
     },
     #[serde(rename = "Fact")]
     Fact {
-        args: SimpleToolFactHelperArgs,
+        args: FactHelperArgs,
     },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "name")]
-pub enum SimpleToolHelperResultIntent {
+pub enum HelperResult {
     #[serde(rename = "Joker")]
     Joker {
-        args: SimpleToolJokerHelperArgs,
+        args: JokerHelperArgs,
         result: (),
         #[serde(default)]
         overridden: bool,
     },
     #[serde(rename = "Plan")]
     Plan {
-        args: SimpleToolPlanHelperArgs,
+        args: PlanHelperArgs,
         result: JsonValue,
         #[serde(default)]
         overridden: bool,
     },
     #[serde(rename = "Fact")]
     Fact {
-        args: SimpleToolFactHelperArgs,
+        args: FactHelperArgs,
         result: JsonValue,
         #[serde(default)]
         overridden: bool,
@@ -260,131 +283,131 @@ pub enum SimpleToolHelperResultIntent {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum SimpleToolIntent {
-    ResponseText(SimpleToolResponseTextIntent),
-    ResponseSchema(SimpleToolResponseSchemaIntent),
-    Error(SimpleToolErrorIntent),
-    ToolCall(SimpleToolToolCallIntent),
-    ToolResult(SimpleToolToolResultIntent),
-    ToolError(SimpleToolToolErrorIntent),
-    ToolSkipped(SimpleToolToolSkippedIntent),
-    WorkflowCall(SimpleToolWorkflowCallIntent),
-    WorkflowResult(SimpleToolWorkflowResultIntent),
-    HelperCall(SimpleToolHelperCallIntent),
-    HelperResult(SimpleToolHelperResultIntent),
+pub enum AuwgentIntent {
+    ResponseText(ResponseText),
+    ResponseSchema(ResponseSchema),
+    Error(ErrorIntent),
+    ToolCall(ToolCall),
+    ToolResult(ToolResult),
+    ToolError(ToolError),
+    ToolSkipped(ToolSkipped),
+    WorkflowCall(WorkflowCall),
+    WorkflowResult(WorkflowResult),
+    HelperCall(HelperCall),
+    HelperResult(HelperResult),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum SimpleToolIntentPartial {
+pub enum AuwgentIntentPartial {
     ResponseText(PartialTextIntentValue),
-    ResponseSchema(PartialStructuredIntentValue<SimpleToolResponseSchemaIntent>),
-    Error(PartialStructuredIntentValue<SimpleToolErrorIntent>),
-    ToolCall(PartialStructuredIntentValue<SimpleToolToolCallIntent>),
-    ToolResult(PartialStructuredIntentValue<SimpleToolToolResultIntent>),
-    ToolError(PartialStructuredIntentValue<SimpleToolToolErrorIntent>),
-    ToolSkipped(PartialStructuredIntentValue<SimpleToolToolSkippedIntent>),
-    WorkflowCall(PartialStructuredIntentValue<SimpleToolWorkflowCallIntent>),
-    WorkflowResult(PartialStructuredIntentValue<SimpleToolWorkflowResultIntent>),
-    HelperCall(PartialStructuredIntentValue<SimpleToolHelperCallIntent>),
-    HelperResult(PartialStructuredIntentValue<SimpleToolHelperResultIntent>),
+    ResponseSchema(PartialStructuredIntentValue<ResponseSchema>),
+    Error(PartialStructuredIntentValue<ErrorIntent>),
+    ToolCall(PartialStructuredIntentValue<ToolCall>),
+    ToolResult(PartialStructuredIntentValue<ToolResult>),
+    ToolError(PartialStructuredIntentValue<ToolError>),
+    ToolSkipped(PartialStructuredIntentValue<ToolSkipped>),
+    WorkflowCall(PartialStructuredIntentValue<WorkflowCall>),
+    WorkflowResult(PartialStructuredIntentValue<WorkflowResult>),
+    HelperCall(PartialStructuredIntentValue<HelperCall>),
+    HelperResult(PartialStructuredIntentValue<HelperResult>),
 }
 
-impl SimpleToolIntentName {
+impl AuwgentIntentName {
     pub fn parse(name: &str) -> Option<Self> {
         match name {
-        "response_text" => Some(SimpleToolIntentName::ResponseText),
-        "response_schema" => Some(SimpleToolIntentName::ResponseSchema),
-        "error" => Some(SimpleToolIntentName::Error),
-        "tool_call" => Some(SimpleToolIntentName::ToolCall),
-        "tool_result" => Some(SimpleToolIntentName::ToolResult),
-        "tool_error" => Some(SimpleToolIntentName::ToolError),
-        "tool_skipped" => Some(SimpleToolIntentName::ToolSkipped),
-        "workflow_call" => Some(SimpleToolIntentName::WorkflowCall),
-        "workflow_result" => Some(SimpleToolIntentName::WorkflowResult),
-        "helper_call" => Some(SimpleToolIntentName::HelperCall),
-        "helper_result" => Some(SimpleToolIntentName::HelperResult),
+        "response_text" => Some(AuwgentIntentName::ResponseText),
+        "response_schema" => Some(AuwgentIntentName::ResponseSchema),
+        "error" => Some(AuwgentIntentName::Error),
+        "tool_call" => Some(AuwgentIntentName::ToolCall),
+        "tool_result" => Some(AuwgentIntentName::ToolResult),
+        "tool_error" => Some(AuwgentIntentName::ToolError),
+        "tool_skipped" => Some(AuwgentIntentName::ToolSkipped),
+        "workflow_call" => Some(AuwgentIntentName::WorkflowCall),
+        "workflow_result" => Some(AuwgentIntentName::WorkflowResult),
+        "helper_call" => Some(AuwgentIntentName::HelperCall),
+        "helper_result" => Some(AuwgentIntentName::HelperResult),
             _ => None,
         }
     }
 }
 
-impl SimpleToolIntent {
-    pub fn decode(name: SimpleToolIntentName, value: JsonValue) -> Option<Self> {
+impl AuwgentIntent {
+    pub fn decode(name: AuwgentIntentName, value: JsonValue) -> Option<Self> {
         match name {
-        SimpleToolIntentName::ResponseText => serde_json::from_value(value).ok().map(SimpleToolIntent::ResponseText),
-        SimpleToolIntentName::ResponseSchema => serde_json::from_value(value).ok().map(SimpleToolIntent::ResponseSchema),
-        SimpleToolIntentName::Error => serde_json::from_value(value).ok().map(SimpleToolIntent::Error),
-        SimpleToolIntentName::ToolCall => serde_json::from_value(value).ok().map(SimpleToolIntent::ToolCall),
-        SimpleToolIntentName::ToolResult => serde_json::from_value(value).ok().map(SimpleToolIntent::ToolResult),
-        SimpleToolIntentName::ToolError => serde_json::from_value(value).ok().map(SimpleToolIntent::ToolError),
-        SimpleToolIntentName::ToolSkipped => serde_json::from_value(value).ok().map(SimpleToolIntent::ToolSkipped),
-        SimpleToolIntentName::WorkflowCall => serde_json::from_value(value).ok().map(SimpleToolIntent::WorkflowCall),
-        SimpleToolIntentName::WorkflowResult => serde_json::from_value(value).ok().map(SimpleToolIntent::WorkflowResult),
-        SimpleToolIntentName::HelperCall => serde_json::from_value(value).ok().map(SimpleToolIntent::HelperCall),
-        SimpleToolIntentName::HelperResult => serde_json::from_value(value).ok().map(SimpleToolIntent::HelperResult),
+        AuwgentIntentName::ResponseText => serde_json::from_value(value).ok().map(AuwgentIntent::ResponseText),
+        AuwgentIntentName::ResponseSchema => serde_json::from_value(value).ok().map(AuwgentIntent::ResponseSchema),
+        AuwgentIntentName::Error => serde_json::from_value(value).ok().map(AuwgentIntent::Error),
+        AuwgentIntentName::ToolCall => serde_json::from_value(value).ok().map(AuwgentIntent::ToolCall),
+        AuwgentIntentName::ToolResult => serde_json::from_value(value).ok().map(AuwgentIntent::ToolResult),
+        AuwgentIntentName::ToolError => serde_json::from_value(value).ok().map(AuwgentIntent::ToolError),
+        AuwgentIntentName::ToolSkipped => serde_json::from_value(value).ok().map(AuwgentIntent::ToolSkipped),
+        AuwgentIntentName::WorkflowCall => serde_json::from_value(value).ok().map(AuwgentIntent::WorkflowCall),
+        AuwgentIntentName::WorkflowResult => serde_json::from_value(value).ok().map(AuwgentIntent::WorkflowResult),
+        AuwgentIntentName::HelperCall => serde_json::from_value(value).ok().map(AuwgentIntent::HelperCall),
+        AuwgentIntentName::HelperResult => serde_json::from_value(value).ok().map(AuwgentIntent::HelperResult),
         }
     }
 }
 
-impl SimpleToolIntentPartial {
-    pub fn decode(name: SimpleToolIntentName, value: JsonValue) -> Option<Self> {
+impl AuwgentIntentPartial {
+    pub fn decode(name: AuwgentIntentName, value: JsonValue) -> Option<Self> {
         match name {
-        SimpleToolIntentName::ResponseText => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ResponseText),
-        SimpleToolIntentName::ResponseSchema => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ResponseSchema),
-        SimpleToolIntentName::Error => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::Error),
-        SimpleToolIntentName::ToolCall => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ToolCall),
-        SimpleToolIntentName::ToolResult => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ToolResult),
-        SimpleToolIntentName::ToolError => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ToolError),
-        SimpleToolIntentName::ToolSkipped => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::ToolSkipped),
-        SimpleToolIntentName::WorkflowCall => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::WorkflowCall),
-        SimpleToolIntentName::WorkflowResult => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::WorkflowResult),
-        SimpleToolIntentName::HelperCall => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::HelperCall),
-        SimpleToolIntentName::HelperResult => serde_json::from_value(value).ok().map(SimpleToolIntentPartial::HelperResult),
+        AuwgentIntentName::ResponseText => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ResponseText),
+        AuwgentIntentName::ResponseSchema => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ResponseSchema),
+        AuwgentIntentName::Error => serde_json::from_value(value).ok().map(AuwgentIntentPartial::Error),
+        AuwgentIntentName::ToolCall => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ToolCall),
+        AuwgentIntentName::ToolResult => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ToolResult),
+        AuwgentIntentName::ToolError => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ToolError),
+        AuwgentIntentName::ToolSkipped => serde_json::from_value(value).ok().map(AuwgentIntentPartial::ToolSkipped),
+        AuwgentIntentName::WorkflowCall => serde_json::from_value(value).ok().map(AuwgentIntentPartial::WorkflowCall),
+        AuwgentIntentName::WorkflowResult => serde_json::from_value(value).ok().map(AuwgentIntentPartial::WorkflowResult),
+        AuwgentIntentName::HelperCall => serde_json::from_value(value).ok().map(AuwgentIntentPartial::HelperCall),
+        AuwgentIntentName::HelperResult => serde_json::from_value(value).ok().map(AuwgentIntentPartial::HelperResult),
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct SimpleToolIntentView {
-    inner: SimpleToolIntent,
+pub struct Intents {
+    inner: AuwgentIntent,
 }
 
-impl SimpleToolIntentView {
-    pub fn new(inner: SimpleToolIntent) -> Self {
+impl Intents {
+    pub fn new(inner: AuwgentIntent) -> Self {
         Self { inner }
     }
 
-    pub fn raw(&self) -> &SimpleToolIntent {
+    pub fn raw(&self) -> &AuwgentIntent {
         &self.inner
     }
 
     pub fn name(&self) -> &'static str {
         match &self.inner {
-            SimpleToolIntent::ResponseText(_) => "response_text",
-            SimpleToolIntent::ResponseSchema(_) => "response_schema",
-            SimpleToolIntent::Error(_) => "error",
-            SimpleToolIntent::ToolCall(..) => "tool_call",
-            SimpleToolIntent::ToolResult(..) => "tool_result",
-            SimpleToolIntent::ToolError(..) => "tool_error",
-            SimpleToolIntent::ToolSkipped(..) => "tool_skipped",
-            SimpleToolIntent::WorkflowCall(..) => "workflow_call",
-            SimpleToolIntent::WorkflowResult(..) => "workflow_result",
-            SimpleToolIntent::HelperCall(..) => "helper_call",
-            SimpleToolIntent::HelperResult(..) => "helper_result",
+            AuwgentIntent::ResponseText(_) => "response_text",
+            AuwgentIntent::ResponseSchema(_) => "response_schema",
+            AuwgentIntent::Error(_) => "error",
+            AuwgentIntent::ToolCall(..) => "tool_call",
+            AuwgentIntent::ToolResult(..) => "tool_result",
+            AuwgentIntent::ToolError(..) => "tool_error",
+            AuwgentIntent::ToolSkipped(..) => "tool_skipped",
+            AuwgentIntent::WorkflowCall(..) => "workflow_call",
+            AuwgentIntent::WorkflowResult(..) => "workflow_result",
+            AuwgentIntent::HelperCall(..) => "helper_call",
+            AuwgentIntent::HelperResult(..) => "helper_result",
         }
     }
 
     pub fn text(&self) -> &str {
         match &self.inner {
-            SimpleToolIntent::ResponseText(intent) => &intent.text,
+            AuwgentIntent::ResponseText(intent) => &intent.text,
             _ => panic!("intent does not contain text"),
         }
     }
 
     pub fn message(&self) -> &str {
         match &self.inner {
-            SimpleToolIntent::Error(intent) => &intent.message,
-            SimpleToolIntent::ToolError(intent) => &intent.message,
+            AuwgentIntent::Error(intent) => &intent.message,
+            AuwgentIntent::ToolError(intent) => &intent.message,
             _ => panic!("intent does not contain a message"),
         }
     }
@@ -394,78 +417,119 @@ impl SimpleToolIntentView {
         T: serde::de::DeserializeOwned,
     {
         let value = match &self.inner {
-            SimpleToolIntent::ResponseSchema(intent) => serde_json::to_value(intent.response.clone()),
+            AuwgentIntent::ResponseSchema(intent) => serde_json::to_value(intent.response.clone()),
             _ => panic!("intent does not contain a response"),
         }.expect("response should serialize");
         serde_json::from_value(value).expect("response should deserialize")
     }
 
-    pub fn args<T>(&self) -> T
+    pub fn value<T>(&self) -> T
     where
         T: serde::de::DeserializeOwned,
     {
         let value = match &self.inner {
-            SimpleToolIntent::ToolCall(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::ToolResult(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::ToolSkipped(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::WorkflowCall(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::WorkflowResult(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::HelperCall(intent) => serde_json::to_value(intent.clone()),
-            SimpleToolIntent::HelperResult(intent) => serde_json::to_value(intent.clone()),
-            _ => panic!("intent does not contain args"),
-        }.expect("args should serialize");
-        serde_json::from_value(value).expect("args should deserialize")
+            AuwgentIntent::ToolCall(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::ToolResult(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::ToolError(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::ToolSkipped(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::WorkflowCall(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::WorkflowResult(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::HelperCall(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::HelperResult(intent) => serde_json::to_value(intent.clone()),
+            _ => panic!("intent does not contain a typed value"),
+        }.expect("intent value should serialize");
+        serde_json::from_value(value).expect("intent value should deserialize")
     }
 }
 
-pub trait SimpleToolIntentHandler: Send + Sync + 'static {
-    fn response_text(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn response_schema(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn tool_call(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn tool_result(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn tool_error(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn tool_skipped(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn workflow_call(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn workflow_result(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn helper_call(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn helper_result(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn error(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
-    fn any(&self, _intent: &SimpleToolIntentView, _agent: &str) {}
+#[derive(Debug, Clone)]
+pub struct ToolCalls {
+    pub kind: ToolCall,
+}
 
-    fn dispatch(&self, intent: &SimpleToolIntentView, agent_name: &str) -> Option<IntentControl> {
+#[derive(Debug, Clone)]
+pub struct ToolResults {
+    pub kind: ToolResult,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolErrors {
+    pub kind: ToolError,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolSkippeds {
+    pub kind: ToolSkipped,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkflowCalls {
+    pub kind: WorkflowCall,
+}
+
+#[derive(Debug, Clone)]
+pub struct WorkflowResults {
+    pub kind: WorkflowResult,
+}
+
+#[derive(Debug, Clone)]
+pub struct HelperCalls {
+    pub kind: HelperCall,
+}
+
+#[derive(Debug, Clone)]
+pub struct HelperResults {
+    pub kind: HelperResult,
+}
+
+pub trait AuwgentIntentHandler: Send + Sync + 'static {
+    fn response_text(&self, _value: &ResponseText, _agent: &str) {}
+    fn response_schema(&self, _value: &ResponseSchema, _agent: &str) {}
+    fn tool_call(&self, _value: &ToolCalls, _agent: &str) {}
+    fn tool_result(&self, _value: &ToolResults, _agent: &str) {}
+    fn tool_error(&self, _value: &ToolErrors, _agent: &str) {}
+    fn tool_skipped(&self, _value: &ToolSkippeds, _agent: &str) {}
+    fn workflow_call(&self, _value: &WorkflowCalls, _agent: &str) {}
+    fn workflow_result(&self, _value: &WorkflowResults, _agent: &str) {}
+    fn helper_call(&self, _value: &HelperCalls, _agent: &str) {}
+    fn helper_result(&self, _value: &HelperResults, _agent: &str) {}
+    fn error(&self, _value: &ErrorIntent, _agent: &str) {}
+    fn any(&self, _intent: &Intents, _agent: &str) {}
+
+    fn dispatch(&self, intent: &Intents, agent_name: &str) -> Option<IntentControl> {
         self.any(intent, agent_name);
         match intent.raw() {
-        SimpleToolIntent::ResponseText(_) => self.response_text(intent, agent_name),
-        SimpleToolIntent::ResponseSchema(_) => self.response_schema(intent, agent_name),
-        SimpleToolIntent::Error(_) => self.error(intent, agent_name),
-        SimpleToolIntent::ToolCall(..) => self.tool_call(intent, agent_name),
-        SimpleToolIntent::ToolResult(..) => self.tool_result(intent, agent_name),
-        SimpleToolIntent::ToolError(..) => self.tool_error(intent, agent_name),
-        SimpleToolIntent::ToolSkipped(..) => self.tool_skipped(intent, agent_name),
-        SimpleToolIntent::WorkflowCall(..) => self.workflow_call(intent, agent_name),
-        SimpleToolIntent::WorkflowResult(..) => self.workflow_result(intent, agent_name),
-        SimpleToolIntent::HelperCall(..) => self.helper_call(intent, agent_name),
-        SimpleToolIntent::HelperResult(..) => self.helper_result(intent, agent_name),
+            AuwgentIntent::ResponseText(value) => self.response_text(value, agent_name),
+            AuwgentIntent::ResponseSchema(value) => self.response_schema(value, agent_name),
+            AuwgentIntent::Error(value) => self.error(value, agent_name),
+            AuwgentIntent::ToolCall(value) => self.tool_call(&ToolCalls { kind: value.clone() }, agent_name),
+            AuwgentIntent::ToolResult(value) => self.tool_result(&ToolResults { kind: value.clone() }, agent_name),
+            AuwgentIntent::ToolError(value) => self.tool_error(&ToolErrors { kind: value.clone() }, agent_name),
+            AuwgentIntent::ToolSkipped(value) => self.tool_skipped(&ToolSkippeds { kind: value.clone() }, agent_name),
+            AuwgentIntent::WorkflowCall(value) => self.workflow_call(&WorkflowCalls { kind: value.clone() }, agent_name),
+            AuwgentIntent::WorkflowResult(value) => self.workflow_result(&WorkflowResults { kind: value.clone() }, agent_name),
+            AuwgentIntent::HelperCall(value) => self.helper_call(&HelperCalls { kind: value.clone() }, agent_name),
+            AuwgentIntent::HelperResult(value) => self.helper_result(&HelperResults { kind: value.clone() }, agent_name),
         }
         None
     }
 }
 
-pub trait SimpleToolBasePartialIntentHandler {
-    fn on_intent_partial(&self, intent: SimpleToolIntentPartial, agent_name: &str) { let _ = (intent, agent_name); }
+pub trait AuwgentBasePartialIntentHandler {
+    fn on_intent_partial(&self, intent: AuwgentIntentPartial, agent_name: &str) { let _ = (intent, agent_name); }
 
-    fn dispatch_partial(&self, intent: SimpleToolIntentPartial, agent_name: &str) {
+    fn dispatch_partial(&self, intent: AuwgentIntentPartial, agent_name: &str) {
         self.on_intent_partial(intent, agent_name)
     }
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SimpleToolApiKeys {
+pub struct AuwgentApiKeys {
     pub groq_api_key: Option<String>,
 }
 
-impl From<SimpleToolApiKeys> for sdk::AuwgentApiKeys {
-    fn from(value: SimpleToolApiKeys) -> Self {
+impl From<AuwgentApiKeys> for sdk::AuwgentApiKeys {
+    fn from(value: AuwgentApiKeys) -> Self {
         sdk::AuwgentApiKeys {
             groq_api_key: value.groq_api_key,
             ..sdk::AuwgentApiKeys::default()
@@ -474,7 +538,7 @@ impl From<SimpleToolApiKeys> for sdk::AuwgentApiKeys {
 }
 
 #[async_trait]
-pub trait SimpleToolMiddleware: Send + Sync + 'static {
+pub trait AuwgentMiddleware: Send + Sync + 'static {
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
@@ -491,11 +555,11 @@ pub trait SimpleToolMiddleware: Send + Sync + 'static {
         prompt
     }
 
-    async fn on_intent(&self, _intent: &SimpleToolIntentView, _ctx: &Context) -> Option<IntentControl> {
+    async fn on_intent(&self, _intent: &Intents, _ctx: &Context) -> Option<IntentControl> {
         None
     }
 
-    async fn on_intent_partial(&self, _intent: &SimpleToolIntentPartial, _ctx: &Context) {}
+    async fn on_intent_partial(&self, _intent: &AuwgentIntentPartial, _ctx: &Context) {}
 
     async fn on_llm_end(&self, _response: &JsonValue, _ctx: &Context) {}
 
@@ -507,14 +571,14 @@ pub trait SimpleToolMiddleware: Send + Sync + 'static {
 }
 
 #[derive(Clone)]
-pub struct SimpleToolMiddlewareRegistry(pub sdk::MiddlewareRegistry);
+pub struct AuwgentMiddlewareRegistry(pub sdk::MiddlewareRegistry);
 
-struct SimpleToolMiddlewareAdapter<T>(T);
+struct MiddlewareAdapter<T>(T);
 
 #[async_trait]
-impl<T> sdk::Middleware for SimpleToolMiddlewareAdapter<T>
+impl<T> sdk::Middleware for MiddlewareAdapter<T>
 where
-    T: SimpleToolMiddleware,
+    T: AuwgentMiddleware,
 {
     fn name(&self) -> &'static str {
         self.0.name()
@@ -546,13 +610,13 @@ where
         value: &JsonValue,
         ctx: &mut sdk::MiddlewareContext,
     ) -> sdk::AuwgentResult<Option<IntentControl>> {
-        let Some(intent_name) = SimpleToolIntentName::parse(name) else {
+        let Some(intent_name) = AuwgentIntentName::parse(name) else {
             return Ok(None);
         };
-        let Some(intent) = SimpleToolIntent::decode(intent_name, value.clone()) else {
+        let Some(intent) = AuwgentIntent::decode(intent_name, value.clone()) else {
             return Ok(None);
         };
-        let intent = SimpleToolIntentView::new(intent);
+        let intent = Intents::new(intent);
         Ok(self.0.on_intent(&intent, ctx).await)
     }
 
@@ -562,8 +626,8 @@ where
         value: &JsonValue,
         ctx: &mut sdk::MiddlewareContext,
     ) -> sdk::AuwgentResult<()> {
-        if let Some(intent_name) = SimpleToolIntentName::parse(name)
-            && let Some(intent) = SimpleToolIntentPartial::decode(intent_name, value.clone())
+        if let Some(intent_name) = AuwgentIntentName::parse(name)
+            && let Some(intent) = AuwgentIntentPartial::decode(intent_name, value.clone())
         {
             self.0.on_intent_partial(&intent, ctx).await;
         }
@@ -598,77 +662,77 @@ where
     }
 }
 
-impl<T> From<T> for SimpleToolMiddlewareRegistry
+impl<T> From<T> for AuwgentMiddlewareRegistry
 where
-    T: SimpleToolMiddleware,
+    T: AuwgentMiddleware,
 {
     fn from(value: T) -> Self {
-        Self(Arc::new(SimpleToolMiddlewareAdapter(value)))
+        Self(Arc::new(MiddlewareAdapter(value)))
     }
 }
 
-impl From<sdk::MiddlewareRegistry> for SimpleToolMiddlewareRegistry {
+impl From<sdk::MiddlewareRegistry> for AuwgentMiddlewareRegistry {
     fn from(value: sdk::MiddlewareRegistry) -> Self {
         Self(value)
     }
 }
 
 #[derive(Clone)]
-pub struct SimpleToolConfig<TTools = SimpleToolToolsRegistry, TMiddleware = SimpleToolMiddlewareRegistry> {
+pub struct AuwgentConfig<TTools = AuwgentToolsRegistry, TMiddleware = AuwgentMiddlewareRegistry> {
     pub tools: TTools,
     pub middleware: Vec<TMiddleware>,
-    pub context: SimpleToolContext,
-    pub api_keys: SimpleToolApiKeys,
+    pub context: AuwgentContext,
+    pub api_keys: AuwgentApiKeys,
 }
 
-pub struct SimpleToolAgent {
-    inner: sdk::TypedAuwgent<SimpleToolToolsRegistry>,
+pub struct AuwgentAgent {
+    inner: sdk::TypedAuwgent<AuwgentToolsRegistry>,
 }
 
-impl std::ops::Deref for SimpleToolAgent {
-    type Target = sdk::TypedAuwgent<SimpleToolToolsRegistry>;
+impl std::ops::Deref for AuwgentAgent {
+    type Target = sdk::TypedAuwgent<AuwgentToolsRegistry>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl SimpleToolAgent {
+impl AuwgentAgent {
     pub fn on_intent<H>(&self, handler: H)
     where
-        H: SimpleToolIntentHandler,
+        H: AuwgentIntentHandler,
     {
         let handler = Arc::new(handler);
-        self.inner.on_decoded_intent(SimpleToolIntentName::parse, SimpleToolIntent::decode, move |intent, agent_name| {
-            let intent = SimpleToolIntentView::new(intent);
+        self.inner.on_decoded_intent(AuwgentIntentName::parse, AuwgentIntent::decode, move |intent, agent_name| {
+            let intent = Intents::new(intent);
             handler.dispatch(&intent, agent_name)
         });
     }
 
     pub fn on_intent_raw<F>(&self, handler: F)
     where
-        F: FnMut(SimpleToolIntent, &str) -> Option<IntentControl> + Send + 'static,
+        F: FnMut(AuwgentIntent, &str) -> Option<IntentControl> + Send + 'static,
     {
-        self.inner.on_decoded_intent(SimpleToolIntentName::parse, SimpleToolIntent::decode, handler);
+        self.inner.on_decoded_intent(AuwgentIntentName::parse, AuwgentIntent::decode, handler);
     }
 
     pub fn on_intent_handler<H>(&self, handler: H)
     where
-        H: SimpleToolIntentHandler,
+        H: AuwgentIntentHandler,
     {
         self.on_intent(handler);
     }
 
     pub fn on_intent_partial<F>(&self, handler: F)
     where
-        F: FnMut(SimpleToolIntentPartial, &str) + Send + 'static,
+        F: FnMut(AuwgentIntentPartial, &str) + Send + 'static,
     {
-        self.inner.on_decoded_intent_partial(SimpleToolIntentName::parse, SimpleToolIntentPartial::decode, handler);
+        self.inner.on_decoded_intent_partial(AuwgentIntentName::parse, AuwgentIntentPartial::decode, handler);
     }
 
     pub fn on_intent_partial_handler<H>(&self, handler: H)
     where
-        H: SimpleToolBasePartialIntentHandler + Send + Sync + 'static,
+        H: AuwgentBasePartialIntentHandler + Send + Sync + 'static,
     {
         let handler = Arc::new(handler);
         self.on_intent_partial(move |intent, agent_name| {
@@ -676,20 +740,20 @@ impl SimpleToolAgent {
         });
     }
 
-    pub async fn run(&self, input: Option<SimpleToolInput>) -> sdk::AuwgentResult<SessionState> {
+    pub async fn run(&self, input: Option<AuwgentInput>) -> sdk::AuwgentResult<SessionState> {
         let input = input.map(serde_json::to_value).transpose().map_err(|e| e.to_string())?;
         self.inner.run(input).await
     }
 }
 
-pub fn create_simpletool<TTools, TMiddleware>(config: SimpleToolConfig<TTools, TMiddleware>) -> sdk::AuwgentResult<SimpleToolAgent>
+pub fn create_simpletool<TTools, TMiddleware>(config: AuwgentConfig<TTools, TMiddleware>) -> sdk::AuwgentResult<AuwgentAgent>
 where
-    TTools: Into<SimpleToolToolsRegistry>,
-    TMiddleware: Into<SimpleToolMiddlewareRegistry>,
+    TTools: Into<AuwgentToolsRegistry>,
+    TMiddleware: Into<AuwgentMiddlewareRegistry>,
 {
     let ir = sdk::parse_ir(include_str!("./main.agent.json"))?;
     let middleware = config.middleware.into_iter().map(|item| {
-        let registry: SimpleToolMiddlewareRegistry = item.into();
+        let registry: AuwgentMiddlewareRegistry = item.into();
         registry.0
     }).collect();
     let sdk_config = sdk::AuwgentConfig {
@@ -699,27 +763,13 @@ where
         api_keys: config.api_keys.into(),
     };
     let inner = sdk::create_auwgent(ir, sdk_config)?;
-    Ok(SimpleToolAgent { inner })
+    Ok(AuwgentAgent { inner })
 }
 
-pub fn auwgent<TTools, TMiddleware>(config: SimpleToolConfig<TTools, TMiddleware>) -> sdk::AuwgentResult<SimpleToolAgent>
+pub fn auwgent<TTools, TMiddleware>(config: AuwgentConfig<TTools, TMiddleware>) -> sdk::AuwgentResult<AuwgentAgent>
 where
-    TTools: Into<SimpleToolToolsRegistry>,
-    TMiddleware: Into<SimpleToolMiddlewareRegistry>,
+    TTools: Into<AuwgentToolsRegistry>,
+    TMiddleware: Into<AuwgentMiddlewareRegistry>,
 {
     create_simpletool(config)
 }
-
-pub use SimpleToolAgent as AuwgentAgent;
-pub use SimpleToolConfig as AuwgentConfig;
-pub use SimpleToolIntent as AuwgentIntent;
-pub use SimpleToolIntentPartial as AuwgentIntentPartial;
-pub use SimpleToolIntentName as AuwgentIntentName;
-pub use SimpleToolIntentHandler as AuwgentIntentHandler;
-pub use SimpleToolBasePartialIntentHandler as AuwgentBasePartialIntentHandler;
-pub use SimpleToolMiddleware as AuwgentMiddleware;
-pub use SimpleToolMiddlewareRegistry as AuwgentMiddlewareRegistry;
-pub use SimpleToolIntentView as Intent;
-pub use SimpleToolContext as AuwgentContext;
-pub use SimpleToolTools as AuwgentTools;
-pub use SimpleToolApiKeys as AuwgentApiKeys;
