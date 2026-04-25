@@ -18,23 +18,24 @@ pub fn generate(plan:&CodegenPlan,base_name:&str)->String{
  let has_context=plan.has_context();
  let required_providers=plan.required_providers();
  let custom_provider_ids=plan.custom_provider_ids();
- let mut sections=vec![format!("// Auto-generated Rust bindings for {agent_name}"),"// Do not edit manually".to_string(),String::new(),"use auwgent_sdk_rust as sdk;".to_string(),"use serde_json::{Map as JsonMap, Value as JsonValue};".to_string(),"use std::marker::PhantomData;".to_string(),"use std::sync::{Arc, Mutex};".to_string(),String::new(),generate_runtime_support()];
+ let mut emitted_shapes=BTreeSet::new();
+ let mut sections=vec![format!("// Auto-generated Rust bindings for {agent_name}"),"// Do not edit manually".to_string(),String::new(),"use async_trait::async_trait;".to_string(),"use auwgent_sdk_rust as sdk;".to_string(),"use serde_json::{Map as JsonMap, Value as JsonValue};".to_string(),"use std::marker::PhantomData;".to_string(),"use std::sync::Arc;".to_string(),String::new(),generate_runtime_support()];
  if let Some(types)=ir.get("types").and_then(Value::as_object){sections.push(generate_custom_types(types));}
  sections.push(generate_named_shape(&format!("{agent_name}Input"),unwrap_input_fields(ir.get("input")).as_ref()));
  for helper in output_helpers{sections.push(generate_helper_output_type(helper));}
  sections.push(generate_output_type(agent_name,ir.get("output"),output_helpers));
  if has_context{sections.push(generate_named_shape(&format!("{agent_name}Context"),ir.get("context")));}
- if has_tools{sections.push(generate_tools(agent_name,all_tools));}
+ if has_tools{sections.push(generate_tools(agent_name,all_tools,&mut emitted_shapes));}
  sections.push(generate_intent_name_enum(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
  sections.push(generate_custom_intent_types(agent_name,plan));
  sections.push(generate_core_intents(agent_name,ir.get("output")));
- if has_tools{sections.push(generate_callable_family(agent_name,"Tool",all_tools,"name","params","returns",true));}
- if has_workflows{sections.push(generate_callable_family(agent_name,"Workflow",workflows,"flowName","flowParams","returns",false));}
- if has_helpers{sections.push(generate_callable_family(agent_name,"Helper",helpers,"name","input","output",false));}
+ if has_tools{sections.push(generate_callable_family(agent_name,"Tool",all_tools,"name","params","returns",true,&mut emitted_shapes));}
+ if has_workflows{sections.push(generate_callable_family(agent_name,"Workflow",workflows,"flowName","flowParams","returns",false,&mut emitted_shapes));}
+ if has_helpers{sections.push(generate_callable_family(agent_name,"Helper",helpers,"name","input","output",false,&mut emitted_shapes));}
  if has_components{sections.push(generate_component_intents(agent_name));}
  sections.push(generate_top_level_intent_enums(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
  sections.push(generate_decode_functions(agent_name,has_tools,has_workflows,has_helpers,has_components,custom_intents));
- sections.push(generate_handler_traits(agent_name));
+ sections.push(generate_handler_traits(agent_name,has_tools,has_workflows,has_helpers,has_components));
  sections.push(generate_api_keys(agent_name,required_providers,custom_provider_ids));
  sections.push(generate_middleware_trait(agent_name));
  sections.push(generate_config(agent_name,has_tools,has_context,plan.has_api_keys()));
@@ -46,6 +47,8 @@ pub fn generate(plan:&CodegenPlan,base_name:&str)->String{
 fn generate_runtime_support()->String{[
 "pub type IntentControl = sdk::IntentControl;".to_string(),
 "pub type SessionState = sdk::SessionState;".to_string(),
+"pub type Session = SessionState;".to_string(),
+"pub type Context = sdk::MiddlewareContext;".to_string(),
 "#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct NoArgs {}\n".to_string(),
 "#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct PartialTextIntentValue {\n    #[serde(flatten)]\n    pub raw: JsonMap<String, JsonValue>,\n}\n".to_string(),
 "#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct PartialStructuredIntentValue<T> {\n    #[serde(flatten)]\n    pub raw: JsonMap<String, JsonValue>,\n    #[serde(skip)]\n    pub marker: PhantomData<T>,\n}\n".to_string(),
@@ -117,18 +120,19 @@ fn generate_struct(name:&str,properties:&Map<String,Value>)->String{
  format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {name} {{\n{}\n}}\n",fields.join("\n"))
 }
 
-fn generate_tools(agent_name:&str,tools:&[Value])->String{
- let mut result_aliases=Vec::new();let mut methods=Vec::new();let mut registrations=Vec::new();
+fn generate_tools(agent_name:&str,tools:&[Value],emitted_shapes:&mut BTreeSet<String>)->String{
+ let mut result_aliases=Vec::new();let mut methods=Vec::new();let mut tool_names=Vec::new();let mut invocations=Vec::new();
  for tool in tools{
   let Some(tool_name)=string_at(tool,&["name"]) else{continue;};
   let pascal=to_rust_type_name(tool_name);let method_name=to_rust_field_name(tool_name);
-  let args_type=shape_type_or_no_args(&format!("{agent_name}{pascal}ToolArgs"),tool.get("params"),&mut result_aliases);
+  let args_type=shape_type_or_no_args(&format!("{agent_name}{pascal}ToolArgs"),tool.get("params"),&mut result_aliases,emitted_shapes);
   let result_alias=format!("{agent_name}{pascal}ToolResultValue");
   result_aliases.push(format!("pub type {result_alias} = {};\n",rust_type(tool.get("returns"),false,"()")));
   methods.push(format!("    fn {method_name}(&self, args: {args_type}) -> {result_alias};"));
-  registrations.push(format!("        let tools = Arc::clone(self);\n        native.register_tool_fn(\"{tool_name}\", move |args| {{\n            let tools = Arc::clone(&tools);\n            Box::pin(async move {{\n                let parsed: {args_type} = serde_json::from_value(args).map_err(|e| e.to_string())?;\n                let result = tools.{method_name}(parsed);\n                serde_json::to_value(result).map_err(|e| e.to_string())\n            }})\n        }});"));
+  tool_names.push(format!("\"{tool_name}\""));
+  invocations.push(format!("            \"{tool_name}\" => {{\n                let tools = Arc::clone(&self.0);\n                Box::pin(async move {{\n                    let parsed: {args_type} = serde_json::from_value(args).map_err(|e| e.to_string())?;\n                    let result = tools.{method_name}(parsed);\n                    serde_json::to_value(result).map_err(|e| e.to_string())\n                }})\n            }}"));
  }
- format!("{}\npub trait {agent_name}Tools: Send + Sync {{\n{}\n}}\n\n#[derive(Clone)]\npub struct {agent_name}ToolsRegistry(pub Arc<dyn {agent_name}Tools>);\n\nimpl {agent_name}ToolsRegistry {{\n    pub fn new<T>(tools: T) -> Self\n    where\n        T: {agent_name}Tools + 'static,\n    {{\n        Self(Arc::new(tools))\n    }}\n\n    pub fn from_arc(tools: Arc<dyn {agent_name}Tools>) -> Self {{\n        Self(tools)\n    }}\n}}\n\nimpl sdk::ToolRegistrar for {agent_name}ToolsRegistry {{\n    fn register_tools(&self, native: &sdk::AuwgentNative) -> sdk::AuwgentResult<()> {{\n        let tool_impl = Arc::clone(&self.0);\n{}\n        Ok(())\n    }}\n}}\n",result_aliases.join("\n"),methods.join("\n"),registrations.join("\n").replace("Arc::clone(self)", "Arc::clone(&tool_impl)"))
+ format!("{}\npub trait {agent_name}Tools: Send + Sync + 'static {{\n{}\n}}\n\n#[derive(Clone)]\npub struct {agent_name}ToolsRegistry(pub Arc<dyn {agent_name}Tools>);\n\nimpl<T> From<T> for {agent_name}ToolsRegistry\nwhere\n    T: {agent_name}Tools,\n{{\n    fn from(value: T) -> Self {{\n        Self(Arc::new(value))\n    }}\n}}\n\nimpl sdk::ToolRegistrar for {agent_name}ToolsRegistry {{\n    fn tool_names(&self) -> &'static [&'static str] {{\n        &[{}]\n    }}\n\n    fn invoke_tool(\n        &self,\n        name: &'static str,\n        args: JsonValue,\n    ) -> sdk::BoxFuture<'static, sdk::AuwgentResult<JsonValue>> {{\n        match name {{\n{}\n            _ => Box::pin(async move {{ Err(format!(\"Unknown tool: {{name}}\")) }}),\n        }}\n    }}\n}}\n",result_aliases.join("\n"),methods.join("\n"),tool_names.join(", "),invocations.join(",\n"))
 }
 
 fn generate_intent_name_enum(agent_name:&str,has_tools:bool,has_workflows:bool,has_helpers:bool,has_components:bool,custom_intents:&[String])->String{
@@ -155,13 +159,13 @@ fn generate_core_intents(agent_name:&str,output:Option<&Value>)->String{
  }else{format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {agent_name}ResponseSchemaIntent {{\n    #[serde(rename = \"type\")]\n    pub kind: String,\n    pub response: {agent_name}Output,\n}}\n")};
  [format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {agent_name}ResponseTextIntent {{\n    pub text: String,\n}}\n"),response_schema,format!("#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct {agent_name}ErrorIntent {{\n    pub message: String,\n}}\n")].join("\n")
 }
-fn generate_callable_family(agent_name:&str,family_name:&str,items:&[Value],name_key:&str,args_key:&str,result_key:&str,include_error_and_skipped:bool)->String{
+fn generate_callable_family(agent_name:&str,family_name:&str,items:&[Value],name_key:&str,args_key:&str,result_key:&str,include_error_and_skipped:bool,emitted_shapes:&mut BTreeSet<String>)->String{
  if items.is_empty(){return String::new();}
  let mut blocks=Vec::new();let mut call_variants=Vec::new();let mut result_variants=Vec::new();let mut skipped_variants=Vec::new();
  for item in items{
   let Some(item_name)=string_at(item,&[name_key]) else{continue;};
   let pascal=to_rust_type_name(item_name);
-  let args_type=shape_type_or_no_args(&format!("{agent_name}{pascal}{family_name}Args"),item.get(args_key),&mut blocks);
+  let args_type=shape_type_or_no_args(&format!("{agent_name}{pascal}{family_name}Args"),item.get(args_key),&mut blocks,emitted_shapes);
   let result_type=rust_type(item.get(result_key),false,"()");
   call_variants.push(enum_struct_variant(item_name,&pascal,"args",&args_type));
   result_variants.push(format!("    #[serde(rename = \"{item_name}\")]\n    {pascal} {{\n        args: {args_type},\n        result: {result_type},\n        #[serde(default)]\n        overridden: bool,\n    }},"));
@@ -228,44 +232,123 @@ fn generate_decode_functions(agent_name:&str,has_tools:bool,has_workflows:bool,h
   partial_cases.extend([format!("        {agent_name}IntentName::Component => serde_json::from_value(value).ok().map({agent_name}IntentPartial::Component),"),format!("        {agent_name}IntentName::RenderComponent => serde_json::from_value(value).ok().map({agent_name}IntentPartial::RenderComponent),")]);
  }
  for custom_intent in custom_intents{let pascal=to_rust_type_name(custom_intent);name_cases.push(format!("        \"{custom_intent}\" => Some({agent_name}IntentName::{pascal}),"));intent_cases.push(format!("        {agent_name}IntentName::{pascal} => serde_json::from_value(value).ok().map({agent_name}Intent::{pascal}),"));partial_cases.push(format!("        {agent_name}IntentName::{pascal} => serde_json::from_value(value).ok().map({agent_name}IntentPartial::{pascal}),"));}
- format!("pub fn parse_intent_name(name: &str) -> Option<{agent_name}IntentName> {{\n    match name {{\n{}\n        _ => None,\n    }}\n}}\n\npub fn decode_intent(name: {agent_name}IntentName, value: JsonValue) -> Option<{agent_name}Intent> {{\n    match name {{\n{}\n    }}\n}}\n\npub fn decode_intent_partial(name: {agent_name}IntentName, value: JsonValue) -> Option<{agent_name}IntentPartial> {{\n    match name {{\n{}\n    }}\n}}\n",name_cases.join("\n"),intent_cases.join("\n"),partial_cases.join("\n"))
+ format!("impl {agent_name}IntentName {{\n    pub fn parse(name: &str) -> Option<Self> {{\n        match name {{\n{}\n            _ => None,\n        }}\n    }}\n}}\n\nimpl {agent_name}Intent {{\n    pub fn decode(name: {agent_name}IntentName, value: JsonValue) -> Option<Self> {{\n        match name {{\n{}\n        }}\n    }}\n}}\n\nimpl {agent_name}IntentPartial {{\n    pub fn decode(name: {agent_name}IntentName, value: JsonValue) -> Option<Self> {{\n        match name {{\n{}\n        }}\n    }}\n}}\n",name_cases.join("\n"),intent_cases.join("\n"),partial_cases.join("\n"))
 }
 
-fn generate_handler_traits(agent_name:&str)->String{format!("pub trait {agent_name}BaseIntentHandler {{\n    fn on_intent(&mut self, intent: {agent_name}Intent, agent_name: &str) -> Option<IntentControl> {{ let _ = (intent, agent_name); None }}\n}}\n\npub trait {agent_name}BasePartialIntentHandler {{\n    fn on_intent_partial(&mut self, intent: {agent_name}IntentPartial, agent_name: &str) {{ let _ = (intent, agent_name); }}\n}}\n\npub fn dispatch_intent<H: {agent_name}BaseIntentHandler>(handler: &mut H, intent: {agent_name}Intent, agent_name: &str) -> Option<IntentControl> {{\n    handler.on_intent(intent, agent_name)\n}}\n\npub fn dispatch_partial_intent<H: {agent_name}BasePartialIntentHandler>(handler: &mut H, intent: {agent_name}IntentPartial, agent_name: &str) {{\n    handler.on_intent_partial(intent, agent_name)\n}}\n")}
+fn generate_handler_traits(agent_name:&str,has_tools:bool,has_workflows:bool,has_helpers:bool,has_components:bool)->String{
+ let view_name=format!("{agent_name}IntentView");
+ let mut name_arms=vec![
+  format!("            {agent_name}Intent::ResponseText(_) => \"response_text\","),
+  format!("            {agent_name}Intent::ResponseSchema(_) => \"response_schema\","),
+  format!("            {agent_name}Intent::Error(_) => \"error\","),
+ ];
+ let mut dispatch_arms=vec![
+  format!("        {agent_name}Intent::ResponseText(_) => handler.response_text(intent, agent_name),"),
+  format!("        {agent_name}Intent::ResponseSchema(_) => handler.response_schema(intent, agent_name),"),
+  format!("        {agent_name}Intent::Error(_) => handler.error(intent, agent_name),"),
+ ];
+ if has_tools{
+  for(name,variant)in [("ToolCall","tool_call"),("ToolResult","tool_result"),("ToolError","tool_error"),("ToolSkipped","tool_skipped")]{
+   name_arms.push(format!("            {agent_name}Intent::{name}(..) => \"{variant}\","));
+   let method=to_rust_field_name(variant);
+   dispatch_arms.push(format!("        {agent_name}Intent::{name}(..) => handler.{method}(intent, agent_name),"));
+  }
+ }
+ if has_workflows{
+  for(name,variant)in [("WorkflowCall","workflow_call"),("WorkflowResult","workflow_result")]{
+   name_arms.push(format!("            {agent_name}Intent::{name}(..) => \"{variant}\","));
+   let method=to_rust_field_name(variant);
+   dispatch_arms.push(format!("        {agent_name}Intent::{name}(..) => handler.{method}(intent, agent_name),"));
+  }
+ }
+ if has_helpers{
+  for(name,variant)in [("HelperCall","helper_call"),("HelperResult","helper_result")]{
+   name_arms.push(format!("            {agent_name}Intent::{name}(..) => \"{variant}\","));
+   let method=to_rust_field_name(variant);
+   dispatch_arms.push(format!("        {agent_name}Intent::{name}(..) => handler.{method}(intent, agent_name),"));
+  }
+ }
+ if has_components{
+  for(name,variant)in [("Component","component"),("RenderComponent","render_component")]{
+   name_arms.push(format!("            {agent_name}Intent::{name}(..) => \"{variant}\","));
+   let method=to_rust_field_name(variant);
+   dispatch_arms.push(format!("        {agent_name}Intent::{name}(..) => handler.{method}(intent, agent_name),"));
+  }
+ }
+ let mut args_arms=Vec::new();
+ if has_tools{
+  args_arms.extend([
+   format!("            {agent_name}Intent::ToolCall(intent) => serde_json::to_value(intent.clone()),"),
+   format!("            {agent_name}Intent::ToolResult(intent) => serde_json::to_value(intent.clone()),"),
+   format!("            {agent_name}Intent::ToolSkipped(intent) => serde_json::to_value(intent.clone()),"),
+  ]);
+ }
+ if has_workflows{
+  args_arms.extend([
+   format!("            {agent_name}Intent::WorkflowCall(intent) => serde_json::to_value(intent.clone()),"),
+   format!("            {agent_name}Intent::WorkflowResult(intent) => serde_json::to_value(intent.clone()),"),
+  ]);
+ }
+ if has_helpers{
+  args_arms.extend([
+   format!("            {agent_name}Intent::HelperCall(intent) => serde_json::to_value(intent.clone()),"),
+   format!("            {agent_name}Intent::HelperResult(intent) => serde_json::to_value(intent.clone()),"),
+  ]);
+ }
+ let tool_error_message_arm=if has_tools{format!("            {agent_name}Intent::ToolError(intent) => &intent.message,\n")}else{String::new()};
+ let tool_methods=if has_tools{"\n    fn tool_call(&self, _intent: &".to_string()+&view_name+", _agent: &str) {}\n    fn tool_result(&self, _intent: &"+&view_name+", _agent: &str) {}\n    fn tool_error(&self, _intent: &"+&view_name+", _agent: &str) {}\n    fn tool_skipped(&self, _intent: &"+&view_name+", _agent: &str) {}"}else{String::new()};
+ let workflow_methods=if has_workflows{"\n    fn workflow_call(&self, _intent: &".to_string()+&view_name+", _agent: &str) {}\n    fn workflow_result(&self, _intent: &"+&view_name+", _agent: &str) {}"}else{String::new()};
+ let helper_methods=if has_helpers{"\n    fn helper_call(&self, _intent: &".to_string()+&view_name+", _agent: &str) {}\n    fn helper_result(&self, _intent: &"+&view_name+", _agent: &str) {}"}else{String::new()};
+ let component_methods=if has_components{"\n    fn component(&self, _intent: &".to_string()+&view_name+", _agent: &str) {}\n    fn render_component(&self, _intent: &"+&view_name+", _agent: &str) {}"}else{String::new()};
+ let dispatch_arms=dispatch_arms.iter().map(|arm|arm.replace("handler.", "self.")).collect::<Vec<_>>();
+ format!("#[derive(Debug, Clone)]\npub struct {view_name} {{\n    inner: {agent_name}Intent,\n}}\n\nimpl {view_name} {{\n    pub fn new(inner: {agent_name}Intent) -> Self {{\n        Self {{ inner }}\n    }}\n\n    pub fn raw(&self) -> &{agent_name}Intent {{\n        &self.inner\n    }}\n\n    pub fn name(&self) -> &'static str {{\n        match &self.inner {{\n{}\n        }}\n    }}\n\n    pub fn text(&self) -> &str {{\n        match &self.inner {{\n            {agent_name}Intent::ResponseText(intent) => &intent.text,\n            _ => panic!(\"intent does not contain text\"),\n        }}\n    }}\n\n    pub fn message(&self) -> &str {{\n        match &self.inner {{\n            {agent_name}Intent::Error(intent) => &intent.message,\n{}            _ => panic!(\"intent does not contain a message\"),\n        }}\n    }}\n\n    pub fn response<T>(&self) -> T\n    where\n        T: serde::de::DeserializeOwned,\n    {{\n        let value = match &self.inner {{\n            {agent_name}Intent::ResponseSchema(intent) => serde_json::to_value(intent.response.clone()),\n            _ => panic!(\"intent does not contain a response\"),\n        }}.expect(\"response should serialize\");\n        serde_json::from_value(value).expect(\"response should deserialize\")\n    }}\n\n    pub fn args<T>(&self) -> T\n    where\n        T: serde::de::DeserializeOwned,\n    {{\n        let value = match &self.inner {{\n{}\n            _ => panic!(\"intent does not contain args\"),\n        }}.expect(\"args should serialize\");\n        serde_json::from_value(value).expect(\"args should deserialize\")\n    }}\n}}\n\npub trait {agent_name}IntentHandler: Send + Sync + 'static {{\n    fn response_text(&self, _intent: &{view_name}, _agent: &str) {{}}\n    fn response_schema(&self, _intent: &{view_name}, _agent: &str) {{}}{}{}{}{}\n    fn error(&self, _intent: &{view_name}, _agent: &str) {{}}\n    fn any(&self, _intent: &{view_name}, _agent: &str) {{}}\n\n    fn dispatch(&self, intent: &{view_name}, agent_name: &str) -> Option<IntentControl> {{\n        self.any(intent, agent_name);\n        match intent.raw() {{\n{}\n        }}\n        None\n    }}\n}}\n\npub trait {agent_name}BasePartialIntentHandler {{\n    fn on_intent_partial(&self, intent: {agent_name}IntentPartial, agent_name: &str) {{ let _ = (intent, agent_name); }}\n\n    fn dispatch_partial(&self, intent: {agent_name}IntentPartial, agent_name: &str) {{\n        self.on_intent_partial(intent, agent_name)\n    }}\n}}\n",name_arms.join("\n"),tool_error_message_arm,args_arms.join("\n"),tool_methods,workflow_methods,helper_methods,component_methods,dispatch_arms.join("\n"))
+}
 fn generate_api_keys(agent_name:&str,required_providers:&BTreeSet<String>,custom_provider_ids:&BTreeSet<String>)->String{
  if required_providers.is_empty(){return String::new();}
  let mut fields=Vec::new();
- let mut direct_sets=vec!["            openai_api_key: None,".to_string(),"            gemini_api_key: None,".to_string(),"            groq_api_key: None,".to_string()];
+ let mut init_fields=Vec::new();
  let mut custom_sets=Vec::new();
- if required_providers.contains("openai"){fields.push("    pub openai_api_key: Option<String>,".to_string());direct_sets[0]="            openai_api_key: value.openai_api_key,".to_string();}
- if required_providers.contains("gemini"){fields.push("    pub gemini_api_key: Option<String>,".to_string());direct_sets[1]="            gemini_api_key: value.gemini_api_key,".to_string();}
- if required_providers.contains("groq"){fields.push("    pub groq_api_key: Option<String>,".to_string());direct_sets[2]="            groq_api_key: value.groq_api_key,".to_string();}
- for id in custom_provider_ids{let field_name=format!("{}_api_key",to_rust_field_name(&id.replace('-',"_")));fields.push(format!("    pub {field_name}: Option<String>,"));custom_sets.push(format!("        if let Some(api_key) = value.{field_name} {{\n            custom_api_keys.insert(\"{id}\".to_string(), api_key);\n        }}"));}
- format!("#[derive(Debug, Clone, Default)]\npub struct {agent_name}ApiKeys {{\n{}\n}}\n\nimpl From<{agent_name}ApiKeys> for sdk::AuwgentApiKeys {{\n    fn from(value: {agent_name}ApiKeys) -> Self {{\n        let mut custom_api_keys = std::collections::HashMap::new();\n{}\n        Self {{\n{}\n            custom_api_keys,\n        }}\n    }}\n}}\n",fields.join("\n"),custom_sets.join("\n"),direct_sets.join("\n"))
+ if required_providers.contains("openai"){fields.push("    pub openai_api_key: Option<String>,".to_string());init_fields.push("            openai_api_key: value.openai_api_key,".to_string());}
+ if required_providers.contains("gemini"){fields.push("    pub gemini_api_key: Option<String>,".to_string());init_fields.push("            gemini_api_key: value.gemini_api_key,".to_string());}
+ if required_providers.contains("groq"){fields.push("    pub groq_api_key: Option<String>,".to_string());init_fields.push("            groq_api_key: value.groq_api_key,".to_string());}
+ for id in custom_provider_ids{
+  let field_name=format!("{}_api_key",to_rust_field_name(&id.replace('-',"_")));
+  fields.push(format!("    pub {field_name}: Option<String>,"));
+  custom_sets.push(format!("        if let Some(api_key) = value.{field_name} {{\n            custom_api_keys.insert(\"{id}\".to_string(), api_key);\n        }}"));
+ }
+ let body=if custom_provider_ids.is_empty(){
+  format!("        sdk::AuwgentApiKeys {{\n{}\n            ..sdk::AuwgentApiKeys::default()\n        }}",init_fields.join("\n"))
+ }else{
+  format!("        let mut custom_api_keys = std::collections::HashMap::new();\n{}\n        sdk::AuwgentApiKeys {{\n{}\n            custom_api_keys,\n            ..sdk::AuwgentApiKeys::default()\n        }}",custom_sets.join("\n"),init_fields.join("\n"))
+ };
+ format!("#[derive(Debug, Clone, Default)]\npub struct {agent_name}ApiKeys {{\n{}\n}}\n\nimpl From<{agent_name}ApiKeys> for sdk::AuwgentApiKeys {{\n    fn from(value: {agent_name}ApiKeys) -> Self {{\n{}\n    }}\n}}\n",fields.join("\n"),body)
 }
 
-fn generate_middleware_trait(agent_name:&str)->String{format!("pub use sdk::MiddlewareContext;\n\npub trait {agent_name}Middleware: sdk::Middleware {{}}\n\nimpl<T> {agent_name}Middleware for T where T: sdk::Middleware + ?Sized {{}}\n\npub type {agent_name}MiddlewareRegistry = sdk::MiddlewareRegistry;\n")}
+ fn generate_middleware_trait(agent_name:&str)->String{format!("#[async_trait]\npub trait {agent_name}Middleware: Send + Sync + 'static {{\n    fn name(&self) -> &'static str {{\n        std::any::type_name::<Self>()\n    }}\n\n    fn target(&self) -> Option<Vec<String>> {{\n        None\n    }}\n\n    async fn on_run_start(&self, session: Session, _ctx: &Context) -> Session {{\n        session\n    }}\n\n    async fn on_llm_start(&self, prompt: String, _ctx: &Context) -> String {{\n        prompt\n    }}\n\n    async fn on_intent(&self, _intent: &{agent_name}IntentView, _ctx: &Context) -> Option<IntentControl> {{\n        None\n    }}\n\n    async fn on_intent_partial(&self, _intent: &{agent_name}IntentPartial, _ctx: &Context) {{}}\n\n    async fn on_llm_end(&self, _response: &JsonValue, _ctx: &Context) {{}}\n\n    async fn on_run_complete(&self, _session: &Session, _ctx: &Context) {{}}\n\n    async fn on_error(&self, _error: &JsonValue, _session: Option<&Session>, _ctx: &Context) -> bool {{\n        false\n    }}\n}}\n\n#[derive(Clone)]\npub struct {agent_name}MiddlewareRegistry(pub sdk::MiddlewareRegistry);\n\nstruct {agent_name}MiddlewareAdapter<T>(T);\n\n#[async_trait]\nimpl<T> sdk::Middleware for {agent_name}MiddlewareAdapter<T>\nwhere\n    T: {agent_name}Middleware,\n{{\n    fn name(&self) -> &'static str {{\n        self.0.name()\n    }}\n\n    fn target(&self) -> Option<Vec<String>> {{\n        self.0.target()\n    }}\n\n    async fn on_run_start(\n        &self,\n        session: SessionState,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<SessionState> {{\n        Ok(self.0.on_run_start(session, ctx).await)\n    }}\n\n    async fn on_llm_start(\n        &self,\n        prompt: String,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<Option<String>> {{\n        Ok(Some(self.0.on_llm_start(prompt, ctx).await))\n    }}\n\n    async fn on_intent(\n        &self,\n        name: &str,\n        value: &JsonValue,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<Option<IntentControl>> {{\n        let Some(intent_name) = {agent_name}IntentName::parse(name) else {{\n            return Ok(None);\n        }};\n        let Some(intent) = {agent_name}Intent::decode(intent_name, value.clone()) else {{\n            return Ok(None);\n        }};\n        let intent = {agent_name}IntentView::new(intent);\n        Ok(self.0.on_intent(&intent, ctx).await)\n    }}\n\n    async fn on_intent_partial(\n        &self,\n        name: &str,\n        value: &JsonValue,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<()> {{\n        if let Some(intent_name) = {agent_name}IntentName::parse(name)\n            && let Some(intent) = {agent_name}IntentPartial::decode(intent_name, value.clone())\n        {{\n            self.0.on_intent_partial(&intent, ctx).await;\n        }}\n        Ok(())\n    }}\n\n    async fn on_llm_end(\n        &self,\n        response: &JsonValue,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<()> {{\n        self.0.on_llm_end(response, ctx).await;\n        Ok(())\n    }}\n\n    async fn on_run_complete(\n        &self,\n        session: &SessionState,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<()> {{\n        self.0.on_run_complete(session, ctx).await;\n        Ok(())\n    }}\n\n    async fn on_error(\n        &self,\n        error: &JsonValue,\n        session: Option<&SessionState>,\n        ctx: &mut sdk::MiddlewareContext,\n    ) -> sdk::AuwgentResult<bool> {{\n        Ok(self.0.on_error(error, session, ctx).await)\n    }}\n}}\n\nimpl<T> From<T> for {agent_name}MiddlewareRegistry\nwhere\n    T: {agent_name}Middleware,\n{{\n    fn from(value: T) -> Self {{\n        Self(Arc::new({agent_name}MiddlewareAdapter(value)))\n    }}\n}}\n\nimpl From<sdk::MiddlewareRegistry> for {agent_name}MiddlewareRegistry {{\n    fn from(value: sdk::MiddlewareRegistry) -> Self {{\n        Self(value)\n    }}\n}}\n")}
 
 fn generate_config(agent_name:&str,has_tools:bool,has_context:bool,has_api_keys:bool)->String{
  let mut fields=Vec::new();
- if has_tools{fields.push(format!("    pub tools: {agent_name}ToolsRegistry,"));}
- fields.push(format!("    pub middleware: Vec<{agent_name}MiddlewareRegistry>,"));
+ if has_tools{fields.push("    pub tools: TTools,".to_string());}
+ fields.push("    pub middleware: Vec<TMiddleware>,".to_string());
  if has_context{fields.push(format!("    pub context: {agent_name}Context,"));}
  if has_api_keys{fields.push(format!("    pub api_keys: {agent_name}ApiKeys,"));}
- let tools_registry=if has_tools{String::new()}else{format!("pub type {agent_name}ToolsRegistry = ();")};
- format!("{tools_registry}\n#[derive(Clone)]\npub struct {agent_name}Config {{\n{}\n}}\n",fields.join("\n"))
+ let generics=if has_tools{format!("<TTools = {agent_name}ToolsRegistry, TMiddleware = {agent_name}MiddlewareRegistry>")}else{format!("<TMiddleware = {agent_name}MiddlewareRegistry>")};
+ format!("#[derive(Clone)]\npub struct {agent_name}Config{generics} {{\n{}\n}}\n",fields.join("\n"))
 }
 
 fn generate_agent(agent_name:&str,base_name:&str,has_tools:bool,has_context:bool,has_api_keys:bool)->String{
  let snake_agent_name=to_rust_field_name(agent_name);
  let inner_tools_type=if has_tools{format!("{agent_name}ToolsRegistry")}else{"()".to_string()};
- let tools_value=if has_tools{"config.tools".to_string()}else{"()".to_string()};
+ let tools_value=if has_tools{"config.tools.into()".to_string()}else{"()".to_string()};
+ let config_type=if has_tools{format!("{agent_name}Config<TTools, TMiddleware>")}else{format!("{agent_name}Config<TMiddleware>")};
+ let generics=if has_tools{"<TTools, TMiddleware>"}else{"<TMiddleware>"};
+ let where_clause=if has_tools{format!("where\n    TTools: Into<{agent_name}ToolsRegistry>,\n    TMiddleware: Into<{agent_name}MiddlewareRegistry>,")}else{format!("where\n    TMiddleware: Into<{agent_name}MiddlewareRegistry>,")};
  let context_value=if has_context{"Some(serde_json::to_value(config.context).map_err(|e| e.to_string())?)".to_string()}else{"None".to_string()};
  let api_keys_value=if has_api_keys{"config.api_keys.into()".to_string()}else{"sdk::AuwgentApiKeys::default()".to_string()};
- format!("pub struct {agent_name}Agent {{\n    inner: sdk::TypedAuwgent<{inner_tools_type}>,\n}}\n\nimpl {agent_name}Agent {{\n    pub fn on_intent<F>(&self, handler: F)\n    where\n        F: FnMut({agent_name}Intent, &str) -> Option<IntentControl> + Send + 'static,\n    {{\n        let handler = Arc::new(Mutex::new(handler));\n        self.inner.on_intent(move |name, value, agent_name| {{\n            let handler = Arc::clone(&handler);\n            Box::pin(async move {{\n                let intent_name = parse_intent_name(&name)?;\n                let intent = decode_intent(intent_name, value)?;\n                let mut handler = handler.lock().ok()?;\n                (*handler)(intent, &agent_name)\n            }})\n        }});\n    }}\n\n    pub fn on_intent_partial<F>(&self, handler: F)\n    where\n        F: FnMut({agent_name}IntentPartial, &str) + Send + 'static,\n    {{\n        let handler = Arc::new(Mutex::new(handler));\n        self.inner.on_intent_partial(move |name, value, agent_name| {{\n            if let Some(intent_name) = parse_intent_name(&name)\n                && let Some(intent) = decode_intent_partial(intent_name, value)\n                && let Ok(mut handler) = handler.lock()\n            {{\n                (*handler)(intent, &agent_name);\n            }}\n        }});\n    }}\n\n    pub fn on_intent_handler<H>(&self, handler: H)\n    where\n        H: {agent_name}BaseIntentHandler + Send + 'static,\n    {{\n        let handler = Arc::new(Mutex::new(handler));\n        self.on_intent(move |intent, agent_name| {{\n            let mut handler = handler.lock().ok()?;\n            dispatch_intent(&mut *handler, intent, agent_name)\n        }});\n    }}\n\n    pub fn on_intent_partial_handler<H>(&self, handler: H)\n    where\n        H: {agent_name}BasePartialIntentHandler + Send + 'static,\n    {{\n        let handler = Arc::new(Mutex::new(handler));\n        self.on_intent_partial(move |intent, agent_name| {{\n            if let Ok(mut handler) = handler.lock() {{\n                dispatch_partial_intent(&mut *handler, intent, agent_name);\n            }}\n        }});\n    }}\n\n    pub async fn run(&self, input: Option<{agent_name}Input>) -> sdk::AuwgentResult<SessionState> {{\n        let input = input.map(serde_json::to_value).transpose().map_err(|e| e.to_string())?;\n        self.inner.run(input).await\n    }}\n\n    pub fn generate_prompt(&self, helper_name: Option<String>) -> sdk::AuwgentResult<String> {{\n        self.inner.generate_prompt(helper_name)\n    }}\n\n    pub fn get_tool_names(&self) -> Vec<String> {{\n        self.inner.get_tool_names()\n    }}\n\n    pub fn get_tool_schemas(&self) -> sdk::AuwgentResult<JsonValue> {{\n        self.inner.get_tool_schemas()\n    }}\n\n    pub fn write_chunk(&self, chunk: String) {{\n        self.inner.raw().write_chunk(chunk);\n    }}\n\n    pub fn end_stream(&self) -> sdk::AuwgentResult<JsonValue> {{\n        self.inner.raw().end_stream()\n    }}\n\n    pub async fn process_intents(&self) -> sdk::AuwgentResult<JsonValue> {{\n        self.inner.raw().process_intents().await\n    }}\n\n    pub fn export_session(&self) -> sdk::AuwgentResult<SessionState> {{\n        self.inner.export_session()\n    }}\n\n    pub fn import_session(&self, session: &SessionState) -> sdk::AuwgentResult<()> {{\n        self.inner.import_session(session)\n    }}\n\n    pub fn clear_session(&self) {{\n        self.inner.clear_session();\n    }}\n\n    pub fn get_metadata(&self) -> sdk::AuwgentResult<sdk::RunMetadata> {{\n        self.inner.get_metadata()\n    }}\n\n    pub fn raw(&self) -> &sdk::TypedAuwgent<{inner_tools_type}> {{\n        &self.inner\n    }}\n}}\n\npub fn create_{snake_agent_name}(config: {agent_name}Config) -> sdk::AuwgentResult<{agent_name}Agent> {{\n    let ir = sdk::parse_ir(include_str!(\"./{base_name}.agent.json\"))?;\n    let sdk_config = sdk::AuwgentConfig {{\n        tools: {tools_value},\n        middleware: config.middleware,\n        context: {context_value},\n        api_keys: {api_keys_value},\n    }};\n    let inner = sdk::create_auwgent(ir, sdk_config)?;\n    Ok({agent_name}Agent {{ inner }})\n}}\n\npub fn auwgent(config: {agent_name}Config) -> sdk::AuwgentResult<{agent_name}Agent> {{\n    create_{snake_agent_name}(config)\n}}\n")}
+ format!("pub struct {agent_name}Agent {{\n    inner: sdk::TypedAuwgent<{inner_tools_type}>,\n}}\n\nimpl std::ops::Deref for {agent_name}Agent {{\n    type Target = sdk::TypedAuwgent<{inner_tools_type}>;\n\n    fn deref(&self) -> &Self::Target {{\n        &self.inner\n    }}\n}}\n\nimpl {agent_name}Agent {{\n    pub fn on_intent<H>(&self, handler: H)\n    where\n        H: {agent_name}IntentHandler,\n    {{\n        let handler = Arc::new(handler);\n        self.inner.on_decoded_intent({agent_name}IntentName::parse, {agent_name}Intent::decode, move |intent, agent_name| {{\n            let intent = {agent_name}IntentView::new(intent);\n            handler.dispatch(&intent, agent_name)\n        }});\n    }}\n\n    pub fn on_intent_raw<F>(&self, handler: F)\n    where\n        F: FnMut({agent_name}Intent, &str) -> Option<IntentControl> + Send + 'static,\n    {{\n        self.inner.on_decoded_intent({agent_name}IntentName::parse, {agent_name}Intent::decode, handler);\n    }}\n\n    pub fn on_intent_handler<H>(&self, handler: H)\n    where\n        H: {agent_name}IntentHandler,\n    {{\n        self.on_intent(handler);\n    }}\n\n    pub fn on_intent_partial<F>(&self, handler: F)\n    where\n        F: FnMut({agent_name}IntentPartial, &str) + Send + 'static,\n    {{\n        self.inner.on_decoded_intent_partial({agent_name}IntentName::parse, {agent_name}IntentPartial::decode, handler);\n    }}\n\n    pub fn on_intent_partial_handler<H>(&self, handler: H)\n    where\n        H: {agent_name}BasePartialIntentHandler + Send + Sync + 'static,\n    {{\n        let handler = Arc::new(handler);\n        self.on_intent_partial(move |intent, agent_name| {{\n            handler.dispatch_partial(intent, agent_name);\n        }});\n    }}\n\n    pub async fn run(&self, input: Option<{agent_name}Input>) -> sdk::AuwgentResult<SessionState> {{\n        let input = input.map(serde_json::to_value).transpose().map_err(|e| e.to_string())?;\n        self.inner.run(input).await\n    }}\n}}\n\npub fn create_{snake_agent_name}{generics}(config: {config_type}) -> sdk::AuwgentResult<{agent_name}Agent>\n{where_clause}\n{{\n    let ir = sdk::parse_ir(include_str!(\"./{base_name}.agent.json\"))?;\n    let middleware = config.middleware.into_iter().map(|item| {{\n        let registry: {agent_name}MiddlewareRegistry = item.into();\n        registry.0\n    }}).collect();\n    let sdk_config = sdk::AuwgentConfig {{\n        tools: {tools_value},\n        middleware,\n        context: {context_value},\n        api_keys: {api_keys_value},\n    }};\n    let inner = sdk::create_auwgent(ir, sdk_config)?;\n    Ok({agent_name}Agent {{ inner }})\n}}\n\npub fn auwgent{generics}(config: {config_type}) -> sdk::AuwgentResult<{agent_name}Agent>\n{where_clause}\n{{\n    create_{snake_agent_name}(config)\n}}\n")}
 
 fn generate_aliases(agent_name:&str,has_tools:bool,has_context:bool,has_api_keys:bool)->String{
- let mut aliases=vec![format!("pub use {agent_name}Agent as AuwgentAgent;"),format!("pub use {agent_name}Config as AuwgentConfig;"),format!("pub use {agent_name}Intent as AuwgentIntent;"),format!("pub use {agent_name}IntentPartial as AuwgentIntentPartial;"),format!("pub use {agent_name}IntentName as AuwgentIntentName;"),format!("pub use {agent_name}BaseIntentHandler as AuwgentBaseIntentHandler;"),format!("pub use {agent_name}BasePartialIntentHandler as AuwgentBasePartialIntentHandler;"),format!("pub use {agent_name}Middleware as AuwgentMiddleware;"),format!("pub use {agent_name}MiddlewareRegistry as AuwgentMiddlewareRegistry;")];
+ let mut aliases=vec![format!("pub use {agent_name}Agent as AuwgentAgent;"),format!("pub use {agent_name}Config as AuwgentConfig;"),format!("pub use {agent_name}Intent as AuwgentIntent;"),format!("pub use {agent_name}IntentPartial as AuwgentIntentPartial;"),format!("pub use {agent_name}IntentName as AuwgentIntentName;"),format!("pub use {agent_name}IntentHandler as AuwgentIntentHandler;"),format!("pub use {agent_name}BasePartialIntentHandler as AuwgentBasePartialIntentHandler;"),format!("pub use {agent_name}Middleware as AuwgentMiddleware;"),format!("pub use {agent_name}MiddlewareRegistry as AuwgentMiddlewareRegistry;"),format!("pub use {agent_name}IntentView as Intent;")];
  if has_context{aliases.push(format!("pub use {agent_name}Context as AuwgentContext;"));}
  if has_tools{aliases.push(format!("pub use {agent_name}Tools as AuwgentTools;"));}
  if has_api_keys{aliases.push(format!("pub use {agent_name}ApiKeys as AuwgentApiKeys;"));}
@@ -287,7 +370,16 @@ fn shape_properties(value:Option<&Value>,unwrap_input_kind:bool)->Option<Map<Str
 
 fn is_empty_shape(value:Option<&Value>,unwrap_input_kind:bool)->bool{shape_properties(value,unwrap_input_kind).map(|properties|properties.iter().filter(|(name,_)|!name.starts_with('@')&&!name.starts_with("__")).count()==0).unwrap_or(false)}
 
-fn shape_type_or_no_args(name:&str,shape:Option<&Value>,blocks:&mut Vec<String>)->String{if is_empty_shape(shape,false){"NoArgs".to_string()}else{blocks.push(generate_named_shape(name,shape));name.to_string()}}
+fn shape_type_or_no_args(name:&str,shape:Option<&Value>,blocks:&mut Vec<String>,emitted_shapes:&mut BTreeSet<String>)->String{
+ if is_empty_shape(shape,false){
+  "NoArgs".to_string()
+ }else{
+  if emitted_shapes.insert(name.to_string()){
+   blocks.push(generate_named_shape(name,shape));
+  }
+  name.to_string()
+ }
+}
 
 fn rust_type(value:Option<&Value>,optional:bool,fallback:&str)->String{let base=rust_type_base(value,fallback);if optional{format!("Option<{base}>")}else{base}}
 
@@ -309,7 +401,7 @@ fn to_rust_field_name(name:&str)->String{let mut out=String::new();let mut under
 mod tests {
  use super::*;use crate::generation_plan::CodegenPlan;use serde_json::json;
  #[test]
- fn emits_typed_intents_and_conditional_config(){let ir=json!({"name":"Hello","context":{"user_id":{"type":"string","optional":false}},"tools":[{"name":"get_details","params":{},"returns":{"type":"typeRef","name":"Person"}},{"name":"get_location","params":{"id":{"type":"string","optional":false}},"returns":{"type":"string"}}],"helpers":[{"name":"Joker","input":null,"output":null,"customIntents":[{"name":"helper_prompt","fields":{"message":{"type":"string","optional":false}}}]}],"output":{"__variants":{"Output":{"name":{"type":"string","optional":false}},"Fallback":{"message":{"type":"string","optional":false}}}},"types":{"Person":{"properties":{"name":{"type":"string","optional":false},"age":{"type":"number","optional":false}}}},"customIntents":[{"name":"ask_user","fields":{"question":{"type":"string","optional":false}}}],"modelConfig":[{"defaultConfig":{"model":{"type":"openai","modelName":"gpt-4.1"}}}]});let output=generate(&CodegenPlan::new(ir),"hello");assert!(output.contains("pub enum HelloIntent"));assert!(output.contains("pub enum HelloIntentPartial"));assert!(output.contains("ToolCall(HelloToolCallIntent)"));assert!(output.contains("ResponseSchema(HelloResponseSchemaIntent)"));assert!(output.contains("pub fn parse_intent_name"));assert!(output.contains("FnMut(HelloIntent, &str) -> Option<IntentControl>"));assert!(output.contains("pub enum HelloToolCallIntent"));assert!(output.contains("GetLocation {"));assert!(output.contains("pub enum HelloResponseSchemaIntent"));assert!(output.contains("#[serde(tag = \"type\", content = \"response\")]"));assert!(output.contains("pub trait HelloTools: Send + Sync"));assert!(output.contains("impl sdk::ToolRegistrar for HelloToolsRegistry"));assert!(output.contains("pub struct HelloConfig"));assert!(output.contains("pub tools: HelloToolsRegistry,"));assert!(output.contains("pub middleware: Vec<HelloMiddlewareRegistry>,"));assert!(output.contains("pub context: HelloContext,"));assert!(output.contains("pub api_keys: HelloApiKeys,"));assert!(output.contains("sdk::parse_ir(include_str!(\"./hello.agent.json\"))"));assert!(output.contains("sdk::create_auwgent(ir, sdk_config)?"));assert!(output.contains("pub fn auwgent(config: HelloConfig) -> sdk::AuwgentResult<HelloAgent>"));assert!(output.contains("pub use HelloIntent as AuwgentIntent;"));assert!(output.contains("pub use HelloIntentPartial as AuwgentIntentPartial;"));assert!(output.contains("pub use HelloTools as AuwgentTools;"));assert!(output.contains("pub trait HelloMiddleware: sdk::Middleware"));assert!(output.contains("pub struct HelloHelperPromptIntent"));}
+ fn emits_typed_intents_and_conditional_config(){let ir=json!({"name":"Hello","context":{"user_id":{"type":"string","optional":false}},"tools":[{"name":"get_details","params":{},"returns":{"type":"typeRef","name":"Person"}},{"name":"get_location","params":{"id":{"type":"string","optional":false}},"returns":{"type":"string"}}],"helpers":[{"name":"Joker","input":null,"output":null,"customIntents":[{"name":"helper_prompt","fields":{"message":{"type":"string","optional":false}}}]}],"output":{"__variants":{"Output":{"name":{"type":"string","optional":false}},"Fallback":{"message":{"type":"string","optional":false}}}},"types":{"Person":{"properties":{"name":{"type":"string","optional":false},"age":{"type":"number","optional":false}}}},"customIntents":[{"name":"ask_user","fields":{"question":{"type":"string","optional":false}}}],"modelConfig":[{"defaultConfig":{"model":{"type":"openai","modelName":"gpt-4.1"}}}]});let output=generate(&CodegenPlan::new(ir),"hello");assert!(output.contains("pub enum HelloIntent"));assert!(output.contains("pub enum HelloIntentPartial"));assert!(output.contains("impl HelloIntentName"));assert!(output.contains("pub fn parse(name: &str) -> Option<Self>"));assert!(output.contains("impl HelloIntent {"));assert!(output.contains("pub fn decode(name: HelloIntentName, value: JsonValue) -> Option<Self>"));assert!(output.contains("impl HelloIntentPartial {"));assert!(output.contains("pub struct HelloIntentView"));assert!(output.contains("pub trait HelloIntentHandler"));assert!(output.contains("pub fn on_intent<H>(&self, handler: H)"));assert!(output.contains("pub fn on_intent_raw<F>(&self, handler: F)"));assert!(output.contains("on_decoded_intent(HelloIntentName::parse, HelloIntent::decode"));assert!(output.contains("on_decoded_intent_partial(HelloIntentName::parse, HelloIntentPartial::decode"));assert!(output.contains("fn tool_names(&self) -> &'static [&'static str]"));assert!(output.contains("fn invoke_tool("));assert!(output.contains("pub trait HelloTools: Send + Sync + 'static"));assert!(output.contains("impl<T> From<T> for HelloToolsRegistry"));assert!(!output.contains("impl HelloToolsRegistry"));assert!(output.contains("pub struct HelloConfig<TTools = HelloToolsRegistry, TMiddleware = HelloMiddlewareRegistry>"));assert!(output.contains("pub tools: TTools,"));assert!(output.contains("pub middleware: Vec<TMiddleware>,"));assert!(output.contains("let registry: HelloMiddlewareRegistry = item.into();"));assert!(output.contains("tools: config.tools.into(),"));assert!(output.contains("pub trait HelloMiddleware: Send + Sync + 'static"));assert!(output.contains("pub use HelloIntentHandler as AuwgentIntentHandler;"));assert!(output.contains("pub use HelloIntentView as Intent;"));assert!(output.contains("pub struct HelloHelperPromptIntent"));assert!(!output.contains("use std::sync::{Arc, Mutex};"));}
  #[test]
- fn omits_conditional_fields_when_not_needed(){let ir=json!({"name":"Mini","tools":[],"helpers":[],"components":[],"modelConfig":[]});let output=generate(&CodegenPlan::new(ir),"mini");assert!(output.contains("pub struct MiniConfig"));assert!(output.contains("pub middleware: Vec<MiniMiddlewareRegistry>,"));assert!(!output.contains("pub tools: MiniToolsRegistry,"));assert!(!output.contains("pub context: MiniContext,"));assert!(!output.contains("pub api_keys: MiniApiKeys,"));assert!(output.contains("FnMut(MiniIntent, &str) -> Option<IntentControl>"));assert!(output.contains("tools: (),"));assert!(output.contains("context: None,"));assert!(output.contains("api_keys: sdk::AuwgentApiKeys::default()"));}
+ fn omits_conditional_fields_when_not_needed(){let ir=json!({"name":"Mini","tools":[],"helpers":[],"components":[],"modelConfig":[]});let output=generate(&CodegenPlan::new(ir),"mini");assert!(output.contains("pub struct MiniConfig<TMiddleware = MiniMiddlewareRegistry>"));assert!(output.contains("pub middleware: Vec<TMiddleware>,"));assert!(!output.contains("pub tools: TTools,"));assert!(!output.contains("pub context: MiniContext,"));assert!(!output.contains("pub api_keys: MiniApiKeys,"));assert!(output.contains("pub trait MiniIntentHandler"));assert!(output.contains("pub fn on_intent_raw<F>(&self, handler: F)"));assert!(output.contains("tools: (),"));assert!(output.contains("context: None,"));assert!(output.contains("api_keys: sdk::AuwgentApiKeys::default()"));}
 }

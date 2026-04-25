@@ -1,4 +1,4 @@
 # auwgent.yml (Root)
-source: "../targets/python/verification"  #default ../manual-testing change later
+source: "../testing/test_case"  #default ../manual-testing change later
 targets:
-  - py
+  - rust

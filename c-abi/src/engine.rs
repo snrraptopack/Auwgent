@@ -1,8 +1,8 @@
 use crate::error::{clear_last_error, set_last_error};
 use crate::ffi_string::{into_c_string, nullable_cstr, required_cstr};
 use crate::host_callback::{
-    parse_intent_control_json, AuwgentErrorCallback, AuwgentIntentCallback,
-    AuwgentLlmEndCallback, AuwgentLlmStartCallback, AuwgentMiddlewareEventCallback,
+    parse_intent_control_json, AuwgentIntentCallback,
+     AuwgentMiddlewareEventCallback,
     AuwgentPartialIntentCallback, AuwgentSessionNotifyCallback,
     AuwgentSessionTransformCallback, JsonCallbackRegistration,
 };

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use futures_util::future::BoxFuture;
+pub use futures_util::future::BoxFuture;
 use ir_runtime::runtime::bridge::EngineBridge;
 use ir_runtime::runtime::engine::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
@@ -24,12 +24,36 @@ pub struct AuwgentApiKeys {
 }
 
 pub trait ToolRegistrar: Send + Sync {
-    fn register_tools(&self, native: &AuwgentNative) -> AuwgentResult<()>;
+    fn tool_names(&self) -> &'static [&'static str];
+
+    fn invoke_tool(
+        &self,
+        name: &'static str,
+        args: Value,
+    ) -> BoxFuture<'static, AuwgentResult<Value>>;
 }
 
 impl ToolRegistrar for () {
-    fn register_tools(&self, _native: &AuwgentNative) -> AuwgentResult<()> {
-        Ok(())
+    fn tool_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    fn invoke_tool(
+        &self,
+        _name: &'static str,
+        _args: Value,
+    ) -> BoxFuture<'static, AuwgentResult<Value>> {
+        Box::pin(async { Err("No tools registered".to_string()) })
+    }
+}
+
+pub trait IntoMiddlewareRegistry {
+    fn into_middleware_registry(self) -> MiddlewareRegistry;
+}
+
+impl IntoMiddlewareRegistry for MiddlewareRegistry {
+    fn into_middleware_registry(self) -> MiddlewareRegistry {
+        self
     }
 }
 
@@ -125,6 +149,15 @@ pub trait Middleware: Send + Sync {
         _ctx: &mut MiddlewareContext,
     ) -> AuwgentResult<bool> {
         Ok(false)
+    }
+}
+
+impl<T> IntoMiddlewareRegistry for T
+where
+    T: Middleware + 'static,
+{
+    fn into_middleware_registry(self) -> MiddlewareRegistry {
+        Arc::new(self)
     }
 }
 
@@ -268,14 +301,14 @@ impl std::fmt::Debug for AuwgentNative {
     }
 }
 
-pub struct AuwgentConfig<Tools = ()> {
+pub struct AuwgentConfig<Tools = (), MiddlewareItem = MiddlewareRegistry> {
     pub tools: Tools,
-    pub middleware: Vec<MiddlewareRegistry>,
+    pub middleware: Vec<MiddlewareItem>,
     pub context: Option<Value>,
     pub api_keys: AuwgentApiKeys,
 }
 
-impl<Tools: Default> Default for AuwgentConfig<Tools> {
+impl<Tools: Default, MiddlewareItem> Default for AuwgentConfig<Tools, MiddlewareItem> {
     fn default() -> Self {
         Self {
             tools: Tools::default(),
@@ -296,9 +329,15 @@ pub struct TypedAuwgent<Tools = ()> {
 
 impl<Tools> TypedAuwgent<Tools>
 where
-    Tools: ToolRegistrar,
+    Tools: ToolRegistrar + Clone + 'static,
 {
-    pub fn new(ir: AgentIR, config: AuwgentConfig<Tools>) -> AuwgentResult<Self> {
+    pub fn new<MiddlewareItem>(
+        ir: AgentIR,
+        config: AuwgentConfig<Tools, MiddlewareItem>,
+    ) -> AuwgentResult<Self>
+    where
+        MiddlewareItem: IntoMiddlewareRegistry,
+    {
         let native = AuwgentNative::from_ir(&ir)?;
 
         if let Some(context) = config.context.clone() {
@@ -316,13 +355,19 @@ where
         }
 
         register_custom_drivers(&native, &ir, &config.api_keys);
-        config.tools.register_tools(&native)?;
+        register_tool_registrar(&native, &config.tools);
+
+        let middleware = config
+            .middleware
+            .into_iter()
+            .map(IntoMiddlewareRegistry::into_middleware_registry)
+            .collect::<Vec<_>>();
 
         let shared_context = Arc::new(Mutex::new(Map::new()));
-        if !config.middleware.is_empty() {
+        if !middleware.is_empty() {
             attach_middleware(
                 native.clone(),
-                config.middleware.clone(),
+                middleware.clone(),
                 Arc::clone(&shared_context),
             );
         }
@@ -330,7 +375,7 @@ where
         Ok(Self {
             native,
             ir,
-            middleware: config.middleware,
+            middleware,
             shared_context,
             _tools: config.tools,
         })
@@ -348,11 +393,69 @@ where
         self.native.on_intent(callback);
     }
 
+    pub fn on_decoded_intent<Name, Intent, Parse, Decode, F>(
+        &self,
+        parse_name: Parse,
+        decode: Decode,
+        handler: F,
+    ) where
+        Name: Send + 'static,
+        Intent: Send + 'static,
+        Parse: Fn(&str) -> Option<Name> + Send + Sync + 'static,
+        Decode: Fn(Name, Value) -> Option<Intent> + Send + Sync + 'static,
+        F: FnMut(Intent, &str) -> Option<IntentControl> + Send + 'static,
+    {
+        let parse_name = Arc::new(parse_name);
+        let decode = Arc::new(decode);
+        let handler = Arc::new(Mutex::new(handler));
+
+        self.on_intent(move |name, value, agent_name| {
+            let parse_name = Arc::clone(&parse_name);
+            let decode = Arc::clone(&decode);
+            let handler = Arc::clone(&handler);
+            Box::pin(async move {
+                let intent_name = parse_name(&name)?;
+                let intent = decode(intent_name, value)?;
+                let mut handler = handler.lock().ok()?;
+                (*handler)(intent, &agent_name)
+            })
+        });
+    }
+
     pub fn on_intent_partial<F>(&self, handler: F)
     where
         F: Fn(String, Value, String) + Send + Sync + 'static,
     {
         self.native.on_intent_partial(Arc::new(handler));
+    }
+
+    pub fn on_decoded_intent_partial<Name, Intent, Parse, Decode, F>(
+        &self,
+        parse_name: Parse,
+        decode: Decode,
+        handler: F,
+    ) where
+        Name: Send + 'static,
+        Intent: Send + 'static,
+        Parse: Fn(&str) -> Option<Name> + Send + Sync + 'static,
+        Decode: Fn(Name, Value) -> Option<Intent> + Send + Sync + 'static,
+        F: FnMut(Intent, &str) + Send + 'static,
+    {
+        let parse_name = Arc::new(parse_name);
+        let decode = Arc::new(decode);
+        let handler = Arc::new(Mutex::new(handler));
+
+        self.on_intent_partial(move |name, value, agent_name| {
+            let Some(intent_name) = parse_name(&name) else {
+                return;
+            };
+            let Some(intent) = decode(intent_name, value) else {
+                return;
+            };
+            if let Ok(mut handler) = handler.lock() {
+                (*handler)(intent, &agent_name);
+            }
+        });
     }
 
     pub fn on_sub_engine_start<F>(&self, handler: F)
@@ -430,14 +533,25 @@ where
     }
 }
 
-pub fn create_auwgent<Tools>(
+pub fn create_auwgent<Tools, MiddlewareItem>(
     ir: AgentIR,
-    config: AuwgentConfig<Tools>,
+    config: AuwgentConfig<Tools, MiddlewareItem>,
 ) -> AuwgentResult<TypedAuwgent<Tools>>
 where
-    Tools: ToolRegistrar,
+    Tools: ToolRegistrar + Clone + 'static,
+    MiddlewareItem: IntoMiddlewareRegistry,
 {
     TypedAuwgent::new(ir, config)
+}
+
+fn register_tool_registrar<Tools>(native: &AuwgentNative, tools: &Tools)
+where
+    Tools: ToolRegistrar + Clone + 'static,
+{
+    for &name in tools.tool_names() {
+        let registrar = tools.clone();
+        native.register_tool_fn(name, move |args| registrar.invoke_tool(name, args));
+    }
 }
 
 pub fn parse_ir(json: &str) -> AuwgentResult<AgentIR> {
@@ -662,8 +776,7 @@ pub fn to_value<T: Serialize>(value: T) -> AuwgentResult<Value> {
 
 pub use ir_runtime::runtime::engine::{IntentControl, RunMetadata};
 pub use ir_runtime::runtime::engine_types::{
-    AggregateUsage, AsyncErrorCallback, AsyncLlmEndCallback, AsyncLlmStartCallback,
-    AsyncRunCompleteCallback, AsyncRunStartCallback,
+    AggregateUsage,
 };
 pub use ir_runtime::runtime::session::{Message, Role, SessionState, Turn};
 pub use ir_runtime::{

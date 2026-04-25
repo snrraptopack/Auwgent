@@ -5,7 +5,7 @@
       "defaultConfig": {
         "model": {
           "type": "groq",
-          "modelName": "llama-3.3-70b-versatile",
+          "modelName": "openai/gpt-oss-120b",
           "config": null
         },
         "embedding": null,
@@ -24,22 +24,18 @@
   ],
   "input": null,
   "output": {
-    "type": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        },
-        "location": {
-          "type": "string",
-          "optional": false
-        }
-      }
+    "name": {
+      "type": "string",
+      "optional": false
+    },
+    "age": {
+      "type": "number",
+      "optional": false
+    },
+    "location": {
+      "type": "string",
+      "optional": false,
+      "description": "location of the user"
     }
   },
   "context": null,
@@ -63,21 +59,63 @@
     }
   ],
   "workflows": [],
-  "helpers": [],
+  "helpers": [
+    {
+      "name": "Joker",
+      "description": "Good at cracking jokes",
+      "modelConfig": [
+        {
+          "defaultConfig": {
+            "model": {
+              "type": "groq",
+              "modelName": "openai/gpt-oss-120b",
+              "config": null
+            },
+            "embedding": null,
+            "prompt": {
+              "value": "You are a joker try to joke to the user",
+              "type": "literal"
+            }
+          },
+          "namedConfig": []
+        }
+      ],
+      "input": {
+        "kind": "properties",
+        "fields": {
+          "joker_prompt": {
+            "type": "string",
+            "optional": false
+          }
+        }
+      },
+      "output": null,
+      "context": null,
+      "tools": [],
+      "workflows": [],
+      "customIntents": null,
+      "examples": []
+    }
+  ],
   "components": [],
   "types": {
     "Person": {
       "isOutput": false,
       "properties": {
+        "age": {
+          "type": "number",
+          "optional": false,
+          "description": null
+        },
         "name": {
           "type": "string",
           "optional": false,
           "description": null
         },
-        "age": {
-          "type": "number",
+        "location": {
+          "type": "string",
           "optional": false,
-          "description": null
+          "description": "location of the user"
         }
       },
       "@examples": []

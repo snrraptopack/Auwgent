@@ -1,4 +1,0 @@
-source: "main.agent"
-output: "generated"
-targets:
-  - rust
