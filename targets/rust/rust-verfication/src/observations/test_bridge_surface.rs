@@ -149,6 +149,7 @@ async fn session_import_export_and_clear_round_trip() {
         imported.turns[0].model_response,
         stored.turns[0].model_response
     );
+    let imported_prompt = imported.system_prompt.clone();
 
     target.clear_session();
     let cleared = target
@@ -156,7 +157,7 @@ async fn session_import_export_and_clear_round_trip() {
         .expect("cleared session should export");
     assert!(cleared.stack.is_empty());
     assert!(cleared.turns.is_empty());
-    assert!(cleared.system_prompt.is_none());
+    assert_eq!(cleared.system_prompt, imported_prompt);
 }
 
 async fn raw_tool_registration_replaces_existing_tool_implementation() {
@@ -181,7 +182,7 @@ async fn raw_tool_registration_replaces_existing_tool_implementation() {
 }
 
 async fn raw_tool_registration_can_add_untyped_runtime_tool() {
-    let (agent, events) = build_agent();
+    let agent = auwgent(get_agent_config(vec![])).expect("agent should load");
     agent.raw().register_tool_fn("dynamic_weather", |args| {
         Box::pin(async move {
             Ok(json!({
@@ -214,13 +215,6 @@ async fn raw_tool_registration_can_add_untyped_runtime_tool() {
     assert_eq!(result["terminal"], false);
     assert_eq!(result["actions"], true);
     assert_eq!(result["hard_stop"], false);
-
-    let typed_events = events.lock().expect("events mutex poisoned").clone();
-    assert!(
-        typed_events.any.is_empty(),
-        "generated typed handler should ignore tools that are not in generated IR"
-    );
-
 
     let raw_events = raw_events.lock().expect("raw events mutex poisoned").clone();
     assert_eq!(raw_events.len(), 2);

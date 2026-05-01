@@ -11,6 +11,17 @@ syntaxes/
 *.vsix
 .env
 
+
+# Native compiled extensions & debug symbols
+*.pyd
+*.so
+*.dylib
+*.node
+*.dll
+*.lib
+*.a
+*.pdb
+
 # Rust build artifacts (scoped to specific crates, not the targets/ source folder)
 auwgent-compiler/target/
 ir-runtime/target/
@@ -19,3 +30,4 @@ targets/python/target/
 function-parser/target/
 targets/rust/target/
 testing/target
+targets/python/auwgent_sdk/_auwgent_sdk.pdb 
