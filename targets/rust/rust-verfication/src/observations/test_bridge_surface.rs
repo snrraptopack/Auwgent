@@ -221,6 +221,7 @@ async fn raw_tool_registration_can_add_untyped_runtime_tool() {
         "generated typed handler should ignore tools that are not in generated IR"
     );
 
+
     let raw_events = raw_events.lock().expect("raw events mutex poisoned").clone();
     assert_eq!(raw_events.len(), 2);
     assert_eq!(raw_events[0].0, "tool_call");
