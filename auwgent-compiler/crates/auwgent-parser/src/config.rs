@@ -73,7 +73,7 @@ pub(crate) fn model_provider_parser(
             },
         );
 
-    choice((gemini, openai, custom,groq))
+    choice((gemini, openai, custom, groq))
 }
 
 // ── Prompt Statement ─────────────────────────────────────────────────────
@@ -276,11 +276,9 @@ pub(crate) fn agent_model_config_parser(
 
 pub(crate) fn tool_function_parser(
 ) -> impl Parser<TokenKind, ToolFunction, Error = Simple<TokenKind>> + Clone {
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     ident()
         .then(
@@ -296,14 +294,16 @@ pub(crate) fn tool_function_parser(
         )
         .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).repeated())
         .then(example_args.repeated())
-        .map_with_span(|((((name, params), returns), desc), examples), span| ToolFunction {
-            name,
-            params,
-            returns,
-            description: desc,
-            examples,
-            span: s(span),
-        })
+        .map_with_span(
+            |((((name, params), returns), desc), examples), span| ToolFunction {
+                name,
+                params,
+                returns,
+                description: desc,
+                examples,
+                span: s(span),
+            },
+        )
 }
 
 // ── Helpers Config ───────────────────────────────────────────────────────
@@ -446,11 +446,9 @@ pub(crate) fn intent_body_parser(
         .or_not()
         .map(|opt| opt.unwrap_or_default());
 
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     ident()
         .then(
@@ -458,14 +456,16 @@ pub(crate) fn intent_body_parser(
                 .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace))
                 .then(example_args.repeated()),
         )
-        .map_with_span(|(name, ((description, fields), examples)), span| IntentDeclaration {
-            exported: false,
-            name,
-            description,
-            fields,
-            examples,
-            span: s(span),
-        })
+        .map_with_span(
+            |(name, ((description, fields), examples)), span| IntentDeclaration {
+                exported: false,
+                name,
+                description,
+                fields,
+                examples,
+                span: s(span),
+            },
+        )
 }
 
 /// Parse the `+`-composed intent expression:
@@ -524,11 +524,9 @@ pub(crate) fn agent_config_parser(
             })
         });
 
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     let output_props = tok(TokenKind::Output)
         .ignore_then(
@@ -543,36 +541,36 @@ pub(crate) fn agent_config_parser(
                         }),
                         ident(),
                     ))
-                        .then(
-                            tok(TokenKind::Pipe)
-                                .ignore_then(choice((
-                                    tok(TokenKind::TextType).map_with_span(|_, span| Spanned {
-                                        value: "Text".to_string(),
-                                        span: s(span),
-                                    }),
-                                    ident(),
-                                )))
-                                .repeated()
-                                .at_least(1),
-                        )
+                    .then(
+                        tok(TokenKind::Pipe)
+                            .ignore_then(choice((
+                                tok(TokenKind::TextType).map_with_span(|_, span| Spanned {
+                                    value: "Text".to_string(),
+                                    span: s(span),
+                                }),
+                                ident(),
+                            )))
+                            .repeated()
+                            .at_least(1),
+                    )
+                    .then(example_args.clone().repeated())
+                    .map_with_span(|((first, rest), examples), span| {
+                        let mut all = vec![first];
+                        all.extend(rest);
+                        OutputConfig {
+                            shape: OutputShape::Union(all),
+                            examples,
+                            span: s(span),
+                        }
+                    })
+                    .or(type_expr_parser()
+                        .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
                         .then(example_args.clone().repeated())
-                        .map_with_span(|((first, rest), examples), span| {
-                            let mut all = vec![first];
-                            all.extend(rest);
-                            OutputConfig {
-                                shape: OutputShape::Union(all),
-                                examples,
-                                span: s(span),
-                            }
-                        })
-                        .or(type_expr_parser()
-                            .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
-                            .then(example_args.clone().repeated())
-                            .map_with_span(|((ty, desc), examples), span| OutputConfig {
-                                shape: OutputShape::Direct { ty, desc },
-                                examples,
-                                span: s(span),
-                            })),
+                        .map_with_span(|((ty, desc), examples), span| OutputConfig {
+                            shape: OutputShape::Direct { ty, desc },
+                            examples,
+                            span: s(span),
+                        })),
                 )
                 .or(type_config_decl_parser()
                     .then(tok(TokenKind::AtDesc).ignore_then(string_lit()).or_not())
@@ -629,11 +627,9 @@ pub(crate) fn agent_config_parser(
             })
         });
 
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     let workflow = tok(TokenKind::Workflow)
         .ignore_then(ident())

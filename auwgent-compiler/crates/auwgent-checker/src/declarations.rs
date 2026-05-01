@@ -91,7 +91,10 @@ impl Checker {
                 )
             };
             let help = if *prev_kind == kind {
-                format!("Rename one of the '{}' declarations in this scope.", name.value)
+                format!(
+                    "Rename one of the '{}' declarations in this scope.",
+                    name.value
+                )
             } else {
                 format!(
                     "Rename '{}' so it does not shadow the existing {} in this scope.",

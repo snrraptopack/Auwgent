@@ -192,8 +192,10 @@ impl AuwgentEngine {
             }
         }
 
-        self.pending_tool_results.lock().unwrap().extend(tool_results);
+        self.pending_tool_results
+            .lock()
+            .unwrap()
+            .extend(tool_results);
         Ok((has_terminal, has_actions, hard_stop))
     }
 }
-

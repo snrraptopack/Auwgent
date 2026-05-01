@@ -4,17 +4,17 @@
 //! Ported from `checker.ts` — validates workflows, prompts, model configs,
 //! and type consistency across the agent.
 
-mod state;
 mod declarations;
 mod prompts;
-mod workflow;
+mod state;
 mod utils;
+mod workflow;
 
 use auwgent_ast::*;
 use auwgent_errors::{Diagnostic, Span};
 use state::TypeEnv;
 use std::collections::HashMap;
-use utils::{find_closest};
+use utils::find_closest;
 
 // ── Main Check Entry ─────────────────────────────────────────────────────
 
@@ -31,7 +31,9 @@ pub fn check(model: &Model) -> Vec<Diagnostic> {
         match element {
             Element::Agent(agent) => checker.check_agent(agent, &mut diags),
             Element::Helper(helper) => checker.check_helper(helper, &mut diags),
-            Element::ComponentDecl(component) => checker.check_component_decl(component, &mut diags),
+            Element::ComponentDecl(component) => {
+                checker.check_component_decl(component, &mut diags)
+            }
             Element::TypeDecl(td) => checker.check_type_decl(td, &mut diags),
             Element::NamedPrompt(p) => checker.check_named_prompt(p, &mut diags),
             Element::ModelDef(_) => {}
@@ -152,7 +154,11 @@ impl Checker {
                         self.infer_expression(expr, &TypeEnv::new(), diags);
                     }
                     if !mc.default_config.prompt_block.is_empty() {
-                        self.check_prompt_statements(&mc.default_config.prompt_block, &scope_params, diags);
+                        self.check_prompt_statements(
+                            &mc.default_config.prompt_block,
+                            &scope_params,
+                            diags,
+                        );
                     }
 
                     // Validate named configs
@@ -161,7 +167,11 @@ impl Checker {
                             self.infer_expression(expr, &TypeEnv::new(), diags);
                         }
                         if !nc.config.prompt_block.is_empty() {
-                            self.check_prompt_statements(&nc.config.prompt_block, &scope_params, diags);
+                            self.check_prompt_statements(
+                                &nc.config.prompt_block,
+                                &scope_params,
+                                diags,
+                            );
                         }
                     }
                 }
@@ -281,10 +291,15 @@ impl Checker {
         if let Some(returns) = &tf.returns {
             self.check_type_ref_exists(returns, diags);
         } else {
-            diags.push(Diagnostic::error(
-                format!("Tool '{}' does not specify a return type", tf.name.value),
-                tf.name.span,
-            ).with_help("A tool must specify a return type, e.g. `tool one(id: string): string`"));
+            diags.push(
+                Diagnostic::error(
+                    format!("Tool '{}' does not specify a return type", tf.name.value),
+                    tf.name.span,
+                )
+                .with_help(
+                    "A tool must specify a return type, e.g. `tool one(id: string): string`",
+                ),
+            );
         }
         for p in &tf.params {
             self.check_type_ref_exists(&p.ty, diags);
@@ -363,7 +378,10 @@ impl Checker {
                     if let Some(prev_span) = seen.get("action") {
                         diags.push(
                             Diagnostic::error(
-                                format!("Duplicate field 'action' in component '{}'", component.name.value),
+                                format!(
+                                    "Duplicate field 'action' in component '{}'",
+                                    component.name.value
+                                ),
                                 action.span,
                             )
                             .with_label(*prev_span, "first defined here"),
@@ -415,7 +433,10 @@ impl Checker {
                     if has_children {
                         diags.push(
                             Diagnostic::error(
-                                format!("Duplicate field 'children' in component '{}'", component.name.value),
+                                format!(
+                                    "Duplicate field 'children' in component '{}'",
+                                    component.name.value
+                                ),
                                 children.span,
                             )
                             .with_help("A component can declare at most one children constraint."),
@@ -566,7 +587,6 @@ impl Checker {
             }
         }
     }
-
 }
 
 #[cfg(test)]
@@ -582,10 +602,7 @@ mod tests {
         let (model, parse_errors) = parse(&tokens);
         assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
 
-        check(&model)
-            .into_iter()
-            .map(|diag| diag.message)
-            .collect()
+        check(&model).into_iter().map(|diag| diag.message).collect()
     }
 
     #[test]

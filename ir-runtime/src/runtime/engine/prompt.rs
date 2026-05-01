@@ -47,8 +47,9 @@ impl AuwgentEngine {
         let parsed_prompt: crate::types::Expression =
             serde_json::from_value(default.prompt.0.clone())
                 .map_err(|e| AuwgentError::Evaluation(format!("Prompt parse error: {}", e)))?;
-        let referenced_context_keys = evaluator.collect_context_references(&parsed_prompt, &scope);
+        evaluator.clear_context_usage();
         let prompt_val = evaluator.evaluate(&parsed_prompt, &mut scope)?;
+        let referenced_context_keys = evaluator.context_usage();
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
 
         if let Some(ctx) = self.context.lock().unwrap().as_ref()
@@ -90,4 +91,3 @@ impl AuwgentEngine {
         Ok(prompt)
     }
 }
-

@@ -66,8 +66,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         tools,
         workflows,
         helpers,
-        plan
-            .ir()
+        plan.ir()
             .get("components")
             .and_then(Value::as_array)
             .map(Vec::as_slice)
@@ -151,12 +150,15 @@ pub fn generate_ir_module(ir: &Value) -> String {
     .join("\n")
 }
 
-
-
 fn generate_custom_types(types: &Map<String, Value>) -> String {
     let mut blocks = Vec::new();
     for (type_name, type_def) in types {
-        blocks.push(generate_named_shape(type_name, Some(type_def), false, "sdk.JsonMap"));
+        blocks.push(generate_named_shape(
+            type_name,
+            Some(type_def),
+            false,
+            "sdk.JsonMap",
+        ));
     }
     blocks.join("\n")
 }
@@ -190,27 +192,18 @@ fn generate_named_shape(
     generate_type_alias(name, value, unwrap_input_kind, null_fallback)
 }
 
-fn shape_properties(
-    value: Option<&Value>,
-    unwrap_input_kind: bool,
-) -> Option<Map<String, Value>> {
+fn shape_properties(value: Option<&Value>, unwrap_input_kind: bool) -> Option<Map<String, Value>> {
     let value = value?;
     let obj = value.as_object()?;
 
     if unwrap_input_kind {
         if obj.get("kind").and_then(Value::as_str) == Some("properties") {
-            return obj
-                .get("fields")
-                .and_then(Value::as_object)
-                .cloned();
+            return obj.get("fields").and_then(Value::as_object).cloned();
         }
     }
 
     if obj.get("type").and_then(Value::as_str) == Some("object") {
-        return obj
-            .get("properties")
-            .and_then(Value::as_object)
-            .cloned();
+        return obj.get("properties").and_then(Value::as_object).cloned();
     }
 
     if obj.contains_key("properties") {
@@ -359,7 +352,11 @@ fn generate_variant_matcher(
         .iter()
         .filter(|(name, _)| !name.starts_with('@') && !name.starts_with("__"))
         .map(|(name, info)| {
-            if info.get("optional").and_then(Value::as_bool).unwrap_or(false) {
+            if info
+                .get("optional")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
                 "true".to_string()
             } else {
                 format!("json.containsKey('{name}')")
@@ -373,9 +370,7 @@ fn generate_variant_matcher(
         checks.join(" && ")
     };
 
-    format!(
-        "bool _matches{base_name}{variant_name}(sdk.JsonMap json) {{\n  return {body};\n}}\n"
-    )
+    format!("bool _matches{base_name}{variant_name}(sdk.JsonMap json) {{\n  return {body};\n}}\n")
 }
 
 fn field_type_string(prop_info: &Value, optional: bool) -> String {
@@ -432,9 +427,7 @@ fn decode_field_expr(prop_name: &str, prop_info: &Value, optional: bool) -> Stri
         }
         "sdk.JsonMap" => {
             if optional {
-                format!(
-                    "{access} == null ? null : Map<String, Object?>.from({access} as Map)"
-                )
+                format!("{access} == null ? null : Map<String, Object?>.from({access} as Map)")
             } else {
                 format!("Map<String, Object?>.from(({access} as Map?) ?? const {{}})")
             }
@@ -473,7 +466,12 @@ fn generate_intent_aliases(
 
 fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> String {
     let response_type = format!("{agent_name}Output");
-    let response_expr = decode_named_shape_expr(output, &response_type, "json['response']", "json['response']");
+    let response_expr = decode_named_shape_expr(
+        output,
+        &response_type,
+        "json['response']",
+        "json['response']",
+    );
 
     format!(
         "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseTextIntent(text: $text)';\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'])?.toString() ?? '',\n      response: {response_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseSchemaIntent(type: $type, response: $response)';\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ErrorIntent(message: $message)';\n}}\n"
@@ -516,14 +514,7 @@ fn generate_action_intent_models(
 
 fn generate_tool_intent_models(agent_name: &str, tools: &[Value]) -> String {
     generate_callable_intent_models(
-        agent_name,
-        "Tool",
-        "tool",
-        tools,
-        "name",
-        "params",
-        "returns",
-        true,
+        agent_name, "Tool", "tool", tools, "name", "params", "returns", true,
     )
 }
 
@@ -542,14 +533,7 @@ fn generate_workflow_intent_models(agent_name: &str, workflows: &[Value]) -> Str
 
 fn generate_helper_intent_models(agent_name: &str, helpers: &[Value]) -> String {
     generate_callable_intent_models(
-        agent_name,
-        "Helper",
-        "helper",
-        helpers,
-        "name",
-        "input",
-        "output",
-        false,
+        agent_name, "Helper", "helper", helpers, "name", "input", "output", false,
     )
 }
 
@@ -579,11 +563,12 @@ fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
         } else {
             Some(format!("{agent_name}{pascal}ToolArgs"))
         };
-        let result_type = if tool.get("returns").is_none() || tool.get("returns").is_some_and(Value::is_null) {
-            "sdk.NoResult".to_string()
-        } else {
-            format!("{agent_name}{pascal}ToolResultValue")
-        };
+        let result_type =
+            if tool.get("returns").is_none() || tool.get("returns").is_some_and(Value::is_null) {
+                "sdk.NoResult".to_string()
+            } else {
+                format!("{agent_name}{pascal}ToolResultValue")
+            };
         let handler_type = format!("{agent_name}{pascal}ToolHandler");
 
         let method_signature = if let Some(args_type) = &args_type {
@@ -619,9 +604,7 @@ fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
                 "      '{tool_name}': (args) => {method_name}({args_type}.fromJson(Map<String, Object?>.from((args as Map?) ?? const {{}}))),"
             ));
         } else {
-            map_lines.push(format!(
-                "      '{tool_name}': (_) => {method_name}(),"
-            ));
+            map_lines.push(format!("      '{tool_name}': (_) => {method_name}(),"));
         }
     }
 
@@ -635,7 +618,11 @@ fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
             .iter()
             .enumerate()
             .map(|(index, line)| {
-                let suffix = if index + 1 == ctor_init_lines.len() { "" } else { "," };
+                let suffix = if index + 1 == ctor_init_lines.len() {
+                    ""
+                } else {
+                    ","
+                };
                 format!("{line}{suffix}")
             })
             .collect::<Vec<_>>()
@@ -725,7 +712,8 @@ fn generate_callable_intent_models(
             ));
             args_type.clone()
         };
-        let result_type_ref = if result_shape.is_none() || result_shape.is_some_and(Value::is_null) {
+        let result_type_ref = if result_shape.is_none() || result_shape.is_some_and(Value::is_null)
+        {
             "sdk.NoResult".to_string()
         } else {
             blocks.push(generate_named_shape(
@@ -744,7 +732,12 @@ fn generate_callable_intent_models(
         let result_decode_expr = if result_type_ref == "sdk.NoResult" {
             "const sdk.NoResult()".to_string()
         } else {
-            decode_named_shape_expr(result_shape, &result_type_ref, "json['result']", "json['result']")
+            decode_named_shape_expr(
+                result_shape,
+                &result_type_ref,
+                "json['result']",
+                "json['result']",
+            )
         };
 
         let call_class = format!("{agent_name}{pascal}{family_name}CallIntentCase");
@@ -923,9 +916,7 @@ fn generate_handler_classes(
         format!(
             "  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, String agentName) {{}}"
         ),
-        format!(
-            "  FutureOr<void> error({agent_name}ErrorIntent intent, String agentName) {{}}"
-        ),
+        format!("  FutureOr<void> error({agent_name}ErrorIntent intent, String agentName) {{}}"),
     ];
 
     let mut partial_methods = vec![
@@ -1044,8 +1035,22 @@ fn generate_handler_classes(
         "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText({agent_name}ResponseTextIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent({agent_name}ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
         intent_methods.join("\n"),
         partial_methods.join("\n"),
-        generate_middleware_intent_methods(agent_name, has_tools, has_workflows, has_helpers, has_components, custom_intents),
-        generate_middleware_partial_methods(agent_name, has_tools, has_workflows, has_helpers, has_components, custom_intents),
+        generate_middleware_intent_methods(
+            agent_name,
+            has_tools,
+            has_workflows,
+            has_helpers,
+            has_components,
+            custom_intents
+        ),
+        generate_middleware_partial_methods(
+            agent_name,
+            has_tools,
+            has_workflows,
+            has_helpers,
+            has_components,
+            custom_intents
+        ),
     )
 }
 
@@ -1091,7 +1096,11 @@ fn generate_middleware_intent_methods(
             "  FutureOr<void> {method_name}({type_name} intent, sdk.MiddlewareContext ctx) {{}}"
         ));
     }
-    if lines.is_empty() { String::new() } else { format!("{}\n", lines.join("\n")) }
+    if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", lines.join("\n"))
+    }
 }
 
 fn generate_middleware_partial_methods(
@@ -1103,9 +1112,15 @@ fn generate_middleware_partial_methods(
     custom_intents: &[String],
 ) -> String {
     let mut lines = vec![
-        format!("  FutureOr<void> partialResponseText(sdk.PartialTextIntentValue intent, sdk.MiddlewareContext ctx) {{}}"),
-        format!("  FutureOr<void> partialResponseSchema(sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-        format!("  FutureOr<void> partialError(sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
+        format!(
+            "  FutureOr<void> partialResponseText(sdk.PartialTextIntentValue intent, sdk.MiddlewareContext ctx) {{}}"
+        ),
+        format!(
+            "  FutureOr<void> partialResponseSchema(sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent> intent, sdk.MiddlewareContext ctx) {{}}"
+        ),
+        format!(
+            "  FutureOr<void> partialError(sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent> intent, sdk.MiddlewareContext ctx) {{}}"
+        ),
     ];
     if has_tools {
         lines.extend([
@@ -1496,7 +1511,11 @@ fn generate_middleware_dispatch_cases(
     let mut lines = vec![
         middleware_dispatch_case(
             "response_text",
-            if partial { "partialResponseText" } else { "responseText" },
+            if partial {
+                "partialResponseText"
+            } else {
+                "responseText"
+            },
             if partial {
                 "sdk.PartialTextIntentValue.fromJson(value as sdk.JsonMap)".to_string()
             } else {
@@ -1506,7 +1525,11 @@ fn generate_middleware_dispatch_cases(
         ),
         middleware_dispatch_case(
             "response_schema",
-            if partial { "partialResponseSchema" } else { "responseSchema" },
+            if partial {
+                "partialResponseSchema"
+            } else {
+                "responseSchema"
+            },
             if partial {
                 format!(
                     "sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent>.fromJson(value as sdk.JsonMap, {agent_name}ResponseSchemaIntent.fromJson)"
@@ -1518,7 +1541,11 @@ fn generate_middleware_dispatch_cases(
         ),
         middleware_dispatch_case(
             "error",
-            if partial { "partialError" } else { "errorIntent" },
+            if partial {
+                "partialError"
+            } else {
+                "errorIntent"
+            },
             if partial {
                 format!(
                     "sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent>.fromJson(value as sdk.JsonMap, {agent_name}ErrorIntent.fromJson)"
@@ -1647,7 +1674,10 @@ fn generate_middleware_dispatch_cases(
     }
     for custom_intent in custom_intents {
         let method_name = if partial {
-            format!("partial{}", pascal_case_identifier(&dart_method_name(custom_intent)))
+            format!(
+                "partial{}",
+                pascal_case_identifier(&dart_method_name(custom_intent))
+            )
         } else {
             dart_method_name(custom_intent)
         };
@@ -1659,28 +1689,50 @@ fn generate_middleware_dispatch_cases(
         } else {
             format!("{type_name}.fromJson(value as sdk.JsonMap)")
         };
-        lines.push(middleware_dispatch_case(custom_intent, &method_name, value_expr, partial));
+        lines.push(middleware_dispatch_case(
+            custom_intent,
+            &method_name,
+            value_expr,
+            partial,
+        ));
     }
     lines.join("\n")
 }
 
-fn middleware_dispatch_case(intent_name: &str, method_name: &str, value_expr: String, partial: bool) -> String {
+fn middleware_dispatch_case(
+    intent_name: &str,
+    method_name: &str,
+    value_expr: String,
+    partial: bool,
+) -> String {
     if partial {
-        format!("    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return;")
+        format!(
+            "    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return;"
+        )
     } else if intent_name == "tool_call" {
-        format!("    case '{intent_name}':\n      return middleware.{method_name}({value_expr}, ctx);")
+        format!(
+            "    case '{intent_name}':\n      return middleware.{method_name}({value_expr}, ctx);"
+        )
     } else {
-        format!("    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return null;")
+        format!(
+            "    case '{intent_name}':\n      middleware.{method_name}({value_expr}, ctx);\n      return null;"
+        )
     }
 }
 
 fn dispatch_case(intent_name: &str, method_name: &str, value_expr: &str, partial: bool) -> String {
     if partial {
-        format!("    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return;")
+        format!(
+            "    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return;"
+        )
     } else if intent_name == "tool_call" {
-        format!("    case '{intent_name}':\n      return handler.{method_name}({value_expr}, agentName);")
+        format!(
+            "    case '{intent_name}':\n      return handler.{method_name}({value_expr}, agentName);"
+        )
     } else {
-        format!("    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return null;")
+        format!(
+            "    case '{intent_name}':\n      handler.{method_name}({value_expr}, agentName);\n      return null;"
+        )
     }
 }
 
@@ -1708,9 +1760,7 @@ fn generate_factory(
         format!("typedef ResponseSchema = {agent_name}ResponseSchemaIntent;"),
         format!("typedef ErrorIntent = {agent_name}ErrorIntent;"),
         format!("typedef AuwgentBaseIntentHandler = {agent_name}BaseIntentHandler;"),
-        format!(
-            "typedef AuwgentBasePartialIntentHandler = {agent_name}BasePartialIntentHandler;"
-        ),
+        format!("typedef AuwgentBasePartialIntentHandler = {agent_name}BasePartialIntentHandler;"),
     ];
 
     if has_api_keys {
@@ -1756,7 +1806,11 @@ fn generate_factory(
     )
 }
 
-fn type_to_dart_string(value: Option<&Value>, unwrap_input_kind: bool, null_fallback: &str) -> String {
+fn type_to_dart_string(
+    value: Option<&Value>,
+    unwrap_input_kind: bool,
+    null_fallback: &str,
+) -> String {
     let Some(value) = value else {
         return null_fallback.to_string();
     };
@@ -1792,7 +1846,7 @@ fn object_or_type_to_dart_string(value: &Value, null_fallback: &str) -> String {
             "typeRef" => {
                 return string_at(value, &["name"])
                     .map(ToString::to_string)
-                    .unwrap_or_else(|| "sdk.JsonMap".to_string())
+                    .unwrap_or_else(|| "sdk.JsonMap".to_string());
             }
             "array" => {
                 let inner = type_to_dart_string(value.get("items"), false, "Object?");
@@ -1875,7 +1929,11 @@ fn sanitize_identifier(name: &str, lower_first: bool) -> String {
         return "agent".to_string();
     }
 
-    let starts_with_digit = out.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+    let starts_with_digit = out
+        .chars()
+        .next()
+        .map(|c| c.is_ascii_digit())
+        .unwrap_or(false);
     if starts_with_digit {
         out.insert(0, '_');
     }

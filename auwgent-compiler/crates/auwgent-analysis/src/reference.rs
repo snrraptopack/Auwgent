@@ -1,11 +1,11 @@
 use crate::completion::find_active_workflow;
 use crate::source::{
-    WorkspaceDocument, canonicalize_best_effort, load_workspace_documents_best_effort,
-    parse_source,
+    canonicalize_best_effort, load_workspace_documents_best_effort, parse_source, WorkspaceDocument,
 };
 use crate::symbols::{
-    SymbolTarget, SymbolTargetKind, find_context_field_definition, find_local_variable_definition,
-    find_tool_definition, symbol_at_offset, symbol_occurrences, workflow_symbol_occurrences,
+    find_context_field_definition, find_local_variable_definition, find_tool_definition,
+    symbol_at_offset, symbol_occurrences, workflow_symbol_occurrences, SymbolTarget,
+    SymbolTargetKind,
 };
 use auwgent_ast::Element;
 use auwgent_errors::Span;
@@ -50,15 +50,10 @@ pub fn references_for_source(file: &Path, source: &str, offset: usize) -> Vec<Re
                         .collect();
                 }
             }
-            collect_workspace_references(
-                &documents,
-                &root_path,
-                &symbol,
-                |candidate| {
-                    matches!(&candidate.kind, SymbolTargetKind::Prompt(candidate_name) if candidate_name == name)
-                        || matches!(&candidate.kind, SymbolTargetKind::Callable(candidate_name) if candidate_name == name)
-                },
-            )
+            collect_workspace_references(&documents, &root_path, &symbol, |candidate| {
+                matches!(&candidate.kind, SymbolTargetKind::Prompt(candidate_name) if candidate_name == name)
+                    || matches!(&candidate.kind, SymbolTargetKind::Callable(candidate_name) if candidate_name == name)
+            })
         }
         SymbolTargetKind::ContextField(name) => {
             if let Some(workflow) = active_workflow {
@@ -263,8 +258,14 @@ agent Demo {
         let refs = references_for_source(&file, source, offset);
 
         assert_eq!(refs.len(), 2);
-        assert_eq!(&refs[0].source[refs[0].span.start..refs[0].span.end], "SharedPrompt");
-        assert_eq!(&refs[1].source[refs[1].span.start..refs[1].span.end], "SharedPrompt");
+        assert_eq!(
+            &refs[0].source[refs[0].span.start..refs[0].span.end],
+            "SharedPrompt"
+        );
+        assert_eq!(
+            &refs[1].source[refs[1].span.start..refs[1].span.end],
+            "SharedPrompt"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }

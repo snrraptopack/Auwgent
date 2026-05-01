@@ -76,8 +76,6 @@ pub fn format_schema(schema: &Value, types: Option<&HashMap<String, TypeDefiniti
     }
 }
 
-
-
 pub fn format_type_value(def: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> String {
     if let Some(obj) = def.as_object() {
         if let Some(type_str) = obj.get("type").and_then(|v| v.as_str()) {
@@ -127,7 +125,9 @@ fn format_type_internal(
                     if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
                         let rendered: Vec<String> = props
                             .iter()
-                            .map(|(k, v)| format!("{}: {}", k, format_type_internal(v, types, visited)))
+                            .map(|(k, v)| {
+                                format!("{}: {}", k, format_type_internal(v, types, visited))
+                            })
                             .collect();
                         return format!("{{ {} }}", rendered.join(", "));
                     }
@@ -138,11 +138,19 @@ fn format_type_internal(
                         if visited.insert(name.to_string()) {
                             if let Some(types_map) = types {
                                 if let Some(custom_type) = types_map.get(name) {
-                                    if let Ok(props_val) = serde_json::to_value(&custom_type.properties) {
+                                    if let Ok(props_val) =
+                                        serde_json::to_value(&custom_type.properties)
+                                    {
                                         if let Some(props) = props_val.as_object() {
                                             let rendered: Vec<String> = props
                                                 .iter()
-                                                .map(|(k, v)| format!("{}: {}", k, format_type_internal(v, types, visited)))
+                                                .map(|(k, v)| {
+                                                    format!(
+                                                        "{}: {}",
+                                                        k,
+                                                        format_type_internal(v, types, visited)
+                                                    )
+                                                })
                                                 .collect();
                                             visited.remove(name);
                                             return format!("{{ {} }}", rendered.join(", "));

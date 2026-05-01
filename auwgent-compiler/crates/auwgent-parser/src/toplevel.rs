@@ -5,7 +5,9 @@ use auwgent_errors::Span;
 use auwgent_lexer::TokenKind;
 use chumsky::prelude::*;
 
-use crate::config::{agent_config_parser, intent_body_parser, model_provider_parser, prompt_stmt_parser};
+use crate::config::{
+    agent_config_parser, intent_body_parser, model_provider_parser, prompt_stmt_parser,
+};
 use crate::expr::named_args_parser;
 use crate::primitives::*;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
@@ -26,11 +28,9 @@ pub(crate) fn agent_parser() -> impl Parser<TokenKind, Agent, Error = Simple<Tok
 }
 
 pub(crate) fn helper_parser() -> impl Parser<TokenKind, Helper, Error = Simple<TokenKind>> + Clone {
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     tok(TokenKind::Helper)
         .ignore_then(ident())
@@ -159,11 +159,9 @@ pub(crate) fn component_decl_parser(
 
 pub(crate) fn type_decl_parser(
 ) -> impl Parser<TokenKind, TypeDeclaration, Error = Simple<TokenKind>> + Clone {
-    let example_args = tok(TokenKind::AtExample)
-        .ignore_then(
-            named_args_parser()
-                .delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen))
-        );
+    let example_args = tok(TokenKind::AtExample).ignore_then(
+        named_args_parser().delimited_by(tok(TokenKind::LParen), tok(TokenKind::RParen)),
+    );
 
     tok(TokenKind::Type)
         .ignore_then(ident())
@@ -335,4 +333,3 @@ pub(crate) fn model_parser() -> impl Parser<TokenKind, Model, Error = Simple<Tok
         .map(|(imports, elements)| Model { imports, elements })
         .boxed()
 }
-

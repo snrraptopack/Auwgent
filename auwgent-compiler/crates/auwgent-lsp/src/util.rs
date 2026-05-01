@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use auwgent_errors::Span;
+use std::path::PathBuf;
 use tower_lsp::lsp_types::{Position, Range, TextDocumentContentChangeEvent, Url};
 
 pub fn apply_content_changes(current: &str, changes: &[TextDocumentContentChangeEvent]) -> String {

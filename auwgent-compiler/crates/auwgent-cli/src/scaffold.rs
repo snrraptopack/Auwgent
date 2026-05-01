@@ -1,15 +1,19 @@
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use serde_json::json;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 pub fn run_scaffolding(target_out_dir: &Path, project_root: &Path, targets: &[String]) {
-    let Some(repo_root) = find_repo_root(project_root) else { return; };
+    let Some(repo_root) = find_repo_root(project_root) else {
+        return;
+    };
     let registry = load_registry(&repo_root);
 
     for target in targets {
         let normalized = normalize_target(target);
-        let Some(entry) = registry.get(normalized) else { continue; };
-        
+        let Some(entry) = registry.get(normalized) else {
+            continue;
+        };
+
         let local_sdk_path = repo_root.join(&entry.path);
 
         let scaffold_shared_dir = if let Some(shared) = &entry.shared_root {
@@ -21,7 +25,12 @@ pub fn run_scaffolding(target_out_dir: &Path, project_root: &Path, targets: &[St
         };
 
         match normalized {
-            "typescript" => scaffold_typescript(&scaffold_shared_dir, project_root, &entry.path, &entry.package),
+            "typescript" => scaffold_typescript(
+                &scaffold_shared_dir,
+                project_root,
+                &entry.path,
+                &entry.package,
+            ),
             "python" => scaffold_python(&scaffold_shared_dir, project_root, &entry.path),
             _ => {}
         }
@@ -39,9 +48,16 @@ fn normalize_target(target: &str) -> &str {
     }
 }
 
-fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &str, package_name: &str) {
-    let Some(repo_root) = find_repo_root(project_dir) else { return; };
-    
+fn scaffold_typescript(
+    shared_root: &Path,
+    project_dir: &Path,
+    sdk_rel_path: &str,
+    package_name: &str,
+) {
+    let Some(repo_root) = find_repo_root(project_dir) else {
+        return;
+    };
+
     // 1. Shared Root: package.json
     let pkg_path = shared_root.join("package.json");
     if !pkg_path.exists() {
@@ -49,11 +65,16 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
         let sdk_abs_path = repo_root.join(sdk_rel_path);
         let canon_shared = std::fs::canonicalize(shared_root).unwrap_or(shared_root.to_path_buf());
         let canon_sdk = std::fs::canonicalize(&sdk_abs_path).unwrap_or(sdk_abs_path.clone());
-        
-        let rel_sdk = pathdiff::diff_paths(&canon_sdk, &canon_shared)
-             .unwrap_or(sdk_abs_path);
+
+        let rel_sdk = pathdiff::diff_paths(&canon_sdk, &canon_shared).unwrap_or(sdk_abs_path);
         let rel_sdk_str = rel_sdk.to_string_lossy().to_string().replace('\\', "/");
-        let rel_sdk_str = if rel_sdk_str.starts_with(r"//?/") { rel_sdk_str[4..].to_string() } else if rel_sdk_str.starts_with(r"\\?\") { rel_sdk_str[4..].to_string() } else { rel_sdk_str };
+        let rel_sdk_str = if rel_sdk_str.starts_with(r"//?/") {
+            rel_sdk_str[4..].to_string()
+        } else if rel_sdk_str.starts_with(r"\\?\") {
+            rel_sdk_str[4..].to_string()
+        } else {
+            rel_sdk_str
+        };
 
         let package_json = json!({
             "name": "auwgent-test-project",
@@ -67,8 +88,14 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
                 package_name: format!("link:{}", rel_sdk_str)
             }
         });
-        let _ = std::fs::write(&pkg_path, serde_json::to_string_pretty(&package_json).unwrap());
-        eprintln!("\x1b[34mℹ\x1b[0m Scaffolded {} with local SDK link", pkg_path.display());
+        let _ = std::fs::write(
+            &pkg_path,
+            serde_json::to_string_pretty(&package_json).unwrap(),
+        );
+        eprintln!(
+            "\x1b[34mℹ\x1b[0m Scaffolded {} with local SDK link",
+            pkg_path.display()
+        );
     }
 
     // 2. Shared Root: tsconfig.json (workspace-level resolution)
@@ -77,11 +104,19 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
         let sdk_abs_path = repo_root.join(sdk_rel_path);
         let canon_shared = std::fs::canonicalize(shared_root).unwrap_or(shared_root.to_path_buf());
         let canon_sdk = std::fs::canonicalize(&sdk_abs_path).unwrap_or(sdk_abs_path.clone());
-        
+
         if let Some(rel_path) = pathdiff::diff_paths(&canon_sdk, &canon_shared) {
             let mut rel_str = rel_path.to_string_lossy().to_string().replace('\\', "/");
-            if rel_str.starts_with(r"//?/") { rel_str = rel_str[4..].to_string(); } else if rel_str.starts_with(r"\\?\") { rel_str = rel_str[4..].to_string(); }
-            let entry_point = if rel_str.ends_with('/') { format!("{}auwgent.ts", rel_str) } else { format!("{}/auwgent.ts", rel_str) };
+            if rel_str.starts_with(r"//?/") {
+                rel_str = rel_str[4..].to_string();
+            } else if rel_str.starts_with(r"\\?\") {
+                rel_str = rel_str[4..].to_string();
+            }
+            let entry_point = if rel_str.ends_with('/') {
+                format!("{}auwgent.ts", rel_str)
+            } else {
+                format!("{}/auwgent.ts", rel_str)
+            };
 
             let tsconfig = json!({
                 "compilerOptions": {
@@ -96,8 +131,14 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
                     }
                 }
             });
-            let _ = std::fs::write(&shared_tsconfig, serde_json::to_string_pretty(&tsconfig).unwrap());
-            eprintln!("\x1b[34mℹ\x1b[0m Scaffolded {} for workspace resolution", shared_tsconfig.display());
+            let _ = std::fs::write(
+                &shared_tsconfig,
+                serde_json::to_string_pretty(&tsconfig).unwrap(),
+            );
+            eprintln!(
+                "\x1b[34mℹ\x1b[0m Scaffolded {} for workspace resolution",
+                shared_tsconfig.display()
+            );
         }
     }
 
@@ -107,11 +148,19 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
         let sdk_abs_path = repo_root.join(sdk_rel_path);
         let canon_proj = std::fs::canonicalize(project_dir).unwrap_or(project_dir.to_path_buf());
         let canon_sdk = std::fs::canonicalize(&sdk_abs_path).unwrap_or(sdk_abs_path.clone());
-        
+
         if let Some(rel_path) = pathdiff::diff_paths(&canon_sdk, &canon_proj) {
             let mut rel_str = rel_path.to_string_lossy().to_string().replace('\\', "/");
-            if rel_str.starts_with(r"//?/") { rel_str = rel_str[4..].to_string(); } else if rel_str.starts_with(r"\\?\") { rel_str = rel_str[4..].to_string(); }
-            let entry_point = if rel_str.ends_with('/') { format!("{}auwgent.ts", rel_str) } else { format!("{}/auwgent.ts", rel_str) };
+            if rel_str.starts_with(r"//?/") {
+                rel_str = rel_str[4..].to_string();
+            } else if rel_str.starts_with(r"\\?\") {
+                rel_str = rel_str[4..].to_string();
+            }
+            let entry_point = if rel_str.ends_with('/') {
+                format!("{}auwgent.ts", rel_str)
+            } else {
+                format!("{}/auwgent.ts", rel_str)
+            };
 
             let tsconfig = json!({
                 "compilerOptions": {
@@ -126,8 +175,14 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
                     }
                 }
             });
-            let _ = std::fs::write(&tsconfig_path, serde_json::to_string_pretty(&tsconfig).unwrap());
-            eprintln!("\x1b[34mℹ\x1b[0m Scaffolded {} for project resolution", tsconfig_path.display());
+            let _ = std::fs::write(
+                &tsconfig_path,
+                serde_json::to_string_pretty(&tsconfig).unwrap(),
+            );
+            eprintln!(
+                "\x1b[34mℹ\x1b[0m Scaffolded {} for project resolution",
+                tsconfig_path.display()
+            );
         }
     }
 
@@ -137,7 +192,9 @@ fn scaffold_typescript(shared_root: &Path, project_dir: &Path, sdk_rel_path: &st
 }
 
 fn scaffold_python(shared_root: &Path, project_dir: &Path, sdk_rel_path: &str) {
-    let Some(repo_root) = find_repo_root(project_dir) else { return; };
+    let Some(repo_root) = find_repo_root(project_dir) else {
+        return;
+    };
     let sdk_abs_path = repo_root.join(sdk_rel_path);
 
     // 1. Shared Root: requirements.txt
@@ -145,15 +202,23 @@ fn scaffold_python(shared_root: &Path, project_dir: &Path, sdk_rel_path: &str) {
     if !req_path.exists() {
         let canon_shared = std::fs::canonicalize(shared_root).unwrap_or(shared_root.to_path_buf());
         let canon_sdk = std::fs::canonicalize(&sdk_abs_path).unwrap_or(sdk_abs_path.clone());
-        
-        let rel_sdk = pathdiff::diff_paths(&canon_sdk, &canon_shared)
-             .unwrap_or(sdk_abs_path);
+
+        let rel_sdk = pathdiff::diff_paths(&canon_sdk, &canon_shared).unwrap_or(sdk_abs_path);
         let rel_sdk_str = rel_sdk.to_string_lossy().to_string().replace('\\', "/");
-        let rel_sdk_str = if rel_sdk_str.starts_with(r"//?/") { rel_sdk_str[4..].to_string() } else if rel_sdk_str.starts_with(r"\\?\") { rel_sdk_str[4..].to_string() } else { rel_sdk_str };
+        let rel_sdk_str = if rel_sdk_str.starts_with(r"//?/") {
+            rel_sdk_str[4..].to_string()
+        } else if rel_sdk_str.starts_with(r"\\?\") {
+            rel_sdk_str[4..].to_string()
+        } else {
+            rel_sdk_str
+        };
 
         let content = format!("-e {}", rel_sdk_str);
         let _ = std::fs::write(&req_path, content);
-        eprintln!("\x1b[34mℹ\x1b[0m Scaffolded {} with local SDK link", req_path.display());
+        eprintln!(
+            "\x1b[34mℹ\x1b[0m Scaffolded {} with local SDK link",
+            req_path.display()
+        );
     }
 
     // 2. Environment: Link .env to BOTH
@@ -177,12 +242,17 @@ fn load_registry(repo_root: &Path) -> HashMap<String, RegistryEntry> {
                 let stem = path.file_stem().unwrap().to_string_lossy().to_string();
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        if let (Some(pkg), Some(p)) = (val["package"].as_str(), val["path"].as_str()) {
-                            map.insert(stem, RegistryEntry { 
-                                package: pkg.to_string(), 
-                                path: p.to_string(),
-                                shared_root: val["shared_root"].as_str().map(|s| s.to_string()),
-                            });
+                        if let (Some(pkg), Some(p)) =
+                            (val["package"].as_str(), val["path"].as_str())
+                        {
+                            map.insert(
+                                stem,
+                                RegistryEntry {
+                                    package: pkg.to_string(),
+                                    path: p.to_string(),
+                                    shared_root: val["shared_root"].as_str().map(|s| s.to_string()),
+                                },
+                            );
                         }
                     }
                 }
@@ -199,9 +269,14 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
         std::fs::canonicalize(start.parent().unwrap_or(Path::new("."))).ok()?
     };
     loop {
-        if curr.join(".auwgent").exists() { return Some(curr); }
-        if let Some(parent) = curr.parent() { curr = parent.to_path_buf(); }
-        else { return None; }
+        if curr.join(".auwgent").exists() {
+            return Some(curr);
+        }
+        if let Some(parent) = curr.parent() {
+            curr = parent.to_path_buf();
+        } else {
+            return None;
+        }
     }
 }
 
@@ -227,18 +302,26 @@ fn link_env_file(repo_root: &Path, target_dir: &Path) {
 
 fn scaffold_secrets(repo_root: &Path, sdk_path: &Path, target: &str) {
     let env_path = repo_root.join(".env");
-    if !env_path.exists() { return; }
+    if !env_path.exists() {
+        return;
+    }
 
-    let Ok(content) = std::fs::read_to_string(env_path) else { return; };
+    let Ok(content) = std::fs::read_to_string(env_path) else {
+        return;
+    };
     let mut env_vars = HashMap::new();
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with("//") || line.starts_with("#") { continue; }
+        if line.is_empty() || line.starts_with("//") || line.starts_with("#") {
+            continue;
+        }
         if let Some((k, v)) = line.split_once('=') {
             let key = k.trim();
             let mut value = v.trim().to_string();
-            if (value.starts_with('"') && value.ends_with('"')) || (value.starts_with('\'') && value.ends_with('\'')) {
-                value = value[1..value.len()-1].to_string();
+            if (value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\''))
+            {
+                value = value[1..value.len() - 1].to_string();
             }
             env_vars.insert(key.to_string(), value);
         }
@@ -246,22 +329,30 @@ fn scaffold_secrets(repo_root: &Path, sdk_path: &Path, target: &str) {
 
     match target {
         "typescript" => {
-            let mut ts_file = String::from("// Auto-generated by Auwgent CLI for development. DO NOT COMMIT.\n");
+            let mut ts_file =
+                String::from("// Auto-generated by Auwgent CLI for development. DO NOT COMMIT.\n");
             for (k, v) in &env_vars {
                 ts_file.push_str(&format!("export const {} = \"{}\";\n", k, v));
             }
             let path = sdk_path.join("secrets.ts");
             let _ = std::fs::write(&path, ts_file);
-            eprintln!("\x1b[34mℹ\x1b[0m Generated {} with embedded secrets", path.display());
+            eprintln!(
+                "\x1b[34mℹ\x1b[0m Generated {} with embedded secrets",
+                path.display()
+            );
         }
         "python" => {
-            let mut py_file = String::from("# Auto-generated by Auwgent CLI for development. DO NOT COMMIT.\n");
+            let mut py_file =
+                String::from("# Auto-generated by Auwgent CLI for development. DO NOT COMMIT.\n");
             for (k, v) in &env_vars {
                 py_file.push_str(&format!("{} = \"{}\"\n", k, v));
             }
             let path = sdk_path.join("secrets.py");
             let _ = std::fs::write(&path, py_file);
-            eprintln!("\x1b[34mℹ\x1b[0m Generated {} with embedded secrets", path.display());
+            eprintln!(
+                "\x1b[34mℹ\x1b[0m Generated {} with embedded secrets",
+                path.display()
+            );
         }
         _ => {}
     }

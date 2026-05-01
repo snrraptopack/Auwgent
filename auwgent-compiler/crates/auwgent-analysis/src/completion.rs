@@ -1,8 +1,8 @@
 use crate::source::{canonicalize_best_effort, load_import_elements_best_effort, parse_source};
 use auwgent_ast::{
-    AgentConfig, BinOperator, Element, Expr, Helper, IfStatement, MemberAccess, Model,
-    NamedPrompt, OutputConfig, OutputShape, Statement, ToolFunction, TypeConfigDecl,
-    TypeDeclaration, TypeExpr, WorkflowConfig,
+    AgentConfig, BinOperator, Element, Expr, Helper, IfStatement, MemberAccess, Model, NamedPrompt,
+    OutputConfig, OutputShape, Statement, ToolFunction, TypeConfigDecl, TypeDeclaration, TypeExpr,
+    WorkflowConfig,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
@@ -120,7 +120,10 @@ pub fn completions_for_source(file: &Path, source: &str, offset: usize) -> Vec<C
     let completion_source = completion_parse_source(source, &query);
     let parsed = parse_source(&completion_source);
     let mut merged_elements = parsed.model.elements.clone();
-    merged_elements.extend(load_import_elements_best_effort(&root_path, &parsed.model.imports));
+    merged_elements.extend(load_import_elements_best_effort(
+        &root_path,
+        &parsed.model.imports,
+    ));
     let merged_model = Model {
         imports: parsed.model.imports.clone(),
         elements: merged_elements,
@@ -197,7 +200,10 @@ fn completion_parse_source(source: &str, query: &CompletionQuery) -> String {
         }
         path
     } else {
-        let line_start = source[..query.start].rfind('\n').map(|index| index + 1).unwrap_or(0);
+        let line_start = source[..query.start]
+            .rfind('\n')
+            .map(|index| index + 1)
+            .unwrap_or(0);
         let line_prefix = &source[line_start..query.start];
         if line_prefix.trim().is_empty() {
             "return __auwgent_completion".to_string()
@@ -292,14 +298,19 @@ pub(crate) fn build_scope(model: &Model, workflow: ActiveWorkflow<'_>, offset: u
                     }
                 }
                 auwgent_ast::InputShape::Direct(ty) => {
-                    env.insert("input".to_string(), value_type_from_type_expr(ty, &type_map));
+                    env.insert(
+                        "input".to_string(),
+                        value_type_from_type_expr(ty, &type_map),
+                    );
                 }
             },
             AgentConfig::Context(context) => {
                 for property in &context.properties {
                     let value = value_type_from_type_expr(&property.ty, &type_map);
                     env.insert(property.name.value.clone(), value.clone());
-                    scope.context_fields.insert(property.name.value.clone(), value);
+                    scope
+                        .context_fields
+                        .insert(property.name.value.clone(), value);
                 }
             }
             AgentConfig::Tool(tool) => {
@@ -322,14 +333,20 @@ pub(crate) fn build_scope(model: &Model, workflow: ActiveWorkflow<'_>, offset: u
     }
 
     for param in &workflow.workflow.params {
-        env.insert(param.name.value.clone(), value_type_from_type_expr(&param.ty, &type_map));
+        env.insert(
+            param.name.value.clone(),
+            value_type_from_type_expr(&param.ty, &type_map),
+        );
     }
 
     for prompt in model.elements.iter().filter_map(|element| match element {
         Element::NamedPrompt(prompt) => Some(prompt),
         _ => None,
     }) {
-        scope.prompts.insert(prompt.name.value.clone(), prompt_signature(prompt, &type_map));
+        scope.prompts.insert(
+            prompt.name.value.clone(),
+            prompt_signature(prompt, &type_map),
+        );
     }
 
     for tool in &workflow.workflow.tool_configs {
@@ -382,7 +399,14 @@ fn collect_statements_before_offset(
         if contains_offset(span.start, span.end, offset) {
             match statement {
                 Statement::If(if_statement) => {
-                    descend_into_if(if_statement, offset, env, type_map, helper_map, tool_returns);
+                    descend_into_if(
+                        if_statement,
+                        offset,
+                        env,
+                        type_map,
+                        helper_map,
+                        tool_returns,
+                    );
                 }
                 Statement::Parallel(parallel) => {
                     collect_statements_before_offset(
@@ -409,7 +433,13 @@ fn descend_into_if(
     helper_map: &HashMap<String, Helper>,
     tool_returns: &HashMap<String, ValueType>,
 ) {
-    if if_statement.then_block.iter().any(|statement| contains_offset(statement_span(statement).start, statement_span(statement).end, offset)) {
+    if if_statement.then_block.iter().any(|statement| {
+        contains_offset(
+            statement_span(statement).start,
+            statement_span(statement).end,
+            offset,
+        )
+    }) {
         collect_statements_before_offset(
             &if_statement.then_block,
             offset,
@@ -421,7 +451,13 @@ fn descend_into_if(
         return;
     }
 
-    if if_statement.else_block.iter().any(|statement| contains_offset(statement_span(statement).start, statement_span(statement).end, offset)) {
+    if if_statement.else_block.iter().any(|statement| {
+        contains_offset(
+            statement_span(statement).start,
+            statement_span(statement).end,
+            offset,
+        )
+    }) {
         collect_statements_before_offset(
             &if_statement.else_block,
             offset,
@@ -447,7 +483,13 @@ fn apply_statement(
                 .as_ref()
                 .map(|ty| value_type_from_type_expr(ty, type_map))
                 .unwrap_or_else(|| {
-                    infer_expr_type(&let_statement.value, env, type_map, helper_map, tool_returns)
+                    infer_expr_type(
+                        &let_statement.value,
+                        env,
+                        type_map,
+                        helper_map,
+                        tool_returns,
+                    )
                 });
             env.insert(let_statement.name.value.clone(), value);
         }
@@ -540,9 +582,7 @@ pub(crate) fn infer_expr_type(
             .get(&context.property.value)
             .cloned()
             .unwrap_or(ValueType::Unknown),
-        Expr::Grouped(inner, _) => {
-            infer_expr_type(inner, env, type_map, helper_map, tool_returns)
-        }
+        Expr::Grouped(inner, _) => infer_expr_type(inner, env, type_map, helper_map, tool_returns),
     }
 }
 
@@ -558,7 +598,8 @@ fn tool_return_map(
             AgentConfig::Tool(tool) => {
                 returns.insert(
                     tool.name.value.clone(),
-                    tool.returns.as_ref()
+                    tool.returns
+                        .as_ref()
                         .map(|ty| value_type_from_type_expr(ty, type_map))
                         .unwrap_or(ValueType::Unknown),
                 );
@@ -567,7 +608,8 @@ fn tool_return_map(
                 for tool in tools {
                     returns.insert(
                         tool.name.value.clone(),
-                        tool.returns.as_ref()
+                        tool.returns
+                            .as_ref()
                             .map(|ty| value_type_from_type_expr(ty, type_map))
                             .unwrap_or(ValueType::Unknown),
                     );
@@ -580,7 +622,8 @@ fn tool_return_map(
     for tool in workflow_tools {
         returns.insert(
             tool.name.value.clone(),
-            tool.returns.as_ref()
+            tool.returns
+                .as_ref()
                 .map(|ty| value_type_from_type_expr(ty, type_map))
                 .unwrap_or(ValueType::Unknown),
         );
@@ -590,14 +633,20 @@ fn tool_return_map(
 }
 
 fn resolve_member_access(access: &MemberAccess, env: &BTreeMap<String, ValueType>) -> ValueType {
-    let mut current = env.get(&access.object.value).cloned().unwrap_or(ValueType::Unknown);
+    let mut current = env
+        .get(&access.object.value)
+        .cloned()
+        .unwrap_or(ValueType::Unknown);
     let mut path = vec![access.property.value.as_str()];
     for segment in &access.chain {
         path.push(segment.value.as_str());
     }
 
     for segment in path {
-        current = current.member(segment).cloned().unwrap_or(ValueType::Unknown);
+        current = current
+            .member(segment)
+            .cloned()
+            .unwrap_or(ValueType::Unknown);
     }
     current
 }
@@ -611,7 +660,11 @@ fn member_completions(
     let mut base = if root == "ctx" {
         ValueType::Object(scope.context_fields.clone())
     } else {
-        scope.variables.get(root).cloned().unwrap_or(ValueType::Unknown)
+        scope
+            .variables
+            .get(root)
+            .cloned()
+            .unwrap_or(ValueType::Unknown)
     };
 
     for segment in chain {
@@ -639,58 +692,80 @@ fn member_completions(
 fn scope_completions(scope: &Scope, prefix: &str) -> Vec<CompletionItem> {
     let mut items = Vec::new();
 
-    items.extend([
-        keyword_completion("let", prefix),
-        keyword_completion("return", prefix),
-        keyword_completion("if", prefix),
-        keyword_completion("transfer", prefix),
-        keyword_completion("parallel", prefix),
-        keyword_completion("true", prefix),
-        keyword_completion("false", prefix),
-        keyword_completion("ctx", prefix),
-        keyword_completion("string", prefix),
-        keyword_completion("number", prefix),
-        keyword_completion("boolean", prefix),
-        keyword_completion("Text", prefix),
-    ].into_iter().flatten());
+    items.extend(
+        [
+            keyword_completion("let", prefix),
+            keyword_completion("return", prefix),
+            keyword_completion("if", prefix),
+            keyword_completion("transfer", prefix),
+            keyword_completion("parallel", prefix),
+            keyword_completion("true", prefix),
+            keyword_completion("false", prefix),
+            keyword_completion("ctx", prefix),
+            keyword_completion("string", prefix),
+            keyword_completion("number", prefix),
+            keyword_completion("boolean", prefix),
+            keyword_completion("Text", prefix),
+        ]
+        .into_iter()
+        .flatten(),
+    );
 
-    items.extend(scope.variables.iter().filter(|(name, _)| name.starts_with(prefix)).map(
-        |(name, ty)| CompletionItem {
-            label: name.clone(),
-            detail: Some(ty.format()),
-            kind: CompletionItemKind::Variable,
-        },
-    ));
-    items.extend(scope.tools.iter().filter(|(name, _)| name.starts_with(prefix)).map(
-        |(name, detail)| CompletionItem {
-            label: name.clone(),
-            detail: Some(detail.clone()),
-            kind: CompletionItemKind::Tool,
-        },
-    ));
-    items.extend(scope.helpers.iter().filter(|(name, _)| name.starts_with(prefix)).map(
-        |(name, detail)| CompletionItem {
-            label: name.clone(),
-            detail: Some(format!("helper -> {}", detail)),
-            kind: CompletionItemKind::Helper,
-        },
-    ));
-    items.extend(scope.prompts.iter().filter(|(name, _)| name.starts_with(prefix)).map(
-        |(name, detail)| CompletionItem {
-            label: name.clone(),
-            detail: Some(detail.clone()),
-            kind: CompletionItemKind::Prompt,
-        },
-    ));
+    items.extend(
+        scope
+            .variables
+            .iter()
+            .filter(|(name, _)| name.starts_with(prefix))
+            .map(|(name, ty)| CompletionItem {
+                label: name.clone(),
+                detail: Some(ty.format()),
+                kind: CompletionItemKind::Variable,
+            }),
+    );
+    items.extend(
+        scope
+            .tools
+            .iter()
+            .filter(|(name, _)| name.starts_with(prefix))
+            .map(|(name, detail)| CompletionItem {
+                label: name.clone(),
+                detail: Some(detail.clone()),
+                kind: CompletionItemKind::Tool,
+            }),
+    );
+    items.extend(
+        scope
+            .helpers
+            .iter()
+            .filter(|(name, _)| name.starts_with(prefix))
+            .map(|(name, detail)| CompletionItem {
+                label: name.clone(),
+                detail: Some(format!("helper -> {}", detail)),
+                kind: CompletionItemKind::Helper,
+            }),
+    );
+    items.extend(
+        scope
+            .prompts
+            .iter()
+            .filter(|(name, _)| name.starts_with(prefix))
+            .map(|(name, detail)| CompletionItem {
+                label: name.clone(),
+                detail: Some(detail.clone()),
+                kind: CompletionItemKind::Prompt,
+            }),
+    );
 
     dedupe_and_sort(items)
 }
 
 fn top_level_completions(prefix: &str) -> Vec<CompletionItem> {
-    let items = ["agent", "helper", "type", "prompt", "model", "import", "export"]
-        .into_iter()
-        .filter_map(|keyword| keyword_completion(keyword, prefix))
-        .collect::<Vec<_>>();
+    let items = [
+        "agent", "helper", "type", "prompt", "model", "import", "export",
+    ]
+    .into_iter()
+    .filter_map(|keyword| keyword_completion(keyword, prefix))
+    .collect::<Vec<_>>();
     dedupe_and_sort(items)
 }
 
@@ -717,7 +792,8 @@ fn dedupe_and_sort(items: Vec<CompletionItem>) -> Vec<CompletionItem> {
 }
 
 pub(crate) fn type_map(model: &Model) -> HashMap<String, TypeDeclaration> {
-    model.elements
+    model
+        .elements
         .iter()
         .filter_map(|element| match element {
             Element::TypeDecl(ty) => Some((ty.name.value.clone(), ty.clone())),
@@ -727,7 +803,8 @@ pub(crate) fn type_map(model: &Model) -> HashMap<String, TypeDeclaration> {
 }
 
 pub(crate) fn helper_map(model: &Model) -> HashMap<String, Helper> {
-    model.elements
+    model
+        .elements
         .iter()
         .filter_map(|element| match element {
             Element::Helper(helper) => Some((helper.name.value.clone(), helper.clone())),
@@ -827,7 +904,9 @@ pub(crate) fn tool_signature(
         .map(|param| type_config_signature(param, type_map))
         .collect::<Vec<_>>()
         .join(", ");
-    let returns = tool.returns.as_ref()
+    let returns = tool
+        .returns
+        .as_ref()
         .map(|ty| value_type_from_type_expr(ty, type_map).format())
         .unwrap_or_else(|| "unknown".to_string());
     format!("({params}) -> {returns}")
@@ -846,7 +925,10 @@ pub(crate) fn prompt_signature(
     format!("prompt({params})")
 }
 
-fn type_config_signature(config: &TypeConfigDecl, type_map: &HashMap<String, TypeDeclaration>) -> String {
+fn type_config_signature(
+    config: &TypeConfigDecl,
+    type_map: &HashMap<String, TypeDeclaration>,
+) -> String {
     format!(
         "{}: {}",
         config.name.value,
@@ -947,15 +1029,38 @@ agent Demo {
 }
 "#;
         std::fs::write(&file, source).unwrap();
-    let offset = source.find("ret").unwrap();
+        let offset = source.find("ret").unwrap();
         let items = completions_for_source(&file, source, offset);
-        let labels = items.iter().map(|item| item.label.clone()).collect::<Vec<_>>();
+        let labels = items
+            .iter()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>();
 
-        assert!(items.iter().any(|item| item.label == "return"), "labels: {:?}", labels);
-        assert!(items.iter().any(|item| item.label == "result"), "labels: {:?}", labels);
-        assert!(items.iter().any(|item| item.label == "lookup"), "labels: {:?}", labels);
-        assert!(items.iter().any(|item| item.label == "Researcher"), "labels: {:?}", labels);
-        assert!(items.iter().any(|item| item.label == "SharedPrompt"), "labels: {:?}", labels);
+        assert!(
+            items.iter().any(|item| item.label == "return"),
+            "labels: {:?}",
+            labels
+        );
+        assert!(
+            items.iter().any(|item| item.label == "result"),
+            "labels: {:?}",
+            labels
+        );
+        assert!(
+            items.iter().any(|item| item.label == "lookup"),
+            "labels: {:?}",
+            labels
+        );
+        assert!(
+            items.iter().any(|item| item.label == "Researcher"),
+            "labels: {:?}",
+            labels
+        );
+        assert!(
+            items.iter().any(|item| item.label == "SharedPrompt"),
+            "labels: {:?}",
+            labels
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }
@@ -984,7 +1089,10 @@ agent Demo {
         std::fs::write(&file, source).unwrap();
         let offset = source.find("ret").unwrap() + "ret".len();
         let items = completions_for_source(&file, source, offset);
-        let labels = items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>();
+        let labels = items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
 
         assert_eq!(labels, vec!["return"]);
 

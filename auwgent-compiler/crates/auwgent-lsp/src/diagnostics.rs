@@ -1,8 +1,10 @@
+use crate::util::span_to_range;
 use auwgent_analysis::AnalysisError;
 use auwgent_errors::{Diagnostic as CompilerDiagnostic, Severity, Span};
 use std::path::Path;
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Url};
-use crate::util::span_to_range;
+use tower_lsp::lsp_types::{
+    Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, Url,
+};
 
 pub fn diagnostics_from_error(
     root_uri: &Url,
@@ -89,19 +91,23 @@ pub fn compiler_diagnostic_to_lsp(
     uri: &Url,
     source: &str,
 ) -> Diagnostic {
-    let related_information = diagnostic.labels.is_empty().then(Vec::new).unwrap_or_else(|| {
-        diagnostic
-            .labels
-            .iter()
-            .map(|label| DiagnosticRelatedInformation {
-                location: Location {
-                    uri: uri.clone(),
-                    range: span_to_range(label.span, source),
-                },
-                message: label.message.clone(),
-            })
-            .collect()
-    });
+    let related_information = diagnostic
+        .labels
+        .is_empty()
+        .then(Vec::new)
+        .unwrap_or_else(|| {
+            diagnostic
+                .labels
+                .iter()
+                .map(|label| DiagnosticRelatedInformation {
+                    location: Location {
+                        uri: uri.clone(),
+                        range: span_to_range(label.span, source),
+                    },
+                    message: label.message.clone(),
+                })
+                .collect()
+        });
 
     let message = match &diagnostic.help {
         Some(help) if !help.is_empty() => format!("{}\n\nHelp: {help}", diagnostic.message),

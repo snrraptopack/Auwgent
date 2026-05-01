@@ -114,7 +114,9 @@ impl AuwgentEngine {
         } else {
             provider_type
         };
-        let model_name = model_info["modelName"].as_str().unwrap_or("gemini-2.0-flash");
+        let model_name = model_info["modelName"]
+            .as_str()
+            .unwrap_or("gemini-2.0-flash");
         let config_params = model_info.get("config").cloned();
 
         let mut system_prompt = self.generate_prompt(None)?;
@@ -291,8 +293,11 @@ impl AuwgentEngine {
                 let mut stream = match stream_res {
                     Ok(stream) => stream,
                     Err(error) => {
-                        self.fire_intent("error".to_string(), serde_json::json!({ "message": error }))
-                            .await;
+                        self.fire_intent(
+                            "error".to_string(),
+                            serde_json::json!({ "message": error }),
+                        )
+                        .await;
                         self.session
                             .lock()
                             .unwrap()
@@ -313,18 +318,18 @@ impl AuwgentEngine {
                             }
                             self.orchestrator.lock().unwrap().write(&text);
 
-                            let (_terminal, actions, hard_stop) =
-                                match self.process_intents().await {
-                                    Ok(result) => result,
-                                    Err(error) => {
-                                        let raw_resp =
-                                            self.current_raw_response.lock().unwrap().clone();
-                                        if !raw_resp.is_empty() {
-                                            self.session.lock().unwrap().set_model_response(&raw_resp);
-                                        }
-                                        return Err(error);
+                            let (_terminal, actions, hard_stop) = match self.process_intents().await
+                            {
+                                Ok(result) => result,
+                                Err(error) => {
+                                    let raw_resp =
+                                        self.current_raw_response.lock().unwrap().clone();
+                                    if !raw_resp.is_empty() {
+                                        self.session.lock().unwrap().set_model_response(&raw_resp);
                                     }
-                                };
+                                    return Err(error);
+                                }
+                            };
                             if actions {
                                 actions_performed = true;
                             }
@@ -411,9 +416,7 @@ impl AuwgentEngine {
                     emitted_final,
                     turn_finish_reason.as_ref(),
                 );
-                if should_retry_empty
-                    && empty_completion_retries < MAX_EMPTY_COMPLETION_RETRIES
-                {
+                if should_retry_empty && empty_completion_retries < MAX_EMPTY_COMPLETION_RETRIES {
                     empty_completion_retries += 1;
                     sleep(Duration::from_millis(EMPTY_COMPLETION_RETRY_DELAY_MS)).await;
                     continue;
@@ -487,7 +490,8 @@ impl AuwgentEngine {
                     error: serde_json::json!({ "message": err.to_string() }),
                 };
 
-                let middleware_response = middleware::apply_error_middleware(handler, payload).await;
+                let middleware_response =
+                    middleware::apply_error_middleware(handler, payload).await;
                 if middleware_response
                     .as_ref()
                     .and_then(|response| response.get("swallow"))
@@ -522,4 +526,3 @@ impl AuwgentEngine {
         self.last_turn_response_value.lock().unwrap().clone()
     }
 }
-

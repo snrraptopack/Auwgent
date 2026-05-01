@@ -1,8 +1,12 @@
-use crate::runtime::{engine_types::{AsyncMiddlewareEventCallback, IntentControl, TurnMetadata}, middleware_event::{ErrorPayload, RunCompletePayload}};
+use crate::runtime::{
+    engine_types::{AsyncMiddlewareEventCallback, IntentControl, TurnMetadata},
+    middleware_event::{ErrorPayload, RunCompletePayload},
+};
 use serde_json::Value;
 
 use crate::runtime::middleware_event::{
-    MiddlewareEvent,LlmStartPayload,EventContext,LlmEndPayload, RunStartPayload,IntentPayload};
+    EventContext, IntentPayload, LlmEndPayload, LlmStartPayload, MiddlewareEvent, RunStartPayload,
+};
 
 pub async fn fire_middleware_event(
     handler: Option<AsyncMiddlewareEventCallback>,
@@ -41,7 +45,7 @@ pub async fn apply_intent_middleware(
 
 pub async fn apply_llm_start_middleware(
     handler: Option<AsyncMiddlewareEventCallback>,
-    payload:LlmStartPayload
+    payload: LlmStartPayload,
 ) -> Option<Value> {
     let event = MiddlewareEvent::LlmStart(payload);
     let event_value = serde_json::to_value(event).unwrap();
@@ -71,18 +75,18 @@ pub async fn notify_llm_end_middleware(
             "metadata": turn_metadata
         });
     }
-    let event = MiddlewareEvent::LlmEnd(LlmEndPayload{
-        response:response_with_metadata,
-        context:context
+    let event = MiddlewareEvent::LlmEnd(LlmEndPayload {
+        response: response_with_metadata,
+        context: context,
     });
     let event_value = serde_json::to_value(event).unwrap();
-    fire_middleware_event(handler,event_value).await;
+    fire_middleware_event(handler, event_value).await;
 }
 
 pub async fn apply_run_start_middleware(
     handler: Option<AsyncMiddlewareEventCallback>,
-    payload:RunStartPayload
-)-> Option<Value>{
+    payload: RunStartPayload,
+) -> Option<Value> {
     let event = MiddlewareEvent::RunStart(payload);
     let event_value = serde_json::to_value(event).unwrap();
     fire_middleware_event(handler, event_value).await
@@ -90,8 +94,8 @@ pub async fn apply_run_start_middleware(
 
 pub async fn apply_run_complete_middleware(
     handler: Option<AsyncMiddlewareEventCallback>,
-    payload:RunCompletePayload
-)-> Option<Value>{
+    payload: RunCompletePayload,
+) -> Option<Value> {
     let event = MiddlewareEvent::RunComplete(payload);
     let event_value = serde_json::to_value(event).unwrap();
     fire_middleware_event(handler, event_value).await
@@ -99,8 +103,8 @@ pub async fn apply_run_complete_middleware(
 
 pub async fn apply_error_middleware(
     handler: Option<AsyncMiddlewareEventCallback>,
-    payload: ErrorPayload
-)->Option<Value>{
+    payload: ErrorPayload,
+) -> Option<Value> {
     let event = MiddlewareEvent::Error(payload);
     let event_value = serde_json::to_value(event).unwrap();
     fire_middleware_event(handler, event_value).await

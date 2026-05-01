@@ -8,8 +8,6 @@ use crate::runtime::session::Message;
 pub mod gemini;
 pub mod openai;
 
-
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -46,8 +46,10 @@ impl CodegenPlan {
 
         let workflows = array_at(&ir, &["workflows"]).to_vec();
         let helpers = array_at(&ir, &["helpers"]).to_vec();
-        let output_helpers =
-            merge_helpers(collect_transferred_helpers(&ir), collect_handoff_helpers(&ir));
+        let output_helpers = merge_helpers(
+            collect_transferred_helpers(&ir),
+            collect_handoff_helpers(&ir),
+        );
         let required_providers = collect_required_providers(&ir);
         let custom_provider_ids = collect_custom_provider_ids(&ir);
         let custom_intent_defs = collect_custom_intent_defs(&ir);
@@ -202,7 +204,9 @@ fn merge_tool_defs(base: &[Value], extra: Vec<Value>) -> Vec<Value> {
 fn collect_required_providers(ir: &Value) -> BTreeSet<String> {
     let mut providers = collect_providers_from_model_config(ir.get("modelConfig"));
     for helper in array_at(ir, &["helpers"]) {
-        providers.extend(collect_providers_from_model_config(helper.get("modelConfig")));
+        providers.extend(collect_providers_from_model_config(
+            helper.get("modelConfig"),
+        ));
     }
     providers
 }
@@ -210,7 +214,9 @@ fn collect_required_providers(ir: &Value) -> BTreeSet<String> {
 fn collect_custom_provider_ids(ir: &Value) -> BTreeSet<String> {
     let mut custom_ids = collect_custom_ids_from_model_config(ir.get("modelConfig"));
     for helper in array_at(ir, &["helpers"]) {
-        custom_ids.extend(collect_custom_ids_from_model_config(helper.get("modelConfig")));
+        custom_ids.extend(collect_custom_ids_from_model_config(
+            helper.get("modelConfig"),
+        ));
     }
     custom_ids
         .into_iter()
@@ -379,7 +385,10 @@ fn collect_custom_intent_defs(ir: &Value) -> Vec<(String, Value)> {
     defs
 }
 
-fn collect_transfer_targets_from_statements(statements: Option<&Value>, found: &mut BTreeSet<String>) {
+fn collect_transfer_targets_from_statements(
+    statements: Option<&Value>,
+    found: &mut BTreeSet<String>,
+) {
     let Some(statements) = statements.and_then(Value::as_array) else {
         return;
     };

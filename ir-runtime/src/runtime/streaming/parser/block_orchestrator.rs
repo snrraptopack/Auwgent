@@ -215,7 +215,9 @@ impl BlockOrchestrator {
             match &block.block_type {
                 BlockType::Chat => {
                     let sanitized = strip_protocol_fragments(&block.content);
-                    if !sanitized.is_empty() {
+                    if !sanitized.is_empty()
+                        && (is_final || !is_incomplete_protocol_header(sanitized.trim()))
+                    {
                         let intent = if is_final {
                             serde_json::json!({ "text": sanitized })
                         } else {
@@ -235,8 +237,12 @@ impl BlockOrchestrator {
 
                 BlockType::Tool => {
                     if let Some(tool_name) = block.target_name.as_deref() {
-                        let parsed = parse_partial_block_fields(&block.content)
-                            .map(|fields| self.unflatten_tool_args(tool_name, ast_to_json_object(&fields)));
+                        if !is_final && block.content.trim().is_empty() {
+                            continue;
+                        }
+                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+                            self.unflatten_tool_args(tool_name, ast_to_json_object(&fields))
+                        });
                         if is_final && parsed.is_none() {
                             continue;
                         }
@@ -260,6 +266,9 @@ impl BlockOrchestrator {
 
                 BlockType::Workflow => {
                     if let Some(workflow_name) = block.target_name.as_deref() {
+                        if !is_final && block.content.trim().is_empty() {
+                            continue;
+                        }
                         let parsed = parse_partial_block_fields(&block.content).map(|fields| {
                             self.unflatten_workflow_args(workflow_name, ast_to_json_object(&fields))
                         });
@@ -286,6 +295,9 @@ impl BlockOrchestrator {
 
                 BlockType::Helper => {
                     if let Some(helper_name) = block.target_name.as_deref() {
+                        if !is_final && block.content.trim().is_empty() {
+                            continue;
+                        }
                         let parsed = parse_partial_block_fields(&block.content).map(|fields| {
                             self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
                         });
@@ -324,18 +336,18 @@ impl BlockOrchestrator {
                             continue;
                         }
                         let fields_json = parsed.unwrap_or_else(|| Value::Object(Map::new()));
-                        let intent =
-                            build_component_intent(component_name, instance_id, fields_json.clone());
+                        let intent = build_component_intent(
+                            component_name,
+                            instance_id,
+                            fields_json.clone(),
+                        );
                         let intent = if is_final {
                             intent
                         } else {
                             let snapshot = build_component_intent(
                                 component_name,
                                 instance_id,
-                                self.merge_component_args(
-                                    component_name,
-                                    &fields_json,
-                                ),
+                                self.merge_component_args(component_name, &fields_json),
                             );
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
@@ -345,8 +357,12 @@ impl BlockOrchestrator {
 
                 BlockType::Out => {
                     let schema_name = block.target_name.as_deref().unwrap_or("Output");
-                    let parsed = parse_partial_schema_content(&block.content)
-                        .map(|obj_ast| self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast)));
+                    if !is_final && block.content.trim().is_empty() {
+                        continue;
+                    }
+                    let parsed = parse_partial_schema_content(&block.content).map(|obj_ast| {
+                        self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast))
+                    });
                     if is_final && parsed.is_none() {
                         continue;
                     }
@@ -396,11 +412,7 @@ impl BlockOrchestrator {
                             args_json
                         } else {
                             let snapshot = self.merge_custom_args(intent_name, &args_json);
-                            build_partial_structured_payload(
-                                snapshot,
-                                &block.content,
-                                block_index,
-                            )
+                            build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
                         self.emit_intent(&intent_name, intent, is_final, true);
                     } else {
@@ -570,7 +582,11 @@ impl BlockOrchestrator {
         )
     }
 
-    fn collect_component_instances(&self, blocks: &[function_parser::Block], is_final: bool) -> HashMap<String, Value> {
+    fn collect_component_instances(
+        &self,
+        blocks: &[function_parser::Block],
+        is_final: bool,
+    ) -> HashMap<String, Value> {
         let mut instances = HashMap::new();
 
         for block in blocks {
@@ -626,7 +642,9 @@ fn parse_block_fields(content: &str) -> Option<std::collections::HashMap<String,
     }
 }
 
-fn parse_partial_block_fields(content: &str) -> Option<std::collections::HashMap<String, ASTValue>> {
+fn parse_partial_block_fields(
+    content: &str,
+) -> Option<std::collections::HashMap<String, ASTValue>> {
     if let Some(parsed) = parse_block_fields(content) {
         return Some(parsed);
     }
@@ -676,9 +694,7 @@ fn parse_partial_schema_content(content: &str) -> Option<ASTValue> {
 fn is_incomplete_response_text_open(input: &str) -> bool {
     const OPEN_TAG: &str = "[response_text]";
     let trimmed = input.trim_start();
-    !trimmed.is_empty()
-        && trimmed.len() < OPEN_TAG.len()
-        && OPEN_TAG.starts_with(trimmed)
+    !trimmed.is_empty() && trimmed.len() < OPEN_TAG.len() && OPEN_TAG.starts_with(trimmed)
 }
 
 fn is_incomplete_protocol_header(input: &str) -> bool {
@@ -748,7 +764,10 @@ fn strip_protocol_fragments(input: &str) -> String {
 
     while cursor < input.len() {
         let rest = &input[cursor..];
-        if let Some(fragment) = FRAGMENTS.iter().find(|fragment| rest.starts_with(**fragment)) {
+        if let Some(fragment) = FRAGMENTS
+            .iter()
+            .find(|fragment| rest.starts_with(**fragment))
+        {
             cursor += protocol_fragment_skip_len(rest, fragment);
             continue;
         }
@@ -842,7 +861,10 @@ fn build_component_intent(component_name: &str, instance_id: &str, fields: Value
             intent.insert("props".to_string(), props.clone());
         }
         if let Some(action) = fields_obj.get("action") {
-            intent.insert("action".to_string(), normalize_component_action_value(action));
+            intent.insert(
+                "action".to_string(),
+                normalize_component_action_value(action),
+            );
         }
         if let Some(children) = fields_obj.get("children") {
             intent.insert("children".to_string(), children.clone());
@@ -860,7 +882,9 @@ fn build_render_component_intent(
 
     if let Some(root) = render_fields.get("root").and_then(Value::as_str) {
         intent.insert("root".to_string(), Value::String(root.to_string()));
-        if let Some(tree) = resolve_component_instance(root, component_instances, &mut HashSet::new()) {
+        if let Some(tree) =
+            resolve_component_instance(root, component_instances, &mut HashSet::new())
+        {
             intent.insert("tree".to_string(), tree);
         }
     }
@@ -869,7 +893,9 @@ fn build_render_component_intent(
         intent.insert("roots".to_string(), Value::Array(roots.clone()));
         let mut trees = Vec::new();
         for root in roots.iter().filter_map(Value::as_str) {
-            if let Some(tree) = resolve_component_instance(root, component_instances, &mut HashSet::new()) {
+            if let Some(tree) =
+                resolve_component_instance(root, component_instances, &mut HashSet::new())
+            {
                 trees.push(tree);
             }
         }
@@ -915,10 +941,7 @@ fn normalize_component_action_value(action: &Value) -> Value {
         }
 
         if let Some(name) = event_value.as_str() {
-            normalized.insert(
-                event_name.clone(),
-                serde_json::json!({ "name": name }),
-            );
+            normalized.insert(event_name.clone(), serde_json::json!({ "name": name }));
             continue;
         }
 
@@ -1039,8 +1062,12 @@ fn build_helper_input_template(
     types: Option<&HashMap<String, TypeDefinition>>,
 ) -> Value {
     let Some(input) = input_ir else {
-        return Value::Object(Map::new());
+        return default_text_input_template();
     };
+
+    if input.is_null() {
+        return default_text_input_template();
+    }
 
     if input.get("kind").and_then(|v| v.as_str()) == Some("properties") {
         if let Some(fields) = input.get("fields") {
@@ -1078,6 +1105,12 @@ fn build_helper_input_template(
     }
 
     Value::Object(Map::new())
+}
+
+fn default_text_input_template() -> Value {
+    let mut map = Map::new();
+    map.insert("input".to_string(), pending_value());
+    Value::Object(map)
 }
 
 fn build_output_templates(
@@ -1134,10 +1167,7 @@ fn build_template_fields(
     Map::new()
 }
 
-fn build_template_value(
-    def: &Value,
-    types: Option<&HashMap<String, TypeDefinition>>,
-) -> Value {
+fn build_template_value(def: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> Value {
     if let Some(properties) = resolve_template_properties(def, types) {
         let nested = properties
             .iter()
@@ -1313,7 +1343,10 @@ mod tests {
 
         // After finalization, both response_text and response_schema should be emitted
         let final_emitted = emitted.lock().unwrap().clone();
-        let intent_names: Vec<&str> = final_emitted.iter().map(|(name, _)| name.as_str()).collect();
+        let intent_names: Vec<&str> = final_emitted
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
 
         assert!(
             intent_names.contains(&"response_text"),
@@ -1327,16 +1360,25 @@ mod tests {
         );
 
         // Verify response_text content
-        let text_intent = final_emitted.iter().find(|(n, _)| n == "response_text").unwrap();
+        let text_intent = final_emitted
+            .iter()
+            .find(|(n, _)| n == "response_text")
+            .unwrap();
         assert_eq!(
             text_intent.1["text"].as_str().unwrap(),
             "Hiroshi is a 21-year-old student from Japan."
         );
 
         // Verify response_schema content
-        let schema_intent = final_emitted.iter().find(|(n, _)| n == "response_schema").unwrap();
+        let schema_intent = final_emitted
+            .iter()
+            .find(|(n, _)| n == "response_schema")
+            .unwrap();
         assert_eq!(schema_intent.1["type"].as_str().unwrap(), "Output");
-        assert!(schema_intent.1["response"].is_object(), "response_schema should have a response object");
+        assert!(
+            schema_intent.1["response"].is_object(),
+            "response_schema should have a response object"
+        );
     }
 
     #[test]
@@ -1533,7 +1575,10 @@ mod tests {
         orch.end();
 
         let final_emitted = emitted.lock().unwrap().clone();
-        let intent_names: Vec<&str> = final_emitted.iter().map(|(name, _)| name.as_str()).collect();
+        let intent_names: Vec<&str> = final_emitted
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
 
         assert!(
             intent_names.contains(&"response_text"),

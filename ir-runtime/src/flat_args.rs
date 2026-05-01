@@ -46,8 +46,12 @@ pub fn flatten_helper_input_specs(
     types: Option<&HashMap<String, TypeDefinition>>,
 ) -> Vec<FlatFieldSpec> {
     let Some(input) = input_ir else {
-        return Vec::new();
+        return vec![default_text_input_spec()];
     };
+
+    if input.is_null() {
+        return vec![default_text_input_spec()];
+    }
 
     if input.get("kind").and_then(|v| v.as_str()) == Some("properties") {
         if let Some(fields) = input.get("fields") {
@@ -93,6 +97,16 @@ pub fn flatten_helper_input_specs(
     }
 
     Vec::new()
+}
+
+fn default_text_input_spec() -> FlatFieldSpec {
+    FlatFieldSpec {
+        alias: "input".to_string(),
+        path: vec!["input".to_string()],
+        type_repr: "string".to_string(),
+        optional: false,
+        description: None,
+    }
 }
 
 pub fn alias_map_from_specs(specs: &[FlatFieldSpec]) -> HashMap<String, Vec<String>> {
@@ -343,6 +357,16 @@ mod tests {
 
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].alias, "analysis_request");
+    }
+
+    #[test]
+    fn test_flatten_helper_input_specs_defaults_null_to_text_input() {
+        let specs = flatten_helper_input_specs(None, None);
+
+        assert_eq!(specs.len(), 1);
+        assert_eq!(specs[0].alias, "input");
+        assert_eq!(specs[0].path, vec!["input"]);
+        assert_eq!(specs[0].type_repr, "string");
     }
 
     #[test]

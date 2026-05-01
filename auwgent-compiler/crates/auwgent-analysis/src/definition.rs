@@ -1,11 +1,10 @@
 use crate::completion::find_active_workflow;
 use crate::source::{
-    WorkspaceDocument, canonicalize_best_effort, load_workspace_documents_best_effort,
-    parse_source,
+    canonicalize_best_effort, load_workspace_documents_best_effort, parse_source, WorkspaceDocument,
 };
 use crate::symbols::{
-    SymbolTargetKind, find_context_field_definition, find_local_variable_definition,
-    find_tool_definition, symbol_at_offset,
+    find_context_field_definition, find_local_variable_definition, find_tool_definition,
+    symbol_at_offset, SymbolTargetKind,
 };
 use auwgent_ast::Element;
 use auwgent_errors::Span;
@@ -130,7 +129,9 @@ fn matches_prompt(element: &Element, name: &str) -> Option<Span> {
 
 fn matches_type(element: &Element, name: &str) -> Option<Span> {
     match element {
-        Element::TypeDecl(declaration) if declaration.name.value == name => Some(declaration.name.span),
+        Element::TypeDecl(declaration) if declaration.name.value == name => {
+            Some(declaration.name.span)
+        }
         _ => None,
     }
 }
@@ -229,7 +230,10 @@ agent Demo {
         let target = definition_for_source(&file, source, offset).unwrap();
 
         assert_eq!(target.path, std::fs::canonicalize(&shared).unwrap());
-        assert_eq!(&target.source[target.span.start..target.span.end], "SharedPrompt");
+        assert_eq!(
+            &target.source[target.span.start..target.span.end],
+            "SharedPrompt"
+        );
 
         let _ = std::fs::remove_dir_all(&base);
     }

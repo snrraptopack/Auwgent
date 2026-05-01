@@ -39,10 +39,7 @@ impl EngineBridge {
         Self::with_runtime(ir, tokio::runtime::Builder::new_current_thread())
     }
 
-    fn with_runtime(
-        ir: AgentIR,
-        mut builder: tokio::runtime::Builder,
-    ) -> Result<Self, String> {
+    fn with_runtime(ir: AgentIR, mut builder: tokio::runtime::Builder) -> Result<Self, String> {
         let engine = AuwgentEngine::new(ir.clone());
 
         let rt = builder
@@ -74,7 +71,10 @@ impl EngineBridge {
     pub fn set_groq_driver(&self, api_key: String) {
         self.engine.register_driver(
             "groq",
-            Arc::new(OpenAIDriver::new(api_key, Some("https://api.groq.com/openai/v1".to_string()))) as Arc<dyn ModelDriver>,
+            Arc::new(OpenAIDriver::new(
+                api_key,
+                Some("https://api.groq.com/openai/v1".to_string()),
+            )) as Arc<dyn ModelDriver>,
         );
     }
 
@@ -97,10 +97,7 @@ impl EngineBridge {
         self.engine.on_intent(handler);
     }
 
-    pub fn on_intent_partial(
-        &self,
-        handler: Arc<dyn Fn(String, Value, String) + Send + Sync>,
-    ) {
+    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
         self.engine.on_intent_partial(handler);
     }
 

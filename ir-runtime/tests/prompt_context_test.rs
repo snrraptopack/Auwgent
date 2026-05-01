@@ -1,5 +1,5 @@
-use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::AgentIR;
+use ir_runtime::runtime::AuwgentEngine;
 use serde_json::json;
 
 fn build_ir(prompt: serde_json::Value) -> AgentIR {
@@ -45,7 +45,7 @@ fn referenced_context_is_rendered_inline_without_static_duplication() {
 }
 
 #[test]
-fn conditional_context_does_not_leak_into_static_context_when_false() {
+fn conditional_context_stays_in_additional_context_when_not_rendered() {
     let ir = build_ir(json!({
         "type": "parts",
         "value": [
@@ -74,8 +74,94 @@ fn conditional_context_does_not_leak_into_static_context_when_false() {
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
     assert!(prompt.contains("Hello"));
-    assert!(!prompt.contains("gold-tier"));
-    assert!(!prompt.contains("is_vip"));
-    assert!(!prompt.contains("vip_note"));
+    assert!(prompt.contains("is_vip: false"));
+    assert!(prompt.contains("vip_note: gold-tier"));
     assert!(prompt.contains("region: EU"));
+}
+
+#[test]
+fn numeric_context_in_rendered_conditional_branch_keeps_prompt_text() {
+    let ir = build_ir(json!({
+        "type": "template",
+        "value": [
+            { "type": "literal", "value": "You are a helpful assistant\n" },
+            {
+                "type": "inlineIf",
+                "condition": {
+                    "type": "comparison",
+                    "operator": ">",
+                    "left": {
+                        "type": "memberAccess",
+                        "object": { "type": "varRef", "value": "ctx" },
+                        "properties": ["age"]
+                    },
+                    "right": { "type": "literal", "value": 20.0 }
+                },
+                "then": [
+                    { "type": "literal", "value": "The person is old " },
+                    {
+                        "type": "memberAccess",
+                        "object": { "type": "varRef", "value": "ctx" },
+                        "properties": ["age"]
+                    }
+                ],
+                "else": [
+                    { "type": "literal", "value": "not that old" }
+                ]
+            }
+        ]
+    }));
+    let engine = AuwgentEngine::new(ir);
+    engine.set_context(json!({
+        "age": 25.4,
+        "user_name": "Amihere"
+    }));
+
+    let prompt = engine.generate_prompt(None).expect("prompt should render");
+
+    assert!(prompt.contains("You are a helpful assistant"));
+    assert!(prompt.contains("The person is old 25.4"));
+    assert!(!prompt.contains("age: 25.4"));
+    assert!(prompt.contains("user_name: Amihere"));
+}
+
+#[test]
+fn condition_only_context_is_not_treated_as_rendered() {
+    let ir = build_ir(json!({
+        "type": "template",
+        "value": [
+            { "type": "literal", "value": "You are a helpful assistant\n" },
+            {
+                "type": "inlineIf",
+                "condition": {
+                    "type": "comparison",
+                    "operator": ">",
+                    "left": {
+                        "type": "memberAccess",
+                        "object": { "type": "varRef", "value": "ctx" },
+                        "properties": ["age"]
+                    },
+                    "right": { "type": "literal", "value": 20.0 }
+                },
+                "then": [
+                    { "type": "literal", "value": "The person is old" }
+                ],
+                "else": [
+                    { "type": "literal", "value": "not that old" }
+                ]
+            }
+        ]
+    }));
+    let engine = AuwgentEngine::new(ir);
+    engine.set_context(json!({
+        "age": 18,
+        "user_name": "Amihere"
+    }));
+
+    let prompt = engine.generate_prompt(None).expect("prompt should render");
+
+    assert!(prompt.contains("You are a helpful assistant"));
+    assert!(prompt.contains("not that old"));
+    assert!(prompt.contains("age: 18"));
+    assert!(prompt.contains("user_name: Amihere"));
 }

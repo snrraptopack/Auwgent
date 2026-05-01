@@ -21,10 +21,10 @@ pub(crate) fn object_literal_parser(
         });
 
     let obj_shorthand_prop = property_name().map_with_span(|name, span| PropertyValue {
-            name,
-            value: None,
-            span: s(span),
-        });
+        name,
+        value: None,
+        span: s(span),
+    });
 
     choice((obj_prop_with_value, obj_shorthand_prop))
         .separated_by(tok(TokenKind::Comma))
@@ -104,10 +104,10 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
             });
 
         let obj_shorthand_prop = property_name().map_with_span(|name, span| PropertyValue {
-                name,
-                value: None,
-                span: s(span),
-            });
+            name,
+            value: None,
+            span: s(span),
+        });
 
         let object_lit = choice((obj_prop_with_value, obj_shorthand_prop))
             .separated_by(tok(TokenKind::Comma))
@@ -215,7 +215,16 @@ pub(crate) fn expr_parser() -> impl Parser<TokenKind, Expr, Error = Simple<Token
 
         // All atoms
         let atom = choice((
-            ctx_ref, hlp_call, grouped, array_lit, object_lit, inline_prompt, str_lit, ml_str, num_lit, bool_lit,
+            ctx_ref,
+            hlp_call,
+            grouped,
+            array_lit,
+            object_lit,
+            inline_prompt,
+            str_lit,
+            ml_str,
+            num_lit,
+            bool_lit,
             ident_expr,
         ));
 

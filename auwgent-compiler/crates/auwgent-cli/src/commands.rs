@@ -97,8 +97,10 @@ pub fn run_generate(
                 .as_ref()
                 .and_then(|c| c.output.as_deref().map(PathBuf::from))
                 .or_else(|| out.clone());
-            let p_targets =
-                resolution::resolve_targets(target.as_deref(), p_cfg.as_ref().map(|c| c.targets.as_slice()));
+            let p_targets = resolution::resolve_targets(
+                target.as_deref(),
+                p_cfg.as_ref().map(|c| c.targets.as_slice()),
+            );
 
             let p_all_files = resolution::collect_agent_files(&p_dir);
             let p_files: Vec<_> = p_all_files
@@ -156,7 +158,11 @@ pub fn compile_file(file: &Path, output: Option<&Path>) -> bool {
 
     std::fs::create_dir_all(out_dir).unwrap();
     std::fs::write(&out_path, serde_json::to_string_pretty(&ir).unwrap()).unwrap();
-    eprintln!("\x1b[32m✓\x1b[0m {} → {}", file.display(), out_path.display());
+    eprintln!(
+        "\x1b[32m✓\x1b[0m {} → {}",
+        file.display(),
+        out_path.display()
+    );
     true
 }
 
@@ -184,7 +190,10 @@ pub fn generate_file(file: &Path, target: &str, output: Option<&Path>) -> bool {
         "dart" => auwgent_codegen::generate_dart(&ir, &stem),
         "rs" | "rust" => auwgent_codegen::generate_rust(&ir, &stem),
         _ => {
-            eprintln!("Unknown target '{}'. Use 'ts', 'python', 'dart', 'rust', or 'both'.", target);
+            eprintln!(
+                "Unknown target '{}'. Use 'ts', 'python', 'dart', 'rust', or 'both'.",
+                target
+            );
             return false;
         }
     };

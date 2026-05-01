@@ -12,7 +12,7 @@ impl AuwgentEngine {
         let session_save_handler = self.session_save_handler.clone();
 
         Box::pin(async move {
-            use crate::runtime::helper_runner::{build_sub_agent_context, HandoffMode};
+            use crate::runtime::helper_runner::{HandoffMode, build_sub_agent_context};
 
             let helper_name = call["type"].as_str().unwrap_or("").to_string();
             let args = call["args"].clone();
@@ -182,10 +182,18 @@ impl AuwgentEngine {
                 HandoffMode::User => {
                     if emitted_final {
                         self.session.lock().unwrap().stack.pop();
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     } else {
                         let _ = emitted_terminal;
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     }
                 }
                 HandoffMode::ThenContinue => {
@@ -201,7 +209,11 @@ impl AuwgentEngine {
                         Ok((helper_name, args, msg))
                     } else {
                         let _ = emitted_terminal;
-                        Ok((helper_name, args, serde_json::json!({ "__handoff_stop": true })))
+                        Ok((
+                            helper_name,
+                            args,
+                            serde_json::json!({ "__handoff_stop": true }),
+                        ))
                     }
                 }
                 HandoffMode::Return => {
@@ -231,4 +243,3 @@ impl AuwgentEngine {
         })
     }
 }
-

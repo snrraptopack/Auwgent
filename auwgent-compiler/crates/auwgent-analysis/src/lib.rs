@@ -6,12 +6,12 @@ pub mod rename;
 pub mod source;
 pub(crate) mod symbols;
 
-pub use completion::{CompletionItem, CompletionItemKind, completions_for_source};
-pub use definition::{DefinitionTarget, definition_for_source};
-pub use hover::{HoverInfo, hover_for_source};
-pub use reference::{ReferenceTarget, references_for_source};
-pub use rename::{RenameEdit, rename_for_source};
+pub use completion::{completions_for_source, CompletionItem, CompletionItemKind};
+pub use definition::{definition_for_source, DefinitionTarget};
+pub use hover::{hover_for_source, HoverInfo};
+pub use reference::{references_for_source, ReferenceTarget};
+pub use rename::{rename_for_source, RenameEdit};
 pub use source::{
-    AnalysisError, best_effort_model_from_source_with_imports, load_model_from_source_with_imports, load_model_with_imports,
-    resolve_import_path, resolve_import_path_with_span,
+    best_effort_model_from_source_with_imports, load_model_from_source_with_imports,
+    load_model_with_imports, resolve_import_path, resolve_import_path_with_span, AnalysisError,
 };

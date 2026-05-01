@@ -1,5 +1,5 @@
-use ir_runtime::intents::{generate_block_protocol_prompt, generate_helper_block_protocol_prompt};
 use ir_runtime::AgentIR;
+use ir_runtime::intents::{generate_block_protocol_prompt, generate_helper_block_protocol_prompt};
 use serde_json::json;
 
 fn build_ir() -> AgentIR {
@@ -35,6 +35,14 @@ fn build_ir() -> AgentIR {
                     "text": { "type": "string", "optional": false }
                 }
             },
+            "modelConfig": [],
+            "tools": [],
+            "workflows": [],
+            "examples": []
+        }, {
+            "name": "Joker",
+            "description": "Is A Joker Helper use it for jokes",
+            "input": null,
             "modelConfig": [],
             "tools": [],
             "workflows": [],
@@ -77,7 +85,11 @@ fn main_protocol_prompt_includes_generic_block_syntax() {
     assert!(prompt.contains("[tool_call: valid_tool_name]"));
     assert!(prompt.contains("[workflow_call: valid_workflow_name]"));
     assert!(prompt.contains("[helper_call: valid_helper_name]"));
-    assert!(prompt.contains("[component: valid_component_name, c_id:\"meaningful_accessible_id\"]"));
+    assert!(prompt.contains("Summarizer(text: string)"));
+    assert!(prompt.contains("Joker(input: string)"));
+    assert!(
+        prompt.contains("[component: valid_component_name, c_id:\"meaningful_accessible_id\"]")
+    );
     assert!(prompt.contains("[render_component]"));
     assert!(prompt.contains("[schema: valid_schema_name]"));
     assert!(prompt.contains("Components available:"));
@@ -102,7 +114,9 @@ fn helper_protocol_prompt_includes_generic_tool_syntax() {
     assert!(prompt.contains("Block syntax:"));
     assert!(prompt.contains("[response_text]...[/response_text]"));
     assert!(prompt.contains("[tool_call: valid_tool_name]"));
-    assert!(prompt.contains("[component: valid_component_name, c_id:\"meaningful_accessible_id\"]"));
+    assert!(
+        prompt.contains("[component: valid_component_name, c_id:\"meaningful_accessible_id\"]")
+    );
     assert!(prompt.contains("[render_component]"));
     assert!(prompt.contains("emit only the tool_call block(s) for that turn and stop"));
     assert!(prompt.contains("close with [/tool_call]"));

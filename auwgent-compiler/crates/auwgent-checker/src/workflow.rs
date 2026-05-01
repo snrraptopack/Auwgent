@@ -66,10 +66,16 @@ impl Checker {
             if let Some(ret) = &tf.returns {
                 self.check_type_ref_exists(ret, diags);
             } else {
-                diags.push(Diagnostic::error(
-                    format!("Scoped tool '{}' does not specify a return type", tf.name.value),
-                    tf.name.span,
-                ).with_help("Add a return type, e.g. `tool name(param: string): string`"));
+                diags.push(
+                    Diagnostic::error(
+                        format!(
+                            "Scoped tool '{}' does not specify a return type",
+                            tf.name.value
+                        ),
+                        tf.name.span,
+                    )
+                    .with_help("Add a return type, e.g. `tool name(param: string): string`"),
+                );
             }
             for p in &tf.params {
                 self.check_type_ref_exists(&p.ty, diags);
@@ -198,10 +204,7 @@ impl Checker {
                 let value_ty = self.infer_expression(value, env, diags);
                 if !self.types_compatible(&Type::boolean(), &value_ty) {
                     diags.push(Diagnostic::error(
-                        format!(
-                            "If-condition must be boolean, got {}",
-                            value_ty.format()
-                        ),
+                        format!("If-condition must be boolean, got {}", value_ty.format()),
                         *span,
                     ));
                 }
@@ -291,7 +294,14 @@ impl Checker {
                             fc.span,
                         ));
                     }
-                    self.check_call_args(&fc.args, &tool.params, &fc.name.value, fc.span, env, diags);
+                    self.check_call_args(
+                        &fc.args,
+                        &tool.params,
+                        &fc.name.value,
+                        fc.span,
+                        env,
+                        diags,
+                    );
                     if let Some(ret_type) = &tool.returns {
                         return self.map_type_expr(ret_type);
                     } else {
@@ -325,7 +335,8 @@ impl Checker {
                 if !self.context_fields.is_empty()
                     && !self.context_fields.contains_key(&cr.property.value)
                 {
-                    let ctx_names: Vec<&str> = self.context_fields.keys().map(|s| s.as_str()).collect();
+                    let ctx_names: Vec<&str> =
+                        self.context_fields.keys().map(|s| s.as_str()).collect();
                     let suggestion = find_closest(&cr.property.value, &ctx_names);
                     let help = if let Some(s) = suggestion {
                         format!("Did you mean 'ctx.{}'?", s)
@@ -406,7 +417,8 @@ impl Checker {
                                 let mut expected_fields = HashMap::new();
                                 let mut expected_optional = HashMap::new();
                                 for p in props {
-                                    expected_fields.insert(p.name.value.clone(), self.map_type_expr(&p.ty));
+                                    expected_fields
+                                        .insert(p.name.value.clone(), self.map_type_expr(&p.ty));
                                     expected_optional.insert(p.name.value.clone(), p.optional);
                                 }
                                 let expected_ty = Type::Record {
@@ -463,7 +475,10 @@ impl Checker {
                             let mut fields = HashMap::new();
                             let mut optional = HashMap::new();
                             for p in props {
-                                fields.insert(p.decl.name.value.clone(), self.map_type_expr(&p.decl.ty));
+                                fields.insert(
+                                    p.decl.name.value.clone(),
+                                    self.map_type_expr(&p.decl.ty),
+                                );
                                 optional.insert(p.decl.name.value.clone(), p.decl.optional);
                             }
                             return Type::Record { fields, optional };
@@ -476,7 +491,10 @@ impl Checker {
                                     let mut fields = HashMap::new();
                                     let mut optional = HashMap::new();
                                     for f in fields_decl {
-                                        fields.insert(f.name.value.clone(), self.map_type_expr(&f.ty));
+                                        fields.insert(
+                                            f.name.value.clone(),
+                                            self.map_type_expr(&f.ty),
+                                        );
                                         optional.insert(f.name.value.clone(), f.optional);
                                     }
                                     union_types.push(Type::Record { fields, optional });
@@ -573,7 +591,10 @@ impl Checker {
                     *el
                 } else {
                     diags.push(Diagnostic::error(
-                        format!("Cannot index into '{}' — it's not an array", ia.object.value),
+                        format!(
+                            "Cannot index into '{}' — it's not an array",
+                            ia.object.value
+                        ),
                         ia.span,
                     ));
                     Type::error("not array")
@@ -635,7 +656,10 @@ impl Checker {
                 }
             }
             TypeExpr::Union { options, .. } => {
-                let types = options.iter().map(|o| Type::Const(o.value.clone())).collect();
+                let types = options
+                    .iter()
+                    .map(|o| Type::Const(o.value.clone()))
+                    .collect();
                 Type::Union(types)
             }
         }
@@ -724,7 +748,10 @@ impl Checker {
                 } else {
                     Some(format!(
                         "Cannot compare {} with {} (Type mismatch: {} vs {})",
-                        left_kind, right_kind, left.format(), right.format()
+                        left_kind,
+                        right_kind,
+                        left.format(),
+                        right.format()
                     ))
                 }
             }

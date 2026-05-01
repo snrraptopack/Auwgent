@@ -1,5 +1,5 @@
-use ir_runtime::runtime::AuwgentEngine;
 use ir_runtime::AgentIR;
+use ir_runtime::runtime::AuwgentEngine;
 use serde_json::json;
 
 fn build_ir() -> AgentIR {
@@ -75,14 +75,7 @@ options: ["yes", "no"]
         .iter()
         .map(|event| event["name"].as_str().unwrap_or_default().to_string())
         .collect();
-    assert_eq!(
-        names,
-        vec![
-            "tool_call",
-            "workflow_call",
-            "ask_user"
-        ]
-    );
+    assert_eq!(names, vec!["tool_call", "workflow_call", "ask_user"]);
 
     for (idx, event) in events.iter().enumerate() {
         assert_eq!(event["event"], "intent");
@@ -90,9 +83,18 @@ options: ["yes", "no"]
         assert_eq!(event["seq"], (idx as u64) + 1);
     }
 
-    let tool_call = events.iter().find(|event| event["name"] == "tool_call").unwrap();
-    let workflow_call = events.iter().find(|event| event["name"] == "workflow_call").unwrap();
-    let ask_user = events.iter().find(|event| event["name"] == "ask_user").unwrap();
+    let tool_call = events
+        .iter()
+        .find(|event| event["name"] == "tool_call")
+        .unwrap();
+    let workflow_call = events
+        .iter()
+        .find(|event| event["name"] == "workflow_call")
+        .unwrap();
+    let ask_user = events
+        .iter()
+        .find(|event| event["name"] == "ask_user")
+        .unwrap();
 
     assert_eq!(tool_call["payload"]["type"], "fetch_session");
     assert_eq!(tool_call["payload"]["args"]["session_id"], "sess_123");

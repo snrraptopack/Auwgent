@@ -93,12 +93,20 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_object_alias(agent_name, "Input", unwrap_input_fields(ir.get("input")).as_ref()));
+    sections.push(generate_object_alias(
+        agent_name,
+        "Input",
+        unwrap_input_fields(ir.get("input")).as_ref(),
+    ));
     for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
     sections.push(generate_output_interface(ir, agent_name, output_helpers));
-    sections.push(generate_object_alias(agent_name, "Context", ir.get("context")));
+    sections.push(generate_object_alias(
+        agent_name,
+        "Context",
+        ir.get("context"),
+    ));
 
     if has_tools {
         sections.push(generate_tools_interface(agent_name, all_tools));
@@ -107,7 +115,11 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     sections.push(generate_custom_intents_union(plan, agent_name));
 
     if plan.has_api_keys() {
-        sections.push(generate_api_keys(agent_name, required_providers, custom_provider_ids));
+        sections.push(generate_api_keys(
+            agent_name,
+            required_providers,
+            custom_provider_ids,
+        ));
     }
 
     sections.push(generate_agent_factory(
@@ -284,16 +296,23 @@ fn generate_output_interface(ir: &Value, agent_name: &str, output_helpers: &[Val
 
     let props = object_lines(ir.get("output"));
     if output_helpers.is_empty() {
-        return format!("export type {agent_name}Output = {{\n{}\n}}\n", props.join("\n"));
+        return format!(
+            "export type {agent_name}Output = {{\n{}\n}}\n",
+            props.join("\n")
+        );
     }
 
-    let base_output = format!("export type {agent_name}BaseOutput = {{\n{}\n}}\n", props.join("\n"));
-    let union_members = std::iter::once(format!("{agent_name}BaseOutput"))
-        .chain(output_helpers.iter().filter_map(|helper| {
-            string_at(helper, &["name"]).map(|name| format!("{name}Output"))
-        }))
-        .collect::<Vec<_>>()
-        .join(" | ");
+    let base_output = format!(
+        "export type {agent_name}BaseOutput = {{\n{}\n}}\n",
+        props.join("\n")
+    );
+    let union_members =
+        std::iter::once(format!("{agent_name}BaseOutput"))
+            .chain(output_helpers.iter().filter_map(|helper| {
+                string_at(helper, &["name"]).map(|name| format!("{name}Output"))
+            }))
+            .collect::<Vec<_>>()
+            .join(" | ");
 
     format!(
         "{base_output}\n/** Union of possible output types (includes transfer destinations) */\nexport type {agent_name}Output = {union_members};\n"
@@ -363,7 +382,10 @@ fn generate_api_keys(
             .map(|c| if c.is_alphanumeric() { c } else { '_' })
             .collect();
         let field_name = format!("{}ApiKey", sanitized);
-        keys.push(format!("    {}: string;  // API key for custom provider '{}'", field_name, custom_id));
+        keys.push(format!(
+            "    {}: string;  // API key for custom provider '{}'",
+            field_name, custom_id
+        ));
     }
 
     format!(
@@ -476,7 +498,10 @@ fn generate_agent_factory(
 
 fn generate_object_alias(name: &str, suffix: &str, value: Option<&Value>) -> String {
     let props = object_lines(value);
-    format!("export type {name}{suffix} = {{\n{}\n}}\n", props.join("\n"))
+    format!(
+        "export type {name}{suffix} = {{\n{}\n}}\n",
+        props.join("\n")
+    )
 }
 
 fn object_lines(value: Option<&Value>) -> Vec<String> {
@@ -582,14 +607,14 @@ fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
                         // properties format. The TypeScript ExtractInputShape will default to string.
                         None
                     }
-                    _ => Some(Value::Object(obj.clone()))
+                    _ => Some(Value::Object(obj.clone())),
                 }
             } else {
                 // Already in flat format
                 Some(Value::Object(obj.clone()))
             }
         }
-        _ => None
+        _ => None,
     }
 }
 
@@ -662,6 +687,8 @@ mod tests {
 
         let output = generate(&CodegenPlan::new(ir), "main");
         assert!(output.contains("flowName: \"deleteAccount\"; flowParams: { id: string }; returns: { delete: boolean; reason: string }"));
-        assert!(output.contains("name: \"Reviewer\"; input: { text: string }; output: { approved: boolean }"));
+        assert!(output.contains(
+            "name: \"Reviewer\"; input: { text: string }; output: { approved: boolean }"
+        ));
     }
 }

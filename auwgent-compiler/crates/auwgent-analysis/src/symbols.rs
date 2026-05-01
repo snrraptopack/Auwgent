@@ -1,7 +1,7 @@
-use crate::completion::{ActiveWorkflow, contains_offset, statement_span};
+use crate::completion::{contains_offset, statement_span, ActiveWorkflow};
 use auwgent_ast::{
-    AgentConfig, Condition, Element, Expr, HelperCall, Model, PromptStatement, Statement,
-    TypeExpr, WorkflowConfig,
+    AgentConfig, Condition, Element, Expr, HelperCall, Model, PromptStatement, Statement, TypeExpr,
+    WorkflowConfig,
 };
 use auwgent_errors::Span;
 
@@ -14,10 +14,7 @@ pub(crate) enum SymbolTargetKind {
     Prompt(String),
     Type(String),
     Model(String),
-    Member {
-        root: String,
-        path: Vec<String>,
-    },
+    Member { root: String, path: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,8 +60,9 @@ pub(crate) fn find_local_variable_definition(
         match config {
             AgentConfig::Input(input) => match &input.shape {
                 auwgent_ast::InputShape::Properties(properties) => {
-                    if let Some(property) =
-                        properties.iter().find(|property| property.name.value == name)
+                    if let Some(property) = properties
+                        .iter()
+                        .find(|property| property.name.value == name)
                     {
                         return Some(property.name.span);
                     }
@@ -118,10 +116,7 @@ pub(crate) fn find_context_field_definition(
     None
 }
 
-pub(crate) fn find_tool_definition(
-    workflow: &ActiveWorkflow<'_>,
-    name: &str,
-) -> Option<Span> {
+pub(crate) fn find_tool_definition(workflow: &ActiveWorkflow<'_>, name: &str) -> Option<Span> {
     for config in workflow.parent_configs {
         match config {
             AgentConfig::Tool(tool) if tool.name.value == name => return Some(tool.name.span),
@@ -270,9 +265,11 @@ fn symbol_in_agent_config(config: &AgentConfig, offset: usize) -> Option<SymbolT
         AgentConfig::Tools(tools) => tools.iter().find_map(|tool| symbol_in_tool(tool, offset)),
         AgentConfig::Workflow(workflow) => symbol_in_workflow(workflow, offset),
         AgentConfig::Helpers(helpers) => helpers.helpers.iter().find_map(|helper| {
-            contains_offset(helper.name.span.start, helper.name.span.end, offset).then(|| SymbolTarget {
-                kind: SymbolTargetKind::Helper(helper.name.value.clone()),
-                span: helper.name.span,
+            contains_offset(helper.name.span.start, helper.name.span.end, offset).then(|| {
+                SymbolTarget {
+                    kind: SymbolTargetKind::Helper(helper.name.value.clone()),
+                    span: helper.name.span,
+                }
             })
         }),
         AgentConfig::Model(model) => {
@@ -375,7 +372,9 @@ fn symbol_in_tool(tool: &auwgent_ast::ToolFunction, offset: usize) -> Option<Sym
         }
     }
 
-    tool.returns.as_ref().and_then(|ty| symbol_in_type_expr(ty, offset))
+    tool.returns
+        .as_ref()
+        .and_then(|ty| symbol_in_type_expr(ty, offset))
 }
 
 fn symbol_in_workflow(workflow: &WorkflowConfig, offset: usize) -> Option<SymbolTarget> {
@@ -414,7 +413,9 @@ fn symbol_in_workflow(workflow: &WorkflowConfig, offset: usize) -> Option<Symbol
 fn symbol_in_prompt_statement(statement: &PromptStatement, offset: usize) -> Option<SymbolTarget> {
     match statement {
         PromptStatement::Expr(expr) => symbol_in_expr(expr, offset),
-        PromptStatement::If(condition) => symbol_in_statement(&Statement::If(condition.clone()), offset),
+        PromptStatement::If(condition) => {
+            symbol_in_statement(&Statement::If(condition.clone()), offset)
+        }
         PromptStatement::Statement(statement) => symbol_in_statement(statement, offset),
         PromptStatement::Example(_) => None,
     }
@@ -439,7 +440,11 @@ fn symbol_in_statement(statement: &Statement, offset: usize) -> Option<SymbolTar
             symbol_in_expr(&statement.value, offset)
         }
         Statement::Assign(statement) => {
-            if contains_offset(statement.variable.span.start, statement.variable.span.end, offset) {
+            if contains_offset(
+                statement.variable.span.start,
+                statement.variable.span.end,
+                offset,
+            ) {
                 return Some(SymbolTarget {
                     kind: SymbolTargetKind::Identifier(statement.variable.value.clone()),
                     span: statement.variable.span,
@@ -490,10 +495,12 @@ fn symbol_in_condition(condition: &Condition, offset: usize) -> Option<SymbolTar
 
 fn symbol_in_expr(expr: &Expr, offset: usize) -> Option<SymbolTarget> {
     match expr {
-        Expr::VarRef(name) => contains_offset(name.span.start, name.span.end, offset).then(|| SymbolTarget {
-            kind: SymbolTargetKind::Identifier(name.value.clone()),
-            span: name.span,
-        }),
+        Expr::VarRef(name) => {
+            contains_offset(name.span.start, name.span.end, offset).then(|| SymbolTarget {
+                kind: SymbolTargetKind::Identifier(name.value.clone()),
+                span: name.span,
+            })
+        }
         Expr::FunctionCall(call) => {
             for arg in &call.args {
                 if let Some(symbol) = symbol_in_expr(arg, offset) {
@@ -501,9 +508,11 @@ fn symbol_in_expr(expr: &Expr, offset: usize) -> Option<SymbolTarget> {
                 }
             }
 
-            contains_offset(call.name.span.start, call.name.span.end, offset).then(|| SymbolTarget {
-                kind: SymbolTargetKind::Callable(call.name.value.clone()),
-                span: call.name.span,
+            contains_offset(call.name.span.start, call.name.span.end, offset).then(|| {
+                SymbolTarget {
+                    kind: SymbolTargetKind::Callable(call.name.value.clone()),
+                    span: call.name.span,
+                }
             })
         }
         Expr::HelperCall(call) => symbol_in_helper_call(call, offset),
@@ -514,9 +523,11 @@ fn symbol_in_expr(expr: &Expr, offset: usize) -> Option<SymbolTarget> {
                 }
             }
 
-            contains_offset(call.prompt.span.start, call.prompt.span.end, offset).then(|| SymbolTarget {
-                kind: SymbolTargetKind::Prompt(call.prompt.value.clone()),
-                span: call.prompt.span,
+            contains_offset(call.prompt.span.start, call.prompt.span.end, offset).then(|| {
+                SymbolTarget {
+                    kind: SymbolTargetKind::Prompt(call.prompt.value.clone()),
+                    span: call.prompt.span,
+                }
             })
         }
         Expr::ContextRef(context) => contains_offset(
@@ -606,9 +617,13 @@ fn symbol_in_expr(expr: &Expr, offset: usize) -> Option<SymbolTarget> {
 
             None
         }
-        Expr::BinaryOp(binary) => symbol_in_expr(&binary.left, offset)
-            .or_else(|| symbol_in_expr(&binary.right, offset)),
-        Expr::Array(array) => array.elements.iter().find_map(|element| symbol_in_expr(element, offset)),
+        Expr::BinaryOp(binary) => {
+            symbol_in_expr(&binary.left, offset).or_else(|| symbol_in_expr(&binary.right, offset))
+        }
+        Expr::Array(array) => array
+            .elements
+            .iter()
+            .find_map(|element| symbol_in_expr(element, offset)),
         Expr::Object(object) => object.properties.iter().find_map(|property| {
             property
                 .value
@@ -616,7 +631,10 @@ fn symbol_in_expr(expr: &Expr, offset: usize) -> Option<SymbolTarget> {
                 .and_then(|value| symbol_in_expr(value, offset))
         }),
         Expr::Grouped(inner, _) => symbol_in_expr(inner, offset),
-        Expr::InlinePrompt(prompt) => prompt.parts.iter().find_map(|part| symbol_in_prompt_statement(part, offset)),
+        Expr::InlinePrompt(prompt) => prompt
+            .parts
+            .iter()
+            .find_map(|part| symbol_in_prompt_statement(part, offset)),
         Expr::StringLit(_)
         | Expr::MultilineStringLit(_)
         | Expr::NumberLit(_)
@@ -640,18 +658,24 @@ fn symbol_in_helper_call(call: &HelperCall, offset: usize) -> Option<SymbolTarge
 fn symbol_in_type_expr(ty: &TypeExpr, offset: usize) -> Option<SymbolTarget> {
     match ty {
         TypeExpr::Array { element, .. } => symbol_in_type_expr(element, offset),
-        TypeExpr::Object { properties, .. } => properties.iter().find_map(|property| symbol_in_type_expr(&property.ty, offset)),
-        TypeExpr::TypeRef(name) => contains_offset(name.span.start, name.span.end, offset).then(|| SymbolTarget {
-            kind: SymbolTargetKind::Type(name.value.clone()),
-            span: name.span,
-        }),
+        TypeExpr::Object { properties, .. } => properties
+            .iter()
+            .find_map(|property| symbol_in_type_expr(&property.ty, offset)),
+        TypeExpr::TypeRef(name) => {
+            contains_offset(name.span.start, name.span.end, offset).then(|| SymbolTarget {
+                kind: SymbolTargetKind::Type(name.value.clone()),
+                span: name.span,
+            })
+        }
         TypeExpr::Union { options, .. } => options.iter().find_map(|option| {
             contains_offset(option.span.start, option.span.end, offset).then(|| SymbolTarget {
                 kind: SymbolTargetKind::Type(option.value.clone()),
                 span: option.span,
             })
         }),
-        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => None,
+        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => {
+            None
+        }
     }
 }
 
@@ -685,7 +709,9 @@ fn find_variable_definition_in_statements(
 fn variable_definition_in_completed_statement(statement: &Statement, name: &str) -> Option<Span> {
     match statement {
         Statement::Let(statement) if statement.name.value == name => Some(statement.name.span),
-        Statement::Parallel(statement) => find_variable_definition_in_statements(&statement.body, usize::MAX, name),
+        Statement::Parallel(statement) => {
+            find_variable_definition_in_statements(&statement.body, usize::MAX, name)
+        }
         _ => None,
     }
 }
@@ -698,12 +724,16 @@ fn variable_definition_in_active_statement(
     match statement {
         Statement::Let(statement) if statement.name.value == name => Some(statement.name.span),
         Statement::If(statement) => {
-            if let Some(found) = find_variable_definition_in_statements(&statement.then_block, offset, name) {
+            if let Some(found) =
+                find_variable_definition_in_statements(&statement.then_block, offset, name)
+            {
                 return Some(found);
             }
             find_variable_definition_in_statements(&statement.else_block, offset, name)
         }
-        Statement::Parallel(statement) => find_variable_definition_in_statements(&statement.body, offset, name),
+        Statement::Parallel(statement) => {
+            find_variable_definition_in_statements(&statement.body, offset, name)
+        }
         _ => None,
     }
 }
@@ -908,7 +938,9 @@ fn collect_workflow_symbols(workflow: &WorkflowConfig, symbols: &mut Vec<SymbolT
 fn collect_prompt_statement_symbols(statement: &PromptStatement, symbols: &mut Vec<SymbolTarget>) {
     match statement {
         PromptStatement::Expr(expr) => collect_expr_symbols(expr, symbols),
-        PromptStatement::If(condition) => collect_statement_symbols(&Statement::If(condition.clone()), symbols),
+        PromptStatement::If(condition) => {
+            collect_statement_symbols(&Statement::If(condition.clone()), symbols)
+        }
         PromptStatement::Statement(statement) => collect_statement_symbols(statement, symbols),
         PromptStatement::Example(_) => {}
     }

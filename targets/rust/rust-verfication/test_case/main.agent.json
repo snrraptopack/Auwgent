@@ -10,8 +10,64 @@
         },
         "embedding": null,
         "prompt": {
-          "value": "You are a helpful assistant. tools, helpers are available at your service utilize them, make wiser decisions and understand each tasks",
-          "type": "literal"
+          "type": "template",
+          "value": [
+            {
+              "type": "literal",
+              "value": "\r\n        You are a helpful assistant\r\n        "
+            },
+            {
+              "type": "inlineIf",
+              "condition": {
+                "type": "comparison",
+                "operator": ">",
+                "left": {
+                  "type": "memberAccess",
+                  "object": {
+                    "type": "varRef",
+                    "value": "ctx"
+                  },
+                  "properties": [
+                    "age"
+                  ]
+                },
+                "right": {
+                  "type": "literal",
+                  "value": 20.0
+                }
+              },
+              "then": [
+                {
+                  "type": "literal",
+                  "value": "\r\n            \"The person is old "
+                },
+                {
+                  "type": "memberAccess",
+                  "object": {
+                    "type": "varRef",
+                    "value": "ctx"
+                  },
+                  "properties": [
+                    "age"
+                  ]
+                },
+                {
+                  "type": "literal",
+                  "value": "\"\r\n        "
+                }
+              ],
+              "else": [
+                {
+                  "type": "literal",
+                  "value": "\r\n            \"not that old\"\r\n        "
+                }
+              ]
+            },
+            {
+              "type": "literal",
+              "value": " \r\n        "
+            }
+          ]
         }
       },
       "namedConfig": []
@@ -256,5 +312,23 @@
   },
   "tests": [],
   "lifecycle": null,
-  "customIntents": null
+  "customIntents": [
+    {
+      "name": "Loud",
+      "description": "use this to explain your thought and actions loud",
+      "fields": {
+        "actions": {
+          "type": "string",
+          "optional": false,
+          "description": "the action about to take"
+        },
+        "reason": {
+          "type": "string",
+          "optional": false,
+          "description": "the reasons behind those actions"
+        }
+      },
+      "examples": []
+    }
+  ]
 }

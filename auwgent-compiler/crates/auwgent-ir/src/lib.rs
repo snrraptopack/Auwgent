@@ -234,7 +234,11 @@ fn lower_properties(props: &[TypeConfigDecl]) -> Value {
     Value::Object(map)
 }
 
-fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: &[ObjectLiteral]) -> Value {
+fn lower_output(
+    shape: &OutputShape,
+    type_decls: &[&TypeDeclaration],
+    examples: &[ObjectLiteral],
+) -> Value {
     let mut result = match shape {
         OutputShape::Properties(props) => {
             if props.is_empty() {
@@ -258,11 +262,14 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: 
         }
         OutputShape::Union(types) => {
             // Check if this is a Text | Object union
-            let has_text = types.iter().any(|t| t.value == "Text" || t.value == "string");
+            let has_text = types
+                .iter()
+                .any(|t| t.value == "Text" || t.value == "string");
 
             if has_text {
                 // Filter out Text from the union
-                let non_text_types: Vec<_> = types.iter()
+                let non_text_types: Vec<_> = types
+                    .iter()
                     .filter(|t| t.value != "Text" && t.value != "string")
                     .collect();
 
@@ -276,7 +283,9 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: 
                 let mut all_variants_resolved = true;
 
                 for variant in &non_text_types {
-                    if let Some(type_decl) = type_decls.iter().find(|td| td.name.value == variant.value) {
+                    if let Some(type_decl) =
+                        type_decls.iter().find(|td| td.name.value == variant.value)
+                    {
                         variants.insert(
                             variant.value.clone(),
                             lower_output_type_decl_fields(type_decl),
@@ -344,18 +353,14 @@ fn lower_output(shape: &OutputShape, type_decls: &[&TypeDeclaration], examples: 
     // Add examples if provided
     if !examples.is_empty() {
         if let Value::Object(ref mut map) = result {
-            let examples_array: Vec<Value> = examples
-                .iter()
-                .map(|ex| lower_object_literal(ex))
-                .collect();
+            let examples_array: Vec<Value> =
+                examples.iter().map(|ex| lower_object_literal(ex)).collect();
             map.insert("@examples".into(), Value::Array(examples_array));
         } else if result.is_null() {
             // If output is null (Text-only), create an object to hold examples
             let mut map = Map::new();
-            let examples_array: Vec<Value> = examples
-                .iter()
-                .map(|ex| lower_object_literal(ex))
-                .collect();
+            let examples_array: Vec<Value> =
+                examples.iter().map(|ex| lower_object_literal(ex)).collect();
             map.insert("@examples".into(), Value::Array(examples_array));
             result = Value::Object(map);
         }
@@ -458,12 +463,16 @@ fn lower_component(component: &ComponentDeclaration) -> Value {
                                 let mut params = Map::new();
                                 for param in &target.params {
                                     let mut param_value = Map::new();
-                                    param_value.insert("type".into(), lower_type_expr_value(&param.ty));
+                                    param_value
+                                        .insert("type".into(), lower_type_expr_value(&param.ty));
                                     param_value.insert("optional".into(), json!(param.optional));
                                     if let Some(desc) = &param.description {
                                         param_value.insert("description".into(), json!(desc.value));
                                     }
-                                    params.insert(param.name.value.clone(), Value::Object(param_value));
+                                    params.insert(
+                                        param.name.value.clone(),
+                                        Value::Object(param_value),
+                                    );
                                 }
                                 target_obj.insert("params".into(), Value::Object(params));
                             }
@@ -532,10 +541,14 @@ fn lower_tool(tf: &ToolFunction) -> Value {
 
     // Examples
     if !tf.examples.is_empty() {
-        let examples: Vec<Value> = tf.examples.iter().map(|obj_lit| {
-            // Each example is an ObjectLiteral with named arguments
-            lower_object_literal(obj_lit)
-        }).collect();
+        let examples: Vec<Value> = tf
+            .examples
+            .iter()
+            .map(|obj_lit| {
+                // Each example is an ObjectLiteral with named arguments
+                lower_object_literal(obj_lit)
+            })
+            .collect();
         tool.insert("examples".into(), Value::Array(examples));
     }
 
@@ -1210,9 +1223,11 @@ fn lower_workflow(wf: &WorkflowConfig) -> Value {
 
     // Examples
     if !wf.examples.is_empty() {
-        let examples: Vec<Value> = wf.examples.iter().map(|obj_lit| {
-            lower_object_literal(obj_lit)
-        }).collect();
+        let examples: Vec<Value> = wf
+            .examples
+            .iter()
+            .map(|obj_lit| lower_object_literal(obj_lit))
+            .collect();
         obj.insert("examples".into(), Value::Array(examples));
     }
 
@@ -1292,7 +1307,9 @@ fn lower_helper(
     for config in &helper.configs {
         match config {
             AgentConfig::Input(ic) => input_val = lower_input(ic),
-            AgentConfig::Output(oc) => output_val = lower_output(&oc.shape, type_decls, &oc.examples),
+            AgentConfig::Output(oc) => {
+                output_val = lower_output(&oc.shape, type_decls, &oc.examples)
+            }
             AgentConfig::Context(cc) => context_val = lower_properties(&cc.properties),
             AgentConfig::Tool(tf) => tools_val.push(lower_tool(tf)),
             AgentConfig::Tools(tfs) => {
@@ -1325,9 +1342,11 @@ fn lower_helper(
 
     // Examples
     if !helper.examples.is_empty() {
-        let examples: Vec<Value> = helper.examples.iter().map(|obj_lit| {
-            lower_object_literal(obj_lit)
-        }).collect();
+        let examples: Vec<Value> = helper
+            .examples
+            .iter()
+            .map(|obj_lit| lower_object_literal(obj_lit))
+            .collect();
         obj.insert("examples".into(), Value::Array(examples));
     }
 
@@ -1398,9 +1417,11 @@ fn lower_intent_decl(decl: &IntentDeclaration) -> Value {
 
     // Examples
     if !decl.examples.is_empty() {
-        let examples: Vec<Value> = decl.examples.iter().map(|obj_lit| {
-            lower_object_literal(obj_lit)
-        }).collect();
+        let examples: Vec<Value> = decl
+            .examples
+            .iter()
+            .map(|obj_lit| lower_object_literal(obj_lit))
+            .collect();
         obj.insert("examples".into(), Value::Array(examples));
     }
 
@@ -1466,7 +1487,7 @@ mod tests {
             ir["modelConfig"][0]["defaultConfig"]["model"]["config"]["value"]["maxToken"]["value"],
             json!(2000.0)
         );
-        assert_eq!(ir["input"], Value::Null);  // input: Text compiles to null
+        assert_eq!(ir["input"], Value::Null); // input: Text compiles to null
         assert_eq!(ir["output"]["name"]["description"], json!("no description"));
         assert_eq!(ir["output"]["age"]["description"], json!("no description"));
     }
@@ -1555,10 +1576,10 @@ mod tests {
                 output: Hey
             }
              "#,
-         );
+        );
 
-         assert_eq!(ir["input"], Value::Null);  // input: Text compiles to null
-         assert_eq!(ir["output"]["name"]["type"], json!("string"));
+        assert_eq!(ir["input"], Value::Null); // input: Text compiles to null
+        assert_eq!(ir["output"]["name"]["type"], json!("string"));
         assert_eq!(ir["output"]["age"]["type"], json!("number"));
         assert_eq!(ir["output"]["name"]["description"], Value::Null);
         assert_eq!(
@@ -1598,7 +1619,10 @@ mod tests {
         assert_eq!(components.len(), 2);
         assert_eq!(components[0]["name"], "Button");
         assert_eq!(components[0]["props"]["label"]["type"], json!("string"));
-        assert_eq!(components[0]["action"]["onclick"][0]["name"], "confirm_order");
+        assert_eq!(
+            components[0]["action"]["onclick"][0]["name"],
+            "confirm_order"
+        );
         assert_eq!(components[0]["action"]["onclick"][1]["name"], "delete_user");
         assert_eq!(
             components[0]["action"]["onclick"][1]["params"]["id"]["type"],

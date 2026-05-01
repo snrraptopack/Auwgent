@@ -27,7 +27,10 @@ impl ModelDriver for GeminiDriver {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>, String> {
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>,
+        String,
+    > {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             model, self.api_key
@@ -114,67 +117,94 @@ impl ModelDriver for GeminiDriver {
 
         // ── SSE stream parsing ────────────────────────────────────────────
         let mut buffer = String::new();
-        let stream = response.bytes_stream().map(move |item| match item {
-            Ok(bytes) => {
-                let chunk = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&chunk);
+        let stream = response
+            .bytes_stream()
+            .map(move |item| match item {
+                Ok(bytes) => {
+                    let chunk = String::from_utf8_lossy(&bytes);
+                    buffer.push_str(&chunk);
 
-                let mut result_events = Vec::new();
-                while let Some(index) = buffer.find('\n') {
-                    let line = buffer.drain(..=index).collect::<String>();
-                    let trimmed = line.trim();
+                    let mut result_events = Vec::new();
+                    while let Some(index) = buffer.find('\n') {
+                        let line = buffer.drain(..=index).collect::<String>();
+                        let trimmed = line.trim();
 
-                    if let Some(data) = trimmed.strip_prefix("data: ")
-                        && let Ok(json_val) = serde_json::from_str::<Value>(data)
-                    {
-
-                        if let Some(candidate) = json_val["candidates"].get(0) {
+                        if let Some(data) = trimmed.strip_prefix("data: ")
+                            && let Ok(json_val) = serde_json::from_str::<Value>(data)
+                        {
+                            if let Some(candidate) = json_val["candidates"].get(0) {
                                 if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
-                                    result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(t.to_string()));
+                                    result_events.push(
+                                        crate::runtime::drivers::ModelEvent::ContentChunk(
+                                            t.to_string(),
+                                        ),
+                                    );
                                 }
 
-                                if let Some(finish_reason_str) = candidate["finishReason"].as_str() {
+                                if let Some(finish_reason_str) = candidate["finishReason"].as_str()
+                                {
                                     let finish_reason = match finish_reason_str {
                                         "STOP" => Some(crate::runtime::drivers::FinishReason::Stop),
-                                        "MAX_TOKENS" => Some(crate::runtime::drivers::FinishReason::Length),
-                                        "SAFETY" | "BLOCKLIST" => Some(crate::runtime::drivers::FinishReason::ContentFilter),
-                                        "OTHER" => Some(crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string())),
-                                        _ => Some(crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string())),
+                                        "MAX_TOKENS" => {
+                                            Some(crate::runtime::drivers::FinishReason::Length)
+                                        }
+                                        "SAFETY" | "BLOCKLIST" => Some(
+                                            crate::runtime::drivers::FinishReason::ContentFilter,
+                                        ),
+                                        "OTHER" => {
+                                            Some(crate::runtime::drivers::FinishReason::Other(
+                                                finish_reason_str.to_string(),
+                                            ))
+                                        }
+                                        _ => Some(crate::runtime::drivers::FinishReason::Other(
+                                            finish_reason_str.to_string(),
+                                        )),
                                     };
 
                                     // Normally usage data is in the same JSON object as STOP
                                     if let Some(usage) = json_val.get("usageMetadata") {
-                                        let prompt_tokens = usage["promptTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let completion_tokens = usage["candidatesTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let total_tokens = usage["totalTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let cached_tokens = usage["cachedTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let reasoning_tokens = usage["thoughtsTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let prompt_tokens =
+                                            usage["promptTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let completion_tokens =
+                                            usage["candidatesTokenCount"].as_u64().unwrap_or(0)
+                                                as u32;
+                                        let total_tokens =
+                                            usage["totalTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let cached_tokens =
+                                            usage["cachedTokenCount"].as_u64().unwrap_or(0) as u32;
+                                        let reasoning_tokens =
+                                            usage["thoughtsTokenCount"].as_u64().unwrap_or(0)
+                                                as u32;
 
-                                        result_events.push(crate::runtime::drivers::ModelEvent::Metadata(crate::runtime::drivers::ModelMetadata {
-                                            usage: crate::runtime::drivers::TokenUsage {
-                                                prompt_tokens,
-                                                completion_tokens,
-                                                total_tokens,
-                                                reasoning_tokens,
-                                                cached_tokens,
-                                            },
-                                            finish_reason,
-                                        }));
+                                        result_events.push(
+                                            crate::runtime::drivers::ModelEvent::Metadata(
+                                                crate::runtime::drivers::ModelMetadata {
+                                                    usage: crate::runtime::drivers::TokenUsage {
+                                                        prompt_tokens,
+                                                        completion_tokens,
+                                                        total_tokens,
+                                                        reasoning_tokens,
+                                                        cached_tokens,
+                                                    },
+                                                    finish_reason,
+                                                },
+                                            ),
+                                        );
                                     }
                                 }
-                        } else if let Some(error) = json_val["error"].get("message") {
-                            return Err(format!("Gemini streaming error: {}", error));
+                            } else if let Some(error) = json_val["error"].get("message") {
+                                return Err(format!("Gemini streaming error: {}", error));
+                            }
                         }
                     }
+                    Ok(result_events)
                 }
-                Ok(result_events)
-            }
-            Err(e) => Err(format!("Stream error: {}", e)),
-        })
-        .flat_map(|res| match res {
-            Ok(events) => futures_util::stream::iter(events.into_iter().map(Ok)).left_stream(),
-            Err(e) => futures_util::stream::iter(vec![Err(e)]).right_stream(),
-        });
+                Err(e) => Err(format!("Stream error: {}", e)),
+            })
+            .flat_map(|res| match res {
+                Ok(events) => futures_util::stream::iter(events.into_iter().map(Ok)).left_stream(),
+                Err(e) => futures_util::stream::iter(vec![Err(e)]).right_stream(),
+            });
 
         Ok(Box::pin(stream))
     }
@@ -227,12 +257,9 @@ impl ModelDriver for GeminiDriver {
             .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
 
         let embedding = &json_val["embedding"]["values"];
-        let values = embedding.as_array().ok_or_else(|| {
-            format!(
-                "Missing 'embedding.values' field in response: {}",
-                json_val
-            )
-        })?;
+        let values = embedding
+            .as_array()
+            .ok_or_else(|| format!("Missing 'embedding.values' field in response: {}", json_val))?;
 
         Ok(values
             .iter()
@@ -295,12 +322,9 @@ impl ModelDriver for GeminiDriver {
             .await
             .map_err(|e| format!("Failed to parse embedding response: {}", e))?;
 
-        let embeddings = json_val["embeddings"].as_array().ok_or_else(|| {
-            format!(
-                "Missing 'embeddings' field in response: {}",
-                json_val
-            )
-        })?;
+        let embeddings = json_val["embeddings"]
+            .as_array()
+            .ok_or_else(|| format!("Missing 'embeddings' field in response: {}", json_val))?;
 
         let mut results = Vec::new();
         for emb in embeddings {

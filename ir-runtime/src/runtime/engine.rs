@@ -6,14 +6,12 @@ use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
 use crate::runtime::drivers::{FinishReason, ModelDriver, ModelEvent, TokenUsage};
 pub use crate::runtime::engine_types::{
-    AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
-    IntentCallback, IntentControl, RunMetadata, SessionSaveCallback, ToolImplementation,
-    TurnMetadata,
+    AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback, IntentCallback,
+    IntentControl, RunMetadata, SessionSaveCallback, ToolImplementation, TurnMetadata,
 };
 use crate::runtime::middleware;
 use crate::runtime::middleware_event::{
-    ErrorPayload, EventContext, IntentPayload, LlmStartPayload, RunCompletePayload,
-    RunStartPayload,
+    ErrorPayload, EventContext, IntentPayload, LlmStartPayload, RunCompletePayload, RunStartPayload,
 };
 use crate::runtime::session::SessionState;
 use crate::runtime::streaming::parser::block_orchestrator::BlockOrchestrator as Orchestrator;
@@ -23,7 +21,7 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 mod execution;
 mod prompt;
@@ -115,7 +113,11 @@ impl AuwgentEngine {
         if let Some(custom) = &ir.custom_intents {
             for ci in custom {
                 orchestrator.register_intent(&ci.name);
-                orchestrator.register_custom_intent_shape(&ci.name, &ci.fields.0, ir.types.as_ref());
+                orchestrator.register_custom_intent_shape(
+                    &ci.name,
+                    &ci.fields.0,
+                    ir.types.as_ref(),
+                );
             }
         }
 
@@ -384,12 +386,13 @@ impl AuwgentEngine {
             .as_ref()
             .ok_or(AuwgentError::MissingConfig("No default config".into()))?;
 
-        let embedding_provider = default_config
-            .embedding
-            .as_ref()
-            .ok_or(AuwgentError::MissingConfig(
-                "No embedding model configured".into(),
-            ))?;
+        let embedding_provider =
+            default_config
+                .embedding
+                .as_ref()
+                .ok_or(AuwgentError::MissingConfig(
+                    "No embedding model configured".into(),
+                ))?;
 
         let evaluator = Evaluator::new(&self.ir);
         let mut scope = HashMap::new();
@@ -475,4 +478,3 @@ mod tests {
         ));
     }
 }
-

@@ -1,12 +1,12 @@
 //! # auwgent-cli
 //!
 //! CLI binary for the Auwgent compiler.
-mod config;
-mod watch;
 mod commands;
-mod scaffold;
-mod resolution;
+mod config;
 mod errors;
+mod resolution;
+mod scaffold;
+mod watch;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -53,10 +53,20 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Compile { path, output, config } => {
+        Commands::Compile {
+            path,
+            output,
+            config,
+        } => {
             commands::run_compile(path, output, config);
         }
-        Commands::Generate { path, target, output, watch, config } => {
+        Commands::Generate {
+            path,
+            target,
+            output,
+            watch,
+            config,
+        } => {
             commands::run_generate(path, target, output, watch, config);
         }
     }

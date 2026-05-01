@@ -64,8 +64,6 @@ pub type AsyncSessionPreloadCallback = Arc<
 pub type SessionSaveCallback =
     Arc<dyn Fn(String, String) -> futures_util::future::BoxFuture<'static, ()> + Send + Sync>;
 
-
-
 /// Generic middleware event callback.
 /// Receives an event JSON payload and may return an optional response JSON payload.
 pub type AsyncMiddlewareEventCallback =

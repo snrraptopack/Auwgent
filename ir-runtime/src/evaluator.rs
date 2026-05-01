@@ -1,7 +1,7 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::types::{AgentIR, Expression};
 use serde_json::Value;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 /// Synchronous tool handler for workflow-level function calls.
@@ -14,6 +14,7 @@ pub struct Evaluator<'a> {
     /// Optional tool registry for resolving FunctionCall expressions within workflows.
     tools: HashMap<String, SyncToolFn>,
     context_usage: RefCell<HashSet<String>>,
+    context_tracking_suppressed: Cell<usize>,
 }
 
 impl<'a> Evaluator<'a> {
@@ -22,6 +23,7 @@ impl<'a> Evaluator<'a> {
             ir,
             tools: HashMap::new(),
             context_usage: RefCell::new(HashSet::new()),
+            context_tracking_suppressed: Cell::new(0),
         }
     }
 
@@ -31,6 +33,7 @@ impl<'a> Evaluator<'a> {
             ir,
             tools,
             context_usage: RefCell::new(HashSet::new()),
+            context_tracking_suppressed: Cell::new(0),
         }
     }
 
@@ -58,9 +61,23 @@ impl<'a> Evaluator<'a> {
     }
 
     fn record_context_property(&self, property: &str) {
-        self.context_usage
-            .borrow_mut()
-            .insert(property.to_string());
+        if self.context_tracking_suppressed.get() > 0 {
+            return;
+        }
+
+        self.context_usage.borrow_mut().insert(property.to_string());
+    }
+
+    fn with_context_tracking_suppressed<T>(
+        &self,
+        f: impl FnOnce() -> AuwgentResult<T>,
+    ) -> AuwgentResult<T> {
+        self.context_tracking_suppressed
+            .set(self.context_tracking_suppressed.get() + 1);
+        let result = f();
+        self.context_tracking_suppressed
+            .set(self.context_tracking_suppressed.get() - 1);
+        result
     }
 
     fn record_all_context_properties(&self, scope: &HashMap<String, Value>) {
@@ -111,7 +128,9 @@ impl<'a> Evaluator<'a> {
                 }
                 self.collect_context_references_from_expr(index, scope, refs);
             }
-            Expression::Parts { value } | Expression::Array { value } | Expression::Parallel { body: value } => {
+            Expression::Parts { value }
+            | Expression::Array { value }
+            | Expression::Parallel { body: value } => {
                 for part in value {
                     self.collect_context_references_from_expr(part, scope, refs);
                 }
@@ -138,7 +157,9 @@ impl<'a> Evaluator<'a> {
                 then,
                 else_block,
             } => {
-                if let Ok(cond) = serde_json::from_value::<crate::types::Condition>(condition.0.clone()) {
+                if let Ok(cond) =
+                    serde_json::from_value::<crate::types::Condition>(condition.0.clone())
+                {
                     self.collect_context_references_from_condition(&cond, scope, refs);
                 }
                 for expr in then {
@@ -184,7 +205,9 @@ impl<'a> Evaluator<'a> {
                     }
                 }
             }
-            Expression::Literal { .. } | Expression::VarRef { .. } | Expression::PromptExamples { .. } => {}
+            Expression::Literal { .. }
+            | Expression::VarRef { .. }
+            | Expression::PromptExamples { .. } => {}
             _ => {}
         }
     }
@@ -219,45 +242,43 @@ impl<'a> Evaluator<'a> {
         scope: &mut HashMap<String, Value>,
     ) -> AuwgentResult<Value> {
         match expr {
-            Expression::SchemaDirective { path } => {
-                match path.as_str() {
-                    "input" => {
-                        if let Some(schema) = &self.ir.input {
-                            Ok(Value::String(crate::schema::format_schema(
-                                &schema.0,
-                                self.ir.types.as_ref(),
-                            )))
-                        } else {
-                            Ok(Value::String("{}".to_string()))
-                        }
+            Expression::SchemaDirective { path } => match path.as_str() {
+                "input" => {
+                    if let Some(schema) = &self.ir.input {
+                        Ok(Value::String(crate::schema::format_schema(
+                            &schema.0,
+                            self.ir.types.as_ref(),
+                        )))
+                    } else {
+                        Ok(Value::String("{}".to_string()))
                     }
-                    "output" => {
-                        if let Some(schema) = &self.ir.output {
-                            Ok(Value::String(crate::schema::format_output_schema_blocks(
-                                &schema.0,
-                                self.ir.types.as_ref(),
-                            )))
-                        } else {
-                            Ok(Value::String("{}".to_string()))
-                        }
-                    }
-                    "context" => {
-                        self.record_all_context_properties(scope);
-                        if let Some(schema) = &self.ir.context {
-                            Ok(Value::String(crate::schema::format_schema(
-                                &schema.0,
-                                self.ir.types.as_ref(),
-                            )))
-                        } else {
-                            Ok(Value::String("{}".to_string()))
-                        }
-                    }
-                    _ => Err(AuwgentError::Evaluation(format!(
-                        "Unknown schema path: {}",
-                        path
-                    ))),
                 }
-            }
+                "output" => {
+                    if let Some(schema) = &self.ir.output {
+                        Ok(Value::String(crate::schema::format_output_schema_blocks(
+                            &schema.0,
+                            self.ir.types.as_ref(),
+                        )))
+                    } else {
+                        Ok(Value::String("{}".to_string()))
+                    }
+                }
+                "context" => {
+                    self.record_all_context_properties(scope);
+                    if let Some(schema) = &self.ir.context {
+                        Ok(Value::String(crate::schema::format_schema(
+                            &schema.0,
+                            self.ir.types.as_ref(),
+                        )))
+                    } else {
+                        Ok(Value::String("{}".to_string()))
+                    }
+                }
+                _ => Err(AuwgentError::Evaluation(format!(
+                    "Unknown schema path: {}",
+                    path
+                ))),
+            },
             Expression::Literal { value } => Ok(value.0.clone()),
             Expression::VarRef { value } => scope
                 .get(value)
@@ -298,7 +319,6 @@ impl<'a> Evaluator<'a> {
             Expression::Template { value } => {
                 // Evaluate all parts first
                 let mut results = Vec::new();
-                let mut all_strings = true;
 
                 let mut parsed_exprs = Vec::new();
                 for part in value {
@@ -308,37 +328,22 @@ impl<'a> Evaluator<'a> {
 
                 for parsed in &parsed_exprs {
                     let val = self.evaluate(parsed, scope)?;
-                    if !val.is_string() {
-                        all_strings = false;
-                    }
                     results.push((parsed, val));
                 }
 
-                if all_strings {
-                    let joined = self.join_and_dedent(results);
-                    Ok(Value::String(joined))
-                } else {
-                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
-                }
+                let joined = self.join_and_dedent(results);
+                Ok(Value::String(joined))
             }
             Expression::Parts { value } => {
                 let mut results = Vec::new();
-                let mut all_strings = true;
 
                 for part in value {
                     let val = self.evaluate(part, scope)?;
-                    if !val.is_string() {
-                        all_strings = false;
-                    }
                     results.push((part, val));
                 }
 
-                if all_strings {
-                    let joined = self.join_and_dedent(results);
-                    Ok(Value::String(joined.trim().to_string()))
-                } else {
-                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
-                }
+                let joined = self.join_and_dedent(results);
+                Ok(Value::String(joined.trim().to_string()))
             }
 
             Expression::Object { value } => {
@@ -360,7 +365,9 @@ impl<'a> Evaluator<'a> {
                     serde_json::from_value(condition.0.clone()).map_err(|e| {
                         AuwgentError::Evaluation(format!("Condition parse error: {}", e))
                     })?;
-                let is_true = self.evaluate_condition(&parsed_cond, scope)?;
+                let is_true = self.with_context_tracking_suppressed(|| {
+                    self.evaluate_condition(&parsed_cond, scope)
+                })?;
 
                 // 2. Choose which block to execute
                 let block = if is_true { then } else { else_block };
@@ -375,13 +382,8 @@ impl<'a> Evaluator<'a> {
                     return Ok(Value::Null);
                 }
 
-                // Join if strings (same logic as Template)
-                if results.iter().all(|(_, v)| v.is_string()) {
-                    let joined = self.join_and_dedent(results);
-                    Ok(Value::String(joined.trim().to_string()))
-                } else {
-                    Ok(Value::Array(results.into_iter().map(|(_, v)| v).collect()))
-                }
+                let joined = self.join_and_dedent(results);
+                Ok(Value::String(joined.trim().to_string()))
             }
 
             Expression::ContextRef { property } => {
@@ -410,7 +412,9 @@ impl<'a> Evaluator<'a> {
                     serde_json::from_value(condition.0.clone()).map_err(|e| {
                         AuwgentError::Evaluation(format!("Condition parse error: {}", e))
                     })?;
-                let is_true = self.evaluate_condition(&parsed_cond, scope)?;
+                let is_true = self.with_context_tracking_suppressed(|| {
+                    self.evaluate_condition(&parsed_cond, scope)
+                })?;
 
                 // 2. Choose which block to execute
                 let block = if is_true { then } else { else_block };
@@ -454,16 +458,11 @@ impl<'a> Evaluator<'a> {
                     results.push(evaluated);
                 }
 
-                // 3. Join results if all are strings
-                if results.iter().all(|v| v.is_string()) {
-                    let mut s = String::new();
-                    for v in results {
-                        s.push_str(v.as_str().unwrap());
-                    }
-                    Ok(Value::String(s.trim().to_string()))
-                } else {
-                    Ok(Value::Array(results.into_iter().collect()))
+                let mut s = String::new();
+                for v in results {
+                    s.push_str(&self.value_to_prompt_string(&v));
                 }
+                Ok(Value::String(s.trim().to_string()))
             }
 
             Expression::BinaryOp { left, op, right } => {
@@ -857,7 +856,7 @@ impl<'a> Evaluator<'a> {
     fn join_and_dedent(&self, parts: Vec<(&Expression, Value)>) -> String {
         let mut joined = String::new();
         for (expr, val) in parts {
-            let s = val.as_str().unwrap_or("");
+            let s = self.value_to_prompt_string(&val);
 
             // Smart Dedent Logic:
             // If we are about to append a block result (InlineIf, If, or Schema),
@@ -879,7 +878,7 @@ impl<'a> Evaluator<'a> {
                 // If it's a literal, clean it up with dedent
                 // but only if it looks like a multiline block or starts with newline
                 if s.contains('\n') {
-                    let dedented = self.dedent(s);
+                    let dedented = self.dedent(&s);
                     // If the previous part ended with newline, we should probably trim start of this one.
                     if joined.ends_with('\n') {
                         // If we are appending to a newline, we want to ensure we don't double up or leave weird gaps.
@@ -891,13 +890,21 @@ impl<'a> Evaluator<'a> {
                         joined.push_str(&dedented);
                     }
                 } else {
-                    joined.push_str(s);
+                    joined.push_str(&s);
                 }
             } else {
-                joined.push_str(s);
+                joined.push_str(&s);
             }
         }
         joined
+    }
+
+    fn value_to_prompt_string(&self, value: &Value) -> String {
+        match value {
+            Value::Null => String::new(),
+            Value::String(text) => text.clone(),
+            _ => value.to_string(),
+        }
     }
 
     fn dedent(&self, s: &str) -> String {
@@ -1004,7 +1011,9 @@ mod tests {
         .unwrap();
 
         let mut scope = HashMap::new();
-        let result = evaluator.evaluate_model_config_expr(&expr, &mut scope).unwrap();
+        let result = evaluator
+            .evaluate_model_config_expr(&expr, &mut scope)
+            .unwrap();
 
         assert_eq!(result, json!({ "somefield": { "another": "value" } }));
     }

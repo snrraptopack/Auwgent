@@ -32,7 +32,10 @@ impl OpenAIDriver {
         };
 
         for (key, value) in cfg_obj {
-            if matches!(key.as_str(), "model" | "messages" | "stream" | "stream_options") {
+            if matches!(
+                key.as_str(),
+                "model" | "messages" | "stream" | "stream_options"
+            ) {
                 continue;
             }
             body_obj.insert(key.clone(), value.clone());
@@ -47,7 +50,10 @@ impl ModelDriver for OpenAIDriver {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>, String> {
+    ) -> Result<
+        Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>,
+        String,
+    > {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/chat/completions") {
             base.to_string()
@@ -109,86 +115,124 @@ impl ModelDriver for OpenAIDriver {
 
         // ── SSE stream parsing ────────────────────────────────────────────
         let mut buffer = String::new();
-        let stream = response.bytes_stream().map(move |item| match item {
-            Ok(bytes) => {
-                let chunk = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&chunk);
+        let stream = response
+            .bytes_stream()
+            .map(move |item| match item {
+                Ok(bytes) => {
+                    let chunk = String::from_utf8_lossy(&bytes);
+                    buffer.push_str(&chunk);
 
-                let mut result_events = Vec::new();
-                while let Some(index) = buffer.find('\n') {
-                    let line = buffer.drain(..=index).collect::<String>();
-                    let trimmed = line.trim();
+                    let mut result_events = Vec::new();
+                    while let Some(index) = buffer.find('\n') {
+                        let line = buffer.drain(..=index).collect::<String>();
+                        let trimmed = line.trim();
 
-                    if trimmed == "data: [DONE]" {
-                        continue;
-                    }
+                        if trimmed == "data: [DONE]" {
+                            continue;
+                        }
 
-                    if let Some(data) = trimmed.strip_prefix("data: ")
-                        && let Ok(json_val) = serde_json::from_str::<Value>(data)
-                    {
-
-                        if let Some(choices) = json_val.get("choices").and_then(|v| v.as_array())
-                            && !choices.is_empty()
+                        if let Some(data) = trimmed.strip_prefix("data: ")
+                            && let Ok(json_val) = serde_json::from_str::<Value>(data)
                         {
-                            if let Some(content) = choices[0].get("delta").and_then(|d| d.get("content")).and_then(|c| c.as_str()) {
-                                result_events.push(crate::runtime::drivers::ModelEvent::ContentChunk(content.to_string()));
-                            }
-
-                            if let Some(finish_reason_str) = choices[0].get("finish_reason").and_then(|f| f.as_str()) {
-                                let finish_reason = match finish_reason_str {
-                                    "stop" => crate::runtime::drivers::FinishReason::Stop,
-                                    "length" => crate::runtime::drivers::FinishReason::Length,
-                                    "tool_calls" => crate::runtime::drivers::FinishReason::ToolCalls,
-                                    "content_filter" => crate::runtime::drivers::FinishReason::ContentFilter,
-                                    _ => crate::runtime::drivers::FinishReason::Other(finish_reason_str.to_string()),
-                                };
-                                result_events.push(crate::runtime::drivers::ModelEvent::FinishReason(finish_reason));
-                            }
+                            if let Some(choices) =
+                                json_val.get("choices").and_then(|v| v.as_array())
+                                && !choices.is_empty()
+                            {
+                                if let Some(content) = choices[0]
+                                    .get("delta")
+                                    .and_then(|d| d.get("content"))
+                                    .and_then(|c| c.as_str())
+                                {
+                                    result_events.push(
+                                        crate::runtime::drivers::ModelEvent::ContentChunk(
+                                            content.to_string(),
+                                        ),
+                                    );
                                 }
-                        // Extract usage if available
-                        if let Some(usage) = json_val.get("usage") {
-                            let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                            let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                            let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                            let prompt_tokens_details = usage
-                                .get("prompt_tokens_details")
-                                .or_else(|| usage.get("input_tokens_details"))
-                                .and_then(|v| v.as_object());
-                            let completion_tokens_details = usage
-                                .get("completion_tokens_details")
-                                .and_then(|v| v.as_object());
 
-                            let cached_tokens = prompt_tokens_details
-                                .and_then(|details| details.get("cached_tokens"))
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
-                            let reasoning_tokens = completion_tokens_details
-                                .and_then(|details| details.get("reasoning_tokens"))
-                                .or_else(|| {
-                                    prompt_tokens_details
-                                        .and_then(|details| details.get("reasoning_tokens"))
-                                })
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
+                                if let Some(finish_reason_str) =
+                                    choices[0].get("finish_reason").and_then(|f| f.as_str())
+                                {
+                                    let finish_reason = match finish_reason_str {
+                                        "stop" => crate::runtime::drivers::FinishReason::Stop,
+                                        "length" => crate::runtime::drivers::FinishReason::Length,
+                                        "tool_calls" => {
+                                            crate::runtime::drivers::FinishReason::ToolCalls
+                                        }
+                                        "content_filter" => {
+                                            crate::runtime::drivers::FinishReason::ContentFilter
+                                        }
+                                        _ => crate::runtime::drivers::FinishReason::Other(
+                                            finish_reason_str.to_string(),
+                                        ),
+                                    };
+                                    result_events.push(
+                                        crate::runtime::drivers::ModelEvent::FinishReason(
+                                            finish_reason,
+                                        ),
+                                    );
+                                }
+                            }
+                            // Extract usage if available
+                            if let Some(usage) = json_val.get("usage") {
+                                let prompt_tokens = usage
+                                    .get("prompt_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+                                let completion_tokens = usage
+                                    .get("completion_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+                                let total_tokens = usage
+                                    .get("total_tokens")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+                                let prompt_tokens_details = usage
+                                    .get("prompt_tokens_details")
+                                    .or_else(|| usage.get("input_tokens_details"))
+                                    .and_then(|v| v.as_object());
+                                let completion_tokens_details = usage
+                                    .get("completion_tokens_details")
+                                    .and_then(|v| v.as_object());
 
-                            result_events.push(crate::runtime::drivers::ModelEvent::Usage(crate::runtime::drivers::TokenUsage {
-                                prompt_tokens,
-                                completion_tokens,
-                                total_tokens,
-                                reasoning_tokens,
-                                cached_tokens,
-                            }));
+                                let cached_tokens = prompt_tokens_details
+                                    .and_then(|details| details.get("cached_tokens"))
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+                                let reasoning_tokens = completion_tokens_details
+                                    .and_then(|details| details.get("reasoning_tokens"))
+                                    .or_else(|| {
+                                        prompt_tokens_details
+                                            .and_then(|details| details.get("reasoning_tokens"))
+                                    })
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as u32;
+
+                                result_events.push(crate::runtime::drivers::ModelEvent::Usage(
+                                    crate::runtime::drivers::TokenUsage {
+                                        prompt_tokens,
+                                        completion_tokens,
+                                        total_tokens,
+                                        reasoning_tokens,
+                                        cached_tokens,
+                                    },
+                                ));
+                            }
                         }
                     }
+                    Ok(result_events)
                 }
-                Ok(result_events)
-            }
-            Err(e) => Err(format!("Stream error: {}", e)),
-        })
-        .flat_map(|res| match res {
-            Ok(events) => futures_util::stream::iter(events.into_iter().map(Ok)).left_stream(),
-            Err(e) => futures_util::stream::iter(vec![Err(e)]).right_stream(),
-        });
+                Err(e) => Err(format!("Stream error: {}", e)),
+            })
+            .flat_map(|res| match res {
+                Ok(events) => futures_util::stream::iter(events.into_iter().map(Ok)).left_stream(),
+                Err(e) => futures_util::stream::iter(vec![Err(e)]).right_stream(),
+            });
 
         Ok(Box::pin(stream))
     }
@@ -402,9 +446,18 @@ mod tests {
             }
         });
 
-        let prompt_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let completion_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-        let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        let prompt_tokens = usage
+            .get("prompt_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let completion_tokens = usage
+            .get("completion_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let total_tokens = usage
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
         let prompt_tokens_details = usage
             .get("prompt_tokens_details")
             .or_else(|| usage.get("input_tokens_details"))
@@ -419,10 +472,7 @@ mod tests {
             .unwrap_or(0) as u32;
         let reasoning_tokens = completion_tokens_details
             .and_then(|details| details.get("reasoning_tokens"))
-            .or_else(|| {
-                prompt_tokens_details
-                    .and_then(|details| details.get("reasoning_tokens"))
-            })
+            .or_else(|| prompt_tokens_details.and_then(|details| details.get("reasoning_tokens")))
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32;
 

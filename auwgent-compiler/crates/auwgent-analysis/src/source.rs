@@ -85,10 +85,11 @@ pub(crate) struct WorkspaceDocument {
 }
 
 pub fn load_model_with_imports(file: &Path) -> Result<Model, AnalysisError> {
-    let canonical = std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
-        path: file.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    let canonical =
+        std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
+            path: file.to_path_buf(),
+            message: error.to_string(),
+        })?;
 
     let mut visited = HashSet::new();
     load_model_recursive(&canonical, &mut visited, None)
@@ -98,10 +99,11 @@ pub fn load_model_from_source_with_imports(
     file: &Path,
     source: &str,
 ) -> Result<Model, AnalysisError> {
-    let canonical = std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
-        path: file.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    let canonical =
+        std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
+            path: file.to_path_buf(),
+            message: error.to_string(),
+        })?;
 
     let mut visited = HashSet::new();
     load_model_recursive(&canonical, &mut visited, Some(source))
@@ -111,17 +113,21 @@ pub fn best_effort_model_from_source_with_imports(
     file: &Path,
     source: &str,
 ) -> Result<(Model, Vec<Diagnostic>), AnalysisError> {
-    let canonical = std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
-        path: file.to_path_buf(),
-        message: error.to_string(),
-    })?;
+    let canonical =
+        std::fs::canonicalize(file).map_err(|error| AnalysisError::CanonicalizeRoot {
+            path: file.to_path_buf(),
+            message: error.to_string(),
+        })?;
 
     let parsed = parse_source(source);
     let mut diagnostics = parsed.lex_diagnostics.clone();
     diagnostics.extend(parsed.parse_diagnostics.clone());
 
     let mut merged_elements = parsed.model.elements.clone();
-    merged_elements.extend(load_import_elements_best_effort(&canonical, &parsed.model.imports));
+    merged_elements.extend(load_import_elements_best_effort(
+        &canonical,
+        &parsed.model.imports,
+    ));
 
     let merged_model = Model {
         imports: parsed.model.imports,
@@ -143,12 +149,14 @@ pub fn resolve_import_path_with_span(
     import_path: &str,
     span: Option<Span>,
 ) -> Result<PathBuf, AnalysisError> {
-    let current_dir = current_file.parent().ok_or_else(|| AnalysisError::ResolveImport {
-        current_file: current_file.to_path_buf(),
-        import_path: import_path.to_string(),
-        message: "missing parent directory".to_string(),
-        span,
-    })?;
+    let current_dir = current_file
+        .parent()
+        .ok_or_else(|| AnalysisError::ResolveImport {
+            current_file: current_file.to_path_buf(),
+            import_path: import_path.to_string(),
+            message: "missing parent directory".to_string(),
+            span,
+        })?;
 
     let with_extension = if import_path.ends_with(".agent") {
         import_path.to_string()
@@ -189,15 +197,24 @@ pub(crate) fn canonicalize_best_effort(file: &Path) -> PathBuf {
     std::fs::canonicalize(file).unwrap_or_else(|_| file.to_path_buf())
 }
 
-pub(crate) fn load_import_elements_best_effort(current_file: &Path, imports: &[FileImport]) -> Vec<Element> {
+pub(crate) fn load_import_elements_best_effort(
+    current_file: &Path,
+    imports: &[FileImport],
+) -> Vec<Element> {
     let mut visited = HashSet::new();
     let mut merged = Vec::new();
 
     for import in imports {
-        let Ok(path) = resolve_import_path_with_span(current_file, &import.path.value, Some(import.path.span)) else {
+        let Ok(path) =
+            resolve_import_path_with_span(current_file, &import.path.value, Some(import.path.span))
+        else {
             continue;
         };
-        merged.extend(load_import_recursive_best_effort(&path, &mut visited, &import.kind));
+        merged.extend(load_import_recursive_best_effort(
+            &path,
+            &mut visited,
+            &import.kind,
+        ));
     }
 
     merged
@@ -249,7 +266,9 @@ fn load_workspace_documents_recursive(
     });
 
     for import in &model.imports {
-        let Ok(import_path) = resolve_import_path_with_span(file, &import.path.value, Some(import.path.span)) else {
+        let Ok(import_path) =
+            resolve_import_path_with_span(file, &import.path.value, Some(import.path.span))
+        else {
             continue;
         };
         load_workspace_documents_recursive(&import_path, None, visited, documents);
@@ -301,7 +320,8 @@ fn load_model_recursive(
 
     let mut merged_elements = parsed.model.elements.clone();
     for import in &parsed.model.imports {
-        let import_path = resolve_import_path_with_span(file, &import.path.value, Some(import.path.span))?;
+        let import_path =
+            resolve_import_path_with_span(file, &import.path.value, Some(import.path.span))?;
         let imported_model = load_model_recursive(&import_path, visited, None)?;
         merged_elements.extend(select_imported_elements(&import.kind, &imported_model));
     }
@@ -322,7 +342,6 @@ fn load_import_recursive_best_effort(
     }
     visited.insert(file.to_path_buf());
 
-
     let Ok(source) = std::fs::read_to_string(file) else {
         return Vec::new();
     };
@@ -330,10 +349,16 @@ fn load_import_recursive_best_effort(
     let parsed = parse_source(&source);
     let mut merged = select_imported_elements(import_shape, &parsed.model);
     for import in &parsed.model.imports {
-        let Ok(import_path) = resolve_import_path_with_span(file, &import.path.value, Some(import.path.span)) else {
+        let Ok(import_path) =
+            resolve_import_path_with_span(file, &import.path.value, Some(import.path.span))
+        else {
             continue;
         };
-        merged.extend(load_import_recursive_best_effort(&import_path, visited, &import.kind));
+        merged.extend(load_import_recursive_best_effort(
+            &import_path,
+            visited,
+            &import.kind,
+        ));
     }
     merged
 }
@@ -360,7 +385,10 @@ fn is_named_import_match(specifiers: &[ImportSpecifier], element: &Element) -> b
         return false;
     };
 
-    exported && specifiers.iter().any(|specifier| specifier.name.value == name)
+    exported
+        && specifiers
+            .iter()
+            .any(|specifier| specifier.name.value == name)
 }
 
 fn is_exported_element(element: &Element) -> bool {
@@ -372,7 +400,9 @@ fn is_exported_element(element: &Element) -> bool {
 fn exported_element_name(element: &Element) -> Option<(String, bool)> {
     match element {
         Element::Helper(helper) => Some((helper.name.value.clone(), helper.exported)),
-        Element::ComponentDecl(component) => Some((component.name.value.clone(), component.exported)),
+        Element::ComponentDecl(component) => {
+            Some((component.name.value.clone(), component.exported))
+        }
         Element::TypeDecl(ty) => Some((ty.name.value.clone(), ty.exported)),
         Element::NamedPrompt(prompt) => Some((prompt.name.value.clone(), prompt.exported)),
         Element::ModelDef(model) => Some((model.name.value.clone(), model.exported)),

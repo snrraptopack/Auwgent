@@ -1,6 +1,6 @@
+use ir_runtime::ComponentDefinition;
 /// Integration tests for block protocol
 use ir_runtime::runtime::streaming::parser::block_orchestrator::BlockOrchestrator;
-use ir_runtime::ComponentDefinition;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -667,10 +667,7 @@ fn test_partial_tool_call_emits_structured_payload() {
     assert_eq!(partials[0].1["mode"], "structured");
     assert_eq!(partials[0].1["type"], "create_user");
     assert_eq!(partials[0].1["args"]["name"], "Ama");
-    assert_eq!(
-        partials[0].1["args"]["email"]["$state"],
-        "pending"
-    );
+    assert_eq!(partials[0].1["args"]["email"]["$state"], "pending");
 }
 
 #[test]
@@ -722,8 +719,5 @@ fn test_partial_response_schema_emits_structured_payload() {
     assert_eq!(partials[0].1["partial"], true);
     assert_eq!(partials[0].1["mode"], "structured");
     assert_eq!(partials[0].1["response"]["status"], "draft");
-    assert_eq!(
-        partials[0].1["response"]["summary"]["$state"],
-        "pending"
-    );
+    assert_eq!(partials[0].1["response"]["summary"]["$state"], "pending");
 }

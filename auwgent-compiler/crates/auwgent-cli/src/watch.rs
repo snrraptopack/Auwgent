@@ -39,10 +39,9 @@ fn collect_import_deps_recursive(
     let (model, _) = auwgent_parser::parse(&tokens);
 
     for import in &model.imports {
-        if let Ok(import_path) = auwgent_analysis::resolve_import_path(
-            &canonical,
-            &import.path.value,
-        ) {
+        if let Ok(import_path) =
+            auwgent_analysis::resolve_import_path(&canonical, &import.path.value)
+        {
             collect_import_deps_recursive(&import_path, deps, visited);
         }
     }
@@ -64,10 +63,7 @@ fn build_reverse_deps(roots: &[PathBuf]) -> HashMap<PathBuf, HashSet<PathBuf>> {
             .insert(root.clone());
 
         for dep in collect_import_deps(&canonical_root) {
-            reverse
-                .entry(dep)
-                .or_default()
-                .insert(root.clone());
+            reverse.entry(dep).or_default().insert(root.clone());
         }
     }
     reverse
@@ -192,13 +188,10 @@ pub fn watch_and_generate(
             let mut to_recompile: HashSet<PathBuf> = HashSet::new();
 
             for changed_path in &changed_paths {
-                let canonical = std::fs::canonicalize(changed_path)
-                    .unwrap_or_else(|_| changed_path.clone());
+                let canonical =
+                    std::fs::canonicalize(changed_path).unwrap_or_else(|_| changed_path.clone());
 
-                eprintln!(
-                    "\x1b[33m↻\x1b[0m  {} changed",
-                    changed_path.display()
-                );
+                eprintln!("\x1b[33m↻\x1b[0m  {} changed", changed_path.display());
 
                 if let Some(dependents) = reverse_deps.get(&canonical) {
                     for root in dependents {

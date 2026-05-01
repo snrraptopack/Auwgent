@@ -146,6 +146,13 @@ pub enum AuwgentIntentName {
     WorkflowResult,
     HelperCall,
     HelperResult,
+    Loud,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LoudIntent {
+    pub actions: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -327,6 +334,7 @@ pub enum AuwgentIntent {
     WorkflowResult(WorkflowResult),
     HelperCall(HelperCall),
     HelperResult(HelperResult),
+    Loud(LoudIntent),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -342,6 +350,7 @@ pub enum AuwgentIntentPartial {
     WorkflowResult(PartialStructuredIntentValue<WorkflowResult>),
     HelperCall(PartialStructuredIntentValue<HelperCall>),
     HelperResult(PartialStructuredIntentValue<HelperResult>),
+    Loud(PartialStructuredIntentValue<LoudIntent>),
 }
 
 impl AuwgentIntentName {
@@ -358,6 +367,7 @@ impl AuwgentIntentName {
         "workflow_result" => Some(AuwgentIntentName::WorkflowResult),
         "helper_call" => Some(AuwgentIntentName::HelperCall),
         "helper_result" => Some(AuwgentIntentName::HelperResult),
+        "Loud" => Some(AuwgentIntentName::Loud),
             _ => None,
         }
     }
@@ -377,6 +387,7 @@ impl AuwgentIntent {
         AuwgentIntentName::WorkflowResult => serde_json::from_value(value).ok().map(AuwgentIntent::WorkflowResult),
         AuwgentIntentName::HelperCall => serde_json::from_value(value).ok().map(AuwgentIntent::HelperCall),
         AuwgentIntentName::HelperResult => serde_json::from_value(value).ok().map(AuwgentIntent::HelperResult),
+        AuwgentIntentName::Loud => serde_json::from_value(value).ok().map(AuwgentIntent::Loud),
         }
     }
 }
@@ -395,6 +406,7 @@ impl AuwgentIntentPartial {
         AuwgentIntentName::WorkflowResult => serde_json::from_value(value).ok().map(AuwgentIntentPartial::WorkflowResult),
         AuwgentIntentName::HelperCall => serde_json::from_value(value).ok().map(AuwgentIntentPartial::HelperCall),
         AuwgentIntentName::HelperResult => serde_json::from_value(value).ok().map(AuwgentIntentPartial::HelperResult),
+        AuwgentIntentName::Loud => serde_json::from_value(value).ok().map(AuwgentIntentPartial::Loud),
         }
     }
 }
@@ -426,6 +438,7 @@ impl Intents {
             AuwgentIntent::WorkflowResult(..) => "workflow_result",
             AuwgentIntent::HelperCall(..) => "helper_call",
             AuwgentIntent::HelperResult(..) => "helper_result",
+            AuwgentIntent::Loud(..) => "Loud",
         }
     }
 
@@ -468,6 +481,7 @@ impl Intents {
             AuwgentIntent::WorkflowResult(intent) => serde_json::to_value(intent.clone()),
             AuwgentIntent::HelperCall(intent) => serde_json::to_value(intent.clone()),
             AuwgentIntent::HelperResult(intent) => serde_json::to_value(intent.clone()),
+            AuwgentIntent::Loud(intent) => serde_json::to_value(intent.clone()),
             _ => panic!("intent does not contain a typed value"),
         }.expect("intent value should serialize");
         serde_json::from_value(value).expect("intent value should deserialize")
@@ -525,6 +539,7 @@ pub trait AuwgentIntentHandler: Send + Sync + 'static {
     fn workflow_result(&self, _value: &WorkflowResults, _agent: &str) {}
     fn helper_call(&self, _value: &HelperCalls, _agent: &str) {}
     fn helper_result(&self, _value: &HelperResults, _agent: &str) {}
+    fn loud(&self, _value: &LoudIntent, _agent: &str) {}
     fn error(&self, _value: &ErrorIntent, _agent: &str) {}
     fn any(&self, _intent: &Intents, _agent: &str) {}
 
@@ -542,6 +557,7 @@ pub trait AuwgentIntentHandler: Send + Sync + 'static {
             AuwgentIntent::WorkflowResult(value) => self.workflow_result(&WorkflowResults { kind: value.clone() }, agent_name),
             AuwgentIntent::HelperCall(value) => self.helper_call(&HelperCalls { kind: value.clone() }, agent_name),
             AuwgentIntent::HelperResult(value) => self.helper_result(&HelperResults { kind: value.clone() }, agent_name),
+            AuwgentIntent::Loud(value) => self.loud(value, agent_name),
         }
         None
     }

@@ -41,13 +41,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
             let old_val = row[j + 1];
             let cost = if char_a == char_b { 0 } else { 1 };
 
-            row[j + 1] = std::cmp::min(
-                std::cmp::min(
-                    row[j] + 1,
-                    row[j + 1] + 1,
-                ),
-                prev + cost,
-            );
+            row[j + 1] = std::cmp::min(std::cmp::min(row[j] + 1, row[j + 1] + 1), prev + cost);
 
             prev = old_val;
         }

@@ -1,20 +1,18 @@
 use auwgent_testing::fixture::*;
+use async_trait::async_trait;
 
 use serde_json::json;
 struct Tools;
 struct Logger;
 
+#[async_trait]
 impl  AuwgentMiddleware for Logger{
     fn name(&self) ->  &'static str {
         "logger"
     }
 
-    async fn on_run_start(&self,session:Session,_ctx:&Context) ->  Session{
+    async fn on_run_start(&self,session:Session,ctx:Context)->Session{
         session
-    }
-
-    async fn on_llm_end<'life0,'life1,'life2,'async_trait>(&'life0 self,_response: &'life1 serde_json::Value,_ctx: &'life2 Context) ->  ::core::pin::Pin<Box<dyn ::core::future::Future<Output = ()> + ::core::marker::Send+'async_trait> >where 'life0:'async_trait,'life1:'async_trait,'life2:'async_trait,Self:'async_trait {
-        
     }
 }
 
@@ -34,7 +32,7 @@ impl AuwgentTools for Tools {
 
 struct MyHandler;
 
-impl SimpleToolIntentHandler for MyHandler {
+impl AuwgentIntentHandler for MyHandler {
     fn response_text(&self, value: &ResponseText, _agent: &str) {
         println!("LLM text: {}", value.text);
     }
@@ -51,6 +49,13 @@ impl SimpleToolIntentHandler for MyHandler {
             ToolResult::GetLocation { result, .. } => println!("tool result: location = {}", result),
             ToolResult::GetMarks { args, result, .. } => println!("marks for {} = {}", args.id, result),
         }
+    }
+
+    fn response_schema(&self,value: &ResponseSchema,_agent: &str) {
+       match value{
+        ResponseSchema::FactOutput { response } =>  print(""),
+        _ => { println!("")}
+       }
     }
 
     fn any(&self, intent: &Intents, agent: &str) {
@@ -78,6 +83,6 @@ async fn live_run_smoke() {
     let agent = auwgent(config).unwrap();
     agent.on_intent_handler(MyHandler);
 
-    let _session = agent.run(Some(json!("hello"))).await.unwrap();
+    let _session = agent.run(Some("hello")).await.unwrap();
 
 }

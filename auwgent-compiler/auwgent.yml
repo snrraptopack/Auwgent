@@ -1,4 +1,4 @@
 # auwgent.yml (Root)
-source: "../testing/test_case"  #default ../manual-testing change later
+source: "../targets/rust/rust-verfication"  #change this to the directory you are observing
 targets:
   - rust

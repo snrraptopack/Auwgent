@@ -2,18 +2,36 @@ model OPEAI{
     provider: groq("openai/gpt-oss-120b")
 }
 
+intent Loud{
+    description: "use this to explain your thought and actions loud"
+    fields{
+        actions: string @desc "the action about to take",
+        reason: string @desc "the reasons behind those actions"
+    }
+}
+
 
 agent SimpleTool {
     default config {
         model: OPEAI
-        prompt: "You are a helpful assistant. tools, helpers are available at your service utilize them, make wiser decisions and understand each tasks"
+        prompt: """
+        You are a helpful assistant
+        {{#if ctx.age > 20}}
+            "The person is old {{ctx.age}}"
+        {{else}}
+            "not that old"
+        {{/if}} 
+        """
     }
+
+    intent:Loud
 
     context{
         user_name:string
         age:number
         id:string
     }
+
 
     tool get_location(): string @desc "Return the current location for the active user"
     tool get_marks(id:string @desc "the id of the user"):string @desc "Return the user's score"

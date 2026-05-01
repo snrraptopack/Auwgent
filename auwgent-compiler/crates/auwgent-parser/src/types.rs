@@ -15,8 +15,7 @@ pub(crate) fn type_expr_parser(
             tok(TokenKind::NumberType).map_with_span(|_, span| TypeExpr::Number(s(span)));
         let bool_t =
             tok(TokenKind::BooleanType).map_with_span(|_, span| TypeExpr::Boolean(s(span)));
-        let text_t =
-            tok(TokenKind::TextType).map_with_span(|_, span| TypeExpr::Text(s(span)));
+        let text_t = tok(TokenKind::TextType).map_with_span(|_, span| TypeExpr::Text(s(span)));
 
         let type_ref = ident().map(TypeExpr::TypeRef);
 
@@ -49,9 +48,7 @@ pub(crate) fn type_expr_parser(
         let union_option = string_lit();
         let union_type = union_option
             .clone()
-            .then(tok(TokenKind::Pipe)
-                .ignore_then(union_option)
-                .repeated())
+            .then(tok(TokenKind::Pipe).ignore_then(union_option).repeated())
             .map_with_span(|(first, rest), span| {
                 let mut options = vec![first];
                 options.extend(rest);

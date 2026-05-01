@@ -85,12 +85,14 @@ fn chumsky_to_diagnostic(err: Simple<TokenKind>) -> Diagnostic {
 /// Provide contextual help based on what was expected/found.
 fn get_help(expected: &[String], found: &str) -> Option<String> {
     let joined = expected.join(" ");
-    
+
     // Special case: @example parsing errors
-    if joined.contains("'='") && (found.contains("string") || found.contains("number") || found.contains("boolean")) {
+    if joined.contains("'='")
+        && (found.contains("string") || found.contains("number") || found.contains("boolean"))
+    {
         return Some("@example requires named arguments using '=' syntax, e.g., @example(param = \"value\", count = 42). Don't use positional arguments like @example(\"value\").".into());
     }
-    
+
     if joined.contains("':'") {
         Some("Properties need a colon between name and type, e.g. `name: string`. Tools need a return type: `tool name(params): ReturnType`".into())
     } else if joined.contains("','") {

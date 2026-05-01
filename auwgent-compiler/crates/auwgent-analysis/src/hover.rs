@@ -1,12 +1,12 @@
 use crate::completion::{
-    ValueType, build_scope, find_active_workflow, helper_output_type, prompt_signature,
-    type_map, value_type_from_type_expr,
+    build_scope, find_active_workflow, helper_output_type, prompt_signature, type_map,
+    value_type_from_type_expr, ValueType,
 };
 use crate::source::{
-    WorkspaceDocument, canonicalize_best_effort, load_import_elements_best_effort,
-    load_workspace_documents_best_effort, parse_source,
+    canonicalize_best_effort, load_import_elements_best_effort,
+    load_workspace_documents_best_effort, parse_source, WorkspaceDocument,
 };
-use crate::symbols::{SymbolTargetKind, symbol_at_offset};
+use crate::symbols::{symbol_at_offset, SymbolTargetKind};
 use auwgent_ast::{Element, Model, TypeDeclaration};
 use auwgent_errors::Span;
 use std::path::Path;
@@ -311,6 +311,4 @@ agent Demo {
 
         let _ = std::fs::remove_dir_all(&base);
     }
-    
-
 }

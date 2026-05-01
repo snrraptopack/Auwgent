@@ -4,7 +4,10 @@
 use super::*;
 
 impl AuwgentEngine {
-    pub(super) async fn execute_workflow(&self, call: &Value) -> AuwgentResult<(String, Value, Value)> {
+    pub(super) async fn execute_workflow(
+        &self,
+        call: &Value,
+    ) -> AuwgentResult<(String, Value, Value)> {
         let wf_name = call["type"].as_str().unwrap_or("").to_string();
         let args = call["args"].clone();
 
@@ -52,7 +55,8 @@ impl AuwgentEngine {
                                 Value::Array(fn_args)
                             }
                         } else {
-                            let mut args_obj: serde_json::Map<String, Value> = serde_json::Map::new();
+                            let mut args_obj: serde_json::Map<String, Value> =
+                                serde_json::Map::new();
                             for (i, param_name) in param_names.iter().enumerate() {
                                 if let Some(arg_value) = fn_args.get(i) {
                                     args_obj.insert(param_name.clone(), arg_value.clone());
@@ -143,4 +147,3 @@ impl AuwgentEngine {
         Ok((wf_name, args, last_result))
     }
 }
-

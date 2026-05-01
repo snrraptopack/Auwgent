@@ -99,7 +99,7 @@ pub fn build_sub_agent_context(
         context: helper.context.clone(),
         tools: final_tools,
         workflows: helper.workflows.clone(),
-        helpers: Vec::new(),            // Helpers cannot call other helpers
+        helpers: Vec::new(), // Helpers cannot call other helpers
         components: parent_ir.components.clone(),
         types: parent_ir.types.clone(), // Share global type definitions
         helper_tool_grants: None,
