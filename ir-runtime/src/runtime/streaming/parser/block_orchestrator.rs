@@ -197,7 +197,11 @@ impl BlockOrchestrator {
                 && !is_incomplete_response_text_open(trimmed)
                 && !is_incomplete_protocol_header(trimmed)
             {
-                let intent = serde_json::json!({ "text": trimmed });
+                let intent = with_raw(
+                    serde_json::json!({ "text": trimmed }),
+                    self.buffer.trim(),
+                    is_final,
+                );
                 self.emit_intent("response_text", intent, is_final, true);
             }
             return;
@@ -207,7 +211,7 @@ impl BlockOrchestrator {
         // Only response_schema is truly terminal (last-wins)
         // response_text can appear multiple times and all should be emitted
         let terminal_types: HashSet<&str> = ["response_schema"].iter().cloned().collect();
-        let mut terminal_intents: std::collections::HashMap<String, Vec<Value>> =
+        let mut terminal_intents: std::collections::HashMap<String, Vec<(Value, String)>> =
             std::collections::HashMap::new();
         let component_instances = self.collect_component_instances(&blocks, is_final);
 
@@ -228,9 +232,14 @@ impl BlockOrchestrator {
                             terminal_intents
                                 .entry("response_text".to_string())
                                 .or_insert_with(Vec::new)
-                                .push(intent);
+                                .push((intent, block.raw.clone()));
                         } else {
-                            self.emit_intent("response_text", intent, is_final, false);
+                            self.emit_intent(
+                                "response_text",
+                                with_raw(intent, &block.raw, is_final),
+                                is_final,
+                                false,
+                            );
                         }
                     }
                 }
@@ -260,7 +269,12 @@ impl BlockOrchestrator {
                             });
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
-                        self.emit_intent("tool_call", intent, is_final, false);
+                        self.emit_intent(
+                            "tool_call",
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            false,
+                        );
                     }
                 }
 
@@ -289,7 +303,12 @@ impl BlockOrchestrator {
                             });
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
-                        self.emit_intent("workflow_call", intent, is_final, false);
+                        self.emit_intent(
+                            "workflow_call",
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            false,
+                        );
                     }
                 }
 
@@ -318,7 +337,12 @@ impl BlockOrchestrator {
                             });
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
-                        self.emit_intent("helper_call", intent, is_final, false);
+                        self.emit_intent(
+                            "helper_call",
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            false,
+                        );
                     }
                 }
 
@@ -351,7 +375,12 @@ impl BlockOrchestrator {
                             );
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
-                        self.emit_intent("component", intent, is_final, false);
+                        self.emit_intent(
+                            "component",
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            false,
+                        );
                     }
                 }
 
@@ -385,9 +414,14 @@ impl BlockOrchestrator {
                         terminal_intents
                             .entry("response_schema".to_string())
                             .or_insert_with(Vec::new)
-                            .push(intent);
+                            .push((intent, block.raw.clone()));
                     } else {
-                        self.emit_intent("response_schema", intent, is_final, false);
+                        self.emit_intent(
+                            "response_schema",
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            false,
+                        );
                     }
                 }
 
@@ -401,7 +435,12 @@ impl BlockOrchestrator {
                     } else {
                         build_partial_structured_payload(intent, &block.content, block_index)
                     };
-                    self.emit_intent("render_component", intent, is_final, true);
+                    self.emit_intent(
+                        "render_component",
+                        with_raw(intent, &block.raw, is_final),
+                        is_final,
+                        true,
+                    );
                 }
 
                 BlockType::Custom(intent_name) => {
@@ -414,11 +453,21 @@ impl BlockOrchestrator {
                             let snapshot = self.merge_custom_args(intent_name, &args_json);
                             build_partial_structured_payload(snapshot, &block.content, block_index)
                         };
-                        self.emit_intent(&intent_name, intent, is_final, true);
+                        self.emit_intent(
+                            &intent_name,
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            true,
+                        );
                     } else {
                         if is_final {
                             let intent = serde_json::json!({ "content": block.content });
-                            self.emit_intent(&intent_name, intent, is_final, true);
+                            self.emit_intent(
+                                &intent_name,
+                                with_raw(intent, &block.raw, is_final),
+                                is_final,
+                                true,
+                            );
                             continue;
                         }
                         let intent = build_partial_structured_payload(
@@ -426,7 +475,12 @@ impl BlockOrchestrator {
                             &block.content,
                             block_index,
                         );
-                        self.emit_intent(&intent_name, intent, is_final, true);
+                        self.emit_intent(
+                            &intent_name,
+                            with_raw(intent, &block.raw, is_final),
+                            is_final,
+                            true,
+                        );
                     }
                 }
 
@@ -438,8 +492,13 @@ impl BlockOrchestrator {
 
         // Emit terminal intents using last-wins strategy
         for (intent_name, instances) in terminal_intents {
-            if let Some(last_intent) = instances.last() {
-                self.emit_intent(&intent_name, last_intent.clone(), is_final, true);
+            if let Some((last_intent, raw)) = instances.last() {
+                self.emit_intent(
+                    &intent_name,
+                    with_raw(last_intent.clone(), raw, is_final),
+                    is_final,
+                    true,
+                );
             }
         }
     }
@@ -846,6 +905,16 @@ fn build_partial_structured_payload(snapshot: Value, raw: &str, segment: usize) 
     }
 
     payload
+}
+
+fn with_raw(mut value: Value, raw: &str, is_final: bool) -> Value {
+    if is_final
+        && !raw.trim().is_empty()
+        && let Value::Object(ref mut map) = value
+    {
+        map.insert("_raw".to_string(), Value::String(raw.trim().to_string()));
+    }
+    value
 }
 
 fn build_component_intent(component_name: &str, instance_id: &str, fields: Value) -> Value {

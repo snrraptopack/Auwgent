@@ -595,25 +595,25 @@ pub trait AuwgentMiddleware: Send + Sync + 'static {
         None
     }
 
-    async fn on_run_start(&self, session: Session, _ctx: &Context) -> Session {
+    async fn on_run_start(&self, session: Session, _ctx: &mut Context) -> Session {
         session
     }
 
-    async fn on_llm_start(&self, prompt: String, _ctx: &Context) -> String {
+    async fn on_llm_start(&self, prompt: String, _ctx: &mut Context) -> String {
         prompt
     }
 
-    async fn on_intent(&self, _intent: &Intents, _ctx: &Context) -> Option<IntentControl> {
+    async fn on_intent(&self, _intent: &Intents, _ctx: &mut Context) -> Option<IntentControl> {
         None
     }
 
-    async fn on_intent_partial(&self, _intent: &AuwgentIntentPartial, _ctx: &Context) {}
+    async fn on_intent_partial(&self, _intent: &AuwgentIntentPartial, _ctx: &mut Context) {}
 
-    async fn on_llm_end(&self, _response: &JsonValue, _ctx: &Context) {}
+    async fn on_llm_end(&self, _response: &JsonValue, _ctx: &mut Context) {}
 
-    async fn on_run_complete(&self, _session: &Session, _ctx: &Context) {}
+    async fn on_run_complete(&self, _session: &Session, _ctx: &mut Context) {}
 
-    async fn on_error(&self, _error: &JsonValue, _session: Option<&Session>, _ctx: &Context) -> bool {
+    async fn on_error(&self, _error: &JsonValue, _session: Option<&Session>, _ctx: &mut Context) -> bool {
         false
     }
 }

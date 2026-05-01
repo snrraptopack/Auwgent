@@ -29,6 +29,7 @@ pub enum BlockType {
 pub struct Block {
     pub block_type: BlockType,
     pub content: String,
+    pub raw: String,
     pub target_name: Option<String>,
     pub instance_id: Option<String>,
 }
@@ -380,6 +381,10 @@ impl BlockScanner {
         content.trim().to_string()
     }
 
+    fn raw_span(&self, start: usize, end: usize) -> String {
+        self.chars[start..end].iter().collect::<String>().trim().to_string()
+    }
+
     pub fn scan(&mut self) -> Vec<Block> {
         let mut blocks = Vec::new();
         let mut implicit_chat = String::new();
@@ -387,21 +392,26 @@ impl BlockScanner {
         while self.pos < self.chars.len() {
             if self.check_literal(Self::RESPONSE_TEXT_OPEN_BRACKET) {
                 if !implicit_chat.trim().is_empty() {
+                    let raw = implicit_chat.trim().to_string();
                     blocks.push(Block {
                         block_type: BlockType::Chat,
-                        content: implicit_chat.trim().to_string(),
+                        content: raw.clone(),
+                        raw,
                         target_name: None,
                         instance_id: None,
                     });
                     implicit_chat.clear();
                 }
 
+                let block_start = self.pos;
                 self.consume_literal(Self::RESPONSE_TEXT_OPEN_BRACKET);
                 let content = self.read_until_literal_or_eof(Self::RESPONSE_TEXT_CLOSE_BRACKET);
                 self.consume_literal(Self::RESPONSE_TEXT_CLOSE_BRACKET);
+                let raw = self.raw_span(block_start, self.pos);
                 blocks.push(Block {
                     block_type: BlockType::Chat,
                     content,
+                    raw,
                     target_name: None,
                     instance_id: None,
                 });
@@ -410,9 +420,11 @@ impl BlockScanner {
                 || self.check_incomplete_known_header_prefix()
             {
                 if !implicit_chat.trim().is_empty() {
+                    let raw = implicit_chat.trim().to_string();
                     blocks.push(Block {
                         block_type: BlockType::Chat,
-                        content: implicit_chat.trim().to_string(),
+                        content: raw.clone(),
+                        raw,
                         target_name: None,
                         instance_id: None,
                     });
@@ -424,21 +436,26 @@ impl BlockScanner {
                     self.parse_header(&header)
                 {
                     if !implicit_chat.trim().is_empty() {
+                        let raw = implicit_chat.trim().to_string();
                         blocks.push(Block {
                             block_type: BlockType::Chat,
-                            content: implicit_chat.trim().to_string(),
+                            content: raw.clone(),
+                            raw,
                             target_name: None,
                             instance_id: None,
                         });
                         implicit_chat.clear();
                     }
 
+                    let block_start = self.pos;
                     self.consume_header();
                     let content = self.read_until_literal_or_eof(close_literal);
                     self.consume_literal(close_literal);
+                    let raw = self.raw_span(block_start, self.pos);
                     blocks.push(Block {
                         block_type,
                         content,
+                        raw,
                         target_name,
                         instance_id,
                     });
@@ -460,9 +477,11 @@ impl BlockScanner {
 
         // Flush any remaining implicit chat
         if !implicit_chat.trim().is_empty() {
+            let raw = implicit_chat.trim().to_string();
             blocks.push(Block {
                 block_type: BlockType::Chat,
-                content: implicit_chat.trim().to_string(),
+                content: raw.clone(),
+                raw,
                 target_name: None,
                 instance_id: None,
             });

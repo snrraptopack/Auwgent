@@ -196,6 +196,59 @@ impl EngineBridge {
         self.engine.export_session().map_err(|e| format!("{}", e))
     }
 
+    pub async fn begin_run_async(
+        &self,
+        input: Option<Value>,
+        initial_stack: Option<Vec<String>>,
+    ) -> Result<String, String> {
+        let session = self
+            .engine
+            .begin_manual_run(input, initial_stack)
+            .await
+            .map_err(|e| format!("{}", e))?;
+        serde_json::to_string(&session).map_err(|e| format!("{}", e))
+    }
+
+    pub async fn apply_llm_start_async(&self, prompt: String) -> Result<String, String> {
+        let prompt = self
+            .engine
+            .apply_manual_llm_start(prompt)
+            .await
+            .map_err(|e| format!("{}", e))?;
+        serde_json::to_string(&serde_json::json!({ "prompt": prompt }))
+            .map_err(|e| format!("{}", e))
+    }
+
+    pub async fn apply_llm_end_async(&self, response: Value) -> Result<String, String> {
+        self.engine
+            .apply_manual_llm_end(response)
+            .await
+            .map_err(|e| format!("{}", e))?;
+        Ok(serde_json::json!({ "ok": true }).to_string())
+    }
+
+    pub async fn complete_run_async(&self) -> Result<String, String> {
+        let session = self
+            .engine
+            .complete_manual_run()
+            .await
+            .map_err(|e| format!("{}", e))?;
+        serde_json::to_string(&session).map_err(|e| format!("{}", e))
+    }
+
+    pub async fn apply_error_async(
+        &self,
+        error: Value,
+        include_session: bool,
+    ) -> Result<String, String> {
+        let swallowed = self
+            .engine
+            .apply_manual_error(error, include_session)
+            .await
+            .map_err(|e| format!("{}", e))?;
+        Ok(serde_json::json!({ "swallowed": swallowed }).to_string())
+    }
+
     pub async fn process_intents_async(&self) -> Result<String, String> {
         let (terminal, actions, hard_stop) = self
             .engine

@@ -56,6 +56,169 @@ impl AuwgentEngine {
         value
     }
 
+    pub async fn begin_manual_run(
+        &self,
+        input: Option<Value>,
+        initial_stack: Option<Vec<String>>,
+    ) -> AuwgentResult<Value> {
+        {
+            let mut session = self.session.lock().unwrap();
+            if session.stack.is_empty() {
+                session.stack = vec![self.ir.name.clone()];
+            }
+            if let Some(stack) = initial_stack {
+                session.stack = stack;
+            }
+        }
+        self.sync_fast_forward_from_session();
+
+        let system_prompt = self.generate_prompt(None)?;
+        self.session
+            .lock()
+            .unwrap()
+            .set_system_prompt(&system_prompt);
+
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        let payload = RunStartPayload {
+            session: serde_json::from_str::<Value>(&self.export_session()?)
+                .map_err(AuwgentError::Serialization)?,
+            context: self.build_event_context(&self.ir.name, None, Some(system_prompt.clone())),
+        };
+
+        if let Some(response) = middleware::apply_run_start_middleware(handler, payload).await
+            && let Some(updated_session) = response.get("session")
+        {
+            self.import_session(
+                &serde_json::to_string(updated_session).map_err(AuwgentError::Serialization)?,
+            )?;
+            self.sync_fast_forward_from_session();
+        }
+
+        if self.middleware_event_handler.lock().unwrap().is_some() {
+            let system_prompt = self.generate_prompt(None)?;
+            self.session
+                .lock()
+                .unwrap()
+                .set_system_prompt(&system_prompt);
+        }
+
+        if let Some(user_input) = input {
+            let user_text = match &user_input {
+                Value::String(text) => text.clone(),
+                value => serde_json::to_string(value).map_err(AuwgentError::Serialization)?,
+            };
+            *self.user_input.lock().unwrap() = Some(user_input);
+            self.session.lock().unwrap().start_turn(user_text);
+        }
+
+        self.pending_tool_results.lock().unwrap().clear();
+        *self.current_raw_response.lock().unwrap() = String::new();
+        *self.last_turn_response_value.lock().unwrap() = Value::Null;
+        *self.terminal_response_emitted.lock().unwrap() = false;
+        *self.final_response_emitted.lock().unwrap() = false;
+        *self.last_run_metadata.lock().unwrap() = RunMetadata::default();
+        self.emit_structured_stream_start();
+
+        serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)
+    }
+
+    pub async fn apply_manual_llm_start(&self, prompt: String) -> AuwgentResult<String> {
+        let system_prompt = self.session.lock().unwrap().system_prompt.clone();
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        let payload = LlmStartPayload {
+            prompt: prompt.clone(),
+            context: self.build_event_context(&self.ir.name, None, system_prompt),
+        };
+
+        let mut next_prompt = prompt;
+        if let Some(middleware_result) =
+            middleware::apply_llm_start_middleware(handler, payload).await
+        {
+            if let Some(modified) = middleware_result.get("prompt").and_then(Value::as_str) {
+                next_prompt = modified.to_string();
+                self.session.lock().unwrap().set_input(next_prompt.clone());
+            }
+
+            if let Some(new_stack) = middleware_result.get("stack").and_then(Value::as_array) {
+                let stack_vec: Vec<String> = new_stack
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                if !stack_vec.is_empty() {
+                    self.session.lock().unwrap().stack = stack_vec;
+                    self.sync_fast_forward_from_session();
+                }
+            }
+        }
+
+        Ok(next_prompt)
+    }
+
+    pub async fn apply_manual_llm_end(&self, response: Value) -> AuwgentResult<()> {
+        if let Some(text) = response.as_str() {
+            self.session.lock().unwrap().set_model_response(text);
+        } else {
+            self.session.lock().unwrap().set_model_response(
+                serde_json::to_string(&response).map_err(AuwgentError::Serialization)?,
+            );
+        }
+
+        let turn_metadata = TurnMetadata {
+            turn_index: self.session.lock().unwrap().turns.len().saturating_sub(1),
+            usage: TokenUsage::default(),
+            finish_reason: None,
+            model: "manual".to_string(),
+        };
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        middleware::notify_llm_end_middleware(
+            handler,
+            &response,
+            self.build_event_context(&self.ir.name, None, None),
+            &turn_metadata,
+        )
+        .await;
+        Ok(())
+    }
+
+    pub async fn complete_manual_run(&self) -> AuwgentResult<Value> {
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        let payload = RunCompletePayload {
+            session: serde_json::from_str::<Value>(&self.export_session()?)
+                .map_err(AuwgentError::Serialization)?,
+            context: self.build_event_context(&self.ir.name, None, None),
+        };
+        let _ = middleware::apply_run_complete_middleware(handler, payload).await;
+        self.emit_structured_stream_finish();
+        serde_json::from_str::<Value>(&self.export_session()?).map_err(AuwgentError::Serialization)
+    }
+
+    pub async fn apply_manual_error(
+        &self,
+        error: Value,
+        include_session: bool,
+    ) -> AuwgentResult<bool> {
+        let handler = self.middleware_event_handler.lock().unwrap().clone();
+        let session = if include_session {
+            Some(
+                serde_json::from_str::<Value>(&self.export_session()?)
+                    .map_err(AuwgentError::Serialization)?,
+            )
+        } else {
+            None
+        };
+        let payload = ErrorPayload {
+            session,
+            context: self.build_event_context(&self.ir.name, None, None),
+            error,
+        };
+        let response = middleware::apply_error_middleware(handler, payload).await;
+        Ok(response
+            .as_ref()
+            .and_then(|value| value.get("swallow"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
     pub async fn run(
         &self,
         input: Option<Value>,

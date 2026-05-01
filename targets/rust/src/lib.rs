@@ -247,6 +247,47 @@ impl AuwgentNative {
         serde_json::from_str(&json).map_err(|e| e.to_string())
     }
 
+    pub async fn begin_run(
+        &self,
+        input: Option<Value>,
+        initial_stack: Option<Vec<String>>,
+    ) -> AuwgentResult<SessionState> {
+        let json = self.bridge.begin_run_async(input, initial_stack).await?;
+        serde_json::from_str(&json).map_err(|e| e.to_string())
+    }
+
+    pub async fn apply_llm_start(&self, prompt: String) -> AuwgentResult<String> {
+        let json = self.bridge.apply_llm_start_async(prompt).await?;
+        let value: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        value
+            .get("prompt")
+            .and_then(Value::as_str)
+            .map(ToString::to_string)
+            .ok_or_else(|| "llm_start response did not include prompt".to_string())
+    }
+
+    pub async fn apply_llm_end(&self, response: Value) -> AuwgentResult<()> {
+        self.bridge.apply_llm_end_async(response).await?;
+        Ok(())
+    }
+
+    pub async fn complete_run(&self) -> AuwgentResult<SessionState> {
+        let json = self.bridge.complete_run_async().await?;
+        serde_json::from_str(&json).map_err(|e| e.to_string())
+    }
+
+    pub async fn apply_error(&self, error: Value, include_session: bool) -> AuwgentResult<bool> {
+        let json = self
+            .bridge
+            .apply_error_async(error, include_session)
+            .await?;
+        let value: Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+        Ok(value
+            .get("swallowed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    }
+
     pub async fn process_intents(&self) -> AuwgentResult<Value> {
         let json = self.bridge.process_intents_async().await?;
         serde_json::from_str(&json).map_err(|e| e.to_string())
@@ -275,10 +316,7 @@ impl AuwgentNative {
         self.bridge.on_intent(handler);
     }
 
-    pub fn on_intent_partial(
-        &self,
-        handler: Arc<dyn Fn(String, Value, String) + Send + Sync>,
-    ) {
+    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
         self.bridge.on_intent_partial(handler);
     }
 
@@ -471,8 +509,7 @@ where
     where
         F: Fn(String, String) -> BoxFuture<'static, ()> + Send + Sync + 'static,
     {
-        let callback: SessionSaveCallback =
-            Arc::new(move |name, session| handler(name, session));
+        let callback: SessionSaveCallback = Arc::new(move |name, session| handler(name, session));
         self.native.on_sub_engine_complete(callback);
     }
 
@@ -775,12 +812,10 @@ pub fn to_value<T: Serialize>(value: T) -> AuwgentResult<Value> {
 }
 
 pub use ir_runtime::runtime::engine::{IntentControl, RunMetadata};
-pub use ir_runtime::runtime::engine_types::{
-    AggregateUsage,
-};
+pub use ir_runtime::runtime::engine_types::AggregateUsage;
 pub use ir_runtime::runtime::session::{Message, Role, SessionState, Turn};
 pub use ir_runtime::{
     Comparison, ComponentChildrenConstraint, ComponentDefinition, Condition, CustomIntentDef,
-    ExamplePair, Expression, Helper, HandoffMode, JsonValue, ModelConfig, NamedModelConfig,
-    Tool, TypeDefinition, TypeProperty, Workflow,
+    ExamplePair, Expression, HandoffMode, Helper, JsonValue, ModelConfig, NamedModelConfig, Tool,
+    TypeDefinition, TypeProperty, Workflow,
 };

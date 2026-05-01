@@ -18,7 +18,7 @@ impl AuwgentEngine {
                         "tool": tool_name,
                         "message": e,
                     });
-                    self.fire_intent("tool_error".to_string(), error_value.clone())
+                    self.fire_generated_intent("tool_error".to_string(), error_value.clone())
                         .await;
                     let payload = ErrorPayload {
                         session: None,
@@ -36,7 +36,7 @@ impl AuwgentEngine {
             }
         } else {
             let message = format!("Tool not found: {}", tool_name);
-            self.fire_intent(
+            self.fire_generated_intent(
                 "tool_error".to_string(),
                 serde_json::json!({
                     "tool": tool_name,

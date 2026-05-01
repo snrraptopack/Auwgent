@@ -10,10 +10,12 @@ pub mod main_agent {
     ));
 }
 
+use observations::test_middleware_lifecycle::test_middleware_lifecycle_driver;
 use observations::test_static_intents::test_static_intents;
 
 #[tokio::main]
 async fn main() {
     //test_promt_generation().await;
     test_static_intents().await;
+    test_middleware_lifecycle_driver().await;
 }

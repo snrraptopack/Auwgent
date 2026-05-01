@@ -44,6 +44,35 @@ impl AuwgentEngine {
         }
     }
 
+    pub(super) async fn fire_generated_intent(
+        &self,
+        name: String,
+        mut value: Value,
+    ) -> Option<IntentControl> {
+        let control = self
+            .apply_intent_middleware(&name, &value, &self.ir.name)
+            .await;
+
+        if let Value::Object(ref mut map) = value {
+            map.remove("_raw");
+        }
+
+        match control.clone() {
+            Some(IntentControl::Skip) => control,
+            Some(IntentControl::Override { result }) => {
+                if let Value::Object(ref mut map) = value {
+                    map.insert("result".to_string(), result);
+                }
+                let _ = self.fire_intent(name, value).await;
+                control
+            }
+            None => {
+                let _ = self.fire_intent(name, value).await;
+                None
+            }
+        }
+    }
+
     pub async fn process_intents(&self) -> AuwgentResult<(bool, bool, bool)> {
         let intents = {
             let mut pending = self
@@ -86,14 +115,14 @@ impl AuwgentEngine {
             match name.as_str() {
                 "tool_call" => match control {
                     Some(IntentControl::Skip) => {
-                        self.fire_intent("tool_skipped".to_string(), value.clone())
+                        self.fire_generated_intent("tool_skipped".to_string(), value.clone())
                             .await;
                         continue;
                     }
                     Some(IntentControl::Override { result }) => {
                         let tool_name = value["type"].as_str().unwrap_or("").to_string();
                         let args = value["args"].clone();
-                        self.fire_intent(
+                        self.fire_generated_intent(
                             "tool_result".to_string(),
                             serde_json::json!({
                                 "name": tool_name,
@@ -108,7 +137,7 @@ impl AuwgentEngine {
                     }
                     None => {
                         let (tool_name, args, result) = self.execute_tool(&value).await?;
-                        self.fire_intent(
+                        self.fire_generated_intent(
                             "tool_result".to_string(),
                             serde_json::json!({
                                 "name": tool_name,
@@ -131,7 +160,7 @@ impl AuwgentEngine {
                     }
                     None => {
                         let (wf_name, args, result) = self.execute_workflow(&value).await?;
-                        self.fire_intent(
+                        self.fire_generated_intent(
                             "workflow_result".to_string(),
                             serde_json::json!({
                                 "name": wf_name,
@@ -165,7 +194,7 @@ impl AuwgentEngine {
                             hard_stop = true;
                         }
 
-                        self.fire_intent(
+                        self.fire_generated_intent(
                             "helper_result".to_string(),
                             serde_json::json!({
                                 "name": helper_name,
