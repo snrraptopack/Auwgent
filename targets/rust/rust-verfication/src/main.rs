@@ -1,13 +1,15 @@
 pub mod observations;
 
-pub mod main_agent{
-     #![allow(clippy::all)]
+pub mod main_agent {
+    #![allow(clippy::all)]
     #![allow(dead_code)]
 
-    include!(concat!(env!("CARGO_MANIFEST_DIR"), "/test_case/main.agent.rs"));
+    include!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test_case/main.agent.rs"
+    ));
 }
 
-use observations::test_prompt::test_promt_generation;
 use observations::test_static_intents::test_static_intents;
 
 #[tokio::main]

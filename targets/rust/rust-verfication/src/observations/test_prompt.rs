@@ -51,14 +51,7 @@ pub async fn test_promt_generation() {
         "expected prompt to contain marks_and_location"
     );
 
-    assert!(
-        prompt.contains("Joker"),
-        "expected prompt to contain Joker"
-    );
+    assert!(prompt.contains("Joker"), "expected prompt to contain Joker");
 
-    assert!(
-        prompt.contains("Loud"),
-        "expected prompt to contain Loud"
-    );
-
+    assert!(prompt.contains("Loud"), "expected prompt to contain Loud");
 }
