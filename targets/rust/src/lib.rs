@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 pub use futures_util::future::BoxFuture;
+use futures_util::{Stream, stream};
 use ir_runtime::runtime::bridge::EngineBridge;
+use ir_runtime::runtime::drivers::{ModelDriver, ModelEvent};
 use ir_runtime::runtime::engine::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
     SessionSaveCallback, ToolImplementation,
@@ -10,6 +12,8 @@ use ir_runtime::{AgentIR, ModelConfigEntry, ModelProvider};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 pub type AuwgentResult<T> = Result<T, String>;
@@ -193,6 +197,13 @@ impl AuwgentNative {
         self.bridge.set_custom_driver(id, api_key, base_url);
     }
 
+    pub fn set_deterministic_driver(&self, provider_type: String, outputs: Vec<String>) {
+        self.bridge.register_driver(
+            provider_type,
+            Arc::new(DeterministicDriver::new(outputs)) as Arc<dyn ModelDriver>,
+        );
+    }
+
     pub fn set_context(&self, context: Value) {
         self.bridge.set_context(context);
     }
@@ -330,6 +341,56 @@ impl AuwgentNative {
 
     pub fn on_middleware_event(&self, handler: AsyncMiddlewareEventCallback) {
         self.bridge.on_middleware_event(handler);
+    }
+}
+
+struct DeterministicDriver {
+    outputs: Arc<Mutex<VecDeque<String>>>,
+}
+
+impl DeterministicDriver {
+    fn new(outputs: Vec<String>) -> Self {
+        Self {
+            outputs: Arc::new(Mutex::new(outputs.into())),
+        }
+    }
+}
+
+#[async_trait]
+impl ModelDriver for DeterministicDriver {
+    async fn stream_generate(
+        &self,
+        _model: &str,
+        _messages: &[Message],
+        _config: Option<Value>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<ModelEvent, String>> + Send>>, String> {
+        let output = self
+            .outputs
+            .lock()
+            .map_err(|_| "deterministic driver output queue poisoned".to_string())?
+            .pop_front()
+            .unwrap_or_default();
+        Ok(Box::pin(stream::iter(vec![Ok(ModelEvent::ContentChunk(
+            output,
+        ))])))
+    }
+
+    async fn embed(
+        &self,
+        _model: &str,
+        _text: &str,
+        _config: Option<Value>,
+    ) -> Result<Vec<f32>, String> {
+        Ok(vec![0.0])
+    }
+
+    async fn embed_batch(
+        &self,
+        _model: &str,
+        texts: &[String],
+        _config: Option<Value>,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        Ok(texts.iter().map(|_| vec![0.0]).collect())
     }
 }
 

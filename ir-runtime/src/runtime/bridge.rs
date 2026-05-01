@@ -85,6 +85,10 @@ impl EngineBridge {
         );
     }
 
+    pub fn register_driver(&self, provider_type: String, driver: Arc<dyn ModelDriver>) {
+        self.engine.register_driver(&provider_type, driver);
+    }
+
     pub fn set_context(&self, context: Value) {
         self.engine.set_context(context);
     }

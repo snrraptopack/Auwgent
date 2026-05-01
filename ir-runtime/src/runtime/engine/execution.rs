@@ -155,6 +155,16 @@ impl AuwgentEngine {
                     Some(IntentControl::Override { result }) => {
                         let wf_name = value["type"].as_str().unwrap_or("").to_string();
                         let args = value["args"].clone();
+                        self.fire_generated_intent(
+                            "workflow_result".to_string(),
+                            serde_json::json!({
+                                "name": wf_name,
+                                "args": args,
+                                "result": result.clone(),
+                                "overridden": true,
+                            }),
+                        )
+                        .await;
                         tool_results.push((format!("workflow:{}", wf_name), args, result));
                         has_actions = true;
                     }
@@ -178,6 +188,16 @@ impl AuwgentEngine {
                     Some(IntentControl::Override { result }) => {
                         let helper_name = value["type"].as_str().unwrap_or("").to_string();
                         let args = value["args"].clone();
+                        self.fire_generated_intent(
+                            "helper_result".to_string(),
+                            serde_json::json!({
+                                "name": helper_name,
+                                "args": args,
+                                "result": result.clone(),
+                                "overridden": true,
+                            }),
+                        )
+                        .await;
                         tool_results.push((format!("helper:{}", helper_name), args, result));
                         has_actions = true;
                     }
