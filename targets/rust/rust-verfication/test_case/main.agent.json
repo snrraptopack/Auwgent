@@ -108,7 +108,14 @@
         }
       },
       "returns": "string",
-      "examples": []
+      "examples": [
+        {
+          "id": {
+            "type": "literal",
+            "value": "10"
+          }
+        }
+      ]
     }
   ],
   "workflows": [
@@ -176,7 +183,14 @@
         }
       ],
       "tools": [],
-      "examples": []
+      "examples": [
+        {
+          "user_id": {
+            "type": "literal",
+            "value": "100"
+          }
+        }
+      ]
     }
   ],
   "helpers": [
@@ -300,15 +314,22 @@
       "tools": [],
       "workflows": [],
       "customIntents": null,
-      "examples": []
+      "examples": [
+        {
+          "input": {
+            "type": "literal",
+            "value": "give me a nice joke"
+          }
+        }
+      ]
     }
   ],
   "components": [],
   "types": null,
   "helperToolGrants": null,
   "helperHandoff": {
-    "Fact": "user",
-    "Plan": "thenContinue"
+    "Plan": "thenContinue",
+    "Fact": "user"
   },
   "tests": [],
   "lifecycle": null,
@@ -328,7 +349,18 @@
           "description": "the reasons behind those actions"
         }
       },
-      "examples": []
+      "examples": [
+        {
+          "actions": {
+            "type": "literal",
+            "value": "I will first do that"
+          },
+          "reason": {
+            "type": "literal",
+            "value": "because of nothing"
+          }
+        }
+      ]
     }
   ]
 }

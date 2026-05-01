@@ -8,8 +8,10 @@ pub mod main_agent{
 }
 
 use observations::test_prompt::test_promt_generation;
+use observations::test_static_intents::test_static_intents;
 
 #[tokio::main]
 async fn main() {
-    test_promt_generation().await;
+    //test_promt_generation().await;
+    test_static_intents().await;
 }

@@ -160,7 +160,6 @@ impl AuwgentEngine {
         }));
 
         let partial_state_for_handler = Arc::clone(&streaming_partials);
-        let jsonl_for_handler = Arc::clone(&streaming_jsonl);
         let partial_handler_for_handler = Arc::clone(&partial_intent_handler);
         let agent_name_for_handler = ir.name.clone();
 
@@ -185,16 +184,6 @@ impl AuwgentEngine {
             } else {
                 value
             };
-
-            if let Ok(mut buffer) = jsonl_for_handler.lock() {
-                let seq = buffer.next_seq();
-                buffer.push_event(StructuredOutputEvent::partial_intent(
-                    seq,
-                    agent_name_for_handler.clone(),
-                    name.clone(),
-                    value.clone(),
-                ));
-            }
 
             if let Some(handler) = partial_handler_for_handler
                 .lock()

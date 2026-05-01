@@ -37,6 +37,11 @@ pub async fn test_promt_generation() {
     );
 
     assert!(
+        prompt.contains("[custom"),
+        "expected prompt to contain custome"
+    );
+
+    assert!(
         prompt.contains("get_location"),
         "expected prompt to contain get_location"
     );
@@ -49,6 +54,11 @@ pub async fn test_promt_generation() {
     assert!(
         prompt.contains("Joker"),
         "expected prompt to contain Joker"
-    )
+    );
+
+    assert!(
+        prompt.contains("Loud"),
+        "expected prompt to contain Loud"
+    );
 
 }

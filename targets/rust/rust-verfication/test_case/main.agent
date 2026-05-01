@@ -8,7 +8,7 @@ intent Loud{
         actions: string @desc "the action about to take",
         reason: string @desc "the reasons behind those actions"
     }
-}
+}@example(actions= "I will first do that", reason= "because of nothing")
 
 
 agent SimpleTool {
@@ -35,6 +35,7 @@ agent SimpleTool {
 
     tool get_location(): string @desc "Return the current location for the active user"
     tool get_marks(id:string @desc "the id of the user"):string @desc "Return the user's score"
+    @example(id="10")
 
     workflow marks_and_location(user_id:string):string{
         description: "This is used to get the location and the marks of the user at once"
@@ -45,7 +46,7 @@ agent SimpleTool {
             user location: {{location}}
             user marks: {{marks}}
         """
-    }
+    }@example(user_id="100")
 
     helpers{
         Plan handoff user then continue
@@ -93,4 +94,4 @@ helper Fact{
         confidence:number
         reasons:string @desc "reasons behind your analysis"
     }
-}
+}@example(input = "give me a nice joke")
