@@ -67,7 +67,13 @@ agent.onIntent((intent, value, agent) => {
      console.log("result",value)
   }
 
+  if (intent === "Loud") {
+    console.log("loud",value)
+  }
+
 })
 
-let session = await agent.run("hello get my location and marks")
+let session = await agent.run("hello get my marks for me")
+
+console.log("meta",agent.getMetadata())
 console.log(JSON.stringify(session.turns, null, 2))

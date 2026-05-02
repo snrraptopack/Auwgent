@@ -14,7 +14,7 @@
           "value": [
             {
               "type": "literal",
-              "value": "\r\n        You are a helpful assistant\r\n        "
+              "value": "\r\n        You are a helpful assistant before you take any action try to reason out your though before the action\r\n        "
             },
             {
               "type": "inlineIf",
@@ -328,8 +328,8 @@
   "types": null,
   "helperToolGrants": null,
   "helperHandoff": {
-    "Plan": "thenContinue",
-    "Fact": "user"
+    "Fact": "user",
+    "Plan": "thenContinue"
   },
   "tests": [],
   "lifecycle": null,

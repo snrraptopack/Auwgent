@@ -130,15 +130,16 @@ impl Auwgent {
     /// });
     /// ```
     #[napi(ts_args_type = "callback: (name: string, value: any, agentName: string) => any")]
-    pub fn on_intent(&self, callback: JsFunction) -> Result<()> {
+    pub fn on_intent(&self, env: Env, callback: JsFunction) -> Result<()> {
         // Create a TSFN that receives (name, value, agent) as a triple
-        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> = callback
+        let mut tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> = callback
             .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, Value, String)>| {
                 let name = ctx.env.create_string(&ctx.value.0)?;
                 let value = ctx.env.to_js_value(&ctx.value.1)?;
                 let agent = ctx.env.create_string(&ctx.value.2)?;
                 Ok(vec![name.into_unknown(), value, agent.into_unknown()])
             })?;
+        let _ = tsfn.unref(&env);
 
         // Wrap into an AsyncIntentCallback
         let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
@@ -176,12 +177,12 @@ impl Auwgent {
     /// });
     /// ```
     #[napi(ts_args_type = "callback: (name: string, value: any, agentName: string) => void")]
-    pub fn on_intent_partial(&self, callback: JsFunction) -> Result<()> {
+    pub fn on_intent_partial(&self, env: Env, callback: JsFunction) -> Result<()> {
         // Use a bounded queue (128) with CalleeHandled so that when the JS event loop
         // is busy (e.g. awaiting a tool Promise), streaming token events are simply
         // dropped rather than flooding the queue and starving the tool resolution.
         // This prevents the livelock / hang seen during concurrent streaming + tools.
-        let tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> =
+        let mut tsfn: ThreadsafeFunction<(String, Value, String), ErrorStrategy::Fatal> =
             callback.create_threadsafe_function(
                 1024,
                 |ctx: ThreadSafeCallContext<(String, Value, String)>| {
@@ -191,6 +192,7 @@ impl Auwgent {
                     Ok(vec![name.into_unknown(), value, agent.into_unknown()])
                 },
             )?;
+        let _ = tsfn.unref(&env);
 
         // Fire-and-forget — partials are observational only, no await needed
         let handler: std::sync::Arc<dyn Fn(String, Value, String) + Send + Sync> =
@@ -210,13 +212,14 @@ impl Auwgent {
     #[napi(
         ts_args_type = "callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined>"
     )]
-    pub fn on_sub_engine_start(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+    pub fn on_sub_engine_start(&self, env: Env, callback: JsFunction) -> Result<()> {
+        let mut tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
             .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
                 let name = ctx.env.create_string(&ctx.value.0)?;
                 let session = ctx.env.create_string(&ctx.value.1)?;
                 Ok(vec![name.into_unknown(), session.into_unknown()])
             })?;
+        let _ = tsfn.unref(&env);
 
         let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
             std::sync::Arc::new(move |name: String, empty_session: String| {
@@ -241,13 +244,14 @@ impl Auwgent {
     #[napi(
         ts_args_type = "callback: (helperName: string, completedSessionJson: string) => Promise<void>"
     )]
-    pub fn on_sub_engine_complete(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
+    pub fn on_sub_engine_complete(&self, env: Env, callback: JsFunction) -> Result<()> {
+        let mut tsfn: ThreadsafeFunction<(String, String), ErrorStrategy::Fatal> = callback
             .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String)>| {
                 let name = ctx.env.create_string(&ctx.value.0)?;
                 let session = ctx.env.create_string(&ctx.value.1)?;
                 Ok(vec![name.into_unknown(), session.into_unknown()])
             })?;
+        let _ = tsfn.unref(&env);
 
         let handler: ir_runtime::runtime::engine::SessionSaveCallback =
             std::sync::Arc::new(move |name: String, completed_session: String| {
@@ -268,12 +272,13 @@ impl Auwgent {
     }
 
     #[napi(ts_args_type = "callback: (eventJson: string) => Promise<string | undefined>")]
-    pub fn on_middleware_event(&self, callback: JsFunction) -> Result<()> {
-        let tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> =
+    pub fn on_middleware_event(&self, env: Env, callback: JsFunction) -> Result<()> {
+        let mut tsfn: ThreadsafeFunction<String, ErrorStrategy::Fatal> =
             callback.create_threadsafe_function(0, |ctx: ThreadSafeCallContext<String>| {
                 let event = ctx.env.create_string(&ctx.value)?;
                 Ok(vec![event.into_unknown()])
             })?;
+        let _ = tsfn.unref(&env);
         self.bridge.on_middleware_event(std::sync::Arc::new(move |event_json: String| {
             let tsfn = tsfn.clone();
             Box::pin(async move {

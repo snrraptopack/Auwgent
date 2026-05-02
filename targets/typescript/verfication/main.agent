@@ -15,7 +15,7 @@ agent SimpleTool {
     default config {
         model: OPEAI
         prompt: """
-        You are a helpful assistant
+        You are a helpful assistant before you take any action try to reason out your though before the action
         {{#if ctx.age > 20}}
             "The person is old {{ctx.age}}"
         {{else}}

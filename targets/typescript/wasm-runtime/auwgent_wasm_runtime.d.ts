@@ -33,7 +33,7 @@ export class AuwgentWasm {
     run(input?: string | null, initial_stack_json?: string | null): Promise<any>;
     setContext(context: any): void;
     setCustomDriver(id: string, api_key: string, base_url: string): void;
-    setGeminiDriver(_api_key: string): void;
+    setGeminiDriver(api_key: string): void;
     setGroqDriver(api_key: string): void;
     setOpenaiDriver(api_key: string): void;
     writeChunk(chunk: string): void;
