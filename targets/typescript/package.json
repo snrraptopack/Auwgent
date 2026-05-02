@@ -35,8 +35,13 @@
     ]
   },
   "scripts": {
-    "build": "napi build --platform --esm --release",
+    "build": "bun run build:napi && bun run build:wasm",
+    "build:napi": "napi build --platform --esm --release",
     "build:debug": "napi build --platform --esm",
+    "build:wasm": "wasm-pack build ../wasm-runtime --target bundler --out-dir ../typescript/wasm-runtime --out-name auwgent_wasm_runtime",
+    "build:wasm:verfication": "wasm-pack build ../wasm-runtime --target web --out-dir ../typescript/verfication/dist/wasm-runtime --out-name auwgent_wasm_runtime",
+    "build:verfication": "bun run build:wasm:verfication && bun build verfication/index.ts --target browser --format esm --outdir verfication/dist",
+    "check:wasm": "cd ../.. && cargo check --manifest-path targets/wasm-runtime/Cargo.toml --target wasm32-unknown-unknown",
     "test": "bun test"
   },
   "devDependencies": {

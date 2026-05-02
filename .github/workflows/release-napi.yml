@@ -46,7 +46,7 @@ jobs:
 
       - name: Build
         working-directory: targets/typescript
-        run: npm run build -- --target ${{ matrix.target }}
+        run: npm run build:napi -- --target ${{ matrix.target }}
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -54,9 +54,51 @@ jobs:
           name: bindings-${{ matrix.target }}
           path: targets/typescript/*.node
 
+  build-wasm:
+    name: Build WASM Runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install Dependencies
+        working-directory: targets/typescript
+        run: bun install
+
+      - name: Check WASM Runtime
+        working-directory: targets/typescript
+        run: bun run check:wasm
+
+      - name: Build WASM Runtime
+        working-directory: targets/typescript
+        run: bun run build:wasm
+
+      - name: Upload WASM Runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-runtime
+          path: targets/typescript/wasm-runtime
+
   publish:
     name: Publish to NPM
-    needs: build
+    needs: [build, build-wasm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,6 +122,12 @@ jobs:
           path: artifacts
           pattern: bindings-*
           merge-multiple: true
+
+      - name: Download WASM runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-runtime
+          path: targets/typescript/wasm-runtime
 
       - name: Publish Architecture Packages
         env:

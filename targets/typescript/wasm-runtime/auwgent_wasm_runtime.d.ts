@@ -1,31 +1,68 @@
-export default function init(input?: unknown): Promise<void>;
+/* tslint:disable */
+/* eslint-disable */
+/**
+ * The `ReadableStreamType` enum.
+ *
+ * *This API requires the following crate features to be activated: `ReadableStreamType`*
+ */
+
+type ReadableStreamType = "bytes";
 
 export class AuwgentWasm {
-    constructor(irJson: string);
-    setContext(context: unknown): void;
-    setGeminiDriver(apiKey: string): void;
-    setGroqDriver(apiKey: string): void;
-    setOpenaiDriver(apiKey: string): void;
-    setCustomDriver(id: string, apiKey: string, baseUrl: string): void;
-    registerTool(name: string, callback: (args: unknown) => Promise<unknown> | unknown): void;
-    onIntent(callback: (name: string, value: unknown, agentName: string) => Promise<unknown> | unknown): void;
-    onIntentPartial(callback: (name: string, value: unknown, agentName: string) => void): void;
-    onSubEngineStart(callback: (helperName: string, emptySessionJson: string) => Promise<string | undefined> | string | undefined): void;
-    onSubEngineComplete(callback: (helperName: string, completedSessionJson: string) => Promise<void> | void): void;
-    onMiddlewareEvent(callback: (eventJson: string) => Promise<string | undefined> | string | undefined): void;
+    free(): void;
+    [Symbol.dispose](): void;
     clearListeners(): void;
-    run(input?: string | null, initialStackJson?: string | null): Promise<string>;
-    exportSession(): string;
-    importSession(json: string): void;
     clearSession(): void;
-    getMetadata(): string;
-    generatePrompt(helperName?: string): string;
-    getToolNames(): string[];
-    getToolSchemas(): string;
-    writeChunk(chunk: string): void;
+    embed(text: string): Promise<any>;
+    embedBatch(texts: any): Promise<any>;
     endStream(): string;
-    processIntents(): Promise<string>;
-    embed(text: string): Promise<number[]>;
-    embedBatch(texts: string[]): Promise<number[][]>;
+    exportSession(): string;
+    generatePrompt(helper_name?: string | null): string;
+    getMetadata(): string;
+    getToolNames(): Array<any>;
+    getToolSchemas(): string;
+    importSession(json: string): void;
+    constructor(ir_json: string);
+    onIntent(callback: Function): void;
+    onIntentPartial(callback: Function): void;
+    onMiddlewareEvent(callback: Function): void;
+    onSubEngineComplete(callback: Function): void;
+    onSubEngineStart(callback: Function): void;
+    processIntents(): Promise<any>;
+    registerTool(name: string, callback: Function): void;
+    run(input?: string | null, initial_stack_json?: string | null): Promise<any>;
+    setContext(context: any): void;
+    setCustomDriver(id: string, api_key: string, base_url: string): void;
+    setGeminiDriver(_api_key: string): void;
+    setGroqDriver(api_key: string): void;
+    setOpenaiDriver(api_key: string): void;
+    writeChunk(chunk: string): void;
 }
 
+export class IntoUnderlyingByteSource {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cancel(): void;
+    pull(controller: ReadableByteStreamController): Promise<any>;
+    start(controller: ReadableByteStreamController): void;
+    readonly autoAllocateChunkSize: number;
+    readonly type: ReadableStreamType;
+}
+
+export class IntoUnderlyingSink {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    abort(reason: any): Promise<any>;
+    close(): Promise<any>;
+    write(chunk: any): Promise<any>;
+}
+
+export class IntoUnderlyingSource {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    cancel(): void;
+    pull(controller: ReadableStreamDefaultController): Promise<any>;
+}

@@ -271,6 +271,115 @@ describe('TypedAuwgent', () => {
         expect(seen).toEqual(['Main:hello']);
     });
 
+    it('normalizes WASM Map intent payloads to N-API plain object shape', async () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        let intentCallback: ((name: string, value: any, agentName: string) => Promise<any>) | undefined;
+
+        native.onIntent = (cb: (name: string, value: any, agentName: string) => Promise<any>) => {
+            intentCallback = cb;
+        };
+        native.onMiddlewareEvent = () => {};
+        native.onSubEngineStart = () => {};
+        native.onSubEngineComplete = () => {};
+        native.onIntentPartial = () => {};
+
+        let seen: any;
+        agent.onIntent((name, value) => {
+            if (name === 'tool_call') {
+                seen = value;
+            }
+        });
+
+        (agent as any).activateListeners();
+
+        await intentCallback?.(
+            'tool_call',
+            new Map([
+                ['type', 'search'],
+                ['args', new Map([['query', 'Accra']])],
+            ]),
+            'Main'
+        );
+
+        expect(seen).toEqual({ type: 'search', args: { query: 'Accra' } });
+        expect(seen).not.toBeInstanceOf(Map);
+        expect(seen.args).not.toBeInstanceOf(Map);
+    });
+
+    it('preserves already-plain intent payload identity for streaming callbacks', async () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        let partialCallback: ((name: string, value: any, agentName: string) => void) | undefined;
+
+        native.onIntent = () => {};
+        native.onMiddlewareEvent = () => {};
+        native.onSubEngineStart = () => {};
+        native.onSubEngineComplete = () => {};
+        native.onIntentPartial = (cb: (name: string, value: any, agentName: string) => void) => {
+            partialCallback = cb;
+        };
+
+        const payload = {
+            partial: true,
+            complete: false,
+            mode: 'text',
+            segment: 0,
+            text: 'Hello',
+            raw: 'Hello',
+            delta: 'Hello',
+        };
+        let seen: any;
+
+        agent.onIntentPartial((name, value) => {
+            if (name === 'response_text') seen = value;
+        });
+
+        (agent as any).activateListeners();
+        partialCallback?.('response_text', payload, 'Main');
+
+        expect(seen).toBe(payload);
+    });
+
+    it('normalizes WASM Map tool args before invoking registered tools', async () => {
+        let toolCallback: ((args: any) => Promise<any>) | undefined;
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async (args) => ({ message: `Hello, ${args.name}!` }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        native.registerTool = (name: string, cb: (args: any) => Promise<any>) => {
+            if (name === 'greet') toolCallback = cb;
+        };
+
+        (agent as any).configureNative(native, {
+            apiKeys: {},
+            tools: {
+                greet: async (args: any) => ({ message: `Hello, ${args.name}!` }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const result = await toolCallback?.(new Map([['name', 'Nana']]));
+
+        expect(result).toEqual({ message: 'Hello, Nana!' });
+    });
+
     it('adds response_text delta in onIntentPartial for realtime streaming', () => {
         const agent = createAuwgent(TEST_IR, {
             tools: {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,8 +128,16 @@ impl JsonlEventBuffer {
 }
 
 fn now_ms() -> u64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        return js_sys::Date::now() as u64;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+    }
 }

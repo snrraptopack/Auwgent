@@ -29,6 +29,10 @@ function optionalRequire(): ((id: string) => any) | null {
     }
 }
 
+function browserDynamicImport(specifier: string): Promise<any> {
+    return new Function('specifier', 'return import(specifier)')(specifier);
+}
+
 export function createNativeRuntimeSync(irJson: string): AuwgentRuntime | null {
     if (!isNodeLike()) return null;
 
@@ -41,11 +45,14 @@ export function createNativeRuntimeSync(irJson: string): AuwgentRuntime | null {
 
 export async function createNativeRuntime(irJson: string): Promise<AuwgentRuntime> {
     if (isNodeLike()) {
-        const mod = await import('./index.js');
+        const nativeEntry = './index.js';
+        const mod = await import(nativeEntry);
         return new mod.Auwgent(irJson);
     }
 
-    const mod = await import('./wasm-runtime/auwgent_wasm_runtime.js');
+    const wasmDir = 'wasm-' + 'runtime';
+    const wasmFile = 'auwgent_' + 'wasm_runtime.js';
+    const mod = await browserDynamicImport(`./${wasmDir}/${wasmFile}`);
     if (typeof mod.default === 'function') {
         await mod.default();
     }

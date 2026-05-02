@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auwgent Browser WASM Verification</title>
+</head>
+<body>
+    <h1>Auwgent Browser WASM Verification</h1>
+    <p>Open the browser console. This page loads only files from <code>dist/</code>.</p>
+    <p>If the NAPI path is used by mistake, this page will fail because the browser cannot load <code>.node</code> binaries.</p>
+    <script type="module" src="./dist/index.js"></script>
+</body>
+</html>

@@ -1,3 +1,5 @@
+#![cfg(target_arch = "wasm32")]
+
 use futures_util::FutureExt;
 use ir_runtime::runtime::drivers::ModelDriver;
 use ir_runtime::runtime::drivers::openai::OpenAIDriver;
@@ -10,6 +12,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    fn error(message: &str);
+}
 
 thread_local! {
     static NEXT_CALLBACK_ID: Cell<u32> = const { Cell::new(1) };
@@ -26,6 +34,7 @@ pub struct AuwgentWasm {
 impl AuwgentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(ir_json: String) -> Result<AuwgentWasm, JsValue> {
+        install_panic_hook();
         let ir: AgentIR = serde_json::from_str(&ir_json).map_err(js_error)?;
         Ok(Self {
             engine: Arc::new(AuwgentEngine::new(ir.clone())),
@@ -348,6 +357,15 @@ fn register_callback(callback: Function) -> u32 {
     id
 }
 
+fn install_panic_hook() {
+    static INSTALLED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    INSTALLED.get_or_init(|| {
+        std::panic::set_hook(Box::new(|info| {
+            error(&format!("Auwgent WASM panic: {info}"));
+        }));
+    });
+}
+
 fn get_callback(id: u32) -> Result<Function, JsValue> {
     CALLBACKS.with(|callbacks| {
         callbacks
@@ -369,7 +387,13 @@ fn to_js_value<T>(value: &T) -> Result<JsValue, JsValue>
 where
     T: serde::Serialize,
 {
-    serde_wasm_bindgen::to_value(value).map_err(js_error)
+    value
+        .serialize(
+            &serde_wasm_bindgen::Serializer::new()
+                .serialize_maps_as_objects(true)
+                .serialize_missing_as_null(true),
+        )
+        .map_err(js_error)
 }
 
 fn js_error(error: impl std::fmt::Display) -> JsValue {

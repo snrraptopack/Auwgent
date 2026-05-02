@@ -1,0 +1,97 @@
+model OPEAI{
+    provider: groq("openai/gpt-oss-120b")
+}
+
+intent Loud{
+    description: "use this to explain your thought and actions loud"
+    fields{
+        actions: string @desc "the action about to take",
+        reason: string @desc "the reasons behind those actions"
+    }
+}@example(actions= "I will first do that", reason= "because of nothing")
+
+
+agent SimpleTool {
+    default config {
+        model: OPEAI
+        prompt: """
+        You are a helpful assistant
+        {{#if ctx.age > 20}}
+            "The person is old {{ctx.age}}"
+        {{else}}
+            "not that old"
+        {{/if}}
+        """
+    }
+
+    intent:Loud
+
+    context{
+        user_name:string
+        age:number
+        id:string
+    }
+
+
+    tool get_location(): string @desc "Return the current location for the active user"
+    tool get_marks(id:string @desc "the id of the user"):string @desc "Return the user's score"
+    @example(id="10")
+
+    workflow marks_and_location(user_id:string):string{
+        description: "This is used to get the location and the marks of the user at once"
+
+        let marks = get_marks(user_id)
+        let location = get_location()
+        return """
+            user location: {{location}}
+            user marks: {{marks}}
+        """
+    }@example(user_id="100")
+
+    helpers{
+        Plan handoff user then continue
+        Joker
+        Fact handoff user
+    }
+}
+
+
+helper Joker{
+    description: "Is A Joker Helper use it for jokes"
+
+    default config{
+        model:OPEAI
+        prompt: "You are a joker Helper understand the user's request and make them laugh"
+    }
+    input :Text
+}
+
+helper Plan{
+    description: "Is a helper specialized at planning and decomposing tasks"
+
+    default config{
+        model:OPEAI
+        prompt: "You are a taks planner your task to take the user's query and give a detailed plan on it"
+    }
+    input : Text
+    output : {
+        steps: string[] @desc "The step by step in solving the issue"
+        motivation: string @desc "The reasons you think your steps are the right approach"
+    }
+}
+
+helper Fact{
+    description: "Is a helper for checking fact"
+
+    default config{
+        model:OPEAI
+        prompt: "You are a fact checker undertstand the user's query and check the fact"
+    }
+    input : Text
+
+    output:{
+        is_fact: boolean
+        confidence:number
+        reasons:string @desc "reasons behind your analysis"
+    }
+}@example(input = "give me a nice joke")

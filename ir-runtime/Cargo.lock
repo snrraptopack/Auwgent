@@ -460,6 +460,7 @@ dependencies = [
  "auwgent-ir-schema",
  "function-parser",
  "futures-util",
+ "js-sys",
  "reqwest",
  "serde",
  "serde_json",

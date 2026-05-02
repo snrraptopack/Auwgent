@@ -1,14 +1,9 @@
-export default async function init() {
-    throw new Error(
-        'Auwgent WASM runtime is not built. Run wasm-pack for targets/wasm-runtime and copy the generated pkg output here.'
-    );
-}
+/* @ts-self-types="./auwgent_wasm_runtime.d.ts" */
+import * as wasm from "./auwgent_wasm_runtime_bg.wasm";
+import { __wbg_set_wasm } from "./auwgent_wasm_runtime_bg.js";
 
-export class AuwgentWasm {
-    constructor() {
-        throw new Error(
-            'Auwgent WASM runtime is not built. Run wasm-pack for targets/wasm-runtime and copy the generated pkg output here.'
-        );
-    }
-}
-
+__wbg_set_wasm(wasm);
+wasm.__wbindgen_start();
+export {
+    AuwgentWasm, IntoUnderlyingByteSource, IntoUnderlyingSink, IntoUnderlyingSource
+} from "./auwgent_wasm_runtime_bg.js";

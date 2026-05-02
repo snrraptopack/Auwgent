@@ -124,9 +124,56 @@ export class TypedAuwgent<
         // Register all tools — guaranteed complete by the type system
         if (config.tools) {
             for (const [name, handler] of Object.entries(config.tools)) {
-                native.registerTool(name, handler as (args: any) => Promise<any>);
+                native.registerTool(name, async (args: any) => {
+                    return await (handler as (args: any) => Promise<any>)(
+                        this.normalizeRuntimeValue(args)
+                    );
+                });
             }
         }
+    }
+
+    private normalizeRuntimeValue<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+        if (value instanceof Map) {
+            if (seen.has(value)) return seen.get(value) as T;
+            const normalized: Record<string, unknown> = {};
+            seen.set(value, normalized);
+            for (const [key, entry] of value.entries()) {
+                normalized[String(key)] = this.normalizeRuntimeValue(entry, seen);
+            }
+            return normalized as T;
+        }
+
+        if (Array.isArray(value)) {
+            if (seen.has(value)) return seen.get(value) as T;
+            let changed = false;
+            const normalized = value.map((entry) => {
+                const next = this.normalizeRuntimeValue(entry, seen);
+                changed ||= next !== entry;
+                return next;
+            });
+            if (!changed) return value;
+            seen.set(value, normalized);
+            return normalized as T;
+        }
+
+        if (value && typeof value === 'object') {
+            if (seen.has(value)) return seen.get(value) as T;
+            const prototype = Object.getPrototypeOf(value);
+            if (prototype === Object.prototype || prototype === null) {
+                let changed = false;
+                const normalized: Record<string, unknown> = {};
+                seen.set(value, normalized);
+                for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+                    const next = this.normalizeRuntimeValue(entry, seen);
+                    changed ||= next !== entry;
+                    normalized[key] = next;
+                }
+                return changed ? normalized as T : value;
+            }
+        }
+
+        return value;
     }
 
     private async ensureNative(): Promise<AuwgentRuntime> {
@@ -550,8 +597,9 @@ export class TypedAuwgent<
     private activateListeners(): void {
         const userHandler = this.storedIntentHandler;
 
-        this.native.onIntent(async (name: string, value: any, agentName: string) => {
+        this.native.onIntent(async (name: string, nativeValue: any, agentName: string) => {
             try {
+                const value = this.normalizeRuntimeValue(nativeValue);
                 const intentCtx = this.getBuildContext();
                 intentCtx.activeAgent = agentName as any;
 
@@ -571,7 +619,8 @@ export class TypedAuwgent<
         });
 
         const partialHandler = this.storedPartialHandler;
-        this.native.onIntentPartial((name: string, value: any, agentName: string) => {
+        this.native.onIntentPartial((name: string, nativeValue: any, agentName: string) => {
+                const value = this.normalizeRuntimeValue(nativeValue);
                 const partialCtx = this.getBuildContext();
                 partialCtx.activeAgent = agentName as any;
 
