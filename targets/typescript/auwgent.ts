@@ -163,6 +163,29 @@ export class TypedAuwgent<
     }
 
     /**
+     * Register a class/object intent handler. Methods are resolved by intent name
+     * first (`response_text`, `tool_call`) and then by camelCase
+     * (`responseText`, `toolCall`).
+     */
+    onIntentHandler(
+        handler:
+            | IntentHandlers<IR, CustomIntents, Output, Tools>
+            | (new () => IntentHandlers<IR, CustomIntents, Output, Tools>)
+    ): void {
+        const instance = typeof handler === 'function' ? new (handler as any)() : handler;
+        this.onIntent(async (...args: any[]) => {
+            const [name, value, agentName] = args;
+            const method =
+                instance[name as keyof typeof instance] ??
+                instance[this.intentMethodName(name) as keyof typeof instance];
+            if (typeof method === 'function') {
+                return await (method as any).call(instance, value, agentName);
+            }
+            return null;
+        });
+    }
+
+    /**
      * Register multiple intent handlers using an object-style API.
      */
     onHandlers(handlers: IntentHandlers<IR, CustomIntents, Output, Tools>): void {
@@ -171,6 +194,10 @@ export class TypedAuwgent<
             const h = handlers[name as keyof typeof handlers];
             if (h) return await (h as any)(value);
         });
+    }
+
+    private intentMethodName(name: string): string {
+        return name.replace(/_([a-zA-Z0-9])/g, (_, ch: string) => ch.toUpperCase());
     }
 
     /**

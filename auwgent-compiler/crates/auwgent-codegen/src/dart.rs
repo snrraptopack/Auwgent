@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     let ir = plan.ir();
     let agent_name = plan.agent_name();
+    let public_name = "Auwgent";
     let output_helpers = plan.output_helpers();
     let required_providers = plan.required_providers();
     let custom_provider_ids = plan.custom_provider_ids();
@@ -30,7 +31,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     }
 
     sections.push(generate_named_shape(
-        &format!("{agent_name}Input"),
+        &format!("{public_name}Input"),
         ir.get("input"),
         true,
         "String",
@@ -48,21 +49,21 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     }
 
     sections.push(generate_named_shape(
-        &format!("{agent_name}Output"),
+        &format!("{public_name}Output"),
         ir.get("output"),
         false,
         "sdk.JsonMap",
     ));
     sections.push(generate_named_shape(
-        &format!("{agent_name}Context"),
+        &format!("{public_name}Context"),
         ir.get("context"),
         false,
         "sdk.JsonMap",
     ));
-    sections.push(generate_tools_registry(agent_name, tools));
-    sections.push(generate_core_intent_models(agent_name, ir.get("output")));
+    sections.push(generate_tools_registry(public_name, tools));
+    sections.push(generate_core_intent_models(public_name, ir.get("output")));
     sections.push(generate_action_intent_models(
-        agent_name,
+        public_name,
         tools,
         workflows,
         helpers,
@@ -75,7 +76,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     ));
 
     sections.push(generate_intent_aliases(
-        agent_name,
+        public_name,
         has_tools,
         !workflows.is_empty(),
         plan.has_helpers(),
@@ -83,7 +84,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         custom_intents,
     ));
     sections.push(generate_handler_classes(
-        agent_name,
+        public_name,
         has_tools,
         !workflows.is_empty(),
         plan.has_helpers(),
@@ -93,19 +94,20 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
 
     if plan.has_api_keys() {
         sections.push(generate_api_keys(
-            agent_name,
+            public_name,
             required_providers,
             custom_provider_ids,
         ));
     }
 
     sections.push(generate_config_class(
-        agent_name,
+        public_name,
         has_tools,
         plan.has_api_keys(),
         plan.has_context(),
     ));
     sections.push(generate_agent_class(
+        public_name,
         agent_name,
         has_tools,
         plan.has_workflows(),
@@ -114,7 +116,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         custom_intents,
     ));
     sections.push(generate_factory(
-        agent_name,
+        public_name,
         plan.has_api_keys(),
         has_tools,
         plan.has_workflows(),
@@ -474,7 +476,7 @@ fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> Stri
     );
 
     format!(
-        "final class {agent_name}ResponseTextIntent {{\n  const {agent_name}ResponseTextIntent({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory {agent_name}ResponseTextIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseTextIntent(\n      text: (json['text'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseTextIntent(text: $text)';\n}}\n\nfinal class {agent_name}ResponseSchemaIntent {{\n  const {agent_name}ResponseSchemaIntent({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory {agent_name}ResponseSchemaIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ResponseSchemaIntent(\n      type: (json['type'])?.toString() ?? '',\n      response: {response_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ResponseSchemaIntent(type: $type, response: $response)';\n}}\n\nfinal class {agent_name}ErrorIntent {{\n  const {agent_name}ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory {agent_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}ErrorIntent(\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}ErrorIntent(message: $message)';\n}}\n"
+        "final class ResponseText {{\n  const ResponseText({{\n    required this.text,\n  }});\n\n  final String text;\n\n  factory ResponseText.fromJson(sdk.JsonMap json) {{\n    return ResponseText(\n      text: (json['text'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => 'ResponseText(text: $text)';\n}}\n\nfinal class ResponseSchema {{\n  const ResponseSchema({{\n    required this.type,\n    required this.response,\n  }});\n\n  final String type;\n  final {response_type} response;\n\n  factory ResponseSchema.fromJson(sdk.JsonMap json) {{\n    return ResponseSchema(\n      type: (json['type'])?.toString() ?? '',\n      response: {response_expr},\n    );\n  }}\n\n  @override\n  String toString() => 'ResponseSchema(type: $type, response: $response)';\n}}\n\nfinal class ErrorIntent {{\n  const ErrorIntent({{\n    required this.message,\n  }});\n\n  final String message;\n\n  factory ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return ErrorIntent(\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => 'ErrorIntent(message: $message)';\n}}\n"
     )
 }
 
@@ -561,15 +563,15 @@ fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
         let args_type = if is_empty_shape(tool.get("params"), false) {
             None
         } else {
-            Some(format!("{agent_name}{pascal}ToolArgs"))
+            Some(format!("{pascal}ToolArgs"))
         };
         let result_type =
             if tool.get("returns").is_none() || tool.get("returns").is_some_and(Value::is_null) {
                 "sdk.NoResult".to_string()
             } else {
-                format!("{agent_name}{pascal}ToolResultValue")
+                format!("{pascal}Result")
             };
-        let handler_type = format!("{agent_name}{pascal}ToolHandler");
+        let handler_type = format!("{pascal}ToolHandler");
 
         let method_signature = if let Some(args_type) = &args_type {
             format!("FutureOr<{result_type}> {method_name}({args_type} args)")
@@ -632,7 +634,7 @@ fn generate_tools_registry(agent_name: &str, tools: &[Value]) -> String {
     )
 }
 
-fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> String {
+fn generate_component_intent_models(_agent_name: &str, components: &[Value]) -> String {
     let mut blocks = Vec::new();
     let mut component_cases = Vec::new();
 
@@ -641,9 +643,9 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
             continue;
         };
         let pascal = pascal_case_identifier(component_name);
-        let props_type = format!("{agent_name}{pascal}ComponentProps");
-        let action_type = format!("{agent_name}{pascal}ComponentAction");
-        let component_class = format!("{agent_name}{pascal}ComponentIntentCase");
+        let props_type = format!("{pascal}ComponentProps");
+        let action_type = format!("{pascal}ComponentAction");
+        let component_class = format!("{pascal}ComponentIntent");
 
         blocks.push(generate_named_shape(
             &props_type,
@@ -656,7 +658,7 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
         blocks.push(format!("typedef {action_type} = sdk.JsonMap;\n"));
 
         blocks.push(format!(
-            "final class {component_class} extends {agent_name}ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'])?.toString() ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
+            "final class {component_class} extends ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'])?.toString() ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
             decode_named_shape_expr(component.get("props"), &props_type, "json['props']", "const <String, Object?>{}"),
             decode_named_shape_expr_optional(component.get("action"), &action_type, "json['action']")
         ));
@@ -669,7 +671,7 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
     blocks.insert(
         0,
         format!(
-            "abstract class {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntent();\n\n  String get type;\n  String get cId;\n  Object? get props;\n  Object? get action;\n  List<String>? get children;\n\n  factory {agent_name}ComponentIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}ComponentIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}ComponentIntentUnknown extends {agent_name}ComponentIntent {{\n  const {agent_name}ComponentIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  String get cId => (raw['c_id'])?.toString() ?? '';\n\n  @override\n  Object? get props => raw['props'];\n\n  @override\n  Object? get action => raw['action'];\n\n  @override\n  List<String>? get children => (raw['children'] as List?)?.map((item) => item.toString()).toList(growable: false);\n}}\n\nfinal class {agent_name}RenderComponentIntent {{\n  const {agent_name}RenderComponentIntent({{\n    this.root,\n    this.roots,\n    this.components,\n    this.tree,\n    this.trees,\n  }});\n\n  final String? root;\n  final List<String>? roots;\n  final sdk.JsonMap? components;\n  final Object? tree;\n  final List<Object?>? trees;\n\n  factory {agent_name}RenderComponentIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}RenderComponentIntent(\n      root: json['root']?.toString(),\n      roots: (json['roots'] as List?)?.map((item) => item.toString()).toList(growable: false),\n      components: json['components'] == null ? null : Map<String, Object?>.from(json['components'] as Map),\n      tree: json['tree'],\n      trees: (json['trees'] as List?)?.map((item) => item as Object?).toList(growable: false),\n    );\n  }}\n}}\n",
+            "abstract class ComponentIntent {{\n  const ComponentIntent();\n\n  String get type;\n  String get cId;\n  Object? get props;\n  Object? get action;\n  List<String>? get children;\n\n  factory ComponentIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return ComponentIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class ComponentIntentUnknown extends ComponentIntent {{\n  const ComponentIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  String get cId => (raw['c_id'])?.toString() ?? '';\n\n  @override\n  Object? get props => raw['props'];\n\n  @override\n  Object? get action => raw['action'];\n\n  @override\n  List<String>? get children => (raw['children'] as List?)?.map((item) => item.toString()).toList(growable: false);\n}}\n\nfinal class RenderComponentIntent {{\n  const RenderComponentIntent({{\n    this.root,\n    this.roots,\n    this.components,\n    this.tree,\n    this.trees,\n  }});\n\n  final String? root;\n  final List<String>? roots;\n  final sdk.JsonMap? components;\n  final Object? tree;\n  final List<Object?>? trees;\n\n  factory RenderComponentIntent.fromJson(sdk.JsonMap json) {{\n    return RenderComponentIntent(\n      root: json['root']?.toString(),\n      roots: (json['roots'] as List?)?.map((item) => item.toString()).toList(growable: false),\n      components: json['components'] == null ? null : Map<String, Object?>.from(json['components'] as Map),\n      tree: json['tree'],\n      trees: (json['trees'] as List?)?.map((item) => item as Object?).toList(growable: false),\n    );\n  }}\n}}\n",
             component_cases.join("\n"),
         ),
     );
@@ -678,7 +680,7 @@ fn generate_component_intent_models(agent_name: &str, components: &[Value]) -> S
 }
 
 fn generate_callable_intent_models(
-    agent_name: &str,
+    _agent_name: &str,
     family_name: &str,
     family_key: &str,
     items: &[Value],
@@ -697,8 +699,12 @@ fn generate_callable_intent_models(
             continue;
         };
         let pascal = pascal_case_identifier(item_name);
-        let args_type = format!("{agent_name}{pascal}{family_name}Args");
-        let result_type = format!("{agent_name}{pascal}{family_name}ResultValue");
+        let args_type = format!("{pascal}{family_name}Args");
+        let result_type = if family_name == "Tool" {
+            format!("{pascal}Result")
+        } else {
+            format!("{pascal}{family_name}ResultValue")
+        };
         let args_shape = item.get(args_key);
         let result_shape = item.get(result_key);
         let args_type_ref = if is_empty_shape(args_shape, false) {
@@ -740,26 +746,29 @@ fn generate_callable_intent_models(
             )
         };
 
-        let call_class = format!("{agent_name}{pascal}{family_name}CallIntentCase");
-        let result_class = format!("{agent_name}{pascal}{family_name}ResultIntentCase");
+        let call_base = format!("{family_name}Calls");
+        let result_base = format!("{family_name}Results");
+        let skipped_base = format!("{family_name}Skippeds");
+        let call_class = format!("{pascal}{family_name}Call");
+        let result_class = format!("{pascal}{family_name}Result");
 
         if args_type_ref == "sdk.NoArgs" {
             blocks.push(format!(
-                "final class {call_class} extends {agent_name}{family_name}CallIntent {{\n  const {call_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return const {call_class}();\n  }}\n\n  @override\n  String toString() => '{call_class}(type: {item_name}, args: $args)';\n}}\n",
+                "final class {call_class} extends {call_base} {{\n  const {call_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return const {call_class}();\n  }}\n\n  @override\n  String toString() => '{call_class}(type: {item_name}, args: $args)';\n}}\n",
             ));
         } else {
             blocks.push(format!(
-                "final class {call_class} extends {agent_name}{family_name}CallIntent {{\n  const {call_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return {call_class}(\n      args: {args_decode_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{call_class}(type: {item_name}, args: $args)';\n}}\n",
+                "final class {call_class} extends {call_base} {{\n  const {call_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {call_class}.fromJson(sdk.JsonMap json) {{\n    return {call_class}(\n      args: {args_decode_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{call_class}(type: {item_name}, args: $args)';\n}}\n",
             ));
         }
 
         if args_type_ref == "sdk.NoArgs" {
             blocks.push(format!(
-                "final class {result_class} extends {agent_name}{family_name}ResultIntent {{\n  const {result_class}({{\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n\n  @override\n  String toString() => '{result_class}(name: {item_name}, result: $result, overridden: $overridden)';\n}}\n",
+                "final class {result_class} extends {result_base} {{\n  const {result_class}({{\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n\n  @override\n  String toString() => '{result_class}(name: {item_name}, result: $result, overridden: $overridden)';\n}}\n",
             ));
         } else {
             blocks.push(format!(
-                "final class {result_class} extends {agent_name}{family_name}ResultIntent {{\n  const {result_class}({{\n    required this.args,\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  final {args_type_ref} args;\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      args: {args_decode_expr},\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n\n  @override\n  String toString() => '{result_class}(name: {item_name}, args: $args, result: $result, overridden: $overridden)';\n}}\n",
+                "final class {result_class} extends {result_base} {{\n  const {result_class}({{\n    required this.args,\n    required this.result,\n    this.overridden = false,\n  }});\n\n  @override\n  final {args_type_ref} args;\n  @override\n  final {result_type_ref} result;\n  @override\n  final bool overridden;\n\n  @override\n  String get name => '{item_name}';\n\n  factory {result_class}.fromJson(sdk.JsonMap json) {{\n    return {result_class}(\n      args: {args_decode_expr},\n      result: {result_decode_expr},\n      overridden: (json['overridden'] as bool?) ?? false,\n    );\n  }}\n\n  @override\n  String toString() => '{result_class}(name: {item_name}, args: $args, result: $result, overridden: $overridden)';\n}}\n",
             ));
         }
 
@@ -771,14 +780,14 @@ fn generate_callable_intent_models(
         ));
 
         if include_error_and_skipped {
-            let skipped_class = format!("{agent_name}{pascal}{family_name}SkippedIntentCase");
+            let skipped_class = format!("{pascal}{family_name}Skipped");
             if args_type_ref == "sdk.NoArgs" {
                 blocks.push(format!(
-                    "final class {skipped_class} extends {agent_name}{family_name}SkippedIntent {{\n  const {skipped_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return const {skipped_class}();\n  }}\n\n  @override\n  String toString() => '{skipped_class}(type: {item_name}, args: $args)';\n}}\n",
+                    "final class {skipped_class} extends {skipped_base} {{\n  const {skipped_class}();\n\n  @override\n  sdk.NoArgs get args => const sdk.NoArgs();\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return const {skipped_class}();\n  }}\n\n  @override\n  String toString() => '{skipped_class}(type: {item_name}, args: $args)';\n}}\n",
                 ));
             } else {
                 blocks.push(format!(
-                    "final class {skipped_class} extends {agent_name}{family_name}SkippedIntent {{\n  const {skipped_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return {skipped_class}(\n      args: {args_decode_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{skipped_class}(type: {item_name}, args: $args)';\n}}\n",
+                    "final class {skipped_class} extends {skipped_base} {{\n  const {skipped_class}({{\n    required this.args,\n  }});\n\n  @override\n  final {args_type_ref} args;\n\n  @override\n  String get type => '{item_name}';\n\n  factory {skipped_class}.fromJson(sdk.JsonMap json) {{\n    return {skipped_class}(\n      args: {args_decode_expr},\n    );\n  }}\n\n  @override\n  String toString() => '{skipped_class}(type: {item_name}, args: $args)';\n}}\n",
                 ));
             }
             skipped_cases.push(format!(
@@ -790,19 +799,19 @@ fn generate_callable_intent_models(
     blocks.insert(
         0,
         format!(
-            "abstract class {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}CallIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}CallIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nabstract class {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntent();\n\n  String get name;\n  Object? get args;\n  Object? get result;\n  bool get overridden;\n\n  factory {agent_name}{family_name}ResultIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['name'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}ResultIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n",
+            "abstract class {family_name}Calls {{\n  const {family_name}Calls();\n\n  String get type;\n  Object? get args;\n\n  factory {family_name}Calls.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {family_name}CallUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\ntypedef {family_name}Call = {family_name}Calls;\n\nabstract class {family_name}Results {{\n  const {family_name}Results();\n\n  String get name;\n  Object? get args;\n  Object? get result;\n  bool get overridden;\n\n  factory {family_name}Results.fromJson(sdk.JsonMap json) {{\n    final kind = (json['name'])?.toString() ?? '';\n{}\n    return {family_name}ResultUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\ntypedef {family_name}Result = {family_name}Results;\n",
             call_cases.join("\n"),
             result_cases.join("\n"),
         ),
     );
 
     blocks.push(format!(
-        "final class {agent_name}{family_name}CallIntentUnknown extends {agent_name}{family_name}CallIntent {{\n  const {agent_name}{family_name}CallIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}CallIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ResultIntentUnknown extends {agent_name}{family_name}ResultIntent {{\n  const {agent_name}{family_name}ResultIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get name => (raw['name'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  Object? get result => raw['result'];\n\n  @override\n  bool get overridden => (raw['overridden'] as bool?) ?? false;\n\n  @override\n  String toString() => '{agent_name}{family_name}ResultIntentUnknown(raw: $raw)';\n}}\n"
+        "final class {family_name}CallUnknown extends {family_name}Calls {{\n  const {family_name}CallUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{family_name}CallUnknown(raw: $raw)';\n}}\n\nfinal class {family_name}ResultUnknown extends {family_name}Results {{\n  const {family_name}ResultUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get name => (raw['name'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  Object? get result => raw['result'];\n\n  @override\n  bool get overridden => (raw['overridden'] as bool?) ?? false;\n\n  @override\n  String toString() => '{family_name}ResultUnknown(raw: $raw)';\n}}\n"
     ));
 
     if include_error_and_skipped {
         blocks.push(format!(
-            "abstract class {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntent();\n\n  String get type;\n  Object? get args;\n\n  factory {agent_name}{family_name}SkippedIntent.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {agent_name}{family_name}SkippedIntentUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\nfinal class {agent_name}{family_name}SkippedIntentUnknown extends {agent_name}{family_name}SkippedIntent {{\n  const {agent_name}{family_name}SkippedIntentUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{agent_name}{family_name}SkippedIntentUnknown(raw: $raw)';\n}}\n\nfinal class {agent_name}{family_name}ErrorIntent {{\n  const {agent_name}{family_name}ErrorIntent({{\n    required this.tool,\n    required this.message,\n  }});\n\n  final String tool;\n  final String message;\n\n  factory {agent_name}{family_name}ErrorIntent.fromJson(sdk.JsonMap json) {{\n    return {agent_name}{family_name}ErrorIntent(\n      tool: (json['tool'])?.toString() ?? '',\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{agent_name}{family_name}ErrorIntent(tool: $tool, message: $message)';\n}}\n",
+            "abstract class {family_name}Skippeds {{\n  const {family_name}Skippeds();\n\n  String get type;\n  Object? get args;\n\n  factory {family_name}Skippeds.fromJson(sdk.JsonMap json) {{\n    final kind = (json['type'])?.toString() ?? '';\n{}\n    return {family_name}SkippedUnknown(Map<String, Object?>.from(json));\n  }}\n}}\n\ntypedef {family_name}Skipped = {family_name}Skippeds;\n\nfinal class {family_name}SkippedUnknown extends {family_name}Skippeds {{\n  const {family_name}SkippedUnknown(this.raw);\n\n  final sdk.JsonMap raw;\n\n  @override\n  String get type => (raw['type'])?.toString() ?? '';\n\n  @override\n  Object? get args => raw['args'];\n\n  @override\n  String toString() => '{family_name}SkippedUnknown(raw: $raw)';\n}}\n\nfinal class {family_name}Errors {{\n  const {family_name}Errors({{\n    required this.tool,\n    required this.message,\n  }});\n\n  final String tool;\n  final String message;\n\n  factory {family_name}Errors.fromJson(sdk.JsonMap json) {{\n    return {family_name}Errors(\n      tool: (json['tool'])?.toString() ?? '',\n      message: (json['message'])?.toString() ?? '',\n    );\n  }}\n\n  @override\n  String toString() => '{family_name}Errors(tool: $tool, message: $message)';\n}}\n\ntypedef {family_name}Error = {family_name}Errors;\n",
             skipped_cases.join("\n"),
         ));
     }
@@ -910,113 +919,68 @@ fn generate_handler_classes(
     custom_intents: &[String],
 ) -> String {
     let mut intent_methods = vec![
-        format!(
-            "  FutureOr<void> responseText({agent_name}ResponseTextIntent intent, String agentName) {{}}"
-        ),
-        format!(
-            "  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, String agentName) {{}}"
-        ),
-        format!("  FutureOr<void> error({agent_name}ErrorIntent intent, String agentName) {{}}"),
+        "  FutureOr<void> responseText(ResponseText intent, String agentName) {}".to_string(),
+        "  FutureOr<void> responseSchema(ResponseSchema intent, String agentName) {}".to_string(),
+        "  FutureOr<void> error(ErrorIntent intent, String agentName) {}".to_string(),
     ];
 
     let mut partial_methods = vec![
         format!(
             "  FutureOr<void> responseText(sdk.PartialTextIntentValue intent, String agentName) {{}}"
         ),
-        format!(
-            "  FutureOr<void> responseSchema(sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent> intent, String agentName) {{}}"
-        ),
-        format!(
-            "  FutureOr<void> error(sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent> intent, String agentName) {{}}"
-        ),
+        "  FutureOr<void> responseSchema(sdk.PartialStructuredIntentValue<ResponseSchema> intent, String agentName) {}".to_string(),
+        "  FutureOr<void> error(sdk.PartialStructuredIntentValue<ErrorIntent> intent, String agentName) {}".to_string(),
     ];
 
     if has_tools {
         intent_methods.extend([
-            format!(
-                "  FutureOr<sdk.IntentControl?> toolCall({agent_name}ToolCallIntent intent, String agentName) => null;"
-            ),
-            format!(
-                "  FutureOr<void> toolResult({agent_name}ToolResultIntent intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> toolError({agent_name}ToolErrorIntent intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> toolSkipped({agent_name}ToolSkippedIntent intent, String agentName) {{}}"
-            ),
+            "  FutureOr<sdk.IntentControl?> toolCall(ToolCalls intent, String agentName) => null;"
+                .to_string(),
+            "  FutureOr<void> toolResult(ToolResults intent, String agentName) {}".to_string(),
+            "  FutureOr<void> toolError(ToolErrors intent, String agentName) {}".to_string(),
+            "  FutureOr<void> toolSkipped(ToolSkippeds intent, String agentName) {}".to_string(),
         ]);
 
         partial_methods.extend([
-            format!(
-                "  FutureOr<void> toolCall(sdk.PartialStructuredIntentValue<{agent_name}ToolCallIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> toolResult(sdk.PartialStructuredIntentValue<{agent_name}ToolResultIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> toolError(sdk.PartialStructuredIntentValue<{agent_name}ToolErrorIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> toolSkipped(sdk.PartialStructuredIntentValue<{agent_name}ToolSkippedIntent> intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> toolCall(sdk.PartialStructuredIntentValue<ToolCalls> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> toolResult(sdk.PartialStructuredIntentValue<ToolResults> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> toolError(sdk.PartialStructuredIntentValue<ToolErrors> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> toolSkipped(sdk.PartialStructuredIntentValue<ToolSkippeds> intent, String agentName) {}".to_string(),
         ]);
     }
 
     if has_workflows {
         intent_methods.extend([
-            format!(
-                "  FutureOr<void> workflowCall({agent_name}WorkflowCallIntent intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> workflowResult({agent_name}WorkflowResultIntent intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> workflowCall(WorkflowCalls intent, String agentName) {}".to_string(),
+            "  FutureOr<void> workflowResult(WorkflowResults intent, String agentName) {}"
+                .to_string(),
         ]);
         partial_methods.extend([
-            format!(
-                "  FutureOr<void> workflowCall(sdk.PartialStructuredIntentValue<{agent_name}WorkflowCallIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> workflowResult(sdk.PartialStructuredIntentValue<{agent_name}WorkflowResultIntent> intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> workflowCall(sdk.PartialStructuredIntentValue<WorkflowCalls> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> workflowResult(sdk.PartialStructuredIntentValue<WorkflowResults> intent, String agentName) {}".to_string(),
         ]);
     }
 
     if has_helpers {
         intent_methods.extend([
-            format!(
-                "  FutureOr<void> helperCall({agent_name}HelperCallIntent intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> helperResult({agent_name}HelperResultIntent intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> helperCall(HelperCalls intent, String agentName) {}".to_string(),
+            "  FutureOr<void> helperResult(HelperResults intent, String agentName) {}".to_string(),
         ]);
         partial_methods.extend([
-            format!(
-                "  FutureOr<void> helperCall(sdk.PartialStructuredIntentValue<{agent_name}HelperCallIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> helperResult(sdk.PartialStructuredIntentValue<{agent_name}HelperResultIntent> intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> helperCall(sdk.PartialStructuredIntentValue<HelperCalls> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> helperResult(sdk.PartialStructuredIntentValue<HelperResults> intent, String agentName) {}".to_string(),
         ]);
     }
 
     if has_components {
         intent_methods.extend([
-            format!(
-                "  FutureOr<void> component({agent_name}ComponentIntent intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> renderComponent({agent_name}RenderComponentIntent intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> component(ComponentIntent intent, String agentName) {}".to_string(),
+            "  FutureOr<void> renderComponent(RenderComponentIntent intent, String agentName) {}"
+                .to_string(),
         ]);
         partial_methods.extend([
-            format!(
-                "  FutureOr<void> component(sdk.PartialStructuredIntentValue<{agent_name}ComponentIntent> intent, String agentName) {{}}"
-            ),
-            format!(
-                "  FutureOr<void> renderComponent(sdk.PartialStructuredIntentValue<{agent_name}RenderComponentIntent> intent, String agentName) {{}}"
-            ),
+            "  FutureOr<void> component(sdk.PartialStructuredIntentValue<ComponentIntent> intent, String agentName) {}".to_string(),
+            "  FutureOr<void> renderComponent(sdk.PartialStructuredIntentValue<RenderComponentIntent> intent, String agentName) {}".to_string(),
         ]);
     }
 
@@ -1032,7 +996,7 @@ fn generate_handler_classes(
     }
 
     format!(
-        "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText({agent_name}ResponseTextIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema({agent_name}ResponseSchemaIntent intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent({agent_name}ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
+        "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText(ResponseText intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema(ResponseSchema intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent(ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
         intent_methods.join("\n"),
         partial_methods.join("\n"),
         generate_middleware_intent_methods(
@@ -1065,28 +1029,32 @@ fn generate_middleware_intent_methods(
     let mut lines = Vec::new();
     if has_tools {
         lines.extend([
-            format!("  FutureOr<sdk.IntentControl?> toolCall({agent_name}ToolCallIntent intent, sdk.MiddlewareContext ctx) => null;"),
-            format!("  FutureOr<void> toolResult({agent_name}ToolResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> toolError({agent_name}ToolErrorIntent intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> toolSkipped({agent_name}ToolSkippedIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<sdk.IntentControl?> toolCall(ToolCalls intent, sdk.MiddlewareContext ctx) => null;".to_string(),
+            "  FutureOr<void> toolResult(ToolResults intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> toolError(ToolErrors intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> toolSkipped(ToolSkippeds intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     if has_workflows {
         lines.extend([
-            format!("  FutureOr<void> workflowCall({agent_name}WorkflowCallIntent intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> workflowResult({agent_name}WorkflowResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> workflowCall(WorkflowCalls intent, sdk.MiddlewareContext ctx) {}"
+                .to_string(),
+            "  FutureOr<void> workflowResult(WorkflowResults intent, sdk.MiddlewareContext ctx) {}"
+                .to_string(),
         ]);
     }
     if has_helpers {
         lines.extend([
-            format!("  FutureOr<void> helperCall({agent_name}HelperCallIntent intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> helperResult({agent_name}HelperResultIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> helperCall(HelperCalls intent, sdk.MiddlewareContext ctx) {}"
+                .to_string(),
+            "  FutureOr<void> helperResult(HelperResults intent, sdk.MiddlewareContext ctx) {}"
+                .to_string(),
         ]);
     }
     if has_components {
         lines.extend([
-            format!("  FutureOr<void> component({agent_name}ComponentIntent intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> renderComponent({agent_name}RenderComponentIntent intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> component(ComponentIntent intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> renderComponent(RenderComponentIntent intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     for custom_intent in custom_intents {
@@ -1115,37 +1083,33 @@ fn generate_middleware_partial_methods(
         format!(
             "  FutureOr<void> partialResponseText(sdk.PartialTextIntentValue intent, sdk.MiddlewareContext ctx) {{}}"
         ),
-        format!(
-            "  FutureOr<void> partialResponseSchema(sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent> intent, sdk.MiddlewareContext ctx) {{}}"
-        ),
-        format!(
-            "  FutureOr<void> partialError(sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent> intent, sdk.MiddlewareContext ctx) {{}}"
-        ),
+        "  FutureOr<void> partialResponseSchema(sdk.PartialStructuredIntentValue<ResponseSchema> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+        "  FutureOr<void> partialError(sdk.PartialStructuredIntentValue<ErrorIntent> intent, sdk.MiddlewareContext ctx) {}".to_string(),
     ];
     if has_tools {
         lines.extend([
-            format!("  FutureOr<void> partialToolCall(sdk.PartialStructuredIntentValue<{agent_name}ToolCallIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialToolResult(sdk.PartialStructuredIntentValue<{agent_name}ToolResultIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialToolError(sdk.PartialStructuredIntentValue<{agent_name}ToolErrorIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialToolSkipped(sdk.PartialStructuredIntentValue<{agent_name}ToolSkippedIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> partialToolCall(sdk.PartialStructuredIntentValue<ToolCalls> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialToolResult(sdk.PartialStructuredIntentValue<ToolResults> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialToolError(sdk.PartialStructuredIntentValue<ToolErrors> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialToolSkipped(sdk.PartialStructuredIntentValue<ToolSkippeds> intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     if has_workflows {
         lines.extend([
-            format!("  FutureOr<void> partialWorkflowCall(sdk.PartialStructuredIntentValue<{agent_name}WorkflowCallIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialWorkflowResult(sdk.PartialStructuredIntentValue<{agent_name}WorkflowResultIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> partialWorkflowCall(sdk.PartialStructuredIntentValue<WorkflowCalls> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialWorkflowResult(sdk.PartialStructuredIntentValue<WorkflowResults> intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     if has_helpers {
         lines.extend([
-            format!("  FutureOr<void> partialHelperCall(sdk.PartialStructuredIntentValue<{agent_name}HelperCallIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialHelperResult(sdk.PartialStructuredIntentValue<{agent_name}HelperResultIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> partialHelperCall(sdk.PartialStructuredIntentValue<HelperCalls> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialHelperResult(sdk.PartialStructuredIntentValue<HelperResults> intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     if has_components {
         lines.extend([
-            format!("  FutureOr<void> partialComponent(sdk.PartialStructuredIntentValue<{agent_name}ComponentIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
-            format!("  FutureOr<void> partialRenderComponent(sdk.PartialStructuredIntentValue<{agent_name}RenderComponentIntent> intent, sdk.MiddlewareContext ctx) {{}}"),
+            "  FutureOr<void> partialComponent(sdk.PartialStructuredIntentValue<ComponentIntent> intent, sdk.MiddlewareContext ctx) {}".to_string(),
+            "  FutureOr<void> partialRenderComponent(sdk.PartialStructuredIntentValue<RenderComponentIntent> intent, sdk.MiddlewareContext ctx) {}".to_string(),
         ]);
     }
     for custom_intent in custom_intents {
@@ -1263,6 +1227,7 @@ fn generate_config_class(
 
 fn generate_agent_class(
     agent_name: &str,
+    ir_agent_name: &str,
     _has_tools: bool,
     _has_workflows: bool,
     _has_helpers: bool,
@@ -1271,7 +1236,7 @@ fn generate_agent_class(
 ) -> String {
     format!(
         "final class {agent_name}Agent extends sdk.TypedAuwgent<sdk.JsonMap> {{\n  {agent_name}Agent({agent_name}Config config)\n      : super(decode{}Ir(), config.toAuwgentConfig());\n\n  void onIntentHandler({agent_name}BaseIntentHandler handler) {{\n    onIntent((name, value, agentName) => _dispatchIntent(handler, name, value, agentName));\n  }}\n\n  void onIntentPartialHandler({agent_name}BasePartialIntentHandler handler) {{\n    onIntentPartial((name, value, agentName) {{\n      _dispatchPartialIntent(handler, name, value, agentName);\n    }});\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchIntent({agent_name}BaseIntentHandler handler, String name, Object? value, String agentName) {{\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchPartialIntent({agent_name}BasePartialIntentHandler handler, String name, Object? value, String agentName) {{\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchMiddlewareIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchMiddlewarePartialIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n",
-        sanitize_identifier(agent_name, false),
+        sanitize_identifier(ir_agent_name, false),
         generate_dispatch_cases(
             agent_name,
             _has_tools,
@@ -1327,7 +1292,7 @@ fn generate_dispatch_cases(
             &if partial {
                 "sdk.PartialTextIntentValue.fromJson(value as sdk.JsonMap)".to_string()
             } else {
-                format!("{agent_name}ResponseTextIntent.fromJson(value as sdk.JsonMap)")
+                "ResponseText.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1336,10 +1301,10 @@ fn generate_dispatch_cases(
             "responseSchema",
             &if partial {
                 format!(
-                    "sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent>.fromJson(value as sdk.JsonMap, {agent_name}ResponseSchemaIntent.fromJson)"
+                    "sdk.PartialStructuredIntentValue<ResponseSchema>.fromJson(value as sdk.JsonMap, ResponseSchema.fromJson)"
                 )
             } else {
-                format!("{agent_name}ResponseSchemaIntent.fromJson(value as sdk.JsonMap)")
+                "ResponseSchema.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1348,10 +1313,10 @@ fn generate_dispatch_cases(
             "error",
             &if partial {
                 format!(
-                    "sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent>.fromJson(value as sdk.JsonMap, {agent_name}ErrorIntent.fromJson)"
+                    "sdk.PartialStructuredIntentValue<ErrorIntent>.fromJson(value as sdk.JsonMap, ErrorIntent.fromJson)"
                 )
             } else {
-                format!("{agent_name}ErrorIntent.fromJson(value as sdk.JsonMap)")
+                "ErrorIntent.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1363,9 +1328,9 @@ fn generate_dispatch_cases(
                 "tool_call",
                 "toolCall",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolCalls>.fromJson(value as sdk.JsonMap, ToolCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolCallIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1373,9 +1338,9 @@ fn generate_dispatch_cases(
                 "tool_result",
                 "toolResult",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolResults>.fromJson(value as sdk.JsonMap, ToolResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolResultIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1383,9 +1348,9 @@ fn generate_dispatch_cases(
                 "tool_error",
                 "toolError",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolErrorIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolErrorIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolErrors>.fromJson(value as sdk.JsonMap, ToolErrors.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolErrorIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolErrors.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1393,9 +1358,9 @@ fn generate_dispatch_cases(
                 "tool_skipped",
                 "toolSkipped",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolSkippedIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolSkippedIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolSkippeds>.fromJson(value as sdk.JsonMap, ToolSkippeds.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolSkippedIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolSkippeds.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1408,9 +1373,9 @@ fn generate_dispatch_cases(
                 "workflow_call",
                 "workflowCall",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}WorkflowCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}WorkflowCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<WorkflowCalls>.fromJson(value as sdk.JsonMap, WorkflowCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}WorkflowCallIntent.fromJson(value as sdk.JsonMap)")
+                    "WorkflowCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1418,9 +1383,9 @@ fn generate_dispatch_cases(
                 "workflow_result",
                 "workflowResult",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}WorkflowResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}WorkflowResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<WorkflowResults>.fromJson(value as sdk.JsonMap, WorkflowResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}WorkflowResultIntent.fromJson(value as sdk.JsonMap)")
+                    "WorkflowResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1433,9 +1398,9 @@ fn generate_dispatch_cases(
                 "helper_call",
                 "helperCall",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}HelperCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}HelperCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<HelperCalls>.fromJson(value as sdk.JsonMap, HelperCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}HelperCallIntent.fromJson(value as sdk.JsonMap)")
+                    "HelperCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1443,9 +1408,9 @@ fn generate_dispatch_cases(
                 "helper_result",
                 "helperResult",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}HelperResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}HelperResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<HelperResults>.fromJson(value as sdk.JsonMap, HelperResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}HelperResultIntent.fromJson(value as sdk.JsonMap)")
+                    "HelperResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1458,9 +1423,9 @@ fn generate_dispatch_cases(
                 "component",
                 "component",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ComponentIntent>.fromJson(value as sdk.JsonMap, {agent_name}ComponentIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ComponentIntent>.fromJson(value as sdk.JsonMap, ComponentIntent.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ComponentIntent.fromJson(value as sdk.JsonMap)")
+                    "ComponentIntent.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1468,9 +1433,9 @@ fn generate_dispatch_cases(
                 "render_component",
                 "renderComponent",
                 &if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}RenderComponentIntent>.fromJson(value as sdk.JsonMap, {agent_name}RenderComponentIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<RenderComponentIntent>.fromJson(value as sdk.JsonMap, RenderComponentIntent.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}RenderComponentIntent.fromJson(value as sdk.JsonMap)")
+                    "RenderComponentIntent.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1519,7 +1484,7 @@ fn generate_middleware_dispatch_cases(
             if partial {
                 "sdk.PartialTextIntentValue.fromJson(value as sdk.JsonMap)".to_string()
             } else {
-                format!("{agent_name}ResponseTextIntent.fromJson(value as sdk.JsonMap)")
+                "ResponseText.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1532,10 +1497,10 @@ fn generate_middleware_dispatch_cases(
             },
             if partial {
                 format!(
-                    "sdk.PartialStructuredIntentValue<{agent_name}ResponseSchemaIntent>.fromJson(value as sdk.JsonMap, {agent_name}ResponseSchemaIntent.fromJson)"
+                    "sdk.PartialStructuredIntentValue<ResponseSchema>.fromJson(value as sdk.JsonMap, ResponseSchema.fromJson)"
                 )
             } else {
-                format!("{agent_name}ResponseSchemaIntent.fromJson(value as sdk.JsonMap)")
+                "ResponseSchema.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1548,10 +1513,10 @@ fn generate_middleware_dispatch_cases(
             },
             if partial {
                 format!(
-                    "sdk.PartialStructuredIntentValue<{agent_name}ErrorIntent>.fromJson(value as sdk.JsonMap, {agent_name}ErrorIntent.fromJson)"
+                    "sdk.PartialStructuredIntentValue<ErrorIntent>.fromJson(value as sdk.JsonMap, ErrorIntent.fromJson)"
                 )
             } else {
-                format!("{agent_name}ErrorIntent.fromJson(value as sdk.JsonMap)")
+                "ErrorIntent.fromJson(value as sdk.JsonMap)".to_string()
             },
             partial,
         ),
@@ -1562,9 +1527,9 @@ fn generate_middleware_dispatch_cases(
                 "tool_call",
                 if partial { "partialToolCall" } else { "toolCall" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolCalls>.fromJson(value as sdk.JsonMap, ToolCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolCallIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1572,9 +1537,9 @@ fn generate_middleware_dispatch_cases(
                 "tool_result",
                 if partial { "partialToolResult" } else { "toolResult" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolResults>.fromJson(value as sdk.JsonMap, ToolResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolResultIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1582,9 +1547,9 @@ fn generate_middleware_dispatch_cases(
                 "tool_error",
                 if partial { "partialToolError" } else { "toolError" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolErrorIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolErrorIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolErrors>.fromJson(value as sdk.JsonMap, ToolErrors.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolErrorIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolErrors.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1592,9 +1557,9 @@ fn generate_middleware_dispatch_cases(
                 "tool_skipped",
                 if partial { "partialToolSkipped" } else { "toolSkipped" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ToolSkippedIntent>.fromJson(value as sdk.JsonMap, {agent_name}ToolSkippedIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ToolSkippeds>.fromJson(value as sdk.JsonMap, ToolSkippeds.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ToolSkippedIntent.fromJson(value as sdk.JsonMap)")
+                    "ToolSkippeds.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1606,9 +1571,9 @@ fn generate_middleware_dispatch_cases(
                 "workflow_call",
                 if partial { "partialWorkflowCall" } else { "workflowCall" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}WorkflowCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}WorkflowCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<WorkflowCalls>.fromJson(value as sdk.JsonMap, WorkflowCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}WorkflowCallIntent.fromJson(value as sdk.JsonMap)")
+                    "WorkflowCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1616,9 +1581,9 @@ fn generate_middleware_dispatch_cases(
                 "workflow_result",
                 if partial { "partialWorkflowResult" } else { "workflowResult" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}WorkflowResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}WorkflowResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<WorkflowResults>.fromJson(value as sdk.JsonMap, WorkflowResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}WorkflowResultIntent.fromJson(value as sdk.JsonMap)")
+                    "WorkflowResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1630,9 +1595,9 @@ fn generate_middleware_dispatch_cases(
                 "helper_call",
                 if partial { "partialHelperCall" } else { "helperCall" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}HelperCallIntent>.fromJson(value as sdk.JsonMap, {agent_name}HelperCallIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<HelperCalls>.fromJson(value as sdk.JsonMap, HelperCalls.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}HelperCallIntent.fromJson(value as sdk.JsonMap)")
+                    "HelperCalls.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1640,9 +1605,9 @@ fn generate_middleware_dispatch_cases(
                 "helper_result",
                 if partial { "partialHelperResult" } else { "helperResult" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}HelperResultIntent>.fromJson(value as sdk.JsonMap, {agent_name}HelperResultIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<HelperResults>.fromJson(value as sdk.JsonMap, HelperResults.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}HelperResultIntent.fromJson(value as sdk.JsonMap)")
+                    "HelperResults.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1654,9 +1619,9 @@ fn generate_middleware_dispatch_cases(
                 "component",
                 if partial { "partialComponent" } else { "component" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}ComponentIntent>.fromJson(value as sdk.JsonMap, {agent_name}ComponentIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<ComponentIntent>.fromJson(value as sdk.JsonMap, ComponentIntent.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}ComponentIntent.fromJson(value as sdk.JsonMap)")
+                    "ComponentIntent.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1664,9 +1629,9 @@ fn generate_middleware_dispatch_cases(
                 "render_component",
                 if partial { "partialRenderComponent" } else { "renderComponent" },
                 if partial {
-                    format!("sdk.PartialStructuredIntentValue<{agent_name}RenderComponentIntent>.fromJson(value as sdk.JsonMap, {agent_name}RenderComponentIntent.fromJson)")
+                    "sdk.PartialStructuredIntentValue<RenderComponentIntent>.fromJson(value as sdk.JsonMap, RenderComponentIntent.fromJson)".to_string()
                 } else {
-                    format!("{agent_name}RenderComponentIntent.fromJson(value as sdk.JsonMap)")
+                    "RenderComponentIntent.fromJson(value as sdk.JsonMap)".to_string()
                 },
                 partial,
             ),
@@ -1738,71 +1703,15 @@ fn dispatch_case(intent_name: &str, method_name: &str, value_expr: &str, partial
 
 fn generate_factory(
     agent_name: &str,
-    has_api_keys: bool,
-    has_tools: bool,
-    has_workflows: bool,
-    has_helpers: bool,
-    has_components: bool,
-    custom_intents: &[String],
+    _has_api_keys: bool,
+    _has_tools: bool,
+    _has_workflows: bool,
+    _has_helpers: bool,
+    _has_components: bool,
+    _custom_intents: &[String],
 ) -> String {
-    let mut aliases = vec![
-        format!("typedef AuwgentAgent = {agent_name}Agent;"),
-        format!("typedef AuwgentConfig = {agent_name}Config;"),
-        format!("typedef AuwgentTools = {agent_name}Tools;"),
-        format!("typedef AuwgentToolRegistry = {agent_name}ToolRegistry;"),
-        format!("typedef AuwgentContext = {agent_name}Context;"),
-        format!("typedef AuwgentMiddleware = {agent_name}Middleware;"),
-        format!("typedef AuwgentIntentValue = {agent_name}IntentValue;"),
-        format!("typedef AuwgentIntentControl = {agent_name}IntentControl;"),
-        format!("typedef AuwgentIntentHandler = {agent_name}IntentHandler;"),
-        format!("typedef AuwgentPartialIntentHandler = {agent_name}PartialIntentHandler;"),
-        format!("typedef ResponseText = {agent_name}ResponseTextIntent;"),
-        format!("typedef ResponseSchema = {agent_name}ResponseSchemaIntent;"),
-        format!("typedef ErrorIntent = {agent_name}ErrorIntent;"),
-        format!("typedef AuwgentBaseIntentHandler = {agent_name}BaseIntentHandler;"),
-        format!("typedef AuwgentBasePartialIntentHandler = {agent_name}BasePartialIntentHandler;"),
-    ];
-
-    if has_api_keys {
-        aliases.push(format!("typedef AuwgentApiKeys = {agent_name}ApiKeys;"));
-    }
-    if has_tools {
-        aliases.extend([
-            format!("typedef ToolCall = {agent_name}ToolCallIntent;"),
-            format!("typedef ToolResult = {agent_name}ToolResultIntent;"),
-            format!("typedef ToolError = {agent_name}ToolErrorIntent;"),
-            format!("typedef ToolSkipped = {agent_name}ToolSkippedIntent;"),
-        ]);
-    }
-    if has_workflows {
-        aliases.extend([
-            format!("typedef WorkflowCall = {agent_name}WorkflowCallIntent;"),
-            format!("typedef WorkflowResult = {agent_name}WorkflowResultIntent;"),
-        ]);
-    }
-    if has_helpers {
-        aliases.extend([
-            format!("typedef HelperCall = {agent_name}HelperCallIntent;"),
-            format!("typedef HelperResult = {agent_name}HelperResultIntent;"),
-        ]);
-    }
-    if has_components {
-        aliases.extend([
-            format!("typedef Component = {agent_name}ComponentIntent;"),
-            format!("typedef RenderComponent = {agent_name}RenderComponentIntent;"),
-        ]);
-    }
-    for custom_intent in custom_intents {
-        aliases.push(format!(
-            "typedef {}Intent = {};",
-            pascal_case_identifier(custom_intent),
-            custom_intent_type_name(agent_name, custom_intent)
-        ));
-    }
-
     format!(
-        "{agent_name}Agent create{agent_name}({agent_name}Config config) {{\n  return {agent_name}Agent(config);\n}}\n\nfinal auwgent = create{agent_name};\n\n{}\n",
-        aliases.join("\n")
+        "{agent_name}Agent create{agent_name}({agent_name}Config config) {{\n  return {agent_name}Agent(config);\n}}\n\nfinal auwgent = create{agent_name};\n"
     )
 }
 
@@ -1882,8 +1791,8 @@ fn normalize_dart_type(raw: &str) -> String {
     }
 }
 
-fn custom_intent_type_name(agent_name: &str, intent_name: &str) -> String {
-    format!("{agent_name}{}Intent", pascal_case_identifier(intent_name))
+fn custom_intent_type_name(_agent_name: &str, intent_name: &str) -> String {
+    format!("{}Intent", pascal_case_identifier(intent_name))
 }
 
 fn dart_method_name(name: &str) -> String {
@@ -2000,9 +1909,9 @@ mod tests {
         assert!(output.contains("import 'dart:async';"));
         assert!(output.contains("import 'demo.agent.ir.dart';"));
         assert!(output.contains("import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;"));
-        assert!(output.contains("final class DemoResponseTextIntent"));
-        assert!(output.contains("final class DemoAgent extends sdk.TypedAuwgent<sdk.JsonMap>"));
-        assert!(output.contains("DemoAgent createDemo(DemoConfig config)"));
+        assert!(output.contains("final class ResponseText"));
+        assert!(output.contains("final class AuwgentAgent extends sdk.TypedAuwgent<sdk.JsonMap>"));
+        assert!(output.contains("AuwgentAgent createAuwgent(AuwgentConfig config)"));
     }
 
     #[test]
@@ -2042,7 +1951,7 @@ mod tests {
         });
 
         let output = generate(&CodegenPlan::new(ir), "billing");
-        assert!(output.contains("final class BillingApiKeys"));
+        assert!(output.contains("final class AuwgentApiKeys"));
         assert!(output.contains("final String? my_groqApiKey;"));
     }
 
@@ -2074,20 +1983,20 @@ mod tests {
         });
 
         let output = generate(&CodegenPlan::new(ir), "ui");
-        assert!(output.contains("abstract class UiAgentBaseIntentHandler"));
-        assert!(output.contains("toolCall(UiAgentToolCallIntent intent, String agentName)"));
-        assert!(output.contains("component(UiAgentComponentIntent intent, String agentName)"));
-        assert!(output.contains("askUser(UiAgentAskUserIntent intent, String agentName)"));
-        assert!(output.contains("void onIntentHandler(UiAgentBaseIntentHandler handler)"));
+        assert!(output.contains("abstract class AuwgentBaseIntentHandler"));
+        assert!(output.contains("toolCall(ToolCalls intent, String agentName)"));
+        assert!(output.contains("component(ComponentIntent intent, String agentName)"));
+        assert!(output.contains("askUser(AskUserIntent intent, String agentName)"));
+        assert!(output.contains("void onIntentHandler(AuwgentBaseIntentHandler handler)"));
         assert!(output.contains("case 'tool_call':"));
         assert!(output.contains("case 'component':"));
         assert!(output.contains("case 'ask_user':"));
-        assert!(output.contains("typedef AuwgentConfig = UiAgentConfig;"));
-        assert!(output.contains("typedef ToolCall = UiAgentToolCallIntent;"));
-        assert!(output.contains("typedef Component = UiAgentComponentIntent;"));
-        assert!(output.contains("typedef AskUserIntent = UiAgentAskUserIntent;"));
-        assert!(output.contains("typedef AuwgentMiddleware = UiAgentMiddleware;"));
-        assert!(output.contains("UiAgentResponseTextIntent.fromJson(value as sdk.JsonMap)"));
+        assert!(!output.contains("typedef AuwgentConfig = UiAgentConfig;"));
+        assert!(output.contains("typedef ToolCall = ToolCalls;"));
+        assert!(!output.contains("typedef Component = UiAgentComponentIntent;"));
+        assert!(!output.contains("typedef AskUserIntent = UiAgentAskUserIntent;"));
+        assert!(!output.contains("typedef AuwgentMiddleware = UiAgentMiddleware;"));
+        assert!(output.contains("ResponseText.fromJson(value as sdk.JsonMap)"));
     }
 
     #[test]
@@ -2124,11 +2033,11 @@ mod tests {
         });
 
         let output = generate(&CodegenPlan::new(ir), "hello");
-        assert!(output.contains("abstract class HelloOutput"));
-        assert!(output.contains("final class HelloOutputSimple extends HelloOutput"));
-        assert!(output.contains("final class HelloOutputPerson extends HelloOutput"));
+        assert!(output.contains("abstract class AuwgentOutput"));
+        assert!(output.contains("final class AuwgentOutputSimple extends AuwgentOutput"));
+        assert!(output.contains("final class AuwgentOutputPerson extends AuwgentOutput"));
         assert!(output.contains("String get variant => 'Person';"));
-        assert!(output.contains("final HelloOutput response;"));
+        assert!(output.contains("final AuwgentOutput response;"));
     }
 
     #[test]
@@ -2151,8 +2060,9 @@ mod tests {
 
         let output = generate(&CodegenPlan::new(ir), "hello");
         assert!(output.contains("sdk.NoArgs get args => const sdk.NoArgs();"));
-        assert!(output.contains("return const HelloGetDetailsToolCallIntentCase();"));
-        assert!(!output.contains("final class HelloGetDetailsToolArgs"));
+        assert!(output.contains("return const GetDetailsToolCall();"));
+        assert!(!output.contains("final class AuwgentGetDetailsToolArgs"));
+        assert!(!output.contains("final class GetDetailsToolArgs"));
     }
 
     #[test]
@@ -2232,7 +2142,9 @@ mod tests {
         assert!(output.contains("final class Person {"));
         assert!(output.contains("final String name;"));
         assert!(output.contains("final double age;"));
-        assert!(output.contains("typedef HelloGetDetailsToolResultValue = Person;"));
+        assert!(output.contains("typedef GetDetailsResult = Person;"));
+        assert!(!output.contains("typedef HelloGetDetailsToolResultValue = Person;"));
+        assert!(!output.contains("typedef AuwgentGetDetailsToolResultValue = Person;"));
         assert!(!output.contains("typedef Person = sdk.JsonMap;"));
     }
 }

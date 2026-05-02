@@ -19,7 +19,7 @@ const String _HelloAgentIrJson = r'''{
           "value": [
             {
               "type": "literal",
-              "value": "\r\n        Be polite and helpful.\r\n        "
+              "value": "\r\n        Be polite helpful accurate.\r\n        tools are avaialble for your use, use them to exute task effectively\r\n        "
             }
           ]
         }
@@ -39,8 +39,8 @@ const String _HelloAgentIrJson = r'''{
     },
     "location": {
       "type": "string",
-      "optional": true,
-      "description": "can be null"
+      "optional": false,
+      "description": "location of the user"
     }
   },
   "context": null,
@@ -107,20 +107,20 @@ const String _HelloAgentIrJson = r'''{
     "Person": {
       "isOutput": false,
       "properties": {
-        "name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
         "age": {
           "type": "number",
           "optional": false,
           "description": null
         },
+        "name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "location": {
           "type": "string",
-          "optional": true,
-          "description": "can be null"
+          "optional": false,
+          "description": "location of the user"
         }
       },
       "@examples": []

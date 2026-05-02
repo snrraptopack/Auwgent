@@ -235,6 +235,42 @@ describe('TypedAuwgent', () => {
         expect(events).toEqual([]);
     });
 
+    it('dispatches class-style onIntentHandler methods', async () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const native = (agent as any).native;
+        let intentCallback: ((name: string, value: any, agentName: string) => Promise<any>) | undefined;
+
+        native.onIntent = (cb: (name: string, value: any, agentName: string) => Promise<any>) => {
+            intentCallback = cb;
+        };
+        native.onMiddlewareEvent = () => {};
+        native.onSubEngineStart = () => {};
+        native.onSubEngineComplete = () => {};
+        native.onIntentPartial = () => {};
+
+        const seen: string[] = [];
+        // Generated code exposes AuwgentBaseIntentHandler; this local class
+        // mirrors the runtime dispatch shape without depending on generated files.
+        class Logger {
+            response_text(value: { text: string }, agentName: string) {
+                seen.push(`${agentName}:${value.text}`);
+            }
+        }
+
+        agent.onIntentHandler(Logger);
+        (agent as any).activateListeners();
+
+        await intentCallback?.('response_text', { text: 'hello' }, 'Main');
+
+        expect(seen).toEqual(['Main:hello']);
+    });
+
     it('adds response_text delta in onIntentPartial for realtime streaming', () => {
         const agent = createAuwgent(TEST_IR, {
             tools: {

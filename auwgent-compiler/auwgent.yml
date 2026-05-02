@@ -1,4 +1,4 @@
 # auwgent.yml (Root)
-source: "../targets/python/verification"  #"../targets/rust/rust-verfication"  #change this to the directory you are observing
+source: "../targets/dart/example"  #"../targets/rust/rust-verfication"  #change this to the directory you are observing
 targets:
-  - py
+  - dart

@@ -7,6 +7,7 @@ use serde_json::{Map, Value};
 pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     let ir = plan.ir();
     let agent_name = plan.agent_name();
+    let public_name = "Auwgent";
     let all_tools = plan.tools();
     let has_tools = plan.has_tools();
     let has_context = plan.has_context();
@@ -82,7 +83,8 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "// Do not edit manually".to_string(),
         String::new(),
         "// Core Runtime Imports".to_string(),
-        "import { createAuwgent } from \"@snrraptopack/auwgent-sdk\";".to_string(),
+        "import { createAuwgent as createAuwgentRuntime } from \"@snrraptopack/auwgent-sdk\";"
+            .to_string(),
         "import type { ToolRegistry } from \"@snrraptopack/auwgent-sdk\";".to_string(),
         String::new(),
         ir_import,
@@ -94,29 +96,30 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     }
 
     sections.push(generate_object_alias(
-        agent_name,
+        public_name,
         "Input",
         unwrap_input_fields(ir.get("input")).as_ref(),
     ));
     for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
-    sections.push(generate_output_interface(ir, agent_name, output_helpers));
+    sections.push(generate_output_interface(ir, public_name, output_helpers));
     sections.push(generate_object_alias(
-        agent_name,
+        public_name,
         "Context",
         ir.get("context"),
     ));
 
     if has_tools {
-        sections.push(generate_tools_interface(agent_name, all_tools));
+        sections.push(generate_tools_interface(public_name, all_tools));
     }
 
-    sections.push(generate_custom_intents_union(plan, agent_name));
+    sections.push(generate_custom_intents_union(plan, public_name));
+    sections.push(generate_base_intent_handler(plan, public_name, has_tools));
 
     if plan.has_api_keys() {
         sections.push(generate_api_keys(
-            agent_name,
+            public_name,
             required_providers,
             custom_provider_ids,
         ));
@@ -124,7 +127,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
 
     sections.push(generate_agent_factory(
         plan,
-        agent_name,
+        public_name,
         has_tools,
         has_context,
         plan.has_api_keys(),
@@ -394,6 +397,57 @@ fn generate_api_keys(
     )
 }
 
+fn generate_base_intent_handler(plan: &CodegenPlan, agent_name: &str, has_tools: bool) -> String {
+    let intent_union = format!(
+        "import(\"@snrraptopack/auwgent-sdk\").AuwgentIntent<typeof agentIR, {agent_name}CustomIntents, {agent_name}Output, {agent_name}Tools>"
+    );
+    let return_type = "import(\"@snrraptopack/auwgent-sdk\").IntentControl | Promise<import(\"@snrraptopack/auwgent-sdk\").IntentControl> | void | Promise<void>";
+
+    let mut names = Vec::new();
+    if has_tools {
+        names.extend(["tool_call", "tool_result", "tool_error", "tool_skipped"]);
+    }
+    names.extend(["response_text", "response_schema", "error"]);
+    for custom_name in plan.custom_intents() {
+        names.push(custom_name);
+    }
+    if plan.has_workflows() {
+        names.extend(["workflow_call", "workflow_result"]);
+    }
+    if plan.has_helpers() {
+        names.extend(["helper_call", "helper_result"]);
+    }
+    if plan.has_components() {
+        names.extend(["component", "render_component"]);
+    }
+
+    let interface_methods = names
+        .iter()
+        .map(|name| {
+            let method_name = sanitize_ts_identifier(name);
+            format!(
+                "    {method_name}?(value: Extract<{intent_union}, {{ name: \"{name}\" }}>[\"value\"], agentName: string): {return_type};"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let base_methods = names
+        .into_iter()
+        .map(|name| {
+            let method_name = sanitize_ts_identifier(name);
+            format!(
+                "    {method_name}(value: Extract<{intent_union}, {{ name: \"{name}\" }}>[\"value\"], agentName: string): {return_type} {{}}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "export interface {agent_name}IntentHandler {{\n{interface_methods}\n}}\n\nexport class {agent_name}BaseIntentHandler implements {agent_name}IntentHandler {{\n{base_methods}\n}}\n"
+    )
+}
+
 fn generate_agent_factory(
     _plan: &CodegenPlan,
     agent_name: &str,
@@ -464,7 +518,7 @@ fn generate_agent_factory(
         "}".to_string(),
         String::new(),
         format!("export function create{agent_name}(config: {agent_name}Config): {agent_name}Agent {{"),
-        "    return createAuwgent<".to_string(),
+        "    return createAuwgentRuntime<".to_string(),
         "        typeof agentIR,".to_string(),
         format!("        {agent_name}CustomIntents,"),
         format!("        {output_type},"),
@@ -486,11 +540,6 @@ fn generate_agent_factory(
         "}".to_string(),
         String::new(),
         format!("export const auwgent = create{agent_name};"),
-        format!("export type AuwgentTools = {tools_type};"),
-        format!("export type AuwgentConfig = {agent_name}Config;"),
-        format!("export type AuwgentAgent = {agent_name}Agent;"),
-        format!("export type AuwgentMiddleware = {agent_name}Middleware;"),
-        format!("export type AuwgentContext = {agent_name}Context;"),
     ]);
 
     lines.join("\n")
@@ -589,6 +638,31 @@ fn normalize_ts_type(raw: &str) -> String {
     }
 }
 
+fn sanitize_ts_identifier(name: &str) -> String {
+    let mut out = String::new();
+    for (idx, ch) in name.chars().enumerate() {
+        let valid = ch == '_' || ch == '$' || ch.is_ascii_alphanumeric();
+        let ch = if valid { ch } else { '_' };
+        if idx == 0 && ch.is_ascii_digit() {
+            out.push('_');
+        }
+        out.push(ch);
+    }
+
+    if out.is_empty() {
+        "intent".to_string()
+    } else {
+        match out.as_str() {
+            "class" | "function" | "return" | "const" | "let" | "var" | "if" | "else" | "for"
+            | "while" | "switch" | "case" | "default" | "new" | "import" | "export" | "extends"
+            | "implements" | "interface" | "type" => {
+                format!("{out}_")
+            }
+            _ => out,
+        }
+    }
+}
+
 /// Unwrap the input field from the IR format to the flat format expected by codegen.
 /// IR format: { "kind": "properties", "fields": {...} } or { "kind": "direct", "type": "string" }
 /// Codegen format: {...} (just the fields object)
@@ -644,6 +718,24 @@ mod tests {
         assert!(output.contains("./main.agent.json"));
         assert!(output.contains("my_groqApiKey: string;"));
         assert!(!output.contains("customUrl?: string;"));
+        assert!(output.contains("export type AuwgentInput = {"));
+        assert!(output.contains("export type AuwgentOutput = {"));
+        assert!(output.contains("export type AuwgentContext = {"));
+        assert!(output.contains("export type AuwgentCustomIntents ="));
+        assert!(output.contains("export type AuwgentConfig = {"));
+        assert!(
+            output.contains("export function createAuwgent(config: AuwgentConfig): AuwgentAgent")
+        );
+        assert!(output.contains("export const auwgent = createAuwgent;"));
+        assert!(output.contains("export interface AuwgentIntentHandler {"));
+        assert!(
+            output
+                .contains("export class AuwgentBaseIntentHandler implements AuwgentIntentHandler")
+        );
+        assert!(output.contains("response_text?(value: Extract<"));
+        assert!(output.contains("response_text(value: Extract<"));
+        assert!(!output.contains("export type TestConfig"));
+        assert!(!output.contains("export type AuwgentConfig = TestConfig"));
     }
 
     #[test]

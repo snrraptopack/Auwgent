@@ -36,7 +36,7 @@ final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<Person> getUserNameAge() async => Person(age: 10, name: "ama");
+  Future<Person> getUserNameAge() async => Person(age: 10, name: "ama",location: "tarkwa");
 
   @override
   Future<String> getLocation() async => "Tarkwa";
@@ -80,7 +80,7 @@ Future<void> main() async {
 
 
 /** issues
- * 
+ *
  * The context {
   "activeAgent": "Hello",
   "stack": [],
@@ -115,10 +115,10 @@ Future<void> main() async {
   "input": "Hello get my name and my location",
   "model_response": " \n[tool_call: get_user_name_age] \n[/tool_call]\n[tool_call: get_location] \n[/tool_call]"
 }]
-PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\dart\example> 
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\dart\example>
 
 
- * 
+ *
  */
 
 
