@@ -1,10 +1,9 @@
-use crate::runtime::drivers::ModelDriver;
+use crate::runtime::drivers::{ModelDriver, ModelEventStream};
 use crate::runtime::session::{Message, Role};
 use async_trait::async_trait;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::pin::Pin;
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
@@ -43,17 +42,15 @@ impl OpenAIDriver {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ModelDriver for OpenAIDriver {
     async fn stream_generate(
         &self,
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<
-        Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>,
-        String,
-    > {
+    ) -> Result<ModelEventStream, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/chat/completions") {
             base.to_string()

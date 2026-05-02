@@ -7,7 +7,7 @@ impl AuwgentEngine {
     pub(super) fn execute_helper<'a>(
         &'a self,
         call: &'a Value,
-    ) -> futures_util::future::BoxFuture<'a, AuwgentResult<(String, Value, Value)>> {
+    ) -> crate::runtime::engine_types::EngineFuture<'a, AuwgentResult<(String, Value, Value)>> {
         let session_preload_handler = self.session_preload_handler.clone();
         let session_save_handler = self.session_save_handler.clone();
 

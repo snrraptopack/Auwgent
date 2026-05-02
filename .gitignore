@@ -30,4 +30,5 @@ targets/python/target/
 function-parser/target/
 targets/rust/target/
 testing/target
-targets/python/auwgent_sdk/_auwgent_sdk.pdb 
+targets/python/auwgent_sdk/_auwgent_sdk.pdb
+targets/wasm-runtime/target/

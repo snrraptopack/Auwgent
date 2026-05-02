@@ -4,7 +4,7 @@ use crate::runtime::drivers::gemini::GeminiDriver;
 use crate::runtime::drivers::openai::OpenAIDriver;
 use crate::runtime::engine::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
-    SessionSaveCallback, ToolImplementation,
+    PartialIntentCallback, SessionSaveCallback, ToolImplementation,
 };
 use crate::types::AgentIR;
 use serde_json::Value;
@@ -117,7 +117,7 @@ impl EngineBridge {
         self.engine.on_intent(handler);
     }
 
-    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
+    pub fn on_intent_partial(&self, handler: PartialIntentCallback) {
         self.engine.on_intent_partial(handler);
     }
 

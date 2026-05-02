@@ -1,10 +1,9 @@
-use crate::runtime::drivers::ModelDriver;
+use crate::runtime::drivers::{ModelDriver, ModelEventStream};
 use crate::runtime::session::{Message, Role};
 use async_trait::async_trait;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::pin::Pin;
 
 pub struct GeminiDriver {
     client: Client,
@@ -20,17 +19,15 @@ impl GeminiDriver {
     }
 }
 
-#[async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 impl ModelDriver for GeminiDriver {
     async fn stream_generate(
         &self,
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<
-        Pin<Box<dyn Stream<Item = Result<crate::runtime::drivers::ModelEvent, String>> + Send>>,
-        String,
-    > {
+    ) -> Result<ModelEventStream, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             model, self.api_key

@@ -4,6 +4,26 @@
 use super::*;
 
 impl AuwgentEngine {
+    #[cfg(target_arch = "wasm32")]
+    pub(super) async fn execute_workflow(
+        &self,
+        call: &Value,
+    ) -> AuwgentResult<(String, Value, Value)> {
+        let wf_name = call["type"].as_str().unwrap_or("").to_string();
+        let args = call["args"].clone();
+        Ok((
+            wf_name.clone(),
+            args,
+            serde_json::json!({
+                "error": format!(
+                    "Workflow execution is not available in the WASM runtime yet: {}",
+                    wf_name
+                )
+            }),
+        ))
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) async fn execute_workflow(
         &self,
         call: &Value,

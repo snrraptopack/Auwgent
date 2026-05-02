@@ -7,7 +7,8 @@ use crate::evaluator::Evaluator;
 use crate::runtime::drivers::{FinishReason, ModelDriver, ModelEvent, TokenUsage};
 pub use crate::runtime::engine_types::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback, IntentCallback,
-    IntentControl, RunMetadata, SessionSaveCallback, ToolImplementation, TurnMetadata,
+    IntentControl, PartialIntentCallback, RunMetadata, SessionSaveCallback, ToolImplementation,
+    TurnMetadata,
 };
 use crate::runtime::middleware;
 use crate::runtime::middleware_event::{
@@ -77,7 +78,7 @@ pub struct AuwgentEngine {
     current_raw_response: Arc<Mutex<String>>,
     last_turn_response_value: Arc<Mutex<Value>>,
     intent_handler: Arc<Mutex<Option<AsyncIntentCallback>>>,
-    partial_intent_handler: Arc<Mutex<Option<Arc<dyn Fn(String, Value, String) + Send + Sync>>>>,
+    partial_intent_handler: Arc<Mutex<Option<PartialIntentCallback>>>,
     session_preload_handler: Arc<Mutex<Option<AsyncSessionPreloadCallback>>>,
     session_save_handler: Arc<Mutex<Option<SessionSaveCallback>>>,
     middleware_event_handler: Arc<Mutex<Option<AsyncMiddlewareEventCallback>>>,
@@ -93,9 +94,8 @@ impl AuwgentEngine {
         let mut orchestrator = Orchestrator::new();
         let streaming_partials = Arc::new(Mutex::new(PartialIntentState::default()));
         let streaming_jsonl = Arc::new(Mutex::new(JsonlEventBuffer::default()));
-        let partial_intent_handler: Arc<
-            Mutex<Option<Arc<dyn Fn(String, Value, String) + Send + Sync>>>,
-        > = Arc::new(Mutex::new(None));
+        let partial_intent_handler: Arc<Mutex<Option<PartialIntentCallback>>> =
+            Arc::new(Mutex::new(None));
 
         orchestrator.register_intent("tool_call");
         orchestrator.register_intent("workflow_call");
@@ -308,7 +308,7 @@ impl AuwgentEngine {
         }));
     }
 
-    pub fn on_intent_partial(&self, handler: Arc<dyn Fn(String, Value, String) + Send + Sync>) {
+    pub fn on_intent_partial(&self, handler: PartialIntentCallback) {
         *self.partial_intent_handler.lock().unwrap() = Some(handler);
     }
 

@@ -1,3 +1,4 @@
+#[cfg(not(target_arch = "wasm32"))]
 pub mod bridge;
 pub mod drivers;
 pub mod engine;

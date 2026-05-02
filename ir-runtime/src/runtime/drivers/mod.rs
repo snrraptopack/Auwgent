@@ -42,7 +42,14 @@ pub enum ModelEvent {
     Metadata(ModelMetadata),
 }
 
-#[async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+pub type ModelEventStream = Pin<Box<dyn Stream<Item = Result<ModelEvent, String>> + Send>>;
+
+#[cfg(target_arch = "wasm32")]
+pub type ModelEventStream = Pin<Box<dyn Stream<Item = Result<ModelEvent, String>>>>;
+
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
 pub trait ModelDriver: Send + Sync {
     /// Send a conversation to the LLM and return a stream of text chunks.
     ///
@@ -53,7 +60,7 @@ pub trait ModelDriver: Send + Sync {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<ModelEvent, String>> + Send>>, String>;
+    ) -> Result<ModelEventStream, String>;
 
     /// Generate an embedding for the given text.
     async fn embed(
