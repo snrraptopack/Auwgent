@@ -5,8 +5,18 @@ import {
   type AuwgentConfig,
   type AuwgentContext,
   type AuwgentTools,
-  AuwgentBaseIntentHandler
+  AuwgentBaseIntentHandler,
+  type AuwgentMiddleware
 } from "./main.agent.types";
+
+const logger: AuwgentMiddleware = {
+  name: "simple",
+
+  onRunStart: (session, ctx) => {
+    console.log(ctx)
+    return session
+  }
+}
 
 
 let apiKeys: AuwgentApiKeys = {
@@ -27,7 +37,8 @@ let tools: AuwgentTools = {
 let config: AuwgentConfig = {
   apiKeys,
   context,
-  tools
+  tools,
+  middleware:[logger]
 }
 
 console.log("from the index.ts")

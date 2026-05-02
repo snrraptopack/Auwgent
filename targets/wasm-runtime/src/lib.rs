@@ -2,6 +2,7 @@
 
 use futures_util::FutureExt;
 use ir_runtime::runtime::drivers::ModelDriver;
+use ir_runtime::runtime::drivers::gemini::GeminiDriver;
 use ir_runtime::runtime::drivers::openai::OpenAIDriver;
 use ir_runtime::runtime::engine::{AuwgentEngine, IntentControl, ToolImplementation};
 use ir_runtime::types::AgentIR;
@@ -76,10 +77,11 @@ impl AuwgentWasm {
     }
 
     #[wasm_bindgen(js_name = setGeminiDriver)]
-    pub fn set_gemini_driver(&self, _api_key: String) -> Result<(), JsValue> {
-        Err(JsValue::from_str(
-            "Gemini driver is not available in the WASM runtime yet",
-        ))
+    pub fn set_gemini_driver(&self, api_key: String) {
+        self.engine.register_driver(
+            "gemini",
+            Arc::new(GeminiDriver::new(api_key)) as Arc<dyn ModelDriver>,
+        );
     }
 
     #[wasm_bindgen(js_name = registerTool)]
