@@ -527,7 +527,7 @@ fn format_named_block_example(
 ) -> String {
     let flattened_args = flatten_example_object(args, specs);
     let close_tag = match block_kind {
-        "tool_call" => "tool",
+        "tool_call" => "tool_call",
         "workflow_call" => "workflow_call",
         "helper_call" => "helper",
         _ => "block",
