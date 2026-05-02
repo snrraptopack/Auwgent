@@ -7,8 +7,15 @@ use serde_json::{Map, Value};
 pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     let ir = plan.ir();
     let agent_name = plan.agent_name();
+    let public_name = "Auwgent";
     let all_tools = plan.tools();
+    let all_helpers = plan.helpers();
     let output_helpers = plan.output_helpers();
+    let schema_output_helpers = output_helpers
+        .iter()
+        .filter(|helper| helper_has_declared_output(helper))
+        .cloned()
+        .collect::<Vec<_>>();
     let has_tools = plan.has_tools();
     let required_providers = plan.required_providers();
     let custom_provider_ids = plan.custom_provider_ids();
@@ -18,11 +25,11 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "import json",
         "from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, Literal, overload",
         "",
-        "# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10",
+        "# Required/NotRequired are 3.11+; fall back to typing_extensions for 3.9/3.10",
         "try:",
-        "    from typing import NotRequired",
+        "    from typing import Required, NotRequired",
         "except ImportError:",
-        "    from typing_extensions import NotRequired",
+        "    from typing_extensions import Required, NotRequired",
         "",
         "try:",
         "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError",
@@ -47,26 +54,30 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     }
 
     sections.push(generate_typed_dict(
-        agent_name,
+        public_name,
         "Input",
         unwrap_input_fields(ir.get("input")).as_ref(),
     ));
-    for helper in output_helpers {
+    for helper in all_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
-    sections.push(generate_output_interface(ir, agent_name, output_helpers));
+    sections.push(generate_output_interface(
+        ir,
+        public_name,
+        &schema_output_helpers,
+    ));
     sections.push(generate_typed_dict(
-        agent_name,
+        public_name,
         "Context",
         ir.get("context"),
     ));
-    sections.push(generate_tools_protocol(agent_name, all_tools));
-    sections.push(generate_custom_intents_union(plan, agent_name));
-    sections.push(generate_intent_typing(plan, agent_name));
+    sections.push(generate_tools_protocol(public_name, all_tools));
+    sections.push(generate_custom_intents_union(plan, public_name));
+    sections.push(generate_intent_typing(plan, public_name));
 
     if plan.has_api_keys() {
         sections.push(generate_api_keys(
-            agent_name,
+            public_name,
             required_providers,
             custom_provider_ids,
         ));
@@ -74,7 +85,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
 
     sections.push(generate_factory_function(
         plan,
-        agent_name,
+        public_name,
         has_tools,
         plan.has_api_keys(),
         base_name,
@@ -96,16 +107,10 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
                         lines.push(format!("    # {description}"));
                     }
 
-                    let mut python_type = type_to_python_string(prop_info);
-                    if prop_info
-                        .get("optional")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false)
-                    {
-                        python_type = format!("Optional[{python_type}]");
-                    }
-
-                    lines.push(format!("    {prop_name}: {python_type}"));
+                    lines.push(format!(
+                        "    {prop_name}: {}",
+                        typed_dict_field_type(prop_info)
+                    ));
                 }
             }
         } else {
@@ -118,54 +123,41 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
 
 fn generate_helper_output_interface(helper: &Value) -> String {
     let helper_name = string_at(helper, &["name"]).unwrap_or("Helper");
-    generate_typed_dict(helper_name, "Output", helper.get("output"))
+    generate_named_python_shape(
+        &format!("{helper_name}Output"),
+        helper.get("output"),
+        "None",
+        false,
+    )
 }
 
 fn generate_custom_intents_union(plan: &CodegenPlan, agent_name: &str) -> String {
+    let mut blocks: Vec<String> = Vec::new();
     let mut intent_types: Vec<String> = Vec::new();
 
     for (_, ci) in plan.custom_intent_defs() {
         let name = string_at(ci, &["name"]).unwrap_or_default();
+        let safe = sanitize_python_type_name(name);
+        let type_name = format!("{safe}Intent");
         let fields = ci.get("fields").unwrap_or(&Value::Null);
-        let ty = format!(
-            "TypedDict('_{}CustomIntent', {{\"name\": Literal[\"{}\"], \"value\": {}}}, total=False)",
-            name,
-            name,
-            generate_raw_typed_dict_inline(fields)
-        );
-        if !intent_types.contains(&ty) {
-            intent_types.push(ty);
+        if !intent_types.contains(&type_name) {
+            blocks.push(generate_typed_dict_raw(&type_name, Some(fields)));
+            intent_types.push(type_name);
         }
     }
 
     if intent_types.is_empty() {
         format!("# No custom intents defined\n{agent_name}CustomIntents = None\n")
     } else if intent_types.len() == 1 {
-        format!("{agent_name}CustomIntents = {}\n", intent_types[0])
+        blocks.push(format!("{agent_name}CustomIntents = {}\n", intent_types[0]));
+        blocks.join("\n")
     } else {
-        format!(
+        blocks.push(format!(
             "{agent_name}CustomIntents = Union[\n    {},\n]\n",
             intent_types.join(",\n    ")
-        )
+        ));
+        blocks.join("\n")
     }
-}
-
-fn generate_raw_typed_dict_inline(value: &Value) -> String {
-    let mut props = Vec::new();
-    if let Some(obj) = value.as_object() {
-        for (name, val) in obj {
-            let mut python_type = type_to_python_string(val);
-            if val
-                .get("optional")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                python_type = format!("Optional[{python_type}]");
-            }
-            props.push(format!("\"{name}\": {python_type}"));
-        }
-    }
-    format!("{{{}}}", props.join(", "))
 }
 
 fn generate_output_interface(
@@ -260,7 +252,7 @@ fn generate_tools_protocol(agent_name: &str, tools: &[Value]) -> String {
             lines.push(format!("    async def {tool_name}(self) -> {returns}: ..."));
         } else {
             lines.push(format!(
-                "    async def {tool_name}(self, *, {}) -> {returns}: ...",
+                "    async def {tool_name}(self, {}) -> {returns}: ...",
                 param_signature.join(", ")
             ));
         }
@@ -286,9 +278,9 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
 
     let mut blocks = vec![];
     let mut value_types = vec![
-        format!("{agent_name}ResponseTextIntent"),
-        format!("{agent_name}ResponseSchemaIntent"),
-        format!("{agent_name}ErrorIntent"),
+        "ResponseText".to_string(),
+        "ResponseSchema".to_string(),
+        "ErrorIntent".to_string(),
     ];
     let mut intent_names = vec![
         "response_text".to_string(),
@@ -303,18 +295,29 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         let mut tool_error_types = Vec::new();
         let mut tool_skipped_types = Vec::new();
 
+        blocks.push("class NoArgs(TypedDict, total=False):".to_string());
+        blocks.push("    pass".to_string());
+        blocks.push(String::new());
+
         if let Some(tools) = ir.get("tools").and_then(Value::as_array) {
             for tool in tools {
                 let tool_name = string_at(tool, &["name"]).unwrap_or("tool");
                 let safe_tool_name = sanitize_python_type_name(tool_name);
-                let args_type_name = format!("{agent_name}{safe_tool_name}ToolArgs");
-                let result_type_name = format!("{agent_name}{safe_tool_name}ToolResultValue");
-                let call_intent_name = format!("{agent_name}{safe_tool_name}ToolCallIntent");
-                let result_intent_name = format!("{agent_name}{safe_tool_name}ToolResultIntent");
-                let error_intent_name = format!("{agent_name}{safe_tool_name}ToolErrorIntent");
-                let skipped_intent_name = format!("{agent_name}{safe_tool_name}ToolSkippedIntent");
+                let has_args = has_python_shape_fields(tool.get("params"));
+                let args_type_name = if has_args {
+                    format!("{safe_tool_name}ToolArgs")
+                } else {
+                    "NoArgs".to_string()
+                };
+                let result_type_name = format!("{safe_tool_name}Result");
+                let call_intent_name = format!("{safe_tool_name}ToolCall");
+                let result_intent_name = format!("{safe_tool_name}ToolResult");
+                let error_intent_name = format!("{safe_tool_name}ToolError");
+                let skipped_intent_name = format!("{safe_tool_name}ToolSkipped");
 
-                blocks.push(generate_typed_dict_raw(&args_type_name, tool.get("params")));
+                if has_args {
+                    blocks.push(generate_typed_dict_raw(&args_type_name, tool.get("params")));
+                }
                 blocks.push(generate_named_python_shape(
                     &result_type_name,
                     tool.get("returns"),
@@ -324,11 +327,14 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
 
                 blocks.push(format!("class {call_intent_name}(TypedDict):"));
                 blocks.push(format!("    type: Literal[\"{tool_name}\"]"));
-                blocks.push(format!("    args: {args_type_name}"));
+                if has_args {
+                    blocks.push(format!("    args: {args_type_name}"));
+                }
                 blocks.push(String::new());
 
                 blocks.push(format!("class {result_intent_name}(TypedDict):"));
                 blocks.push(format!("    name: Literal[\"{tool_name}\"]"));
+                blocks.push(format!("    args: {args_type_name}"));
                 blocks.push(format!("    result: {result_type_name}"));
                 blocks.push("    overridden: NotRequired[bool]".to_string());
                 blocks.push(String::new());
@@ -340,7 +346,9 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
 
                 blocks.push(format!("class {skipped_intent_name}(TypedDict):"));
                 blocks.push(format!("    type: Literal[\"{tool_name}\"]"));
-                blocks.push(format!("    args: {args_type_name}"));
+                if has_args {
+                    blocks.push(format!("    args: {args_type_name}"));
+                }
                 blocks.push(String::new());
 
                 tool_call_types.push(call_intent_name);
@@ -351,39 +359,40 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         }
 
         if !tool_call_types.is_empty() {
+            blocks.push(format!("ToolCall = Union[{}]", tool_call_types.join(", ")));
             blocks.push(format!(
-                "{agent_name}ToolCallIntent = Union[{}]",
-                tool_call_types.join(", ")
-            ));
-            blocks.push(format!(
-                "{agent_name}ToolResultIntent = Union[{}]",
+                "ToolResult = Union[{}]",
                 tool_result_types.join(", ")
             ));
             blocks.push(format!(
-                "{agent_name}ToolErrorIntent = Union[{}]",
+                "ToolError = Union[{}]",
                 tool_error_types.join(", ")
             ));
             blocks.push(format!(
-                "{agent_name}ToolSkippedIntent = Union[{}]",
+                "ToolSkipped = Union[{}]",
                 tool_skipped_types.join(", ")
             ));
+            blocks.push("ToolCalls = ToolCall".to_string());
+            blocks.push("ToolResults = ToolResult".to_string());
+            blocks.push("ToolErrors = ToolError".to_string());
+            blocks.push("ToolSkippeds = ToolSkipped".to_string());
             blocks.push(String::new());
         } else {
             blocks.extend([
-                format!("class {agent_name}ToolCallIntent(TypedDict):"),
+                "class ToolCall(TypedDict):".to_string(),
                 "    type: str".to_string(),
                 "    args: Dict[str, Any]".to_string(),
                 String::new(),
-                format!("class {agent_name}ToolResultIntent(TypedDict):"),
+                "class ToolResult(TypedDict):".to_string(),
                 "    name: str".to_string(),
                 "    result: Any".to_string(),
                 "    overridden: NotRequired[bool]".to_string(),
                 String::new(),
-                format!("class {agent_name}ToolErrorIntent(TypedDict):"),
+                "class ToolError(TypedDict):".to_string(),
                 "    tool: str".to_string(),
                 "    message: str".to_string(),
                 String::new(),
-                format!("class {agent_name}ToolSkippedIntent(TypedDict):"),
+                "class ToolSkipped(TypedDict):".to_string(),
                 "    type: str".to_string(),
                 "    args: Dict[str, Any]".to_string(),
                 String::new(),
@@ -393,10 +402,10 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         value_types.splice(
             0..0,
             vec![
-                format!("{agent_name}ToolCallIntent"),
-                format!("{agent_name}ToolResultIntent"),
-                format!("{agent_name}ToolErrorIntent"),
-                format!("{agent_name}ToolSkippedIntent"),
+                "ToolCall".to_string(),
+                "ToolResult".to_string(),
+                "ToolError".to_string(),
+                "ToolSkipped".to_string(),
             ],
         );
         intent_names.splice(
@@ -417,6 +426,9 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
     schema_names.push(format!("{agent_name}Output"));
     if let Some(helpers) = ir.get("helpers").and_then(Value::as_array) {
         for helper in helpers {
+            if !helper_has_declared_output(helper) {
+                continue;
+            }
             if let Some(name) = string_at(helper, &["name"]) {
                 schema_names.push(format!("{name}Output"));
             }
@@ -427,16 +439,14 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
 
     let mut response_schema_variant_types = Vec::new();
     if schema_names.is_empty() {
-        blocks.push(format!(
-            "class {agent_name}ResponseSchemaIntent(TypedDict):"
-        ));
+        blocks.push(format!("class ResponseSchema(TypedDict):"));
         blocks.push("    type: str".to_string());
         blocks.push("    response: Any".to_string());
         blocks.push(String::new());
     } else {
         for schema_name in &schema_names {
             let safe_schema_name = sanitize_python_type_name(schema_name);
-            let variant_type_name = format!("{agent_name}{safe_schema_name}ResponseSchemaIntent");
+            let variant_type_name = format!("{safe_schema_name}ResponseSchema");
 
             blocks.push(format!("class {variant_type_name}(TypedDict):"));
             blocks.push(format!("    type: Literal[\"{schema_name}\"]"));
@@ -447,17 +457,17 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         }
 
         blocks.push(format!(
-            "{agent_name}ResponseSchemaIntent = Union[{}]",
+            "ResponseSchema = Union[{}]",
             response_schema_variant_types.join(", ")
         ));
         blocks.push(String::new());
     }
 
     blocks.extend([
-        format!("class {agent_name}ResponseTextIntent(TypedDict):"),
+        "class ResponseText(TypedDict):".to_string(),
         "    text: str".to_string(),
         String::new(),
-        format!("class {agent_name}ErrorIntent(TypedDict):"),
+        "class ErrorIntent(TypedDict):".to_string(),
         "    message: str".to_string(),
     ]);
 
@@ -469,15 +479,7 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
                 continue;
             }
             let safe = sanitize_python_type_name(name);
-            let type_name = format!("{agent_name}{safe}CustomIntent");
-            let fields = ci.get("fields").unwrap_or(&Value::Null);
-            blocks.push(format!("class {type_name}(TypedDict):"));
-            blocks.push(format!("    name: Literal[\"{name}\"]"));
-            blocks.push(format!(
-                "    value: {}",
-                generate_raw_typed_dict_inline(fields)
-            ));
-            blocks.push(String::new());
+            let type_name = format!("{safe}Intent");
             value_types.push(type_name.clone());
             intent_names.push(name.to_string());
             custom_intents.push((name.to_string(), type_name));
@@ -492,15 +494,7 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
                         continue;
                     }
                     let safe = sanitize_python_type_name(name);
-                    let type_name = format!("{agent_name}{safe}CustomIntent");
-                    let fields = ci.get("fields").unwrap_or(&Value::Null);
-                    blocks.push(format!("class {type_name}(TypedDict):"));
-                    blocks.push(format!("    name: Literal[\"{name}\"]"));
-                    blocks.push(format!(
-                        "    value: {}",
-                        generate_raw_typed_dict_inline(fields)
-                    ));
-                    blocks.push(String::new());
+                    let type_name = format!("{safe}Intent");
                     value_types.push(type_name.clone());
                     intent_names.push(name.to_string());
                     custom_intents.push((name.to_string(), type_name));
@@ -518,10 +512,10 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         for workflow in workflows {
             let flow_name = string_at(workflow, &["flowName"]).unwrap_or("workflow");
             let safe_name = sanitize_python_type_name(flow_name);
-            let args_type_name = format!("{agent_name}{safe_name}WorkflowArgs");
-            let result_type_name = format!("{agent_name}{safe_name}WorkflowResultValue");
-            let call_type_name = format!("{agent_name}{safe_name}WorkflowCall");
-            let result_intent_name = format!("{agent_name}{safe_name}WorkflowResult");
+            let args_type_name = format!("{safe_name}WorkflowArgs");
+            let result_type_name = format!("{safe_name}WorkflowResultValue");
+            let call_type_name = format!("{safe_name}WorkflowCall");
+            let result_intent_name = format!("{safe_name}WorkflowResult");
 
             blocks.push(generate_named_python_shape(
                 &args_type_name,
@@ -555,10 +549,10 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         for helper in helpers {
             let helper_name = string_at(helper, &["name"]).unwrap_or("Helper");
             let safe_name = sanitize_python_type_name(helper_name);
-            let args_type_name = format!("{agent_name}{safe_name}HelperArgs");
-            let result_type_name = format!("{agent_name}{safe_name}HelperResultValue");
-            let call_type_name = format!("{agent_name}{safe_name}HelperCall");
-            let result_intent_name = format!("{agent_name}{safe_name}HelperResult");
+            let args_type_name = format!("{safe_name}HelperArgs");
+            let result_type_name = format!("{safe_name}HelperResultValue");
+            let call_type_name = format!("{safe_name}HelperCall");
+            let result_intent_name = format!("{safe_name}HelperResult");
 
             blocks.push(generate_named_python_shape(
                 &args_type_name,
@@ -594,40 +588,44 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
     ));
     if !workflow_call_types.is_empty() {
         blocks.push(format!(
-            "{agent_name}WorkflowCallIntentValue = Union[{}]",
+            "WorkflowCall = Union[{}]",
             workflow_call_types.join(", ")
         ));
         blocks.push(format!(
-            "{agent_name}WorkflowResultIntentValue = Union[{}]",
+            "WorkflowResult = Union[{}]",
             workflow_result_types.join(", ")
         ));
+        blocks.push("WorkflowCalls = WorkflowCall".to_string());
+        blocks.push("WorkflowResults = WorkflowResult".to_string());
+        blocks.push(String::new());
         intent_names.push("workflow_call".to_string());
         intent_names.push("workflow_result".to_string());
     }
     if !helper_call_types.is_empty() {
         blocks.push(format!(
-            "{agent_name}HelperCallIntentValue = Union[{}]",
+            "HelperCall = Union[{}]",
             helper_call_types.join(", ")
         ));
         blocks.push(format!(
-            "{agent_name}HelperResultIntentValue = Union[{}]",
+            "HelperResult = Union[{}]",
             helper_result_types.join(", ")
         ));
+        blocks.push("HelperCalls = HelperCall".to_string());
+        blocks.push("HelperResults = HelperResult".to_string());
+        blocks.push(String::new());
         intent_names.push("helper_call".to_string());
         intent_names.push("helper_result".to_string());
     }
 
     if has_components {
-        blocks.push(format!("class {agent_name}ComponentIntent(TypedDict):"));
+        blocks.push("class ComponentIntent(TypedDict):".to_string());
         blocks.push("    type: str".to_string());
         blocks.push("    c_id: str".to_string());
         blocks.push("    props: Dict[str, Any]".to_string());
         blocks.push("    action: NotRequired[Any]".to_string());
         blocks.push("    children: NotRequired[List[str]]".to_string());
         blocks.push(String::new());
-        blocks.push(format!(
-            "class {agent_name}RenderComponentIntent(TypedDict):"
-        ));
+        blocks.push(format!("class RenderComponentIntent(TypedDict):"));
         blocks.push("    root: NotRequired[str]".to_string());
         blocks.push("    roots: NotRequired[List[str]]".to_string());
         blocks.push("    components: NotRequired[Dict[str, Any]]".to_string());
@@ -635,8 +633,8 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
         blocks.push("    trees: NotRequired[List[Any]]".to_string());
         blocks.push(String::new());
 
-        value_types.push(format!("{agent_name}ComponentIntent"));
-        value_types.push(format!("{agent_name}RenderComponentIntent"));
+        value_types.push("ComponentIntent".to_string());
+        value_types.push("RenderComponentIntent".to_string());
         intent_names.push("component".to_string());
         intent_names.push("render_component".to_string());
     }
@@ -725,84 +723,84 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BaseIntentHandler:"));
     if has_declared_tools {
-        blocks.push(format!("    def tool_call(self, intent: {agent_name}ToolCallIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def tool_call(self, value: ToolCalls, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_result(self, intent: {agent_name}ToolResultIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def tool_result(self, value: ToolResults, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_error(self, intent: {agent_name}ToolErrorIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def tool_error(self, value: ToolErrors, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}ToolSkippedIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def tool_skipped(self, value: ToolSkippeds, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
-    blocks.push(format!("    def response_text(self, intent: {agent_name}ResponseTextIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+    blocks.push(format!("    def response_text(self, value: ResponseText, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def response_schema(self, intent: {agent_name}ResponseSchemaIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+    blocks.push(format!("    def response_schema(self, value: ResponseSchema, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def error(self, intent: {agent_name}ErrorIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+    blocks.push(format!("    def error(self, value: ErrorIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
     blocks.push("        pass".to_string());
     for (custom_name, custom_type) in &custom_intents {
         let method_name = sanitize_python_identifier(custom_name);
-        blocks.push(format!("    def {method_name}(self, intent: {custom_type}, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def {method_name}(self, value: {custom_type}, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
     if !workflow_call_types.is_empty() {
-        blocks.push(format!("    def workflow_call(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", workflow_call_types.join(", ")));
+        blocks.push(format!("    def workflow_call(self, value: WorkflowCalls, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def workflow_result(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", workflow_result_types.join(", ")));
+        blocks.push(format!("    def workflow_result(self, value: WorkflowResults, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
     if !helper_call_types.is_empty() {
-        blocks.push(format!("    def helper_call(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", helper_call_types.join(", ")));
+        blocks.push(format!("    def helper_call(self, value: HelperCalls, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def helper_result(self, intent: Union[{}], agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:", helper_result_types.join(", ")));
+        blocks.push(format!("    def helper_result(self, value: HelperResults, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
     if has_components {
-        blocks.push(format!("    def component(self, intent: {agent_name}ComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def component(self, value: ComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def render_component(self, intent: {agent_name}RenderComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
+        blocks.push(format!("    def render_component(self, value: RenderComponentIntent, agent_name: str) -> Union[{agent_name}IntentHandlerReturn, Awaitable[{agent_name}IntentHandlerReturn]]:"));
         blocks.push("        pass".to_string());
     }
 
     blocks.push(String::new());
     blocks.push(format!("class {agent_name}BasePartialIntentHandler:"));
     if has_declared_tools {
-        blocks.push(format!("    def tool_call(self, intent: {agent_name}PartialToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def tool_call(self, value: {agent_name}PartialToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_result(self, intent: {agent_name}PartialToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def tool_result(self, value: {agent_name}PartialToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_error(self, intent: {agent_name}PartialToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def tool_error(self, value: {agent_name}PartialToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def tool_skipped(self, intent: {agent_name}PartialToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def tool_skipped(self, value: {agent_name}PartialToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
-    blocks.push(format!("    def response_text(self, intent: {agent_name}PartialResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push(format!("    def response_text(self, value: {agent_name}PartialResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def response_schema(self, intent: {agent_name}PartialResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push(format!("    def response_schema(self, value: {agent_name}PartialResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
-    blocks.push(format!("    def error(self, intent: {agent_name}PartialErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+    blocks.push(format!("    def error(self, value: {agent_name}PartialErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
     blocks.push("        pass".to_string());
     for (custom_name, _custom_type) in &custom_intents {
         let method_name = sanitize_python_identifier(custom_name);
-        blocks.push(format!("    def {method_name}(self, intent: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def {method_name}(self, value: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
     if !workflow_call_types.is_empty() {
-        blocks.push(format!("    def workflow_call(self, intent: {agent_name}PartialWorkflowCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def workflow_call(self, value: {agent_name}PartialWorkflowCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def workflow_result(self, intent: {agent_name}PartialWorkflowResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def workflow_result(self, value: {agent_name}PartialWorkflowResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
     if !helper_call_types.is_empty() {
-        blocks.push(format!("    def helper_call(self, intent: {agent_name}PartialHelperCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def helper_call(self, value: {agent_name}PartialHelperCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def helper_result(self, intent: {agent_name}PartialHelperResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def helper_result(self, value: {agent_name}PartialHelperResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
     if has_components {
-        blocks.push(format!("    def component(self, intent: {agent_name}PartialComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def component(self, value: {agent_name}PartialComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
-        blocks.push(format!("    def render_component(self, intent: {agent_name}PartialRenderComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
+        blocks.push(format!("    def render_component(self, value: {agent_name}PartialRenderComponentIntent, agent_name: str) -> Union[None, Awaitable[None]]:"));
         blocks.push("        pass".to_string());
     }
 
@@ -810,15 +808,24 @@ fn generate_intent_typing(plan: &CodegenPlan, agent_name: &str) -> String {
 }
 
 fn sanitize_python_type_name(name: &str) -> String {
-    let sanitized: String = name
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '_' })
-        .collect();
+    let mut out = String::new();
+    for part in name
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|part| !part.is_empty())
+    {
+        let mut chars = part.chars();
+        if let Some(first) = chars.next() {
+            out.push(first.to_ascii_uppercase());
+            out.extend(chars);
+        }
+    }
 
-    if sanitized.is_empty() {
+    if out.is_empty() {
         "Value".to_string()
+    } else if out.chars().next().is_some_and(|ch| ch.is_ascii_digit()) {
+        format!("_{out}")
     } else {
-        sanitized
+        out
     }
 }
 
@@ -856,7 +863,8 @@ fn generate_named_python_shape(
     null_fallback: &str,
     unwrap_input_kind: bool,
 ) -> String {
-    if let Some(shape) = value {
+    if let Some(original_shape) = value {
+        let shape = unwrap_wrapped_shape(original_shape).unwrap_or(original_shape);
         if let Some(properties) = python_shape_properties(shape, unwrap_input_kind) {
             return generate_typed_dict_raw(type_name, Some(&properties));
         }
@@ -868,6 +876,18 @@ fn generate_named_python_shape(
     }
 
     format!("{type_name} = {null_fallback}\n")
+}
+
+fn unwrap_wrapped_shape(value: &Value) -> Option<&Value> {
+    let obj = value.as_object()?;
+    obj.get("type").filter(|inner| inner.is_object())
+}
+
+fn helper_has_declared_output(helper: &Value) -> bool {
+    match helper.get("output") {
+        None | Some(Value::Null) => false,
+        Some(_) => true,
+    }
 }
 
 fn python_shape_properties(value: &Value, unwrap_input_kind: bool) -> Option<Value> {
@@ -947,7 +967,11 @@ fn generate_factory_function(
     config_keys.push(format!("    middleware: NotRequired[List[Union['{agent_name}Middleware', 'type[{agent_name}Middleware]']]]"));
 
     if plan.has_context() {
-        config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));
+        if has_required_python_fields(plan.ir().get("context")) {
+            config_keys.push(format!("    context: '{agent_name}Context'"));
+        } else {
+            config_keys.push(format!("    context: NotRequired['{agent_name}Context']"));
+        }
     }
     if has_api_keys {
         config_keys.push(format!("    apiKeys: NotRequired['{agent_name}ApiKeys']"));
@@ -974,17 +998,6 @@ fn generate_factory_function(
         "    return create_auwgent(ir_dict, config)".to_string(),
         String::new(),
         format!("auwgent = create{agent_name}"),
-        format!("AuwgentTools = {agent_name}Tools"),
-        format!("AuwgentConfig = {agent_name}Config"),
-        format!("AuwgentAgent = {agent_name}Agent"),
-        format!("AuwgentMiddleware = {agent_name}Middleware"),
-        format!("AuwgentContext = {agent_name}Context"),
-        format!("AuwgentIntentName = {agent_name}IntentName"),
-        format!("AuwgentIntentValue = {agent_name}IntentValue"),
-        format!("AuwgentIntentHandler = {agent_name}IntentHandler"),
-        format!("AuwgentPartialIntentHandler = {agent_name}PartialIntentHandler"),
-        format!("AuwgentBaseIntentHandler = {agent_name}BaseIntentHandler"),
-        format!("AuwgentBasePartialIntentHandler = {agent_name}BasePartialIntentHandler"),
     ]
     .join("\n")
 }
@@ -1002,21 +1015,58 @@ fn generate_typed_dict_raw(class_name: &str, value: Option<&Value>) -> String {
                 if prop_name.starts_with('@') || prop_name.starts_with("__") {
                     continue;
                 }
-                let mut python_type = type_to_python_string(prop_info);
-                if prop_info
-                    .get("optional")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-                {
-                    python_type = format!("Optional[{python_type}]");
-                }
-                lines.push(format!("    {prop_name}: {python_type}"));
+                lines.push(format!(
+                    "    {prop_name}: {}",
+                    typed_dict_field_type(prop_info)
+                ));
             }
         }
         _ => lines.push("    pass".to_string()),
     }
 
     lines.join("\n") + "\n"
+}
+
+fn typed_dict_field_type(prop_info: &Value) -> String {
+    let python_type = type_to_python_string(prop_info);
+    if prop_info
+        .get("optional")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        format!("NotRequired[Optional[{python_type}]]")
+    } else {
+        format!("Required[{python_type}]")
+    }
+}
+
+fn has_required_python_fields(value: Option<&Value>) -> bool {
+    match value.and_then(Value::as_object) {
+        Some(properties) => properties.iter().any(|(prop_name, prop_info)| {
+            if prop_name.starts_with('@') || prop_name.starts_with("__") {
+                return false;
+            }
+            !prop_info
+                .get("optional")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        }),
+        None => false,
+    }
+}
+
+fn has_python_shape_fields(value: Option<&Value>) -> bool {
+    match value.and_then(Value::as_object) {
+        Some(properties) => properties.iter().any(|(prop_name, prop_info)| {
+            if prop_name.starts_with('@') || prop_name.starts_with("__") {
+                return false;
+            }
+            !prop_info
+                .as_object()
+                .is_some_and(|obj| obj.contains_key("@id") || obj.contains_key("__source"))
+        }),
+        None => false,
+    }
 }
 
 fn type_to_python_string(type_val: &Value) -> String {
@@ -1131,6 +1181,133 @@ mod tests {
     }
 
     #[test]
+    fn emits_helper_outputs_without_null_helpers_in_response_schema() {
+        let ir = json!({
+            "name": "SimpleTool",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [{
+                "name": "Joker",
+                "input": null,
+                "output": null
+            }, {
+                "name": "Plan",
+                "input": null,
+                "output": {
+                    "type": {
+                        "type": "object",
+                        "properties": {
+                            "steps": {
+                                "type": {
+                                    "type": "array",
+                                    "items": "string"
+                                },
+                                "optional": false
+                            },
+                            "motivation": {
+                                "type": "string",
+                                "optional": false
+                            }
+                        }
+                    }
+                }
+            }]
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "main");
+        assert!(output.contains("JokerOutput = None"));
+        assert!(output.contains("class PlanOutput(TypedDict, total=False):"));
+        assert!(output.contains("    steps: Required[List[str]]"));
+        assert!(output.contains("    motivation: Required[str]"));
+        assert!(output.contains("class PlanOutputResponseSchema(TypedDict):"));
+        assert!(!output.contains("class JokerOutputResponseSchema(TypedDict):"));
+        assert!(!output.contains("response: JokerOutput"));
+        assert!(!output.contains("    type: Dict[str, Any]"));
+    }
+
+    #[test]
+    fn emits_required_context_fields_and_config_context() {
+        let ir = json!({
+            "name": "SimpleTool",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": {
+                "user_name": { "type": "string", "optional": false },
+                "age": { "type": "number", "optional": false },
+                "nickname": { "type": "string", "optional": true }
+            },
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "main");
+        assert!(output.contains("from typing import Required, NotRequired"));
+        assert!(output.contains("class AuwgentContext(TypedDict, total=False):"));
+        assert!(output.contains("    user_name: Required[str]"));
+        assert!(output.contains("    age: Required[float]"));
+        assert!(output.contains("    nickname: NotRequired[Optional[str]]"));
+        assert!(output.contains("class AuwgentConfig(TypedDict, total=False):"));
+        assert!(output.contains("    context: 'AuwgentContext'"));
+        assert!(!output.contains("context: NotRequired['AuwgentContext']"));
+    }
+
+    #[test]
+    fn emits_python_tool_intents_like_rust_handler_surface() {
+        let ir = json!({
+            "name": "SimpleTool",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [{
+                "name": "get_location",
+                "description": "Get location",
+                "params": {},
+                "returns": "string"
+            }, {
+                "name": "get_marks",
+                "description": "Return the user's score",
+                "params": {
+                    "id": { "type": "string", "optional": false }
+                },
+                "returns": "string"
+            }],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "main");
+        assert!(output.contains("class AuwgentTools(Protocol):"));
+        assert!(output.contains("async def get_location(self) -> str: ..."));
+        assert!(output.contains("    # Return the user's score"));
+        assert!(output.contains("async def get_marks(self, id: str) -> str: ..."));
+        assert!(output.contains("class NoArgs(TypedDict, total=False):"));
+        assert!(output.contains("GetLocationResult = str"));
+        assert!(output.contains("class GetLocationToolCall(TypedDict):"));
+        assert!(output.contains("class GetLocationToolResult(TypedDict):"));
+        assert!(output.contains("    args: NoArgs"));
+        assert!(output.contains("class GetMarksToolArgs(TypedDict, total=False):"));
+        assert!(output.contains("GetMarksResult = str"));
+        assert!(output.contains("class GetMarksToolCall(TypedDict):"));
+        assert!(output.contains("    args: GetMarksToolArgs"));
+        assert!(output.contains("ToolCall = Union[GetLocationToolCall, GetMarksToolCall]"));
+        assert!(output.contains("ToolCalls = ToolCall"));
+        assert!(output.contains("ToolResults = ToolResult"));
+        assert!(output.contains("def tool_call(self, value: ToolCalls, agent_name: str)"));
+        assert!(output.contains("def tool_result(self, value: ToolResults, agent_name: str)"));
+        assert!(output.contains("def response_text(self, value: ResponseText, agent_name: str)"));
+        assert!(!output.contains("SimpleToolToolCallIntent"));
+        assert!(!output.contains("AuwgentToolCallIntent"));
+        assert!(!output.contains("class GetLocationToolArgs"));
+    }
+
+    #[test]
     fn emits_python_intent_typing_for_workflows_and_helpers() {
         let ir = json!({
             "name": "Manager",
@@ -1171,14 +1348,19 @@ mod tests {
         });
 
         let output = generate(&CodegenPlan::new(ir), "main");
-        assert!(output.contains("class ManagerdeleteAccountWorkflowArgs(TypedDict, total=False):"));
-        assert!(output.contains("class ManagerReviewerHelperArgs(TypedDict, total=False):"));
+        assert!(output.contains("class DeleteAccountWorkflowArgs(TypedDict, total=False):"));
+        assert!(output.contains("class ReviewerHelperArgs(TypedDict, total=False):"));
+        assert!(output.contains("WorkflowCall = Union[DeleteAccountWorkflowCall]"));
+        assert!(output.contains("WorkflowCalls = WorkflowCall"));
+        assert!(output.contains("HelperCall = Union[ReviewerHelperCall]"));
+        assert!(output.contains("HelperCalls = HelperCall"));
         assert!(output.contains(
-            "ManagerIntentHandlerReturn = Optional[Union[SessionState, ManagerIntentControl]]"
+            "AuwgentIntentHandlerReturn = Optional[Union[SessionState, AuwgentIntentControl]]"
         ));
-        assert!(output.contains("class ManagerBaseIntentHandler:"));
-        assert!(output.contains("def on_intent(self, handler: Union[ManagerBaseIntentHandler, type[ManagerBaseIntentHandler]]) -> None:"));
-        assert!(output.contains("class ManagerBasePartialIntentHandler:"));
+        assert!(output.contains("class AuwgentBaseIntentHandler:"));
+        assert!(output.contains("def on_intent(self, handler: Union[AuwgentBaseIntentHandler, type[AuwgentBaseIntentHandler]]) -> None:"));
+        assert!(output.contains("class AuwgentBasePartialIntentHandler:"));
+        assert!(!output.contains("ManagerBaseIntentHandler"));
     }
 
     #[test]
@@ -1208,18 +1390,21 @@ mod tests {
         });
 
         let output = generate(&CodegenPlan::new(ir), "main");
-        assert!(output.contains("class UiAgentComponentIntent(TypedDict):"));
-        assert!(output.contains("class UiAgentRenderComponentIntent(TypedDict):"));
-        assert!(output.contains("UiAgentIntentName = Literal[\"response_text\", \"response_schema\", \"error\", \"component\", \"render_component\"]"));
+        assert!(output.contains("class ComponentIntent(TypedDict):"));
+        assert!(output.contains("class RenderComponentIntent(TypedDict):"));
+        assert!(output.contains("AuwgentIntentName = Literal[\"response_text\", \"response_schema\", \"error\", \"component\", \"render_component\"]"));
+        assert!(output.contains("def component(self, value: ComponentIntent, agent_name: str)"));
         assert!(
-            output.contains("def component(self, intent: UiAgentComponentIntent, agent_name: str)")
+            output.contains(
+                "def render_component(self, value: RenderComponentIntent, agent_name: str)"
+            )
         );
-        assert!(output.contains(
-            "def render_component(self, intent: UiAgentRenderComponentIntent, agent_name: str)"
-        ));
-        assert!(output.contains("UiAgentPartialComponentIntent = PartialStructuredIntentValue"));
+        assert!(output.contains("AuwgentPartialComponentIntent = PartialStructuredIntentValue"));
         assert!(
-            output.contains("UiAgentPartialRenderComponentIntent = PartialStructuredIntentValue")
+            output.contains("AuwgentPartialRenderComponentIntent = PartialStructuredIntentValue")
         );
+        assert!(!output.contains("AuwgentComponentIntent"));
+        assert!(!output.contains("AuwgentRenderComponentIntent"));
+        assert!(!output.contains("UiAgentComponentIntent"));
     }
 }

@@ -1,14 +1,14 @@
-# Auto-generated types for Hello
+# Auto-generated types for SimpleTool
 # Do not edit manually
 import os
 import json
 from typing import TypedDict, Callable, Awaitable, Any, List, Dict, Union, Optional, Protocol, Literal, overload
 
-# NotRequired is 3.11+; fall back to typing_extensions for 3.9/3.10
+# Required/NotRequired are 3.11+; fall back to typing_extensions for 3.9/3.10
 try:
-    from typing import NotRequired
+    from typing import Required, NotRequired
 except ImportError:
-    from typing_extensions import NotRequired
+    from typing_extensions import Required, NotRequired
 
 try:
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError
@@ -18,190 +18,300 @@ except ImportError:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError
 
-class Person(TypedDict, total=False):
-    age: float
-    name: str
-class HelloInput(TypedDict, total=False):
+class AuwgentInput(TypedDict, total=False):
     pass
 
-class HelloOutput(TypedDict, total=False):
-    type: Dict[str, Any]
+JokerOutput = None
 
-class HelloContext(TypedDict, total=False):
+class PlanOutput(TypedDict, total=False):
+    steps: Required[List[str]]
+    motivation: Required[str]
+
+class FactOutput(TypedDict, total=False):
+    is_fact: Required[bool]
+    confidence: Required[float]
+    reasons: Required[str]
+
+class AuwgentBaseOutput(TypedDict, total=False):
     pass
 
-class HelloTools(Protocol):
-    # use this to get the user's name and age
-    async def get_user_name_age(self) -> "Person": ...
+AuwgentOutput = Union[AuwgentBaseOutput, PlanOutput, FactOutput]
 
-    # use this to ge location
+class AuwgentContext(TypedDict, total=False):
+    user_name: Required[str]
+    age: Required[float]
+    id: Required[str]
+
+class AuwgentTools(Protocol):
+    # Return the current location for the active user
     async def get_location(self) -> str: ...
 
-HelloToolsDict = Dict[str, Callable[..., Awaitable[Any]]]
+    # Return the user's score
+    async def get_marks(self, id: str) -> str: ...
 
-# No custom intents defined
-HelloCustomIntents = None
+AuwgentToolsDict = Dict[str, Callable[..., Awaitable[Any]]]
 
-class Helloget_user_name_ageToolArgs(TypedDict, total=False):
+class LoudIntent(TypedDict, total=False):
+    actions: Required[str]
+    reason: Required[str]
+
+AuwgentCustomIntents = LoudIntent
+
+class NoArgs(TypedDict, total=False):
     pass
 
-Helloget_user_name_ageToolResultValue = "Person"
+GetLocationResult = str
 
-class Helloget_user_name_ageToolCallIntent(TypedDict):
-    type: Literal["get_user_name_age"]
-    args: Helloget_user_name_ageToolArgs
-
-class Helloget_user_name_ageToolResultIntent(TypedDict):
-    name: Literal["get_user_name_age"]
-    result: Helloget_user_name_ageToolResultValue
-    overridden: NotRequired[bool]
-
-class Helloget_user_name_ageToolErrorIntent(TypedDict):
-    tool: Literal["get_user_name_age"]
-    message: str
-
-class Helloget_user_name_ageToolSkippedIntent(TypedDict):
-    type: Literal["get_user_name_age"]
-    args: Helloget_user_name_ageToolArgs
-
-class Helloget_locationToolArgs(TypedDict, total=False):
-    pass
-
-Helloget_locationToolResultValue = str
-
-class Helloget_locationToolCallIntent(TypedDict):
+class GetLocationToolCall(TypedDict):
     type: Literal["get_location"]
-    args: Helloget_locationToolArgs
 
-class Helloget_locationToolResultIntent(TypedDict):
+class GetLocationToolResult(TypedDict):
     name: Literal["get_location"]
-    result: Helloget_locationToolResultValue
+    args: NoArgs
+    result: GetLocationResult
     overridden: NotRequired[bool]
 
-class Helloget_locationToolErrorIntent(TypedDict):
+class GetLocationToolError(TypedDict):
     tool: Literal["get_location"]
     message: str
 
-class Helloget_locationToolSkippedIntent(TypedDict):
+class GetLocationToolSkipped(TypedDict):
     type: Literal["get_location"]
-    args: Helloget_locationToolArgs
 
-HelloToolCallIntent = Union[Helloget_user_name_ageToolCallIntent, Helloget_locationToolCallIntent]
-HelloToolResultIntent = Union[Helloget_user_name_ageToolResultIntent, Helloget_locationToolResultIntent]
-HelloToolErrorIntent = Union[Helloget_user_name_ageToolErrorIntent, Helloget_locationToolErrorIntent]
-HelloToolSkippedIntent = Union[Helloget_user_name_ageToolSkippedIntent, Helloget_locationToolSkippedIntent]
+class GetMarksToolArgs(TypedDict, total=False):
+    id: Required[str]
 
-class HelloHelloOutputResponseSchemaIntent(TypedDict):
-    type: Literal["HelloOutput"]
-    response: HelloOutput
+GetMarksResult = str
 
-class HelloPersonResponseSchemaIntent(TypedDict):
-    type: Literal["Person"]
-    response: Person
+class GetMarksToolCall(TypedDict):
+    type: Literal["get_marks"]
+    args: GetMarksToolArgs
 
-HelloResponseSchemaIntent = Union[HelloHelloOutputResponseSchemaIntent, HelloPersonResponseSchemaIntent]
+class GetMarksToolResult(TypedDict):
+    name: Literal["get_marks"]
+    args: GetMarksToolArgs
+    result: GetMarksResult
+    overridden: NotRequired[bool]
 
-class HelloResponseTextIntent(TypedDict):
+class GetMarksToolError(TypedDict):
+    tool: Literal["get_marks"]
+    message: str
+
+class GetMarksToolSkipped(TypedDict):
+    type: Literal["get_marks"]
+    args: GetMarksToolArgs
+
+ToolCall = Union[GetLocationToolCall, GetMarksToolCall]
+ToolResult = Union[GetLocationToolResult, GetMarksToolResult]
+ToolError = Union[GetLocationToolError, GetMarksToolError]
+ToolSkipped = Union[GetLocationToolSkipped, GetMarksToolSkipped]
+ToolCalls = ToolCall
+ToolResults = ToolResult
+ToolErrors = ToolError
+ToolSkippeds = ToolSkipped
+
+class AuwgentOutputResponseSchema(TypedDict):
+    type: Literal["AuwgentOutput"]
+    response: AuwgentOutput
+
+class FactOutputResponseSchema(TypedDict):
+    type: Literal["FactOutput"]
+    response: FactOutput
+
+class PlanOutputResponseSchema(TypedDict):
+    type: Literal["PlanOutput"]
+    response: PlanOutput
+
+ResponseSchema = Union[AuwgentOutputResponseSchema, FactOutputResponseSchema, PlanOutputResponseSchema]
+
+class ResponseText(TypedDict):
     text: str
 
-class HelloErrorIntent(TypedDict):
+class ErrorIntent(TypedDict):
     message: str
-HelloIntentValue = Union[
-    HelloToolCallIntent,
-    HelloToolResultIntent,
-    HelloToolErrorIntent,
-    HelloToolSkippedIntent,
-    HelloResponseTextIntent,
-    HelloResponseSchemaIntent,
-    HelloErrorIntent,
-]
-HelloIntentName = Literal["tool_call", "tool_result", "tool_error", "tool_skipped", "response_text", "response_schema", "error"]
+class MarksAndLocationWorkflowArgs(TypedDict, total=False):
+    user_id: Required[str]
 
-class HelloIntentControlSkip(TypedDict):
+MarksAndLocationWorkflowResultValue = str
+
+class MarksAndLocationWorkflowCall(TypedDict):
+    type: Literal["marks_and_location"]
+    args: MarksAndLocationWorkflowArgs
+
+class MarksAndLocationWorkflowResult(TypedDict):
+    name: Literal["marks_and_location"]
+    result: MarksAndLocationWorkflowResultValue
+
+JokerHelperArgs = str
+
+JokerHelperResultValue = TypedDict('_TextOutput', {"text": str}, total=False)
+
+class JokerHelperCall(TypedDict):
+    type: Literal["Joker"]
+    args: JokerHelperArgs
+
+class JokerHelperResult(TypedDict):
+    name: Literal["Joker"]
+    result: JokerHelperResultValue
+
+PlanHelperArgs = str
+
+class PlanHelperResultValue(TypedDict, total=False):
+    steps: Required[List[str]]
+    motivation: Required[str]
+
+class PlanHelperCall(TypedDict):
+    type: Literal["Plan"]
+    args: PlanHelperArgs
+
+class PlanHelperResult(TypedDict):
+    name: Literal["Plan"]
+    result: PlanHelperResultValue
+
+FactHelperArgs = str
+
+class FactHelperResultValue(TypedDict, total=False):
+    is_fact: Required[bool]
+    confidence: Required[float]
+    reasons: Required[str]
+
+class FactHelperCall(TypedDict):
+    type: Literal["Fact"]
+    args: FactHelperArgs
+
+class FactHelperResult(TypedDict):
+    name: Literal["Fact"]
+    result: FactHelperResultValue
+
+AuwgentIntentValue = Union[
+    ToolCall,
+    ToolResult,
+    ToolError,
+    ToolSkipped,
+    ResponseText,
+    ResponseSchema,
+    ErrorIntent,
+    LoudIntent,
+    MarksAndLocationWorkflowCall,
+    MarksAndLocationWorkflowResult,
+    JokerHelperCall,
+    JokerHelperResult,
+    PlanHelperCall,
+    PlanHelperResult,
+    FactHelperCall,
+    FactHelperResult,
+]
+WorkflowCall = Union[MarksAndLocationWorkflowCall]
+WorkflowResult = Union[MarksAndLocationWorkflowResult]
+WorkflowCalls = WorkflowCall
+WorkflowResults = WorkflowResult
+
+HelperCall = Union[JokerHelperCall, PlanHelperCall, FactHelperCall]
+HelperResult = Union[JokerHelperResult, PlanHelperResult, FactHelperResult]
+HelperCalls = HelperCall
+HelperResults = HelperResult
+
+AuwgentIntentName = Literal["tool_call", "tool_result", "tool_error", "tool_skipped", "response_text", "response_schema", "error", "Loud", "workflow_call", "workflow_result", "helper_call", "helper_result"]
+
+class AuwgentIntentControlSkip(TypedDict):
     skip: Literal[True]
 
-class HelloIntentControlOverride(TypedDict):
+class AuwgentIntentControlOverride(TypedDict):
     result: Any
 
-HelloIntentControl = Union[HelloIntentControlSkip, HelloIntentControlOverride]
-HelloIntentHandlerReturn = Optional[Union[SessionState, HelloIntentControl]]
+AuwgentIntentControl = Union[AuwgentIntentControlSkip, AuwgentIntentControlOverride]
+AuwgentIntentHandlerReturn = Optional[Union[SessionState, AuwgentIntentControl]]
 
-HelloIntentHandler = Callable[[HelloIntentName, HelloIntentValue, str], Awaitable[HelloIntentHandlerReturn]]
+AuwgentIntentHandler = Callable[[AuwgentIntentName, AuwgentIntentValue, str], Awaitable[AuwgentIntentHandlerReturn]]
 # Partial intent payloads use top-level fields (for example: text/type/args/response).
-HelloPartialResponseTextIntent = PartialTextIntentValue
-HelloPartialResponseSchemaIntent = PartialStructuredIntentValue
-HelloPartialErrorIntent = PartialStructuredIntentValue
-HelloPartialToolCallIntent = PartialStructuredIntentValue
-HelloPartialToolResultIntent = PartialStructuredIntentValue
-HelloPartialToolErrorIntent = PartialStructuredIntentValue
-HelloPartialToolSkippedIntent = PartialStructuredIntentValue
-HelloPartialIntentHandler = Callable[[HelloIntentName, PartialIntentValue, str], None]
+AuwgentPartialResponseTextIntent = PartialTextIntentValue
+AuwgentPartialResponseSchemaIntent = PartialStructuredIntentValue
+AuwgentPartialErrorIntent = PartialStructuredIntentValue
+AuwgentPartialToolCallIntent = PartialStructuredIntentValue
+AuwgentPartialToolResultIntent = PartialStructuredIntentValue
+AuwgentPartialToolErrorIntent = PartialStructuredIntentValue
+AuwgentPartialToolSkippedIntent = PartialStructuredIntentValue
+AuwgentPartialWorkflowCallIntent = PartialStructuredIntentValue
+AuwgentPartialWorkflowResultIntent = PartialStructuredIntentValue
+AuwgentPartialHelperCallIntent = PartialStructuredIntentValue
+AuwgentPartialHelperResultIntent = PartialStructuredIntentValue
+AuwgentPartialIntentHandler = Callable[[AuwgentIntentName, PartialIntentValue, str], None]
 
-class HelloBaseIntentHandler:
-    def tool_call(self, intent: HelloToolCallIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+class AuwgentBaseIntentHandler:
+    def tool_call(self, value: ToolCalls, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_result(self, intent: HelloToolResultIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def tool_result(self, value: ToolResults, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_error(self, intent: HelloToolErrorIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def tool_error(self, value: ToolErrors, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_skipped(self, intent: HelloToolSkippedIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def tool_skipped(self, value: ToolSkippeds, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def response_text(self, intent: HelloResponseTextIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def response_text(self, value: ResponseText, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def response_schema(self, intent: HelloResponseSchemaIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def response_schema(self, value: ResponseSchema, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def error(self, intent: HelloErrorIntent, agent_name: str) -> Union[HelloIntentHandlerReturn, Awaitable[HelloIntentHandlerReturn]]:
+    def error(self, value: ErrorIntent, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-
-class HelloBasePartialIntentHandler:
-    def tool_call(self, intent: HelloPartialToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def loud(self, value: LoudIntent, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_result(self, intent: HelloPartialToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def workflow_call(self, value: WorkflowCalls, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_error(self, intent: HelloPartialToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def workflow_result(self, value: WorkflowResults, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def tool_skipped(self, intent: HelloPartialToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def helper_call(self, value: HelperCalls, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
-    def response_text(self, intent: HelloPartialResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:
-        pass
-    def response_schema(self, intent: HelloPartialResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:
-        pass
-    def error(self, intent: HelloPartialErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+    def helper_result(self, value: HelperResults, agent_name: str) -> Union[AuwgentIntentHandlerReturn, Awaitable[AuwgentIntentHandlerReturn]]:
         pass
 
-class HelloApiKeys(TypedDict, total=False):
+class AuwgentBasePartialIntentHandler:
+    def tool_call(self, value: AuwgentPartialToolCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_result(self, value: AuwgentPartialToolResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_error(self, value: AuwgentPartialToolErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def tool_skipped(self, value: AuwgentPartialToolSkippedIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def response_text(self, value: AuwgentPartialResponseTextIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def response_schema(self, value: AuwgentPartialResponseSchemaIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def error(self, value: AuwgentPartialErrorIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def loud(self, value: PartialStructuredIntentValue, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def workflow_call(self, value: AuwgentPartialWorkflowCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def workflow_result(self, value: AuwgentPartialWorkflowResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def helper_call(self, value: AuwgentPartialHelperCallIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+    def helper_result(self, value: AuwgentPartialHelperResultIntent, agent_name: str) -> Union[None, Awaitable[None]]:
+        pass
+
+class AuwgentApiKeys(TypedDict, total=False):
     groqApiKey: str
 
-class HelloAgent(TypedAuwgent[Any, HelloContext, HelloOutput, HelloTools]):
-    def on_intent(self, handler: Union[HelloBaseIntentHandler, type[HelloBaseIntentHandler]]) -> None:
+class AuwgentAgent(TypedAuwgent[Any, AuwgentContext, AuwgentOutput, AuwgentTools]):
+    def on_intent(self, handler: Union[AuwgentBaseIntentHandler, type[AuwgentBaseIntentHandler]]) -> None:
         return super().on_intent(handler)
 
-    def on_intent_partial(self, handler: Union[HelloBasePartialIntentHandler, type[HelloBasePartialIntentHandler]]) -> None:
+    def on_intent_partial(self, handler: Union[AuwgentBasePartialIntentHandler, type[AuwgentBasePartialIntentHandler]]) -> None:
         return super().on_intent_partial(handler)
 
-HelloMiddleware = Middleware
+AuwgentMiddleware = Middleware
 
-class HelloConfig(TypedDict, total=False):
-    tools: NotRequired[Union['HelloTools', HelloToolsDict]]
-    middleware: NotRequired[List[Union['HelloMiddleware', 'type[HelloMiddleware]']]]
-    apiKeys: NotRequired['HelloApiKeys']
+class AuwgentConfig(TypedDict, total=False):
+    tools: NotRequired[Union['AuwgentTools', AuwgentToolsDict]]
+    middleware: NotRequired[List[Union['AuwgentMiddleware', 'type[AuwgentMiddleware]']]]
+    context: 'AuwgentContext'
+    apiKeys: NotRequired['AuwgentApiKeys']
 
-def createHello(config: HelloConfig) -> 'HelloAgent':
-    """Create a fully configured Hello agent from config."""
+def createAuwgent(config: AuwgentConfig) -> 'AuwgentAgent':
+    """Create a fully configured Auwgent agent from config."""
     ir_path = os.path.join(os.path.dirname(__file__), "main.agent.json")
     with open(ir_path, "r", encoding="utf-8") as f:
         ir_dict = json.load(f)
     return create_auwgent(ir_dict, config)
 
-auwgent = createHello
-AuwgentTools = HelloTools
-AuwgentConfig = HelloConfig
-AuwgentAgent = HelloAgent
-AuwgentMiddleware = HelloMiddleware
-AuwgentContext = HelloContext
-AuwgentIntentName = HelloIntentName
-AuwgentIntentValue = HelloIntentValue
-AuwgentIntentHandler = HelloIntentHandler
-AuwgentPartialIntentHandler = HelloPartialIntentHandler
-AuwgentBaseIntentHandler = HelloBaseIntentHandler
-AuwgentBasePartialIntentHandler = HelloBasePartialIntentHandler
+auwgent = createAuwgent

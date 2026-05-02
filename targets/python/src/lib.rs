@@ -159,18 +159,12 @@ impl AuwgentNative {
                         let cb = callback.clone_ref(py);
                         let args_py = pyo3::types::PyString::new(py, &args_json);
                         let res = cb.call1(py, (args_py,))?;
-                        pyo3_async_runtimes::tokio::into_future(res.into_bound(py))
+                        res.extract::<String>(py)
                     })
                     .map_err(|e: PyErr| e.to_string())?;
 
-                    let awaited_result = future.await.map_err(|e| e.to_string())?;
-
-                    let result_str: String =
-                        Python::attach(|py| awaited_result.extract::<String>(py))
-                            .map_err(|e: PyErr| e.to_string())?;
-
                     let val: Value =
-                        serde_json::from_str(&result_str).map_err(|e| e.to_string())?;
+                        serde_json::from_str(&future).map_err(|e| e.to_string())?;
                     Ok(val)
                 })
             });

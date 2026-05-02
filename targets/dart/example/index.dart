@@ -12,7 +12,7 @@ final class ML extends AuwgentMiddleware {
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
   responseText(value, agentName) {
-     print("text");
+    print("text");
     print("${value.text} by $agentName");
   }
 

@@ -2,7 +2,8 @@ import asyncio
 import json
 from dotenv import load_dotenv
 import os
-from main_types import AuwgentMiddleware, HelloApiKeys, auwgent,AuwgentBaseIntentHandler,AuwgentConfig
+
+from main_types import AuwgentContext, AuwgentMiddleware, AuwgentApiKeys, auwgent,AuwgentBaseIntentHandler,AuwgentConfig
 from tools import Tools
 
 
@@ -23,33 +24,42 @@ class MLogger(AuwgentMiddleware):
 
 class Logger(AuwgentBaseIntentHandler):
 
-    def response_text(self, intent, agent_name):
-        print(f"answer: {intent.get('text')}")
+    def response_text(self, value, agent_name):
+        print(f"answer: {value.get('text')}")
         print()
 
-    def response_schema(self, intent, agent_name):
-        print(f"schema: {json.dumps(intent['response'], indent=2)}")
+    def response_schema(self, value, agent_name):
+        print(f"schema: {json.dumps(value['response'], indent=2)}")
         print()
 
-    def tool_call(self, intent, agent_name: str):
-        print(f"[tool call] {json.dumps(intent,indent=2)}")
+    def tool_call(self, value, agent_name: str):
+
+        if value['type'] == 'get_marks':
+            args = value.get('args')
+
+        print(f"[tool call] {json.dumps(value,indent=2)}")
         print()
 
-    def tool_result(self, intent, agent_name: str):
-        print(f"[tool result] {json.dumps(intent, indent=2)}")
+    def tool_result(self, value, agent_name: str):
+        print(f"[tool result] {json.dumps(value, indent=2)}")
         print()
 
-    def error(self,intent,agent_name):
-        print(intent['message'])
+    def error(self, value, agent_name: str):
+        print(value['message'])
 
 
 load_dotenv()
 groq_key = os.getenv("GROQ_API_KEY", "")
 
 config = AuwgentConfig(
-    apiKeys=HelloApiKeys(groqApiKey=groq_key),
+    apiKeys=AuwgentApiKeys(groqApiKey=groq_key),
     tools=Tools(),
-    middleware=[MLogger]
+    # middleware=[MLogger],
+    context= AuwgentContext(
+        age=10,
+        user_name= "Amihere",
+        id="100"
+    )
 )
 
 async def main():
@@ -57,14 +67,13 @@ async def main():
     # agent initializaton
     agent = auwgent(config)
 
+    agent.on_intent(Logger)
 
-    agent.on_intent(Logger())
+    print(agent.generate_prompt())
 
-    #print(agent.generate_prompt())
-
-    _result = await agent.run("Hello get my name and my location..")
+    _result = await agent.run("Hello get my marks and my location and by the how are you?")
     print(json.dumps(agent.get_metadata(), indent=2))
-    #print(json.dumps(_result, indent=2))
+    print(json.dumps(_result['turns'], indent=2))
 
 if __name__ == "__main__":
     asyncio.run(main())

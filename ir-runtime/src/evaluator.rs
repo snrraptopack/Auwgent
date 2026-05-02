@@ -285,11 +285,14 @@ impl<'a> Evaluator<'a> {
                 .cloned()
                 .ok_or_else(|| AuwgentError::VariableNotFound(value.clone())),
             Expression::MemberAccess { object, properties } => {
-                if let Some(props) = self.extract_context_member_access(expr) {
+                let context_label = if let Some(props) = self.extract_context_member_access(expr) {
                     if let Some(first) = props.first() {
                         self.record_context_property(first);
                     }
-                }
+                    "context"
+                } else {
+                    "object"
+                };
                 // 1. Evaluate the base object (e.g., "input")
                 let mut current = self.evaluate(object, scope)?;
 
@@ -302,7 +305,7 @@ impl<'a> Evaluator<'a> {
                             } else {
                                 return Err(AuwgentError::PropertyNotFound {
                                     property: prop.clone(),
-                                    context: "object".to_string(),
+                                    context: context_label.to_string(),
                                 });
                             }
                         }

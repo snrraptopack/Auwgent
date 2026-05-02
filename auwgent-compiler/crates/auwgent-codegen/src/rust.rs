@@ -1324,4 +1324,3 @@ mod tests {
         assert!(output.contains("api_keys: sdk::AuwgentApiKeys::default()"));
     }
 }
-

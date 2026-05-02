@@ -19,7 +19,7 @@ pub enum AuwgentError {
     #[error("Variable not found: {0}")]
     VariableNotFound(String),
 
-    #[error("Property '{property}' not found on {context}")]
+    #[error("Property '{property}' not found on {context}. If this is an agent context field, provide it in config.context or set_context before running.")]
     PropertyNotFound { property: String, context: String },
 
     #[error("Unsupported operator: {0}")]

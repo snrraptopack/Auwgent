@@ -224,6 +224,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._stored_intent_handler: Optional[Any] = None
         self._stored_partial_handler: Optional[Any] = None
         self._last_raw_block: Optional[str] = None
+        self._running_loop: Optional[asyncio.AbstractEventLoop] = None
 
         # ── 1. Context ──
         if "context" in config:
@@ -320,12 +321,24 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     # ── Tool Registration ─────────────────────────────────────────────────
 
-    def register_tool(self, name: str, callback: Callable[..., Awaitable[Any]]) -> None:
-        async def wrap_callback(args_json_str: str) -> str:
+    def register_tool(self, name: str, callback: Callable[..., Any]) -> None:
+        def wrap_callback(args_json_str: str) -> str:
             args_dict = json.loads(args_json_str)
             if not isinstance(args_dict, dict):
                 args_dict = {}
-            res = await callback(**args_dict)
+
+            res = callback(**args_dict)
+            if inspect.isawaitable(res):
+                loop = self._running_loop
+                if loop is None or loop.is_closed():
+                    raise RuntimeError(
+                        "async Python tool was called without an active Auwgent run loop"
+                    )
+                res = asyncio.run_coroutine_threadsafe(
+                    cast(Awaitable[Any], res),
+                    loop,
+                ).result()
+
             return json.dumps(res)
         self._native.register_tool(name, wrap_callback)
 
@@ -729,6 +742,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
         self._shared_context = {}
         self._agent_stack = [self.ir.get("name", "agent")]
         self._last_raw_block = None
+        self._running_loop = asyncio.get_running_loop()
 
         self._activate_listeners()
 
@@ -756,6 +770,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             self._report_warning("run", "native run failed", error)
             raise
         finally:
+            self._running_loop = None
             self._deactivate_listeners()
 
     # ── Session Management ────────────────────────────────────────────────
