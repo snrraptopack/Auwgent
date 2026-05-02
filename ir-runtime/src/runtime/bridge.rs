@@ -21,6 +21,22 @@ pub struct EngineBridge {
 }
 
 impl EngineBridge {
+    pub fn generate_prompt_from_ir(
+        ir_json: String,
+        context: Option<Value>,
+        helper_name: Option<String>,
+    ) -> Result<String, String> {
+        let ir: AgentIR = serde_json::from_str(&ir_json)
+            .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;
+        let engine = AuwgentEngine::new(ir);
+        if let Some(context) = context {
+            engine.set_context(context);
+        }
+        engine
+            .generate_prompt(helper_name)
+            .map_err(|e| format!("{}", e))
+    }
+
     pub fn new(ir_json: String) -> Result<Self, String> {
         let ir: AgentIR = serde_json::from_str(&ir_json)
             .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;

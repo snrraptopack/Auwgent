@@ -7,40 +7,47 @@ import 'types.dart';
 
 class TypedAuwgent<IR extends JsonMap> {
   TypedAuwgent(this.ir, this.config)
-    : native = AuwgentNative.fromIrJson(
-        irJson: jsonEncode(ir),
-        libraryPath: config.libraryPath,
-      ),
+    : _irJson = jsonEncode(ir),
+      _context = config.context == null
+          ? null
+          : Map<String, Object?>.from(config.context!),
       middleware = List<Middleware>.from(
         config.middleware.whereType<Middleware>(),
-      ) {
-    if (config.context != null) {
-      native.setContext(config.context!);
-    }
-
-    _registerDrivers(config.apiKeys);
-    _registerTools(config.tools);
-  }
+      );
 
   final IR ir;
   final AuwgentConfig config;
-  final AuwgentNative native;
   final List<Middleware> middleware;
+  final String _irJson;
 
   IntentHandler? _storedIntentHandler;
   PartialIntentHandler? _storedPartialIntentHandler;
   final List<AuwgentWarning> _warnings = [];
   void Function(AuwgentWarning warning)? _warningHandler;
 
+  AuwgentNative? _native;
+  Map<String, Object?>? _context;
+  int _contextRevision = 0;
+  final Map<String, String> _promptCache = {};
   Map<String, Object?> _sharedContext = {};
   List<String> _agentStack = [];
   String? _lastTurnRawBlock;
 
-  void dispose() => native.dispose();
+  void dispose() {
+    _native?.dispose();
+    _native = null;
+  }
 
-  void setContext(JsonMap context) => native.setContext(context);
+  void setContext(JsonMap context) {
+    _context = Map<String, Object?>.from(context);
+    _contextRevision++;
+    _promptCache.clear();
+    _native?.setContext(_context!);
+  }
 
-  AuwgentNative get raw => native;
+  AuwgentNative get native => _ensureNative();
+
+  AuwgentNative get raw => _ensureNative();
 
   void registerTool(String name, ToolHandler handler) {
     native.registerTool(name, handler);
@@ -63,7 +70,20 @@ class TypedAuwgent<IR extends JsonMap> {
   void clearWarnings() => _warnings.clear();
 
   String generatePrompt({String? helperName}) {
-    return native.generatePrompt(helperName: helperName);
+    final cacheKey = '${helperName ?? ''}#$_contextRevision';
+    final cached = _promptCache[cacheKey];
+    if (cached != null) {
+      return cached;
+    }
+
+    final prompt = AuwgentNative.generatePromptFromIrJson(
+      irJson: _irJson,
+      context: _context,
+      helperName: helperName,
+      libraryPath: config.libraryPath,
+    );
+    _promptCache[cacheKey] = prompt;
+    return prompt;
   }
 
   SessionState exportSession() {
@@ -252,6 +272,27 @@ class TypedAuwgent<IR extends JsonMap> {
     for (final entry in tools.entries) {
       native.registerTool(entry.key, entry.value);
     }
+  }
+
+  AuwgentNative _ensureNative() {
+    final existing = _native;
+    if (existing != null && !existing.isDisposed) {
+      return existing;
+    }
+
+    final created = AuwgentNative.fromIrJson(
+      irJson: _irJson,
+      libraryPath: config.libraryPath,
+    );
+    _native = created;
+
+    if (_context != null) {
+      created.setContext(_context!);
+    }
+    _registerDrivers(config.apiKeys);
+    _registerTools(config.tools);
+
+    return created;
   }
 
   Future<void> _awaitRunWithStructuredPolling(Future<void> runFuture) async {

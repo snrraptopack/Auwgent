@@ -58,6 +58,47 @@ final class AuwgentNative {
     }
   }
 
+  static String generatePromptFromIrJson({
+    required String irJson,
+    Map<String, Object?>? context,
+    String? helperName,
+    String? libraryPath,
+  }) {
+    final bindings = _bindingsForLibrary(libraryPath);
+    final irPtr = irJson.toNativeUtf8();
+    final contextPtr = context == null
+        ? ffi.nullptr
+        : jsonEncode(context).toNativeUtf8();
+    final helperPtr = helperName?.toNativeUtf8() ?? ffi.nullptr;
+    try {
+      try {
+        final ptr = bindings.generatePromptFromIr(irPtr, contextPtr, helperPtr);
+        return _takeRustStringFrom(bindings, ptr);
+      } on StateError {
+        final native = AuwgentNative.fromIrJson(
+          irJson: irJson,
+          libraryPath: libraryPath,
+        );
+        try {
+          if (context != null) {
+            native.setContext(context);
+          }
+          return native.generatePrompt(helperName: helperName);
+        } finally {
+          native.dispose();
+        }
+      }
+    } finally {
+      malloc.free(irPtr);
+      if (contextPtr != ffi.nullptr) {
+        malloc.free(contextPtr);
+      }
+      if (helperPtr != ffi.nullptr) {
+        malloc.free(helperPtr);
+      }
+    }
+  }
+
   final AuwgentBindings _bindings;
   ffi.Pointer<_EngineHandle> _handle;
   final List<_RegisteredCallable> _callbacks = [];
@@ -346,140 +387,6 @@ final class AuwgentNative {
       handler,
       'sub-engine complete',
     );
-  }
-
-  void onLlmStart(LlmStartHandler handler) {
-    _checkNotDisposed();
-    final callable = ffi.NativeCallable<NativeLlmStartCallback>.isolateLocal((
-      ffi.Pointer<Utf8> inputJsonPtr,
-      ffi.Pointer<Utf8> systemPromptPtr,
-      ffi.Pointer<Utf8> contextJsonPtr,
-      ffi.Pointer<ffi.Void> _,
-    ) {
-      try {
-        return _encodeSyncJson(
-          handler(
-            inputJsonPtr.toDartString(),
-            systemPromptPtr.toDartString(),
-            contextJsonPtr.toDartString(),
-          ),
-          'LLM start callbacks',
-        );
-      } catch (_) {
-        return ffi.nullptr;
-      }
-    });
-
-    final ok = _bindings.engineOnLlmStart(
-      _handle,
-      callable.nativeFunction,
-      _freeCallbackStringPtr,
-      ffi.nullptr,
-    );
-    if (!ok) {
-      callable.close();
-      throw StateError(_readLastError(_bindings));
-    }
-    _callbacks.add(_RegisteredCallable(callable.close));
-  }
-
-  void onLlmEnd(LlmEndHandler handler) {
-    _checkNotDisposed();
-    final callable = ffi.NativeCallable<NativeLlmEndCallback>.isolateLocal((
-      ffi.Pointer<Utf8> rawResponsePtr,
-      ffi.Pointer<Utf8> systemPromptPtr,
-      ffi.Pointer<ffi.Void> _,
-    ) {
-      try {
-        final result = handler(
-          rawResponsePtr.toDartString(),
-          systemPromptPtr.toDartString(),
-        );
-        if (result is Future) {
-          throw StateError(
-            'Dart LLM end callbacks must return synchronously for now.',
-          );
-        }
-      } catch (_) {}
-    });
-
-    final ok = _bindings.engineOnLlmEnd(
-      _handle,
-      callable.nativeFunction,
-      ffi.nullptr,
-    );
-    if (!ok) {
-      callable.close();
-      throw StateError(_readLastError(_bindings));
-    }
-    _callbacks.add(_RegisteredCallable(callable.close));
-  }
-
-  void onRunStart(SessionTransformHandler handler) {
-    _registerSessionTransform(_bindings.engineOnRunStart, handler, 'run start');
-  }
-
-  void onRunComplete(SessionNotifyHandler handler) {
-    _registerSessionNotify(
-      _bindings.engineOnRunComplete,
-      handler,
-      'run complete',
-    );
-  }
-
-  void onError(
-    FutureOr<bool> Function(
-      Object error,
-      SessionState? session,
-      Map<String, Object?> context,
-    )
-    handler,
-  ) {
-    _checkNotDisposed();
-    final callable = ffi.NativeCallable<NativeErrorCallback>.isolateLocal((
-      ffi.Pointer<Utf8> errorJsonPtr,
-      ffi.Pointer<Utf8> sessionJsonPtr,
-      ffi.Pointer<Utf8> contextJsonPtr,
-      ffi.Pointer<ffi.Void> _,
-    ) {
-      try {
-        final sessionText = sessionJsonPtr == ffi.nullptr
-            ? null
-            : sessionJsonPtr.toDartString();
-        final session = sessionText == null
-            ? null
-            : SessionState.fromJson(
-                Map<String, Object?>.from(jsonDecode(sessionText) as Map),
-              );
-        final context = Map<String, Object?>.from(
-          jsonDecode(contextJsonPtr.toDartString()) as Map,
-        );
-        final result = handler(
-          jsonDecode(errorJsonPtr.toDartString()),
-          session,
-          context,
-        );
-        if (result is Future) {
-          throw StateError(
-            'Dart error callbacks must return synchronously for now.',
-          );
-        }
-        return result;
-      } catch (_) {
-        return false;
-      }
-    }, exceptionalReturn: false);
-
-    final ok = _bindings.engineOnError(
-      _handle,
-      callable.nativeFunction,
-      ffi.nullptr,
-    );
-    if (!ok) {
-      callable.close();
-      throw StateError(_readLastError(_bindings));
-    }
-    _callbacks.add(_RegisteredCallable(callable.close));
   }
 
   String generatePrompt({String? helperName}) {
@@ -808,13 +715,20 @@ final class AuwgentNative {
   }
 
   String _takeRustString(ffi.Pointer<Utf8> ptr) {
+    return _takeRustStringFrom(_bindings, ptr);
+  }
+
+  static String _takeRustStringFrom(
+    AuwgentBindings bindings,
+    ffi.Pointer<Utf8> ptr,
+  ) {
     if (ptr == ffi.nullptr) {
-      throw StateError(_readLastError(_bindings));
+      throw StateError(_readLastError(bindings));
     }
     try {
       return ptr.toDartString();
     } finally {
-      _bindings.stringFree(ptr, ffi.nullptr);
+      bindings.stringFree(ptr, ffi.nullptr);
     }
   }
 

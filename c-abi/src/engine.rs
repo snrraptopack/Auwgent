@@ -1,16 +1,15 @@
 use crate::error::{clear_last_error, set_last_error};
 use crate::ffi_string::{into_c_string, nullable_cstr, required_cstr};
 use crate::host_callback::{
-    parse_intent_control_json, AuwgentIntentCallback,
-     AuwgentMiddlewareEventCallback,
-    AuwgentPartialIntentCallback, AuwgentSessionNotifyCallback,
-    AuwgentSessionTransformCallback, JsonCallbackRegistration,
+    AuwgentIntentCallback, AuwgentMiddlewareEventCallback, AuwgentPartialIntentCallback,
+    AuwgentSessionNotifyCallback, AuwgentSessionTransformCallback, JsonCallbackRegistration,
+    parse_intent_control_json,
 };
 use crate::json::{parse_optional_json, parse_optional_stack};
 use crate::tool_callback::{
-    tool_callback_error, AsyncToolCallbackRegistration, AuwgentAsyncToolCallback,
-    AuwgentFreeCallback, AuwgentRunCompleteCallback, AuwgentToolCallback, PendingAsyncToolCalls,
-    RunCompleteCallbackRegistration, ToolCallbackRegistration,
+    AsyncToolCallbackRegistration, AuwgentAsyncToolCallback, AuwgentFreeCallback,
+    AuwgentRunCompleteCallback, AuwgentToolCallback, PendingAsyncToolCalls,
+    RunCompleteCallbackRegistration, ToolCallbackRegistration, tool_callback_error,
 };
 use ir_runtime::runtime::bridge::EngineBridge;
 use serde_json::Value;
@@ -59,6 +58,30 @@ pub extern "C" fn auwgent_engine_new(ir_json: *const c_char) -> *mut EngineHandl
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn auwgent_generate_prompt_from_ir(
+    ir_json: *const c_char,
+    context_json: *const c_char,
+    helper_name: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+
+    let result: Result<String, String> = (|| {
+        let ir_json = required_cstr(ir_json, "ir_json")?;
+        let context = parse_optional_json(context_json, "context")?;
+        let helper_name = nullable_cstr(helper_name)?;
+        EngineBridge::generate_prompt_from_ir(ir_json, context, helper_name)
+    })();
+
+    match result {
+        Ok(prompt) => into_c_string(prompt),
+        Err(err) => {
+            set_last_error(err);
+            ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_free(handle: *mut EngineHandle) {
     if handle.is_null() {
         return;
@@ -77,8 +100,8 @@ pub extern "C" fn auwgent_engine_set_context(
 ) -> bool {
     clear_last_error();
     match with_bridge(handle, |bridge| {
-        let context = parse_optional_json(context_json, "context")?
-            .unwrap_or_else(|| serde_json::json!({}));
+        let context =
+            parse_optional_json(context_json, "context")?.unwrap_or_else(|| serde_json::json!({}));
         bridge.set_context(context);
         Ok(())
     }) {
@@ -129,7 +152,6 @@ pub extern "C" fn auwgent_engine_set_openai_driver(
         }
     }
 }
-
 
 #[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_set_groq_driver(
@@ -379,7 +401,9 @@ pub extern "C" fn auwgent_engine_run_json_async(
 #[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_process_intents(handle: *mut EngineHandle) -> *mut c_char {
     clear_last_error();
-    match with_bridge(handle, |bridge| bridge.rt.block_on(bridge.process_intents_async())) {
+    match with_bridge(handle, |bridge| {
+        bridge.rt.block_on(bridge.process_intents_async())
+    }) {
         Ok(json) => into_c_string(json),
         Err(err) => {
             set_last_error(err);
@@ -434,7 +458,9 @@ pub extern "C" fn auwgent_engine_drain_jsonl(handle: *mut EngineHandle) -> *mut 
 #[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_drain_jsonl_lines(handle: *mut EngineHandle) -> *mut c_char {
     clear_last_error();
-    match with_bridge(handle, |bridge| bridge.drain_structured_output_jsonl_lines()) {
+    match with_bridge(handle, |bridge| {
+        bridge.drain_structured_output_jsonl_lines()
+    }) {
         Ok(json) => into_c_string(json),
         Err(err) => {
             set_last_error(err);
@@ -494,13 +520,15 @@ pub extern "C" fn auwgent_engine_register_tool_callback(
                 let registration = registration;
                 let tool_name = tool_name_for_callback.clone();
                 Box::pin(async move {
-                    let args_json = serde_json::to_string(&args)
-                        .map_err(|err| tool_callback_error(&tool_name, &format!("failed to serialize args: {err}")))?;
+                    let args_json = serde_json::to_string(&args).map_err(|err| {
+                        tool_callback_error(&tool_name, &format!("failed to serialize args: {err}"))
+                    })?;
                     let result_json = registration
                         .invoke_json(&tool_name, &args_json)
                         .map_err(|err| tool_callback_error(&tool_name, &err))?;
-                    serde_json::from_str(&result_json)
-                        .map_err(|err| tool_callback_error(&tool_name, &format!("returned invalid JSON: {err}")))
+                    serde_json::from_str(&result_json).map_err(|err| {
+                        tool_callback_error(&tool_name, &format!("returned invalid JSON: {err}"))
+                    })
                 })
             });
 
@@ -536,7 +564,10 @@ pub extern "C" fn auwgent_engine_register_tool_callback_async(
     let result: Result<(), String> = (|| {
         let tool_name = required_cstr(tool_name, "tool_name")?;
         let callback = callback.ok_or_else(|| "async tool callback was null".to_string())?;
-        let registration = AsyncToolCallbackRegistration { callback, user_data };
+        let registration = AsyncToolCallbackRegistration {
+            callback,
+            user_data,
+        };
 
         let tool_name_for_callback = tool_name.clone();
         let implementation: ir_runtime::runtime::engine::ToolImplementation =
@@ -546,10 +577,7 @@ pub extern "C" fn auwgent_engine_register_tool_callback_async(
                 let tool_name = tool_name_for_callback.clone();
                 Box::pin(async move {
                     let args_json = serde_json::to_string(&args).map_err(|err| {
-                        tool_callback_error(
-                            &tool_name,
-                            &format!("failed to serialize args: {err}"),
-                        )
+                        tool_callback_error(&tool_name, &format!("failed to serialize args: {err}"))
                     })?;
 
                     let (request_id, receiver) = pending_async_tools
@@ -572,10 +600,7 @@ pub extern "C" fn auwgent_engine_register_tool_callback_async(
                         result_json.map_err(|err| tool_callback_error(&tool_name, &err))?;
 
                     serde_json::from_str(&result_json).map_err(|err| {
-                        tool_callback_error(
-                            &tool_name,
-                            &format!("returned invalid JSON: {err}"),
-                        )
+                        tool_callback_error(&tool_name, &format!("returned invalid JSON: {err}"))
                     })
                 })
             });
@@ -610,7 +635,9 @@ pub extern "C" fn auwgent_engine_complete_tool_call(
     let result: Result<(), String> = (|| {
         let request_id = required_cstr(request_id, "request_id")?;
         let result_json = required_cstr(result_json, "result_json")?;
-        handle_ref.pending_async_tools.complete(&request_id, result_json)
+        handle_ref
+            .pending_async_tools
+            .complete(&request_id, result_json)
     })();
 
     match result {
@@ -672,7 +699,12 @@ pub extern "C" fn auwgent_engine_on_middleware_event(
         let handler: ir_runtime::runtime::engine::AsyncMiddlewareEventCallback =
             Arc::new(move |event_json: String| {
                 let registration = registration;
-                Box::pin(async move { registration.invoke_middleware_event(&event_json).ok().flatten() })
+                Box::pin(async move {
+                    registration
+                        .invoke_middleware_event(&event_json)
+                        .ok()
+                        .flatten()
+                })
             });
 
         bridge.on_middleware_event(handler);
@@ -710,7 +742,9 @@ pub extern "C" fn auwgent_engine_on_intent(
                         Ok(json) => json,
                         Err(_) => return None,
                     };
-                    let result = registration.invoke_intent(&name, &value_json, &agent).ok()?;
+                    let result = registration
+                        .invoke_intent(&name, &value_json, &agent)
+                        .ok()?;
                     parse_intent_control_json(result).ok().flatten()
                 })
             });
@@ -780,7 +814,12 @@ pub extern "C" fn auwgent_engine_on_sub_engine_start(
         let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
             Arc::new(move |name: String, session_json: String| {
                 let registration = registration;
-                Box::pin(async move { registration.invoke_session_transform(&name, &session_json).ok().flatten() })
+                Box::pin(async move {
+                    registration
+                        .invoke_session_transform(&name, &session_json)
+                        .ok()
+                        .flatten()
+                })
             });
 
         bridge.on_sub_engine_start(handler);
@@ -802,7 +841,8 @@ pub extern "C" fn auwgent_engine_on_sub_engine_complete(
 ) -> bool {
     clear_last_error();
     match with_bridge(handle, |bridge| {
-        let callback = callback.ok_or_else(|| "sub engine complete callback was null".to_string())?;
+        let callback =
+            callback.ok_or_else(|| "sub engine complete callback was null".to_string())?;
         let registration = JsonCallbackRegistration {
             callback,
             free_result: None,

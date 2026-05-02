@@ -53,7 +53,7 @@ Future<void> main() async {
 
   final agent = auwgent(config);
 
-  //print(agent.generatePrompt());
+  print(agent.generatePrompt());
 
   agent.onIntentHandler(HelloLogger());
   //agent.onIntentPartialHandler(Logger());

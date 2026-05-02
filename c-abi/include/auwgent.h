@@ -58,26 +58,6 @@ typedef void (*auwgent_session_notify_callback)(
     void* user_data
 );
 
-typedef char* (*auwgent_llm_start_callback)(
-    const char* input_json,
-    const char* system_prompt,
-    const char* context_json,
-    void* user_data
-);
-
-typedef void (*auwgent_llm_end_callback)(
-    const char* raw_response,
-    const char* system_prompt,
-    void* user_data
-);
-
-typedef bool (*auwgent_error_callback)(
-    const char* error_json,
-    const char* session_json,
-    const char* context_json,
-    void* user_data
-);
-
 /*
  * Strings returned by this library must be freed with auwgent_string_free.
  * Strings returned by host callbacks may be freed by the optional free callback
@@ -89,12 +69,23 @@ char* auwgent_last_error_message(void);
 auwgent_engine_handle* auwgent_engine_new(const char* ir_json);
 void auwgent_engine_free(auwgent_engine_handle* handle);
 
+char* auwgent_generate_prompt_from_ir(
+    const char* ir_json,
+    const char* context_json,
+    const char* helper_name
+);
+
 bool auwgent_engine_set_context(
     auwgent_engine_handle* handle,
     const char* context_json
 );
 
 bool auwgent_engine_set_gemini_driver(
+    auwgent_engine_handle* handle,
+    const char* api_key
+);
+
+bool auwgent_engine_set_groq_driver(
     auwgent_engine_handle* handle,
     const char* api_key
 );
@@ -231,38 +222,6 @@ bool auwgent_engine_on_sub_engine_start(
 bool auwgent_engine_on_sub_engine_complete(
     auwgent_engine_handle* handle,
     auwgent_session_notify_callback callback,
-    void* user_data
-);
-
-bool auwgent_engine_on_llm_start(
-    auwgent_engine_handle* handle,
-    auwgent_llm_start_callback callback,
-    auwgent_free_callback free_result,
-    void* user_data
-);
-
-bool auwgent_engine_on_llm_end(
-    auwgent_engine_handle* handle,
-    auwgent_llm_end_callback callback,
-    void* user_data
-);
-
-bool auwgent_engine_on_run_start(
-    auwgent_engine_handle* handle,
-    auwgent_session_transform_callback callback,
-    auwgent_free_callback free_result,
-    void* user_data
-);
-
-bool auwgent_engine_on_run_complete(
-    auwgent_engine_handle* handle,
-    auwgent_session_notify_callback callback,
-    void* user_data
-);
-
-bool auwgent_engine_on_error(
-    auwgent_engine_handle* handle,
-    auwgent_error_callback callback,
     void* user_data
 );
 

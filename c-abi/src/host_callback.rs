@@ -33,26 +33,6 @@ pub type AuwgentSessionNotifyCallback = unsafe extern "C" fn(
     user_data: *mut c_void,
 );
 
-pub type AuwgentLlmStartCallback = unsafe extern "C" fn(
-    input_json: *const c_char,
-    system_prompt: *const c_char,
-    context_json: *const c_char,
-    user_data: *mut c_void,
-) -> *mut c_char;
-
-pub type AuwgentLlmEndCallback = unsafe extern "C" fn(
-    raw_response: *const c_char,
-    system_prompt: *const c_char,
-    user_data: *mut c_void,
-);
-
-pub type AuwgentErrorCallback = unsafe extern "C" fn(
-    error_json: *const c_char,
-    session_json: *const c_char,
-    context_json: *const c_char,
-    user_data: *mut c_void,
-) -> bool;
-
 #[derive(Clone, Copy)]
 pub struct JsonCallbackRegistration<C> {
     pub callback: C,
@@ -164,70 +144,6 @@ impl JsonCallbackRegistration<AuwgentSessionNotifyCallback> {
         let session_json_c = make_cstring("session json", session_json)?;
         unsafe { (self.callback)(primary_name_c.as_ptr(), session_json_c.as_ptr(), self.user_data) };
         Ok(())
-    }
-}
-
-impl JsonCallbackRegistration<AuwgentLlmStartCallback> {
-    pub fn invoke_llm_start(
-        &self,
-        input_json: &str,
-        system_prompt: &str,
-        context_json: &str,
-    ) -> Result<Option<String>, String> {
-        let input_json_c = make_cstring("input json", input_json)?;
-        let system_prompt_c = make_cstring("system prompt", system_prompt)?;
-        let context_json_c = make_cstring("context json", context_json)?;
-        let result_ptr = unsafe {
-            (self.callback)(
-                input_json_c.as_ptr(),
-                system_prompt_c.as_ptr(),
-                context_json_c.as_ptr(),
-                self.user_data,
-            )
-        };
-        copy_optional_json_result(result_ptr, self.free_result, self.user_data)
-    }
-}
-
-impl JsonCallbackRegistration<AuwgentLlmEndCallback> {
-    pub fn invoke_llm_end(&self, raw_response: &str, system_prompt: &str) -> Result<(), String> {
-        let raw_response_c = make_cstring("raw response", raw_response)?;
-        let system_prompt_c = make_cstring("system prompt", system_prompt)?;
-        unsafe {
-            (self.callback)(
-                raw_response_c.as_ptr(),
-                system_prompt_c.as_ptr(),
-                self.user_data,
-            )
-        };
-        Ok(())
-    }
-}
-
-impl JsonCallbackRegistration<AuwgentErrorCallback> {
-    pub fn invoke_error(
-        &self,
-        error_json: &str,
-        session_json: Option<&str>,
-        context_json: &str,
-    ) -> Result<bool, String> {
-        let error_json_c = make_cstring("error json", error_json)?;
-        let session_json_c = session_json
-            .map(|value| make_cstring("session json", value))
-            .transpose()?;
-        let context_json_c = make_cstring("context json", context_json)?;
-
-        Ok(unsafe {
-            (self.callback)(
-                error_json_c.as_ptr(),
-                session_json_c
-                    .as_ref()
-                    .map(|s| s.as_ptr())
-                    .unwrap_or(std::ptr::null()),
-                context_json_c.as_ptr(),
-                self.user_data,
-            )
-        })
     }
 }
 

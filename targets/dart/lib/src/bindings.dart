@@ -15,6 +15,19 @@ typedef NativeEngineNew =
     ffi.Pointer<_EngineHandle> Function(ffi.Pointer<Utf8>);
 typedef DartEngineNew = ffi.Pointer<_EngineHandle> Function(ffi.Pointer<Utf8>);
 
+typedef NativeGeneratePromptFromIr =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+typedef DartGeneratePromptFromIr =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+
 typedef NativeEngineFree = ffi.Void Function(ffi.Pointer<_EngineHandle>);
 typedef DartEngineFree = void Function(ffi.Pointer<_EngineHandle>);
 
@@ -220,25 +233,6 @@ typedef NativeSessionTransformCallback =
 typedef NativeSessionNotifyCallback =
     ffi.Void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, NativeVoidPtr);
 
-typedef NativeLlmStartCallback =
-    ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>,
-      ffi.Pointer<Utf8>,
-      ffi.Pointer<Utf8>,
-      NativeVoidPtr,
-    );
-
-typedef NativeLlmEndCallback =
-    ffi.Void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, NativeVoidPtr);
-
-typedef NativeErrorCallback =
-    ffi.Bool Function(
-      ffi.Pointer<Utf8>,
-      ffi.Pointer<Utf8>,
-      ffi.Pointer<Utf8>,
-      NativeVoidPtr,
-    );
-
 typedef NativeEngineRegisterToolCallback =
     ffi.Bool Function(
       ffi.Pointer<_EngineHandle>,
@@ -368,75 +362,6 @@ typedef DartEngineOnSubEngineComplete =
       NativeVoidPtr,
     );
 
-typedef NativeEngineOnLlmStart =
-    ffi.Bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeLlmStartCallback>>,
-      ffi.Pointer<ffi.NativeFunction<NativeFreeString>>,
-      NativeVoidPtr,
-    );
-typedef DartEngineOnLlmStart =
-    bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeLlmStartCallback>>,
-      ffi.Pointer<ffi.NativeFunction<NativeFreeString>>,
-      NativeVoidPtr,
-    );
-
-typedef NativeEngineOnLlmEnd =
-    ffi.Bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeLlmEndCallback>>,
-      NativeVoidPtr,
-    );
-typedef DartEngineOnLlmEnd =
-    bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeLlmEndCallback>>,
-      NativeVoidPtr,
-    );
-
-typedef NativeEngineOnRunStart =
-    ffi.Bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeSessionTransformCallback>>,
-      ffi.Pointer<ffi.NativeFunction<NativeFreeString>>,
-      NativeVoidPtr,
-    );
-typedef DartEngineOnRunStart =
-    bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeSessionTransformCallback>>,
-      ffi.Pointer<ffi.NativeFunction<NativeFreeString>>,
-      NativeVoidPtr,
-    );
-
-typedef NativeEngineOnRunComplete =
-    ffi.Bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeSessionNotifyCallback>>,
-      NativeVoidPtr,
-    );
-typedef DartEngineOnRunComplete =
-    bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeSessionNotifyCallback>>,
-      NativeVoidPtr,
-    );
-
-typedef NativeEngineOnError =
-    ffi.Bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeErrorCallback>>,
-      NativeVoidPtr,
-    );
-typedef DartEngineOnError =
-    bool Function(
-      ffi.Pointer<_EngineHandle>,
-      ffi.Pointer<ffi.NativeFunction<NativeErrorCallback>>,
-      NativeVoidPtr,
-    );
-
 final class AuwgentBindings {
   AuwgentBindings(this.library)
     : stringFree = library.lookupFunction<NativeFreeString, DartFreeString>(
@@ -449,6 +374,7 @@ final class AuwgentBindings {
       engineNew = library.lookupFunction<NativeEngineNew, DartEngineNew>(
         'auwgent_engine_new',
       ),
+      generatePromptFromIr = _lookupGeneratePromptFromIr(library),
       engineFree = library.lookupFunction<NativeEngineFree, DartEngineFree>(
         'auwgent_engine_free',
       ),
@@ -462,10 +388,9 @@ final class AuwgentBindings {
             DartEngineSetGeminiDriver
           >('auwgent_engine_set_gemini_driver'),
       engineSetGroqDriver = library
-          .lookupFunction<
-            NativeEngineSetGroqDriver,
-            DartEngineSetGroqDriver
-          >('auwgent_engine_set_groq_driver'),
+          .lookupFunction<NativeEngineSetGroqDriver, DartEngineSetGroqDriver>(
+            'auwgent_engine_set_groq_driver',
+          ),
       engineSetOpenaiDriver = library
           .lookupFunction<
             NativeEngineSetOpenaiDriver,
@@ -501,15 +426,13 @@ final class AuwgentBindings {
             'auwgent_engine_run_json',
           ),
       engineRunTextAsync = library
-          .lookupFunction<
-            NativeEngineRunTextAsync,
-            DartEngineRunTextAsync
-          >('auwgent_engine_run_text_async'),
+          .lookupFunction<NativeEngineRunTextAsync, DartEngineRunTextAsync>(
+            'auwgent_engine_run_text_async',
+          ),
       engineRunJsonAsync = library
-          .lookupFunction<
-            NativeEngineRunJsonAsync,
-            DartEngineRunJsonAsync
-          >('auwgent_engine_run_json_async'),
+          .lookupFunction<NativeEngineRunJsonAsync, DartEngineRunJsonAsync>(
+            'auwgent_engine_run_json_async',
+          ),
       engineProcessIntents = library
           .lookupFunction<NativeEngineProcessIntents, DartEngineProcessIntents>(
             'auwgent_engine_process_intents',
@@ -558,56 +481,18 @@ final class AuwgentBindings {
           .lookupFunction<NativeEngineFailToolCall, DartEngineFailToolCall>(
             'auwgent_engine_fail_tool_call',
           ),
-      engineOnMiddlewareEvent = library
-          .lookupFunction<
-            NativeEngineOnMiddlewareEvent,
-            DartEngineOnMiddlewareEvent
-          >('auwgent_engine_on_middleware_event'),
-      engineOnIntent = library
-          .lookupFunction<NativeEngineOnIntent, DartEngineOnIntent>(
-            'auwgent_engine_on_intent',
-          ),
-      engineOnIntentPartial = library
-          .lookupFunction<
-            NativeEngineOnIntentPartial,
-            DartEngineOnIntentPartial
-          >('auwgent_engine_on_intent_partial'),
-      engineOnSubEngineStart = library
-          .lookupFunction<
-            NativeEngineOnSubEngineStart,
-            DartEngineOnSubEngineStart
-          >('auwgent_engine_on_sub_engine_start'),
-      engineOnSubEngineComplete = library
-          .lookupFunction<
-            NativeEngineOnSubEngineComplete,
-            DartEngineOnSubEngineComplete
-          >('auwgent_engine_on_sub_engine_complete'),
-      engineOnLlmStart = library
-          .lookupFunction<NativeEngineOnLlmStart, DartEngineOnLlmStart>(
-            'auwgent_engine_on_llm_start',
-          ),
-      engineOnLlmEnd = library
-          .lookupFunction<NativeEngineOnLlmEnd, DartEngineOnLlmEnd>(
-            'auwgent_engine_on_llm_end',
-          ),
-      engineOnRunStart = library
-          .lookupFunction<NativeEngineOnRunStart, DartEngineOnRunStart>(
-            'auwgent_engine_on_run_start',
-          ),
-      engineOnRunComplete = library
-          .lookupFunction<NativeEngineOnRunComplete, DartEngineOnRunComplete>(
-            'auwgent_engine_on_run_complete',
-          ),
-      engineOnError = library
-          .lookupFunction<NativeEngineOnError, DartEngineOnError>(
-            'auwgent_engine_on_error',
-          );
+      engineOnMiddlewareEvent = _lookupEngineOnMiddlewareEvent(library),
+      engineOnIntent = _lookupEngineOnIntent(library),
+      engineOnIntentPartial = _lookupEngineOnIntentPartial(library),
+      engineOnSubEngineStart = _lookupEngineOnSubEngineStart(library),
+      engineOnSubEngineComplete = _lookupEngineOnSubEngineComplete(library);
 
   final ffi.DynamicLibrary library;
 
   final DartFreeString stringFree;
   final DartLastErrorMessage lastErrorMessage;
   final DartEngineNew engineNew;
+  final DartGeneratePromptFromIr generatePromptFromIr;
   final DartEngineFree engineFree;
   final DartEngineSetContext engineSetContext;
   final DartEngineSetGeminiDriver engineSetGeminiDriver;
@@ -638,9 +523,96 @@ final class AuwgentBindings {
   final DartEngineOnIntentPartial engineOnIntentPartial;
   final DartEngineOnSubEngineStart engineOnSubEngineStart;
   final DartEngineOnSubEngineComplete engineOnSubEngineComplete;
-  final DartEngineOnLlmStart engineOnLlmStart;
-  final DartEngineOnLlmEnd engineOnLlmEnd;
-  final DartEngineOnRunStart engineOnRunStart;
-  final DartEngineOnRunComplete engineOnRunComplete;
-  final DartEngineOnError engineOnError;
+}
+
+Never _missingSymbol(String symbol, Object error) {
+  throw StateError(
+    "Auwgent native library is missing required symbol '$symbol'. "
+    'Rebuild/copy the current C ABI library so the Dart SDK and native DLL match. '
+    'Original lookup error: $error',
+  );
+}
+
+DartGeneratePromptFromIr _lookupGeneratePromptFromIr(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_generate_prompt_from_ir';
+  try {
+    return library
+        .lookupFunction<NativeGeneratePromptFromIr, DartGeneratePromptFromIr>(
+          symbol,
+        );
+  } catch (error) {
+    return (irJson, contextJson, helperName) => _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnMiddlewareEvent _lookupEngineOnMiddlewareEvent(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_on_middleware_event';
+  try {
+    return library.lookupFunction<
+      NativeEngineOnMiddlewareEvent,
+      DartEngineOnMiddlewareEvent
+    >(symbol);
+  } catch (error) {
+    return (handle, callback, freeResult, userData) =>
+        _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnIntent _lookupEngineOnIntent(ffi.DynamicLibrary library) {
+  const symbol = 'auwgent_engine_on_intent';
+  try {
+    return library.lookupFunction<NativeEngineOnIntent, DartEngineOnIntent>(
+      symbol,
+    );
+  } catch (error) {
+    return (handle, callback, freeResult, userData) =>
+        _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnIntentPartial _lookupEngineOnIntentPartial(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_on_intent_partial';
+  try {
+    return library
+        .lookupFunction<NativeEngineOnIntentPartial, DartEngineOnIntentPartial>(
+          symbol,
+        );
+  } catch (error) {
+    return (handle, callback, userData) => _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnSubEngineStart _lookupEngineOnSubEngineStart(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_on_sub_engine_start';
+  try {
+    return library.lookupFunction<
+      NativeEngineOnSubEngineStart,
+      DartEngineOnSubEngineStart
+    >(symbol);
+  } catch (error) {
+    return (handle, callback, freeResult, userData) =>
+        _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnSubEngineComplete _lookupEngineOnSubEngineComplete(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_on_sub_engine_complete';
+  try {
+    return library.lookupFunction<
+      NativeEngineOnSubEngineComplete,
+      DartEngineOnSubEngineComplete
+    >(symbol);
+  } catch (error) {
+    return (handle, callback, userData) => _missingSymbol(symbol, error);
+  }
 }
