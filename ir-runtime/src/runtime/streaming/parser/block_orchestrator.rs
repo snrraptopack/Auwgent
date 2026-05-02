@@ -763,7 +763,7 @@ fn is_incomplete_protocol_header(input: &str) -> bool {
         "[tool_call:]",
         "[/tool_call]",
         "[workflow_call:]",
-        "[/workflow]",
+        "[/workflow_call]",
         "[helper_call:]",
         "[/helper]",
         "[component:]",

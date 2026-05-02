@@ -59,7 +59,7 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
         blocks.push("[tool_call: name] key: value per line [/tool_call]".to_string());
     }
     if has_workflows {
-        blocks.push("[workflow_call: name] key: value per line [/workflow]".to_string());
+        blocks.push("[workflow_call: name] key: value per line [/workflow_call]".to_string());
     }
     if has_helpers {
         blocks.push("[helper_call: name] key: value per line [/helper]".to_string());
@@ -528,7 +528,7 @@ fn format_named_block_example(
     let flattened_args = flatten_example_object(args, specs);
     let close_tag = match block_kind {
         "tool_call" => "tool",
-        "workflow_call" => "workflow",
+        "workflow_call" => "workflow_call",
         "helper_call" => "helper",
         _ => "block",
     };

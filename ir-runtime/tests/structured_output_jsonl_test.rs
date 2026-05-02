@@ -58,7 +58,7 @@ session_id: "sess_123"
 [/tool_call]
 [workflow_call: process_data]
 input: "hello"
-[/workflow]
+[/workflow_call]
 [schema: Output]
 status: "ok"
 [/schema]

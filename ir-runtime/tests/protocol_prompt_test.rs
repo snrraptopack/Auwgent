@@ -83,7 +83,7 @@ fn main_protocol_prompt_includes_generic_block_syntax() {
     assert!(prompt.contains("Blocks:"));
     assert!(prompt.contains("[response_text] plain text [/response_text]"));
     assert!(prompt.contains("[tool_call: name] key: value per line [/tool_call]"));
-    assert!(prompt.contains("[workflow_call: name] key: value per line [/workflow]"));
+    assert!(prompt.contains("[workflow_call: name] key: value per line [/workflow_call]"));
     assert!(prompt.contains("[helper_call: name] key: value per line [/helper]"));
     assert!(prompt.contains("Summarizer(text: string)"));
     assert!(prompt.contains("Joker(input: string)"));

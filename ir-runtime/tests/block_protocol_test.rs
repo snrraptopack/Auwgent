@@ -105,7 +105,7 @@ fn test_workflow_to_workflow_call() {
     }));
 
     orch.write(
-        "[workflow_call: process_data]\ninput: \"test\"\nconfig: { timeout: 30 }\n[/workflow]",
+        "[workflow_call: process_data]\ninput: \"test\"\nconfig: { timeout: 30 }\n[/workflow_call]",
     );
     orch.end();
 

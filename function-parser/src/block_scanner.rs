@@ -1,8 +1,8 @@
 /// Block scanner for the bracket protocol
 /// Scans for:
 /// - [response_text]...[/response_text]
-/// - [tool_call: name]...[/tool]
-/// - [workflow_call: name]...[/workflow]
+/// - [tool_call: name]...[/tool_call]
+/// - [workflow_call: name]...[/workflow_call]
 /// - [helper_call: name]...[/helper]
 /// - [component: name, c_id:"instance_id"]...[/component]
 /// - [render_component]...[/render_component]
@@ -48,7 +48,7 @@ impl BlockScanner {
         "[tool_call:",
         "[/tool_call]",
         "[workflow_call:",
-        "[/workflow]",
+        "[/workflow_call]",
         "[helper_call:",
         "[/helper]",
         "[component:",
@@ -181,6 +181,8 @@ impl BlockScanner {
         matches!(
             header.trim(),
             "/tool_call"
+                | "/tool"
+                | "/workflow_call"
                 | "/workflow"
                 | "/helper"
                 | "/component"
@@ -269,7 +271,7 @@ impl BlockScanner {
                     BlockType::Workflow,
                     Some(target.to_string()),
                     None,
-                    "[/workflow]",
+                    "[/workflow_call]",
                 ))
             }
             "helper_call" => {
@@ -330,7 +332,7 @@ impl BlockScanner {
 
         match header.split_once(':').map(|(kind, _)| kind.trim()) {
             Some("tool_call") => Some("[/tool_call]"),
-            Some("workflow_call") => Some("[/workflow]"),
+            Some("workflow_call") => Some("[/workflow_call]"),
             Some("helper_call") => Some("[/helper]"),
             Some("component") => Some("[/component]"),
             Some("schema") => Some("[/schema]"),
@@ -550,6 +552,30 @@ mod tests {
         assert_eq!(blocks[0].target_name, Some("fetch_user".to_string()));
         assert_eq!(blocks[0].instance_id, None);
         assert_eq!(blocks[0].content, "id: \"123\"");
+    }
+
+    #[test]
+    fn test_workflow_call_uses_matching_close_tag() {
+        let input = "[workflow_call: fetch_all]\nid: \"123\"\n[/workflow_call]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Workflow);
+        assert_eq!(blocks[0].target_name, Some("fetch_all".to_string()));
+        assert_eq!(blocks[0].content, "id: \"123\"");
+    }
+
+    #[test]
+    fn test_tool_call_recovers_from_short_close_tag() {
+        let input = "[tool_call: fetch_user]\n[/tool]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].target_name, Some("fetch_user".to_string()));
+        assert_eq!(blocks[0].content, "");
     }
 
     #[test]
