@@ -301,6 +301,23 @@ export class TypedAuwgent<
     // Shared context storage for cross-hook state mapping
     private sharedContext: Record<string, any> = {};
 
+    private mergeMiddlewareData(data: any, ctx?: Record<string, any>): void {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) {
+            this.sharedContext.dynamic_context = data;
+            if (ctx) {
+                ctx.dynamic_context = data;
+            }
+            return;
+        }
+
+        for (const [key, value] of Object.entries(data)) {
+            this.sharedContext[key] = value;
+            if (ctx) {
+                ctx[key] = value;
+            }
+        }
+    }
+
     private persistMiddlewareContext(ctx: MiddlewareContext<IR>): void {
         const reserved = new Set([
             'activeAgent',
@@ -322,12 +339,15 @@ export class TypedAuwgent<
 
     private getBuildContext(): MiddlewareContext<IR> {
         const activeAgent = this.agentStack[this.agentStack.length - 1] ?? this.ir.name;
-        return {
+        const ctx = {
             activeAgent: activeAgent as any,
             stack: [...this.agentStack],
             rootAgent: this.ir.name,
             rawBlock: this.lastTurnRawBlock,
-            setContext: (data: any) => this.native.setContext(data),
+            setContext: (data: any) => {
+                this.native.setContext(data);
+                this.mergeMiddlewareData(data, ctx as Record<string, any>);
+            },
             embed: async (text: string) => {
                 try {
                     return await this.native.embed(text);
@@ -346,6 +366,8 @@ export class TypedAuwgent<
             },
             ...this.sharedContext
         } as MiddlewareContext<IR>;
+
+        return ctx;
     }
 
     private buildContextFromRuntimeEvent(event: any): MiddlewareContext<IR> {

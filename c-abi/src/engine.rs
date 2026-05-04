@@ -1,6 +1,7 @@
 use crate::error::{clear_last_error, set_last_error};
 use crate::ffi_string::{into_c_string, nullable_cstr, required_cstr};
 use crate::host_callback::{
+    AsyncMiddlewareEventCallbackRegistration, AuwgentAsyncMiddlewareEventCallback,
     AuwgentIntentCallback, AuwgentMiddlewareEventCallback, AuwgentPartialIntentCallback,
     AuwgentSessionNotifyCallback, AuwgentSessionTransformCallback, JsonCallbackRegistration,
     parse_intent_control_json,
@@ -20,6 +21,7 @@ use std::sync::Arc;
 pub struct EngineHandle {
     pub bridge: EngineBridge,
     pub pending_async_tools: Arc<PendingAsyncToolCalls>,
+    pub pending_async_middleware_events: Arc<PendingAsyncToolCalls>,
 }
 
 fn with_bridge<T>(
@@ -45,6 +47,7 @@ pub extern "C" fn auwgent_engine_new(ir_json: *const c_char) -> *mut EngineHandl
         Ok(Box::into_raw(Box::new(EngineHandle {
             bridge,
             pending_async_tools: Arc::new(PendingAsyncToolCalls::new()),
+            pending_async_middleware_events: Arc::new(PendingAsyncToolCalls::new()),
         })))
     })();
 
@@ -710,6 +713,128 @@ pub extern "C" fn auwgent_engine_on_middleware_event(
         bridge.on_middleware_event(handler);
         Ok(())
     }) {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_on_middleware_event_async(
+    handle: *mut EngineHandle,
+    callback: Option<AuwgentAsyncMiddlewareEventCallback>,
+    user_data: *mut c_void,
+) -> bool {
+    clear_last_error();
+
+    if handle.is_null() {
+        set_last_error("engine handle was null".to_string());
+        return false;
+    }
+
+    let result: Result<(), String> = (|| {
+        let callback = callback.ok_or_else(|| "async middleware callback was null".to_string())?;
+        let registration = AsyncMiddlewareEventCallbackRegistration {
+            callback,
+            user_data: user_data as usize,
+        };
+        let handle_ref = unsafe { &*handle };
+        let bridge = &handle_ref.bridge;
+        let pending_async_middleware_events = handle_ref.pending_async_middleware_events.clone();
+
+        let handler: ir_runtime::runtime::engine::AsyncMiddlewareEventCallback =
+            Arc::new(move |event_json: String| {
+                let pending_async_middleware_events = pending_async_middleware_events.clone();
+                let registration = registration;
+                Box::pin(async move {
+                    let (request_id, receiver) =
+                        pending_async_middleware_events.create_request().ok()?;
+
+                    let request_id_c = std::ffi::CString::new(request_id.clone()).ok()?.into_raw();
+                    let event_json_c = std::ffi::CString::new(event_json).ok()?.into_raw();
+
+                    unsafe {
+                        (registration.callback)(
+                            request_id_c,
+                            event_json_c,
+                            registration.user_data as *mut c_void,
+                        );
+                    }
+
+                    receiver.await.ok()?.ok()
+                })
+            });
+
+        bridge.on_middleware_event(handler);
+        Ok(())
+    })();
+
+    match result {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_complete_middleware_event(
+    handle: *mut EngineHandle,
+    request_id: *const c_char,
+    result_json: *const c_char,
+) -> bool {
+    clear_last_error();
+
+    if handle.is_null() {
+        set_last_error("engine handle was null".to_string());
+        return false;
+    }
+
+    let result: Result<(), String> = (|| {
+        let request_id = required_cstr(request_id, "request_id")?;
+        let result_json = nullable_cstr(result_json)?.unwrap_or_else(|| "null".to_string());
+        let handle_ref = unsafe { &*handle };
+        handle_ref
+            .pending_async_middleware_events
+            .complete(&request_id, result_json)
+    })();
+
+    match result {
+        Ok(()) => true,
+        Err(err) => {
+            set_last_error(err);
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn auwgent_engine_fail_middleware_event(
+    handle: *mut EngineHandle,
+    request_id: *const c_char,
+    error_message: *const c_char,
+) -> bool {
+    clear_last_error();
+
+    if handle.is_null() {
+        set_last_error("engine handle was null".to_string());
+        return false;
+    }
+
+    let result: Result<(), String> = (|| {
+        let request_id = required_cstr(request_id, "request_id")?;
+        let error_message =
+            nullable_cstr(error_message)?.unwrap_or_else(|| "middleware callback failed".to_string());
+        let handle_ref = unsafe { &*handle };
+        handle_ref
+            .pending_async_middleware_events
+            .fail(&request_id, error_message)
+    })();
+
+    match result {
         Ok(()) => true,
         Err(err) => {
             set_last_error(err);

@@ -5,3 +5,4 @@ pub mod test_middleware_lifecycle;
 pub mod test_prompt;
 pub mod test_stack_resumption;
 pub mod test_static_intents;
+pub mod live_test;

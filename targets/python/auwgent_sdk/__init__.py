@@ -150,7 +150,7 @@ class MiddlewareContext(TypedDict):
     systemPrompt: Optional[str]
     embed: Callable[[str], Awaitable[List[float]]]
     embedBatch: Callable[[List[str]], Awaitable[List[List[float]]]]
-    set_context: Callable[[Dict[str, Any]], None]
+    set_context: Callable[[Any], None]
 
 @runtime_checkable
 class Middleware(Protocol):
@@ -308,7 +308,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
     def set_custom_driver(self, id: str, api_key: str, base_url: str) -> None:
         self._native.set_custom_driver(id, api_key, base_url)
 
-    def set_context(self, context: Dict[str, Any]) -> None:
+    def set_context(self, context: Any) -> None:
         self._native.set_context(json.dumps(context))
 
     async def embed(self, text: str) -> List[float]:
@@ -482,6 +482,16 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
     def _build_context(self) -> MiddlewareContext:
         active = self._agent_stack[-1] if self._agent_stack else self.ir.get("name", "agent")
+        def set_context_and_mirror(data: Any) -> None:
+            self.set_context(data)
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    self._shared_context[key] = value
+                    ctx[key] = value  # type: ignore
+            else:
+                self._shared_context["dynamic_context"] = data
+                ctx["dynamic_context"] = data  # type: ignore
+
         ctx = MiddlewareContext(
             activeAgent=active,
             stack=list(self._agent_stack),
@@ -490,7 +500,7 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             systemPrompt=None,
             embed=self.embed,
             embedBatch=self.embed_batch,
-            set_context=self.set_context
+            set_context=set_context_and_mirror
         )
         for k, v in self._shared_context.items():
             ctx[k] = v  # type: ignore

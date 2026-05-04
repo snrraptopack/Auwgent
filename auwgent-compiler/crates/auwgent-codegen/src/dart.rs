@@ -1221,7 +1221,7 @@ fn generate_config_class(
     };
 
     format!(
-        "final class {agent_name}Config {{\n  const {agent_name}Config({{\n{tools_ctor}    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n{tools_expr}\n      middleware: middleware,\n      context: context,\n{api_keys_expr}\n      libraryPath: libraryPath,\n    );\n  }}\n}}\n"
+        "final class {agent_name}Config {{\n  const {agent_name}Config({{\n{tools_ctor}    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n    this.autoDispose = true,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n  final bool autoDispose;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n{tools_expr}\n      middleware: middleware,\n      context: context,\n{api_keys_expr}\n      libraryPath: libraryPath,\n      autoDispose: autoDispose,\n    );\n  }}\n}}\n"
     )
 }
 

@@ -56,7 +56,8 @@ final class MiddlewareContext {
     required this.rawBlock,
     required this.systemPrompt,
     required this.setContext,
-  });
+    Map<String, Object?>? data,
+  }) : data = data == null ? <String, Object?>{} : Map<String, Object?>.from(data);
 
   String activeAgent;
   List<String> stack;
@@ -64,6 +65,13 @@ final class MiddlewareContext {
   String? rawBlock;
   String? systemPrompt;
   final void Function(JsonMap value) setContext;
+  final Map<String, Object?> data;
+
+  Object? operator [](String key) => data[key];
+
+  void operator []=(String key, Object? value) {
+    data[key] = value;
+  }
 
   @override
   String toString() =>
@@ -73,5 +81,6 @@ final class MiddlewareContext {
         'rootAgent': rootAgent,
         'rawBlock': rawBlock,
         'systemPrompt': systemPrompt,
+        'data': data,
       });
 }

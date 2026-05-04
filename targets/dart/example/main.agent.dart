@@ -665,6 +665,7 @@ final class AuwgentConfig {
     this.context,
     this.apiKeys,
     this.libraryPath,
+    this.autoDispose = true,
   });
 
   final AuwgentTools tools;
@@ -672,6 +673,7 @@ final class AuwgentConfig {
   final sdk.JsonMap? context;
   final AuwgentApiKeys? apiKeys;
   final String? libraryPath;
+  final bool autoDispose;
 
   sdk.AuwgentConfig toAuwgentConfig() {
     return sdk.AuwgentConfig(
@@ -680,6 +682,7 @@ final class AuwgentConfig {
       context: context,
       apiKeys: apiKeys?.toMap() ?? const {},
       libraryPath: libraryPath,
+      autoDispose: autoDispose,
     );
   }
 }

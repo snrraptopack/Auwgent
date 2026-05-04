@@ -1,5 +1,5 @@
 {
-  "name": "SimpleTool",
+  "name": "Asisstant",
   "modelConfig": [
     {
       "defaultConfig": {
@@ -10,62 +10,34 @@
         },
         "embedding": null,
         "prompt": {
-          "type": "template",
+          "type": "promptRef",
+          "name": "Simple",
+          "params": [
+            "user_name"
+          ],
+          "args": [
+            {
+              "type": "contextRef",
+              "property": "user_name"
+            }
+          ],
           "value": [
             {
-              "type": "literal",
-              "value": "\r\n        You are a helpful assistant before you take any action try to reason out your though before the action\r\n        "
-            },
-            {
-              "type": "inlineIf",
-              "condition": {
-                "type": "comparison",
-                "operator": ">",
-                "left": {
-                  "type": "memberAccess",
-                  "object": {
-                    "type": "varRef",
-                    "value": "ctx"
-                  },
-                  "properties": [
-                    "age"
-                  ]
-                },
-                "right": {
-                  "type": "literal",
-                  "value": 20.0
-                }
-              },
-              "then": [
+              "type": "template",
+              "value": [
                 {
                   "type": "literal",
-                  "value": "\r\n            \"The person is old "
+                  "value": "\r\n        You are a helpful assistant please respond to the user in a polite manner\r\n        user name : "
                 },
                 {
-                  "type": "memberAccess",
-                  "object": {
-                    "type": "varRef",
-                    "value": "ctx"
-                  },
-                  "properties": [
-                    "age"
-                  ]
+                  "type": "varRef",
+                  "value": "user_name"
                 },
                 {
                   "type": "literal",
-                  "value": "\"\r\n        "
-                }
-              ],
-              "else": [
-                {
-                  "type": "literal",
-                  "value": "\r\n            \"not that old\"\r\n        "
+                  "value": "\r\n    "
                 }
               ]
-            },
-            {
-              "type": "literal",
-              "value": "\r\n        "
             }
           ]
         }
@@ -79,288 +51,34 @@
     "user_name": {
       "type": "string",
       "optional": false
-    },
-    "age": {
-      "type": "number",
-      "optional": false
-    },
-    "id": {
-      "type": "string",
-      "optional": false
     }
   },
   "tools": [
     {
+      "name": "get_user_marks",
+      "description": "use this to get the marks of the user",
+      "params": {},
+      "returns": {
+        "type": "array",
+        "items": "string"
+      },
+      "examples": []
+    },
+    {
       "name": "get_location",
-      "description": "Return the current location for the active user",
+      "description": "use this to get the location of the user",
       "params": {},
       "returns": "string",
       "examples": []
-    },
-    {
-      "name": "get_marks",
-      "description": "Return the user's score",
-      "params": {
-        "id": {
-          "type": "string",
-          "optional": false,
-          "description": "the id of the user"
-        }
-      },
-      "returns": "string",
-      "examples": [
-        {
-          "id": {
-            "type": "literal",
-            "value": "10"
-          }
-        }
-      ]
     }
   ],
-  "workflows": [
-    {
-      "flowName": "marks_and_location",
-      "flowParams": {
-        "user_id": {
-          "type": "string",
-          "optional": false
-        }
-      },
-      "returns": "string",
-      "description": "This is used to get the location and the marks of the user at once",
-      "body": [
-        {
-          "type": "variableDeclaration",
-          "name": "marks",
-          "value": {
-            "type": "functionCall",
-            "value": "get_marks",
-            "args": [
-              {
-                "type": "varRef",
-                "value": "user_id"
-              }
-            ]
-          }
-        },
-        {
-          "type": "variableDeclaration",
-          "name": "location",
-          "value": {
-            "type": "functionCall",
-            "value": "get_location",
-            "args": []
-          }
-        },
-        {
-          "type": "return",
-          "value": {
-            "type": "template",
-            "value": [
-              {
-                "type": "literal",
-                "value": "\r\n            user location: "
-              },
-              {
-                "type": "varRef",
-                "value": "location"
-              },
-              {
-                "type": "literal",
-                "value": "\r\n            user marks: "
-              },
-              {
-                "type": "varRef",
-                "value": "marks"
-              },
-              {
-                "type": "literal",
-                "value": "\r\n        "
-              }
-            ]
-          }
-        }
-      ],
-      "tools": [],
-      "examples": [
-        {
-          "user_id": {
-            "type": "literal",
-            "value": "100"
-          }
-        }
-      ]
-    }
-  ],
-  "helpers": [
-    {
-      "name": "Joker",
-      "description": "Is A Joker Helper use it for jokes",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "groq",
-              "modelName": "openai/gpt-oss-120b",
-              "config": null
-            },
-            "embedding": null,
-            "prompt": {
-              "value": "You are a joker Helper understand the user's request and make them laugh",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": null,
-      "context": null,
-      "tools": [],
-      "workflows": [],
-      "customIntents": null,
-      "examples": []
-    },
-    {
-      "name": "Plan",
-      "description": "Is a helper specialized at planning and decomposing tasks",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "groq",
-              "modelName": "openai/gpt-oss-120b",
-              "config": null
-            },
-            "embedding": null,
-            "prompt": {
-              "value": "You are a taks planner your task to take the user's query and give a detailed plan on it",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": {
-        "type": {
-          "type": "object",
-          "properties": {
-            "steps": {
-              "type": {
-                "type": "array",
-                "items": "string"
-              },
-              "optional": false,
-              "description": "The step by step in solving the issue"
-            },
-            "motivation": {
-              "type": "string",
-              "optional": false,
-              "description": "The reasons you think your steps are the right approach"
-            }
-          }
-        }
-      },
-      "context": null,
-      "tools": [],
-      "workflows": [],
-      "customIntents": null,
-      "examples": []
-    },
-    {
-      "name": "Fact",
-      "description": "Is a helper for checking fact",
-      "modelConfig": [
-        {
-          "defaultConfig": {
-            "model": {
-              "type": "groq",
-              "modelName": "openai/gpt-oss-120b",
-              "config": null
-            },
-            "embedding": null,
-            "prompt": {
-              "value": "You are a fact checker undertstand the user's query and check the fact",
-              "type": "literal"
-            }
-          },
-          "namedConfig": []
-        }
-      ],
-      "input": null,
-      "output": {
-        "type": {
-          "type": "object",
-          "properties": {
-            "is_fact": {
-              "type": "boolean",
-              "optional": false
-            },
-            "confidence": {
-              "type": "number",
-              "optional": false
-            },
-            "reasons": {
-              "type": "string",
-              "optional": false,
-              "description": "reasons behind your analysis"
-            }
-          }
-        }
-      },
-      "context": null,
-      "tools": [],
-      "workflows": [],
-      "customIntents": null,
-      "examples": [
-        {
-          "input": {
-            "type": "literal",
-            "value": "give me a nice joke"
-          }
-        }
-      ]
-    }
-  ],
+  "workflows": [],
+  "helpers": [],
   "components": [],
   "types": null,
   "helperToolGrants": null,
-  "helperHandoff": {
-    "Fact": "user",
-    "Plan": "thenContinue"
-  },
+  "helperHandoff": null,
   "tests": [],
   "lifecycle": null,
-  "customIntents": [
-    {
-      "name": "Loud",
-      "description": "use this to explain your thought and actions loud",
-      "fields": {
-        "actions": {
-          "type": "string",
-          "optional": false,
-          "description": "the action about to take"
-        },
-        "reason": {
-          "type": "string",
-          "optional": false,
-          "description": "the reasons behind those actions"
-        }
-      },
-      "examples": [
-        {
-          "actions": {
-            "type": "literal",
-            "value": "I will first do that"
-          },
-          "reason": {
-            "type": "literal",
-            "value": "because of nothing"
-          }
-        }
-      ]
-    }
-  ]
+  "customIntents": null
 }

@@ -266,25 +266,42 @@ final class AuwgentNative {
 
   void onMiddlewareEvent(FutureOr<String?> Function(String eventJson) handler) {
     _checkNotDisposed();
-    final callable =
-        ffi.NativeCallable<NativeMiddlewareEventCallback>.isolateLocal((
-          ffi.Pointer<Utf8> eventJsonPtr,
-          ffi.Pointer<ffi.Void> _,
-        ) {
-          try {
-            return _encodeSyncString(
-              handler(eventJsonPtr.toDartString()),
-              'middleware callbacks',
-            );
-          } catch (_) {
-            return ffi.nullptr;
+    final callable = ffi.NativeCallable<NativeAsyncMiddlewareEventCallback>.listener(
+      (
+        ffi.Pointer<Utf8> requestIdPtr,
+        ffi.Pointer<Utf8> eventJsonPtr,
+        ffi.Pointer<ffi.Void> _,
+      ) {
+        try {
+          final requestId = requestIdPtr.toDartString();
+          final eventJson = eventJsonPtr.toDartString();
+          Future.sync(() => handler(eventJson)).then(
+            (result) {
+              _completeMiddlewareEvent(requestId, result);
+            },
+            onError: (Object error, StackTrace stackTrace) {
+              _failMiddlewareEvent(requestId, '$error\n$stackTrace');
+            },
+          );
+        } catch (error, stackTrace) {
+          final requestId = requestIdPtr == ffi.nullptr
+              ? ''
+              : requestIdPtr.toDartString();
+          _failMiddlewareEvent(requestId, '$error\n$stackTrace');
+        } finally {
+          if (requestIdPtr != ffi.nullptr) {
+            _bindings.stringFree(requestIdPtr, ffi.nullptr);
           }
-        });
+          if (eventJsonPtr != ffi.nullptr) {
+            _bindings.stringFree(eventJsonPtr, ffi.nullptr);
+          }
+        }
+      },
+    );
 
-    final ok = _bindings.engineOnMiddlewareEvent(
+    final ok = _bindings.engineOnMiddlewareEventAsync(
       _handle,
       callable.nativeFunction,
-      _freeCallbackStringPtr,
       ffi.nullptr,
     );
     if (!ok) {
@@ -292,6 +309,37 @@ final class AuwgentNative {
       throw StateError(_readLastError(_bindings));
     }
     _callbacks.add(_RegisteredCallable(callable.close));
+  }
+
+  void _completeMiddlewareEvent(String requestId, String? result) {
+    if (isDisposed) return;
+    final requestIdPtr = requestId.toNativeUtf8();
+    final resultPtr = (result ?? 'null').toNativeUtf8();
+    try {
+      final ok = _bindings.engineCompleteMiddlewareEvent(
+        _handle,
+        requestIdPtr,
+        resultPtr,
+      );
+      if (!ok) {
+        throw StateError(_readLastError(_bindings));
+      }
+    } finally {
+      malloc.free(requestIdPtr);
+      malloc.free(resultPtr);
+    }
+  }
+
+  void _failMiddlewareEvent(String requestId, String message) {
+    if (isDisposed) return;
+    final requestIdPtr = requestId.toNativeUtf8();
+    final messagePtr = message.toNativeUtf8();
+    try {
+      _bindings.engineFailMiddlewareEvent(_handle, requestIdPtr, messagePtr);
+    } finally {
+      malloc.free(requestIdPtr);
+      malloc.free(messagePtr);
+    }
   }
 
   void onIntent(

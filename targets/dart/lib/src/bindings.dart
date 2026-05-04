@@ -207,6 +207,9 @@ typedef NativeAsyncToolCallback =
 typedef NativeMiddlewareEventCallback =
     ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, NativeVoidPtr);
 
+typedef NativeAsyncMiddlewareEventCallback =
+    ffi.Void Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, NativeVoidPtr);
+
 typedef NativeIntentCallback =
     ffi.Pointer<Utf8> Function(
       ffi.Pointer<Utf8>,
@@ -304,6 +307,45 @@ typedef DartEngineOnMiddlewareEvent =
       ffi.Pointer<ffi.NativeFunction<NativeMiddlewareEventCallback>>,
       ffi.Pointer<ffi.NativeFunction<NativeFreeString>>,
       NativeVoidPtr,
+    );
+
+typedef NativeEngineOnMiddlewareEventAsync =
+    ffi.Bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<ffi.NativeFunction<NativeAsyncMiddlewareEventCallback>>,
+      NativeVoidPtr,
+    );
+typedef DartEngineOnMiddlewareEventAsync =
+    bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<ffi.NativeFunction<NativeAsyncMiddlewareEventCallback>>,
+      NativeVoidPtr,
+    );
+
+typedef NativeEngineCompleteMiddlewareEvent =
+    ffi.Bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+typedef DartEngineCompleteMiddlewareEvent =
+    bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+
+typedef NativeEngineFailMiddlewareEvent =
+    ffi.Bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+typedef DartEngineFailMiddlewareEvent =
+    bool Function(
+      ffi.Pointer<_EngineHandle>,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
     );
 
 typedef NativeEngineOnIntent =
@@ -482,6 +524,9 @@ final class AuwgentBindings {
             'auwgent_engine_fail_tool_call',
           ),
       engineOnMiddlewareEvent = _lookupEngineOnMiddlewareEvent(library),
+      engineOnMiddlewareEventAsync = _lookupEngineOnMiddlewareEventAsync(library),
+      engineCompleteMiddlewareEvent = _lookupEngineCompleteMiddlewareEvent(library),
+      engineFailMiddlewareEvent = _lookupEngineFailMiddlewareEvent(library),
       engineOnIntent = _lookupEngineOnIntent(library),
       engineOnIntentPartial = _lookupEngineOnIntentPartial(library),
       engineOnSubEngineStart = _lookupEngineOnSubEngineStart(library),
@@ -519,6 +564,9 @@ final class AuwgentBindings {
   final DartEngineCompleteToolCall engineCompleteToolCall;
   final DartEngineFailToolCall engineFailToolCall;
   final DartEngineOnMiddlewareEvent engineOnMiddlewareEvent;
+  final DartEngineOnMiddlewareEventAsync engineOnMiddlewareEventAsync;
+  final DartEngineCompleteMiddlewareEvent engineCompleteMiddlewareEvent;
+  final DartEngineFailMiddlewareEvent engineFailMiddlewareEvent;
   final DartEngineOnIntent engineOnIntent;
   final DartEngineOnIntentPartial engineOnIntentPartial;
   final DartEngineOnSubEngineStart engineOnSubEngineStart;
@@ -559,6 +607,48 @@ DartEngineOnMiddlewareEvent _lookupEngineOnMiddlewareEvent(
   } catch (error) {
     return (handle, callback, freeResult, userData) =>
         _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineOnMiddlewareEventAsync _lookupEngineOnMiddlewareEventAsync(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_on_middleware_event_async';
+  try {
+    return library.lookupFunction<
+      NativeEngineOnMiddlewareEventAsync,
+      DartEngineOnMiddlewareEventAsync
+    >(symbol);
+  } catch (error) {
+    return (handle, callback, userData) => _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineCompleteMiddlewareEvent _lookupEngineCompleteMiddlewareEvent(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_complete_middleware_event';
+  try {
+    return library.lookupFunction<
+      NativeEngineCompleteMiddlewareEvent,
+      DartEngineCompleteMiddlewareEvent
+    >(symbol);
+  } catch (error) {
+    return (handle, requestId, resultJson) => _missingSymbol(symbol, error);
+  }
+}
+
+DartEngineFailMiddlewareEvent _lookupEngineFailMiddlewareEvent(
+  ffi.DynamicLibrary library,
+) {
+  const symbol = 'auwgent_engine_fail_middleware_event';
+  try {
+    return library.lookupFunction<
+      NativeEngineFailMiddlewareEvent,
+      DartEngineFailMiddlewareEvent
+    >(symbol);
+  } catch (error) {
+    return (handle, requestId, errorMessage) => _missingSymbol(symbol, error);
   }
 }
 

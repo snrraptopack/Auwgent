@@ -45,6 +45,66 @@ fn referenced_context_is_rendered_inline_without_static_duplication() {
 }
 
 #[test]
+fn set_context_merges_object_context_updates() {
+    let ir = build_ir(json!({
+        "type": "template",
+        "value": [
+            { "type": "literal", "value": "Age: " },
+            {
+                "type": "memberAccess",
+                "object": { "type": "varRef", "value": "ctx" },
+                "properties": ["age"]
+            }
+        ]
+    }));
+    let engine = AuwgentEngine::new(ir);
+    engine.set_context(json!({
+        "age": 100,
+        "id": "100",
+        "user_name": "Amihere"
+    }));
+    engine.set_context(json!({
+        "location": "Tarkwa",
+        "marks": ["A", "B", "D"]
+    }));
+
+    let prompt = engine.generate_prompt(None).expect("prompt should render");
+
+    assert!(prompt.contains("Age: 100"));
+    assert!(prompt.contains("id: '100'"));
+    assert!(prompt.contains("user_name: Amihere"));
+    assert!(prompt.contains("location: Tarkwa"));
+    assert!(prompt.contains("- A"));
+}
+
+#[test]
+fn scalar_set_context_is_added_without_replacing_object_context() {
+    let ir = build_ir(json!({
+        "type": "template",
+        "value": [
+            { "type": "literal", "value": "Age: " },
+            {
+                "type": "memberAccess",
+                "object": { "type": "varRef", "value": "ctx" },
+                "properties": ["age"]
+            }
+        ]
+    }));
+    let engine = AuwgentEngine::new(ir);
+    engine.set_context(json!({
+        "age": 100,
+        "id": "100"
+    }));
+    engine.set_context(json!("secret number: 100"));
+
+    let prompt = engine.generate_prompt(None).expect("prompt should render");
+
+    assert!(prompt.contains("Age: 100"));
+    assert!(prompt.contains("id: '100'"));
+    assert!(prompt.contains("dynamic_context: 'secret number: 100'"));
+}
+
+#[test]
 fn conditional_context_stays_in_additional_context_when_not_rendered() {
     let ir = build_ir(json!({
         "type": "parts",

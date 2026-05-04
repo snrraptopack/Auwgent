@@ -1,79 +1,51 @@
-import { GEMINI_API_KEY,GROQ_API_KEY } from "../secrets";
-import {
-  auwgent,
-  type AuwgentApiKeys,
-  type AuwgentConfig,
-  type AuwgentContext,
-  type AuwgentTools,
-  AuwgentBaseIntentHandler,
-  type AuwgentMiddleware
-} from "./main.agent.types";
+import { GROQ_API_KEY } from "../secrets.ts"
+import { auwgent, type AuwgentConfig, type AuwgentMiddleware, type AuwgentTools } from "./main.agent.types.ts"
 
-const logger: AuwgentMiddleware = {
-  name: "simple",
 
+let log: AuwgentMiddleware = {
+  name: "one",
   onRunStart: (session, ctx) => {
-    console.log(ctx)
+    ctx.one = "hello"
     return session
+  },
+
+  onLLMStart: (prompt, ctx) => {
+    ctx.setContext({marks:['A','B','C'], location:"Tarkwa/Accra"})
+    console.log(ctx.one)
   }
 }
 
-
-let apiKeys: AuwgentApiKeys = {
-  'groqApiKey': GROQ_API_KEY
+const tools: AuwgentTools = {
+  get_location: async (args) => "Tarkwa/Ghana",
+  get_user_marks: async (args) => ['A', 'B', 'C']
 }
 
-let context: AuwgentContext = {
-  'age': 100,
-  'id': "100",
-  'user_name':"Amihere"
-}
-
-let tools: AuwgentTools = {
-  'get_location': async (args) => "Tarkwa",
-  'get_marks': async (args) => "A,B,C"
-}
-
-let config: AuwgentConfig = {
-  apiKeys,
-  context,
+const config: AuwgentConfig = {
+  apiKeys: {
+    'groqApiKey': GROQ_API_KEY
+  },
+  context: {
+    'user_name': "Theo"
+  },
   tools,
-  middleware:[logger]
+  middleware:[log]
 }
-
-console.log("from the index.ts")
-
 const agent = auwgent(config)
 
-agent.onIntent((intent, value, agent) => {
-
+agent.onIntent((intent, value, agentName) => {
   if (intent === "response_text") {
     console.log(value.text)
   }
 
   if(intent === "tool_call"){
-    console.log("type", value.type, "args",value.args)
+    console.log("tool call", value)
   }
 
   if(intent === "tool_result"){
-    console.log("result",value)
-  }
-
-  if(intent === "workflow_call"){
-     console.log("workflow call",value)
-  }
-
-  if(intent === "workflow_result"){
-     console.log("result",value)
-  }
-
-  if (intent === "Loud") {
-    console.log("loud",value)
+    console.log("tool result",value)
   }
 
 })
 
-let session = await agent.run("hello get my marks for me")
 
-console.log("meta",agent.getMetadata())
-console.log(JSON.stringify(session.turns, null, 2))
+const session = await agent.run("hello in the system prompt do you see anything related to location and marks")

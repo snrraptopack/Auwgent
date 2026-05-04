@@ -151,6 +151,14 @@ impl AuwgentEngine {
             }
         }
 
+        if self.middleware_event_handler.lock().unwrap().is_some() {
+            let system_prompt = self.generate_prompt(None)?;
+            self.session
+                .lock()
+                .unwrap()
+                .set_system_prompt(&system_prompt);
+        }
+
         Ok(next_prompt)
     }
 
@@ -436,6 +444,14 @@ impl AuwgentEngine {
                                 }
                             }
                         }
+                    }
+
+                    if self.middleware_event_handler.lock().unwrap().is_some() {
+                        let system_prompt = self.generate_prompt(None)?;
+                        self.session
+                            .lock()
+                            .unwrap()
+                            .set_system_prompt(&system_prompt);
                     }
                 }
 

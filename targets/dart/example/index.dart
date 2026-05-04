@@ -1,14 +1,19 @@
-import 'dart:async';
-
 import 'main.agent.dart';
 
 final class ML extends AuwgentMiddleware {
+  @override
   onRunStart(session, ctx) {
-    print("The context $ctx");
+    ctx.data['one'] = "hellosss";
     return session;
   }
-}
 
+  @override
+  onLLMStart(prompt, ctx) {
+    print("llm start");
+    print(ctx.data.toString());
+    return prompt;
+  }
+}
 
 final class HelloLogger extends AuwgentBaseIntentHandler {
   responseText(value, agentName) {
@@ -29,14 +34,14 @@ final class HelloLogger extends AuwgentBaseIntentHandler {
   toolResult(value, agentName) {
     print(" tool result name $agentName , ${value}");
   }
-
 }
 
 final class Tools extends AuwgentTools {
   const Tools();
 
   @override
-  Future<Person> getUserNameAge() async => Person(age: 10, name: "ama",location: "tarkwa");
+  Future<Person> getUserNameAge() async =>
+      Person(age: 10, name: "ama", location: "tarkwa");
 
   @override
   Future<String> getLocation() async => "Tarkwa";
@@ -53,7 +58,7 @@ Future<void> main() async {
 
   final agent = auwgent(config);
 
-  print(agent.generatePrompt());
+  //print(agent.generatePrompt());
 
   agent.onIntentHandler(HelloLogger());
   //agent.onIntentPartialHandler(Logger());
@@ -65,17 +70,8 @@ Future<void> main() async {
   //   return null;
   // });
 
-  try {
-    final session = await agent.run(
-      'Hello get my name and my location',
-    );
+  await agent.run('Hello get my name and my location');
 
-    print(agent.getMetadata());
-    print(session.turns);
-
-  } finally {
-    agent.dispose();
-  }
 }
 
 

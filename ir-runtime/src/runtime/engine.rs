@@ -64,6 +64,7 @@ fn should_retry_empty_completion(
 
 const MAX_EMPTY_COMPLETION_RETRIES: usize = 2;
 const EMPTY_COMPLETION_RETRY_DELAY_MS: u64 = 250;
+const DYNAMIC_CONTEXT_KEY: &str = "dynamic_context";
 
 pub struct AuwgentEngine {
     ir: AgentIR,
@@ -286,7 +287,25 @@ impl AuwgentEngine {
     }
 
     pub fn set_context(&self, context: Value) {
-        *self.context.lock().unwrap() = Some(context);
+        let mut current = self.context.lock().unwrap();
+        match (&mut *current, context) {
+            (Some(Value::Object(existing)), Value::Object(incoming)) => {
+                for (key, value) in incoming {
+                    existing.insert(key, value);
+                }
+            }
+            (None, Value::Object(incoming)) => {
+                *current = Some(Value::Object(incoming));
+            }
+            (Some(Value::Object(existing)), replacement) => {
+                existing.insert(DYNAMIC_CONTEXT_KEY.to_string(), replacement);
+            }
+            (_, replacement) => {
+                let mut next = serde_json::Map::new();
+                next.insert(DYNAMIC_CONTEXT_KEY.to_string(), replacement);
+                *current = Some(Value::Object(next));
+            }
+        }
     }
 
     pub fn register_tool(&self, name: &str, implementation: ToolImplementation) {

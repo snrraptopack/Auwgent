@@ -73,7 +73,14 @@ pub struct MiddlewareContext {
 }
 
 impl MiddlewareContext {
-    pub fn set_context(&self, data: Value) {
+    pub fn set_context(&mut self, data: Value) {
+        if let Value::Object(values) = &data {
+            for (key, value) in values {
+                self.data.insert(key.clone(), value.clone());
+            }
+        } else {
+            self.data.insert("dynamic_context".to_string(), data.clone());
+        }
         self.native.set_context(data);
     }
 

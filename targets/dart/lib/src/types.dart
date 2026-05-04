@@ -503,6 +503,7 @@ final class AuwgentConfig {
     this.context,
     this.apiKeys = const {},
     this.libraryPath,
+    this.autoDispose = true,
   });
 
   final Map<String, ToolHandler> tools;
@@ -510,4 +511,5 @@ final class AuwgentConfig {
   final JsonMap? context;
   final Map<String, String> apiKeys;
   final String? libraryPath;
+  final bool autoDispose;
 }

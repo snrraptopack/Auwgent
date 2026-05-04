@@ -32,6 +32,12 @@ typedef char* (*auwgent_middleware_event_callback)(
     void* user_data
 );
 
+typedef void (*auwgent_async_middleware_event_callback)(
+    const char* request_id,
+    const char* event_json,
+    void* user_data
+);
+
 typedef char* (*auwgent_intent_callback)(
     const char* intent_name,
     const char* value_json,
@@ -197,6 +203,24 @@ bool auwgent_engine_on_middleware_event(
     auwgent_middleware_event_callback callback,
     auwgent_free_callback free_result,
     void* user_data
+);
+
+bool auwgent_engine_on_middleware_event_async(
+    auwgent_engine_handle* handle,
+    auwgent_async_middleware_event_callback callback,
+    void* user_data
+);
+
+bool auwgent_engine_complete_middleware_event(
+    auwgent_engine_handle* handle,
+    const char* request_id,
+    const char* result_json
+);
+
+bool auwgent_engine_fail_middleware_event(
+    auwgent_engine_handle* handle,
+    const char* request_id,
+    const char* error_message
 );
 
 bool auwgent_engine_on_intent(

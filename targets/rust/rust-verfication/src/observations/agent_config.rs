@@ -27,3 +27,19 @@ pub fn get_agent_config(middleware: Vec<AuwgentMiddlewareRegistry>) -> AuwgentCo
         tools: Tools.into(),
     }
 }
+
+// this will lead to refactoring so it best duplicating
+
+
+pub fn get_agent_config_live(middleware: Vec<AuwgentMiddlewareRegistry>,api_key:Option<String>) -> AuwgentConfig {
+    AuwgentConfig {
+        middleware: middleware,
+        context: AuwgentContext {
+            user_name: "Amihere".to_string(),
+            age: 25.4,
+            id: "10".to_string(),
+        },
+        api_keys: AuwgentApiKeys { groq_api_key: api_key },
+        tools: Tools.into(),
+    }
+}

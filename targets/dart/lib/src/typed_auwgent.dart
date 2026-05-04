@@ -27,22 +27,29 @@ class TypedAuwgent<IR extends JsonMap> {
 
   AuwgentNative? _native;
   Map<String, Object?>? _context;
+  SessionState? _sessionSnapshot;
+  RunMetadata? _metadataSnapshot;
   int _contextRevision = 0;
   final Map<String, String> _promptCache = {};
   Map<String, Object?> _sharedContext = {};
   List<String> _agentStack = [];
   String? _lastTurnRawBlock;
+  bool _nativeMiddlewareEventsActive = false;
 
   void dispose() {
     _native?.dispose();
     _native = null;
+    _nativeMiddlewareEventsActive = false;
   }
 
   void setContext(JsonMap context) {
-    _context = Map<String, Object?>.from(context);
+    _context = {
+      ...?_context,
+      ...Map<String, Object?>.from(context),
+    };
     _contextRevision++;
     _promptCache.clear();
-    _native?.setContext(_context!);
+    _native?.setContext(context);
   }
 
   AuwgentNative get native => _ensureNative();
@@ -87,6 +94,9 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   SessionState exportSession() {
+    if (_native == null) {
+      return _sessionSnapshot ?? SessionState();
+    }
     final raw = native.exportSession();
     return SessionState.fromJson(
       Map<String, Object?>.from(jsonDecode(raw) as Map),
@@ -94,7 +104,8 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   void importSession(SessionState session) {
-    native.importSession(jsonEncode(session.toJson()));
+    _sessionSnapshot = session;
+    _native?.importSession(jsonEncode(session.toJson()));
   }
 
   void clearSession() {
@@ -107,7 +118,9 @@ class TypedAuwgent<IR extends JsonMap> {
 
     try {
       final initialSession = exportSession();
-      _runMiddlewareStart(initialSession);
+      if (!_nativeMiddlewareEventsActive) {
+        _runMiddlewareStart(initialSession);
+      }
 
       if (input is String) {
         await _awaitRunWithStructuredPolling(
@@ -120,7 +133,13 @@ class TypedAuwgent<IR extends JsonMap> {
       }
       final session = exportSession();
       _agentStack = [...session.stack];
-      _runMiddlewareComplete(session);
+      if (!_nativeMiddlewareEventsActive) {
+        _runMiddlewareComplete(session);
+      }
+      _sessionSnapshot = session;
+      _metadataSnapshot = RunMetadata.fromJson(
+        Map<String, Object?>.from(jsonDecode(native.getMetadata()) as Map),
+      );
       return session;
     } catch (error) {
       _reportWarning(
@@ -129,6 +148,10 @@ class TypedAuwgent<IR extends JsonMap> {
         error: error,
       );
       rethrow;
+    } finally {
+      if (config.autoDispose) {
+        dispose();
+      }
     }
   }
 
@@ -152,6 +175,9 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   RunMetadata getMetadata() {
+    if (_native == null && _metadataSnapshot != null) {
+      return _metadataSnapshot!;
+    }
     return RunMetadata.fromJson(
       Map<String, Object?>.from(jsonDecode(native.getMetadata()) as Map),
     );
@@ -289,10 +315,33 @@ class TypedAuwgent<IR extends JsonMap> {
     if (_context != null) {
       created.setContext(_context!);
     }
+    if (_sessionSnapshot != null) {
+      created.importSession(jsonEncode(_sessionSnapshot!.toJson()));
+    }
     _registerDrivers(config.apiKeys);
     _registerTools(config.tools);
+    _registerMiddlewareEvents(created);
 
     return created;
+  }
+
+  void _registerMiddlewareEvents(AuwgentNative created) {
+    _nativeMiddlewareEventsActive = false;
+    if (middleware.isEmpty) {
+      return;
+    }
+
+    try {
+      created.onMiddlewareEvent(_handleMiddlewareEvent);
+      _nativeMiddlewareEventsActive = true;
+    } catch (error) {
+      _reportWarning(
+        AuwgentWarningSource.middleware,
+        'native middleware event registration failed',
+        error: error,
+        agentName: ir['name']?.toString(),
+      );
+    }
   }
 
   Future<void> _awaitRunWithStructuredPolling(Future<void> runFuture) async {
@@ -402,6 +451,10 @@ class TypedAuwgent<IR extends JsonMap> {
         _requireSync(result, 'intent callbacks');
       }
 
+      if (_nativeMiddlewareEventsActive) {
+        return;
+      }
+
       final ctx = _getBuildContext()..activeAgent = agentName;
       for (final item in _getMiddleware(ctx)) {
         _requireSync(
@@ -498,29 +551,180 @@ class TypedAuwgent<IR extends JsonMap> {
     }
   }
 
+  String? _handleMiddlewareEvent(String eventJson) {
+    try {
+      final decoded = jsonDecode(eventJson);
+      if (decoded is! Map) {
+        return null;
+      }
+      final event = Map<String, Object?>.from(decoded);
+      final type = event['type']?.toString();
+      final ctx = _buildContextFromRuntimeEvent(event);
+
+      switch (type) {
+        case 'run_start':
+          var session = _sessionFromEvent(event['session']);
+          for (final item in _getMiddleware(ctx)) {
+            session = _requireSync(
+              item.onRunStart(session, ctx),
+              'middleware onRunStart hooks',
+            );
+          }
+          if (ctx.stack.isNotEmpty) {
+            _agentStack = [...ctx.stack];
+          }
+          _persistMiddlewareContext(ctx);
+          return jsonEncode({'session': session.toJson()});
+
+        case 'llm_start':
+          var prompt = event['prompt']?.toString() ?? '';
+          for (final item in _getMiddleware(ctx)) {
+            final updated = _requireSync(
+              item.onLLMStart(prompt, ctx),
+              'middleware onLLMStart hooks',
+            );
+            if (updated is String) {
+              prompt = updated;
+            }
+          }
+          _persistMiddlewareContext(ctx);
+          return jsonEncode({'prompt': prompt, 'stack': ctx.stack});
+
+        case 'intent':
+          final name = event['name']?.toString();
+          if (name == null || name.isEmpty) {
+            return null;
+          }
+          final value = event['value'];
+          for (final item in _getMiddleware(ctx)) {
+            final control = _requireSync(
+              item.onIntent(name, value, ctx),
+              'middleware onIntent hooks',
+            );
+            if (control != null) {
+              _persistMiddlewareContext(ctx);
+              return jsonEncode(control.toJson());
+            }
+          }
+          _persistMiddlewareContext(ctx);
+          return null;
+
+        case 'llm_end':
+          for (final item in _getMiddleware(ctx)) {
+            _requireSync(
+              item.onLLMEnd(event['response'], ctx),
+              'middleware onLLMEnd hooks',
+            );
+          }
+          _persistMiddlewareContext(ctx);
+          return null;
+
+        case 'run_complete':
+          final session = _sessionFromEvent(event['session']);
+          for (final item in _getMiddleware(ctx)) {
+            _requireSync(
+              item.onRunComplete(session, ctx),
+              'middleware onRunComplete hooks',
+            );
+          }
+          _persistMiddlewareContext(ctx);
+          return null;
+
+        case 'error':
+          final session = event['session'] == null
+              ? null
+              : _sessionFromEvent(event['session']);
+          for (final item in _getMiddleware(ctx)) {
+            final swallow = _requireSync(
+              item.onError(event['error'] ?? 'Unknown runtime error', session, ctx),
+              'middleware onError hooks',
+            );
+            if (swallow == true) {
+              _persistMiddlewareContext(ctx);
+              return jsonEncode({'swallow': true});
+            }
+          }
+          _persistMiddlewareContext(ctx);
+          return null;
+
+        default:
+          return null;
+      }
+    } catch (error) {
+      _reportWarning(
+        AuwgentWarningSource.middleware,
+        'middleware event handling failed',
+        error: error,
+        agentName: ir['name']?.toString(),
+      );
+      return null;
+    }
+  }
+
+  SessionState _sessionFromEvent(Object? value) {
+    if (value is Map) {
+      return SessionState.fromJson(Map<String, Object?>.from(value));
+    }
+    return SessionState();
+  }
+
+  MiddlewareContext _buildContextFromRuntimeEvent(JsonMap event) {
+    final ctx = _getBuildContext();
+    final runtimeCtx = event['context'];
+    if (runtimeCtx is Map) {
+      final context = Map<String, Object?>.from(runtimeCtx);
+      final activeAgent = context['activeAgent'];
+      if (activeAgent is String) {
+        ctx.activeAgent = activeAgent;
+      }
+
+      final stack = context['stack'];
+      if (stack is List) {
+        ctx.stack = stack.map((item) => item.toString()).toList();
+        _agentStack = [...ctx.stack];
+      }
+
+      final rootAgent = context['rootAgent'];
+      if (rootAgent is String) {
+        ctx.rootAgent = rootAgent;
+      }
+
+      final rawBlock = context['rawBlock'];
+      if (rawBlock is String) {
+        ctx.rawBlock = rawBlock;
+        _lastTurnRawBlock = rawBlock;
+      }
+
+      final systemPrompt = context['systemPrompt'];
+      if (systemPrompt is String) {
+        ctx.systemPrompt = systemPrompt;
+      }
+    }
+    return ctx;
+  }
+
   MiddlewareContext _getBuildContext() {
     final activeAgent = _agentStack.isNotEmpty
         ? _agentStack.last
         : ir['name']?.toString() ?? 'agent';
-    return MiddlewareContext(
+    late final MiddlewareContext ctx;
+    ctx = MiddlewareContext(
       activeAgent: activeAgent,
       stack: [..._agentStack],
       rootAgent: ir['name']?.toString() ?? activeAgent,
       rawBlock: _lastTurnRawBlock,
       systemPrompt: null,
-      setContext: native.setContext,
+      setContext: (value) {
+        setContext(value);
+        ctx.data.addAll(value);
+      },
+      data: _sharedContext,
     );
+    return ctx;
   }
 
   void _persistMiddlewareContext(MiddlewareContext ctx) {
-    _sharedContext = {
-      ..._sharedContext,
-      'activeAgent': ctx.activeAgent,
-      'stack': ctx.stack,
-      'rootAgent': ctx.rootAgent,
-      'rawBlock': ctx.rawBlock,
-      'systemPrompt': ctx.systemPrompt,
-    };
+    _sharedContext = Map<String, Object?>.from(ctx.data);
   }
 
   Iterable<Middleware> _getMiddleware(MiddlewareContext ctx) sync* {

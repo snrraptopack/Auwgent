@@ -7,6 +7,23 @@ use std::os::raw::{c_char, c_void};
 pub type AuwgentMiddlewareEventCallback =
     unsafe extern "C" fn(event_json: *const c_char, user_data: *mut c_void) -> *mut c_char;
 
+pub type AuwgentAsyncMiddlewareEventCallback = unsafe extern "C" fn(
+    request_id: *const c_char,
+    event_json: *const c_char,
+    user_data: *mut c_void,
+);
+
+#[derive(Clone, Copy)]
+pub struct AsyncMiddlewareEventCallbackRegistration {
+    pub callback: AuwgentAsyncMiddlewareEventCallback,
+    pub user_data: usize,
+}
+
+// SAFETY: this carries host-managed function pointers and opaque host state.
+unsafe impl Send for AsyncMiddlewareEventCallbackRegistration {}
+// SAFETY: host is responsible for ensuring thread-safe use of the callback/user_data.
+unsafe impl Sync for AsyncMiddlewareEventCallbackRegistration {}
+
 pub type AuwgentIntentCallback = unsafe extern "C" fn(
     intent_name: *const c_char,
     value_json: *const c_char,
