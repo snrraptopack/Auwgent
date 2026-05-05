@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'auwgent_native.dart';
 import 'middleware.dart';
@@ -43,10 +44,7 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   void setContext(JsonMap context) {
-    _context = {
-      ...?_context,
-      ...Map<String, Object?>.from(context),
-    };
+    _context = {...?_context, ...Map<String, Object?>.from(context)};
     _contextRevision++;
     _promptCache.clear();
     _native?.setContext(context);
@@ -113,13 +111,17 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   Future<SessionState> run(Object? input, {List<String>? initialStack}) async {
+    final watch = Stopwatch()..start();
+    _timingLog('run start inputType=${input.runtimeType}', watch);
     _sharedContext = {};
     _lastTurnRawBlock = null;
 
     try {
       final initialSession = exportSession();
+      _timingLog('exported initial session', watch);
       if (!_nativeMiddlewareEventsActive) {
         _runMiddlewareStart(initialSession);
+        _timingLog('dart fallback run_start middleware complete', watch);
       }
 
       if (input is String) {
@@ -131,15 +133,19 @@ class TypedAuwgent<IR extends JsonMap> {
           native.runJsonAsync(input, initialStack: initialStack),
         );
       }
+      _timingLog('native run future complete', watch);
       final session = exportSession();
+      _timingLog('exported final session', watch);
       _agentStack = [...session.stack];
       if (!_nativeMiddlewareEventsActive) {
         _runMiddlewareComplete(session);
+        _timingLog('dart fallback run_complete middleware complete', watch);
       }
       _sessionSnapshot = session;
       _metadataSnapshot = RunMetadata.fromJson(
         Map<String, Object?>.from(jsonDecode(native.getMetadata()) as Map),
       );
+      _timingLog('loaded metadata', watch);
       return session;
     } catch (error) {
       _reportWarning(
@@ -301,26 +307,35 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   AuwgentNative _ensureNative() {
+    final watch = Stopwatch()..start();
     final existing = _native;
     if (existing != null && !existing.isDisposed) {
+      _timingLog('ensureNative existing native reused', watch);
       return existing;
     }
 
+    _timingLog('ensureNative creating native', watch);
     final created = AuwgentNative.fromIrJson(
       irJson: _irJson,
       libraryPath: config.libraryPath,
     );
     _native = created;
+    _timingLog('ensureNative created native', watch);
 
     if (_context != null) {
       created.setContext(_context!);
+      _timingLog('ensureNative applied context', watch);
     }
     if (_sessionSnapshot != null) {
       created.importSession(jsonEncode(_sessionSnapshot!.toJson()));
+      _timingLog('ensureNative imported session snapshot', watch);
     }
     _registerDrivers(config.apiKeys);
+    _timingLog('ensureNative registered drivers', watch);
     _registerTools(config.tools);
+    _timingLog('ensureNative registered tools', watch);
     _registerMiddlewareEvents(created);
+    _timingLog('ensureNative registered middleware events', watch);
 
     return created;
   }
@@ -552,6 +567,7 @@ class TypedAuwgent<IR extends JsonMap> {
   }
 
   String? _handleMiddlewareEvent(String eventJson) {
+    final watch = Stopwatch()..start();
     try {
       final decoded = jsonDecode(eventJson);
       if (decoded is! Map) {
@@ -559,6 +575,7 @@ class TypedAuwgent<IR extends JsonMap> {
       }
       final event = Map<String, Object?>.from(decoded);
       final type = event['type']?.toString();
+      _timingLog('middleware event start type=$type', watch);
       final ctx = _buildContextFromRuntimeEvent(event);
 
       switch (type) {
@@ -574,6 +591,7 @@ class TypedAuwgent<IR extends JsonMap> {
             _agentStack = [...ctx.stack];
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=run_start', watch);
           return jsonEncode({'session': session.toJson()});
 
         case 'llm_start':
@@ -588,6 +606,7 @@ class TypedAuwgent<IR extends JsonMap> {
             }
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=llm_start', watch);
           return jsonEncode({'prompt': prompt, 'stack': ctx.stack});
 
         case 'intent':
@@ -603,10 +622,12 @@ class TypedAuwgent<IR extends JsonMap> {
             );
             if (control != null) {
               _persistMiddlewareContext(ctx);
+              _timingLog('middleware event done type=intent control', watch);
               return jsonEncode(control.toJson());
             }
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=intent', watch);
           return null;
 
         case 'llm_end':
@@ -617,6 +638,7 @@ class TypedAuwgent<IR extends JsonMap> {
             );
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=llm_end', watch);
           return null;
 
         case 'run_complete':
@@ -628,6 +650,7 @@ class TypedAuwgent<IR extends JsonMap> {
             );
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=run_complete', watch);
           return null;
 
         case 'error':
@@ -636,15 +659,21 @@ class TypedAuwgent<IR extends JsonMap> {
               : _sessionFromEvent(event['session']);
           for (final item in _getMiddleware(ctx)) {
             final swallow = _requireSync(
-              item.onError(event['error'] ?? 'Unknown runtime error', session, ctx),
+              item.onError(
+                event['error'] ?? 'Unknown runtime error',
+                session,
+                ctx,
+              ),
               'middleware onError hooks',
             );
             if (swallow == true) {
               _persistMiddlewareContext(ctx);
+              _timingLog('middleware event done type=error swallow', watch);
               return jsonEncode({'swallow': true});
             }
           }
           _persistMiddlewareContext(ctx);
+          _timingLog('middleware event done type=error', watch);
           return null;
 
         default:
@@ -778,4 +807,21 @@ TypedAuwgent<IR> createAuwgent<IR extends JsonMap>(
   AuwgentConfig config,
 ) {
   return TypedAuwgent<IR>(ir, config);
+}
+
+bool _timingEnabled() {
+  final value = Platform.environment['AUWGENT_DEBUG_TIMING'];
+  return value == '1' ||
+      value == 'true' ||
+      value == 'TRUE' ||
+      value == 'yes' ||
+      value == 'YES';
+}
+
+void _timingLog(String message, Stopwatch watch) {
+  if (_timingEnabled()) {
+    stderr.writeln(
+      '[auwgent][timing][dart] typed +${watch.elapsedMilliseconds}ms $message',
+    );
+  }
 }

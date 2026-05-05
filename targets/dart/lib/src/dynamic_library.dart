@@ -2,23 +2,34 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 
 ffi.DynamicLibrary openAuwgentLibrary([String? path]) {
+  final watch = Stopwatch()..start();
+  _timingLog('open library start path=${path ?? '<auto>'}', watch);
   if (path != null && path.isNotEmpty) {
-    return ffi.DynamicLibrary.open(path);
+    final library = ffi.DynamicLibrary.open(path);
+    _timingLog('opened explicit library', watch);
+    return library;
   }
 
   final envPath = Platform.environment['AUWGENT_LIBRARY_PATH'];
   if (envPath != null && envPath.isNotEmpty) {
-    return ffi.DynamicLibrary.open(envPath);
+    final library = ffi.DynamicLibrary.open(envPath);
+    _timingLog('opened env library', watch);
+    return library;
   }
 
   final libraryName = _defaultLibraryName();
   for (final candidate in _candidateLibraryPaths(libraryName)) {
+    _timingLog('checking $candidate', watch);
     if (File(candidate).existsSync()) {
-      return ffi.DynamicLibrary.open(candidate);
+      final library = ffi.DynamicLibrary.open(candidate);
+      _timingLog('opened candidate $candidate', watch);
+      return library;
     }
   }
 
-  return ffi.DynamicLibrary.open(libraryName);
+  final library = ffi.DynamicLibrary.open(libraryName);
+  _timingLog('opened by library name $libraryName', watch);
+  return library;
 }
 
 String _defaultLibraryName() {
@@ -43,10 +54,43 @@ Iterable<String> _candidateLibraryPaths(String libraryName) sync* {
   yield File(current.uri.resolve(libraryName).toFilePath()).path;
   yield File(current.uri.resolve('../../$libraryName').toFilePath()).path;
   yield File(current.uri.resolve('../../../$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../target/debug/$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../target/release/$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../c-abi/target/debug/$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../c-abi/target/release/$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../../target/debug/$libraryName').toFilePath()).path;
-  yield File(current.uri.resolve('../../../../target/release/$libraryName').toFilePath()).path;
+  yield File(
+    current.uri.resolve('../../../target/debug/$libraryName').toFilePath(),
+  ).path;
+  yield File(
+    current.uri.resolve('../../../target/release/$libraryName').toFilePath(),
+  ).path;
+  yield File(
+    current.uri
+        .resolve('../../../c-abi/target/debug/$libraryName')
+        .toFilePath(),
+  ).path;
+  yield File(
+    current.uri
+        .resolve('../../../c-abi/target/release/$libraryName')
+        .toFilePath(),
+  ).path;
+  yield File(
+    current.uri.resolve('../../../../target/debug/$libraryName').toFilePath(),
+  ).path;
+  yield File(
+    current.uri.resolve('../../../../target/release/$libraryName').toFilePath(),
+  ).path;
+}
+
+bool _timingEnabled() {
+  final value = Platform.environment['AUWGENT_DEBUG_TIMING'];
+  return value == '1' ||
+      value == 'true' ||
+      value == 'TRUE' ||
+      value == 'yes' ||
+      value == 'YES';
+}
+
+void _timingLog(String message, Stopwatch watch) {
+  if (_timingEnabled()) {
+    stderr.writeln(
+      '[auwgent][timing][dart] dynamic_library +${watch.elapsedMilliseconds}ms $message',
+    );
+  }
 }

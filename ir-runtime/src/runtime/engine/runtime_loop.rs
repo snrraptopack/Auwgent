@@ -3,6 +3,7 @@
 // and event-context helpers. Execution of tools/workflows/helpers belongs in
 // the execution modules instead of here.
 use super::*;
+use std::time::Instant;
 
 impl AuwgentEngine {
     pub(super) fn build_event_context(
@@ -232,6 +233,7 @@ impl AuwgentEngine {
         input: Option<Value>,
         initial_stack: Option<Vec<String>>,
     ) -> AuwgentResult<()> {
+        let timing = RuntimeTimingProbe::new("rust.engine.run");
         {
             let mut session = self.session.lock().unwrap();
             if session.stack.is_empty() {
@@ -247,6 +249,7 @@ impl AuwgentEngine {
                 *self.fast_forward_stack.lock().unwrap() = None;
             }
         }
+        timing.mark("initialized session stack");
 
         let mut scope = HashMap::new();
         {
@@ -259,6 +262,7 @@ impl AuwgentEngine {
             scope.insert("context".to_string(), ctx_val.clone());
             scope.insert("ctx".to_string(), ctx_val);
         }
+        timing.mark("built initial scope");
 
         let evaluator = Evaluator::new(&self.ir);
         let model_entry = self
@@ -289,12 +293,14 @@ impl AuwgentEngine {
             .as_str()
             .unwrap_or("gemini-2.0-flash");
         let config_params = model_info.get("config").cloned();
+        timing.mark("evaluated model config");
 
         let mut system_prompt = self.generate_prompt(None)?;
         self.session
             .lock()
             .unwrap()
             .set_system_prompt(&system_prompt);
+        timing.mark("generated system prompt");
 
         let handler = self.middleware_event_handler.lock().unwrap().clone();
         let payload = RunStartPayload {
@@ -311,6 +317,7 @@ impl AuwgentEngine {
             )?;
             self.sync_fast_forward_from_session();
         }
+        timing.mark("run_start middleware complete");
 
         if self.middleware_event_handler.lock().unwrap().is_some() {
             system_prompt = self.generate_prompt(None)?;
@@ -318,6 +325,7 @@ impl AuwgentEngine {
                 .lock()
                 .unwrap()
                 .set_system_prompt(&system_prompt);
+            timing.mark("regenerated prompt after run_start middleware");
         }
 
         let initial_user_input = match input.as_ref() {
@@ -329,6 +337,7 @@ impl AuwgentEngine {
         *self.terminal_response_emitted.lock().unwrap() = false;
         *self.final_response_emitted.lock().unwrap() = false;
         self.emit_structured_stream_start();
+        timing.mark("started structured stream");
 
         let is_teleporting = self.fast_forward_stack.lock().unwrap().is_some();
         if let Some(user_text) = initial_user_input.clone() {
@@ -445,6 +454,7 @@ impl AuwgentEngine {
                             }
                         }
                     }
+                    timing.mark("llm_start middleware complete");
 
                     if self.middleware_event_handler.lock().unwrap().is_some() {
                         let system_prompt = self.generate_prompt(None)?;
@@ -452,10 +462,12 @@ impl AuwgentEngine {
                             .lock()
                             .unwrap()
                             .set_system_prompt(&system_prompt);
+                        timing.mark("regenerated prompt after llm_start middleware");
                     }
                 }
 
                 let messages = self.session.lock().unwrap().to_messages();
+                timing.mark("built provider messages");
                 let stream_res = {
                     let driver = self
                         .drivers
@@ -468,6 +480,7 @@ impl AuwgentEngine {
                         .stream_generate(model_name, &messages, config_params.clone())
                         .await
                 };
+                timing.mark("provider stream_generate returned stream");
 
                 let mut stream = match stream_res {
                     Ok(stream) => stream,
@@ -540,6 +553,7 @@ impl AuwgentEngine {
                         }
                     }
                 }
+                timing.mark("provider stream drained");
 
                 let turn_metadata = TurnMetadata {
                     turn_index: loop_count - 1,
@@ -580,6 +594,7 @@ impl AuwgentEngine {
                     &turn_metadata,
                 )
                 .await;
+                timing.mark("llm_end middleware complete");
 
                 let raw_resp = self.current_raw_response.lock().unwrap().clone();
                 if !raw_resp.is_empty() {
@@ -646,6 +661,7 @@ impl AuwgentEngine {
                     context: self.build_event_context(&self.ir.name, None, None),
                 };
                 let _ = middleware::apply_run_complete_middleware(handler, payload).await;
+                timing.mark("run_complete middleware complete");
                 Ok(())
             }
             Err(err) => {
@@ -704,4 +720,42 @@ impl AuwgentEngine {
     fn last_turn_response_value(&self) -> Value {
         self.last_turn_response_value.lock().unwrap().clone()
     }
+}
+
+struct RuntimeTimingProbe {
+    label: &'static str,
+    start: Instant,
+    enabled: bool,
+}
+
+impl RuntimeTimingProbe {
+    fn new(label: &'static str) -> Self {
+        let enabled = runtime_timing_enabled();
+        let probe = Self {
+            label,
+            start: Instant::now(),
+            enabled,
+        };
+        if enabled {
+            eprintln!("[auwgent][timing][rust] {} +0ms start", label);
+        }
+        probe
+    }
+
+    fn mark(&self, message: &str) {
+        if self.enabled {
+            eprintln!(
+                "[auwgent][timing][rust] {} +{}ms {}",
+                self.label,
+                self.start.elapsed().as_millis(),
+                message
+            );
+        }
+    }
+}
+
+fn runtime_timing_enabled() -> bool {
+    std::env::var("AUWGENT_DEBUG_TIMING")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }

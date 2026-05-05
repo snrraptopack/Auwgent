@@ -17,6 +17,7 @@ use serde_json::Value;
 use std::os::raw::{c_char, c_void};
 use std::ptr;
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct EngineHandle {
     pub bridge: EngineBridge,
@@ -40,10 +41,13 @@ fn with_bridge<T>(
 #[unsafe(no_mangle)]
 pub extern "C" fn auwgent_engine_new(ir_json: *const c_char) -> *mut EngineHandle {
     clear_last_error();
+    let timing = TimingProbe::new("c-abi.engine_new");
 
     let result: Result<*mut EngineHandle, String> = (|| {
         let ir_json = required_cstr(ir_json, "ir_json")?;
+        timing.mark("read ir_json");
         let bridge = EngineBridge::new(ir_json)?;
+        timing.mark("created bridge");
         Ok(Box::into_raw(Box::new(EngineHandle {
             bridge,
             pending_async_tools: Arc::new(PendingAsyncToolCalls::new()),
@@ -102,10 +106,12 @@ pub extern "C" fn auwgent_engine_set_context(
     context_json: *const c_char,
 ) -> bool {
     clear_last_error();
+    let timing = TimingProbe::new("c-abi.set_context");
     match with_bridge(handle, |bridge| {
         let context =
             parse_optional_json(context_json, "context")?.unwrap_or_else(|| serde_json::json!({}));
         bridge.set_context(context);
+        timing.mark("set context on bridge");
         Ok(())
     }) {
         Ok(()) => true,
@@ -316,6 +322,7 @@ pub extern "C" fn auwgent_engine_run_text_async(
     user_data: *mut c_void,
 ) -> bool {
     clear_last_error();
+    let timing = TimingProbe::new("c-abi.run_text_async");
 
     if handle.is_null() {
         set_last_error("engine handle was null".to_string());
@@ -326,6 +333,7 @@ pub extern "C" fn auwgent_engine_run_text_async(
         let input = nullable_cstr(input_text)?.map(Value::String);
         let initial_stack = parse_optional_stack(initial_stack_json)?;
         let on_complete = on_complete.ok_or_else(|| "on_complete callback was null".to_string())?;
+        timing.mark("parsed async run inputs");
         let registration = RunCompleteCallbackRegistration {
             callback: on_complete,
             user_data,
@@ -334,13 +342,22 @@ pub extern "C" fn auwgent_engine_run_text_async(
         let handle_ref = unsafe { &*handle };
         let bridge = handle_ref.bridge.clone();
         let rt = bridge.rt.clone();
+        timing.mark("cloned bridge/runtime");
 
         rt.spawn(async move {
+            let timing = TimingProbe::new("c-abi.run_text_async.spawn");
             match bridge.run_async(input, initial_stack).await {
-                Ok(_) => registration.invoke_success(),
-                Err(err) => registration.invoke_error(&err),
+                Ok(_) => {
+                    timing.mark("bridge run_async complete");
+                    registration.invoke_success()
+                }
+                Err(err) => {
+                    timing.mark("bridge run_async errored");
+                    registration.invoke_error(&err)
+                }
             }
         });
+        timing.mark("spawned async run");
 
         Ok(())
     })();
@@ -363,6 +380,7 @@ pub extern "C" fn auwgent_engine_run_json_async(
     user_data: *mut c_void,
 ) -> bool {
     clear_last_error();
+    let timing = TimingProbe::new("c-abi.run_json_async");
 
     if handle.is_null() {
         set_last_error("engine handle was null".to_string());
@@ -373,6 +391,7 @@ pub extern "C" fn auwgent_engine_run_json_async(
         let input = parse_optional_json(input_json, "input")?;
         let initial_stack = parse_optional_stack(initial_stack_json)?;
         let on_complete = on_complete.ok_or_else(|| "on_complete callback was null".to_string())?;
+        timing.mark("parsed async run inputs");
         let registration = RunCompleteCallbackRegistration {
             callback: on_complete,
             user_data,
@@ -381,13 +400,22 @@ pub extern "C" fn auwgent_engine_run_json_async(
         let handle_ref = unsafe { &*handle };
         let bridge = handle_ref.bridge.clone();
         let rt = bridge.rt.clone();
+        timing.mark("cloned bridge/runtime");
 
         rt.spawn(async move {
+            let timing = TimingProbe::new("c-abi.run_json_async.spawn");
             match bridge.run_async(input, initial_stack).await {
-                Ok(_) => registration.invoke_success(),
-                Err(err) => registration.invoke_error(&err),
+                Ok(_) => {
+                    timing.mark("bridge run_async complete");
+                    registration.invoke_success()
+                }
+                Err(err) => {
+                    timing.mark("bridge run_async errored");
+                    registration.invoke_error(&err)
+                }
             }
         });
+        timing.mark("spawned async run");
 
         Ok(())
     })();
@@ -728,6 +756,7 @@ pub extern "C" fn auwgent_engine_on_middleware_event_async(
     user_data: *mut c_void,
 ) -> bool {
     clear_last_error();
+    let timing = TimingProbe::new("c-abi.on_middleware_event_async");
 
     if handle.is_null() {
         set_last_error("engine handle was null".to_string());
@@ -740,6 +769,7 @@ pub extern "C" fn auwgent_engine_on_middleware_event_async(
             callback,
             user_data: user_data as usize,
         };
+        timing.mark("created callback registration");
         let handle_ref = unsafe { &*handle };
         let bridge = &handle_ref.bridge;
         let pending_async_middleware_events = handle_ref.pending_async_middleware_events.clone();
@@ -749,8 +779,10 @@ pub extern "C" fn auwgent_engine_on_middleware_event_async(
                 let pending_async_middleware_events = pending_async_middleware_events.clone();
                 let registration = registration;
                 Box::pin(async move {
+                    let timing = TimingProbe::new("c-abi.middleware_event");
                     let (request_id, receiver) =
                         pending_async_middleware_events.create_request().ok()?;
+                    timing.mark("created middleware request");
 
                     let request_id_c = std::ffi::CString::new(request_id.clone()).ok()?.into_raw();
                     let event_json_c = std::ffi::CString::new(event_json).ok()?.into_raw();
@@ -762,12 +794,16 @@ pub extern "C" fn auwgent_engine_on_middleware_event_async(
                             registration.user_data as *mut c_void,
                         );
                     }
+                    timing.mark("called host middleware callback");
 
-                    receiver.await.ok()?.ok()
+                    let result = receiver.await.ok()?.ok();
+                    timing.mark("host middleware callback completed");
+                    result
                 })
             });
 
         bridge.on_middleware_event(handler);
+        timing.mark("registered middleware handler");
         Ok(())
     })();
 
@@ -991,4 +1027,42 @@ pub extern "C" fn auwgent_engine_on_sub_engine_complete(
             false
         }
     }
+}
+
+struct TimingProbe {
+    label: &'static str,
+    start: Instant,
+    enabled: bool,
+}
+
+impl TimingProbe {
+    fn new(label: &'static str) -> Self {
+        let enabled = timing_enabled();
+        let probe = Self {
+            label,
+            start: Instant::now(),
+            enabled,
+        };
+        if enabled {
+            eprintln!("[auwgent][timing][c-abi] {} +0ms start", label);
+        }
+        probe
+    }
+
+    fn mark(&self, message: &str) {
+        if self.enabled {
+            eprintln!(
+                "[auwgent][timing][c-abi] {} +{}ms {}",
+                self.label,
+                self.start.elapsed().as_millis(),
+                message
+            );
+        }
+    }
+}
+
+fn timing_enabled() -> bool {
+    std::env::var("AUWGENT_DEBUG_TIMING")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }

@@ -9,6 +9,7 @@ use crate::runtime::engine::{
 use crate::types::AgentIR;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
+use std::time::Instant;
 
 /// EngineBridge provides a language-agnostic facade for the Auwgent engine.
 /// It encapsulates the Tokio runtime and engine state, reducing duplication
@@ -38,13 +39,21 @@ impl EngineBridge {
     }
 
     pub fn new(ir_json: String) -> Result<Self, String> {
+        let timing = TimingProbe::new("rust.bridge.new");
         let ir: AgentIR = serde_json::from_str(&ir_json)
             .map_err(|e| format!("Failed to parse IR JSON: {}", e))?;
+        timing.mark("parsed ir");
+
+        let engine = Arc::new(AuwgentEngine::new(ir.clone()));
+        timing.mark("constructed engine");
+
+        let rt = shared_runtime()?.clone();
+        timing.mark("loaded shared runtime");
 
         Ok(Self {
-            engine: Arc::new(AuwgentEngine::new(ir.clone())),
+            engine,
             ir: Arc::new(ir),
-            rt: shared_runtime()?.clone(),
+            rt,
         })
     }
 
@@ -210,10 +219,12 @@ impl EngineBridge {
         input: Option<Value>,
         initial_stack: Option<Vec<String>>,
     ) -> Result<String, String> {
+        let timing = TimingProbe::new("rust.bridge.run_async");
         self.engine
             .run(input, initial_stack)
             .await
             .map_err(|e| format!("{}", e))?;
+        timing.mark("engine run complete");
         self.engine.export_session().map_err(|e| format!("{}", e))
     }
 
@@ -309,4 +320,42 @@ fn shared_runtime() -> Result<&'static Arc<tokio::runtime::Runtime>, String> {
         })
         .as_ref()
         .map_err(|err| err.clone())
+}
+
+struct TimingProbe {
+    label: &'static str,
+    start: Instant,
+    enabled: bool,
+}
+
+impl TimingProbe {
+    fn new(label: &'static str) -> Self {
+        let enabled = timing_enabled();
+        let probe = Self {
+            label,
+            start: Instant::now(),
+            enabled,
+        };
+        if enabled {
+            eprintln!("[auwgent][timing][rust] {} +0ms start", label);
+        }
+        probe
+    }
+
+    fn mark(&self, message: &str) {
+        if self.enabled {
+            eprintln!(
+                "[auwgent][timing][rust] {} +{}ms {}",
+                self.label,
+                self.start.elapsed().as_millis(),
+                message
+            );
+        }
+    }
+}
+
+fn timing_enabled() -> bool {
+    std::env::var("AUWGENT_DEBUG_TIMING")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }

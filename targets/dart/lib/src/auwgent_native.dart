@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
@@ -21,13 +22,21 @@ final _freeCallbackStringPtr = ffi.Pointer.fromFunction<NativeFreeString>(
 );
 
 AuwgentBindings _bindingsForLibrary(String? libraryPath) {
+  final watch = Stopwatch()..start();
   final cacheKey = libraryPath?.trim().isNotEmpty == true
       ? libraryPath!.trim()
       : '__default__';
-  return _bindingsCache.putIfAbsent(
-    cacheKey,
-    () => AuwgentBindings(openAuwgentLibrary(libraryPath)),
-  );
+  final cached = _bindingsCache[cacheKey];
+  if (cached != null) {
+    AuwgentNative._timingLog('bindings cache hit key=$cacheKey', watch);
+    return cached;
+  }
+
+  AuwgentNative._timingLog('bindings cache miss key=$cacheKey', watch);
+  final bindings = AuwgentBindings(openAuwgentLibrary(libraryPath));
+  _bindingsCache[cacheKey] = bindings;
+  AuwgentNative._timingLog('created bindings key=$cacheKey', watch);
+  return bindings;
 }
 
 final class _RegisteredCallable {
@@ -45,13 +54,17 @@ final class AuwgentNative {
     required String irJson,
     String? libraryPath,
   }) {
+    final watch = Stopwatch()..start();
+    _timingLog('fromIrJson start bytes=${irJson.length}', watch);
     final bindings = _bindingsForLibrary(libraryPath);
+    _timingLog('loaded bindings', watch);
     final irPtr = irJson.toNativeUtf8();
     try {
       final handle = bindings.engineNew(irPtr);
       if (handle == ffi.nullptr) {
         throw StateError(_readLastError(bindings));
       }
+      _timingLog('engineNew complete', watch);
       return AuwgentNative._(bindings, handle);
     } finally {
       malloc.free(irPtr);
@@ -114,6 +127,7 @@ final class AuwgentNative {
 
   void setContext(Map<String, Object?> context) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final json = jsonEncode(context);
     final ptr = json.toNativeUtf8();
     try {
@@ -121,6 +135,7 @@ final class AuwgentNative {
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('setContext complete keys=${context.length}', watch);
     } finally {
       malloc.free(ptr);
     }
@@ -128,12 +143,14 @@ final class AuwgentNative {
 
   void setGeminiDriver(String apiKey) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final apiKeyPtr = apiKey.toNativeUtf8();
     try {
       final ok = _bindings.engineSetGeminiDriver(_handle, apiKeyPtr);
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('setGeminiDriver complete', watch);
     } finally {
       malloc.free(apiKeyPtr);
     }
@@ -141,6 +158,7 @@ final class AuwgentNative {
 
   void setOpenaiDriver(String apiKey, {String? baseUrl}) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final apiKeyPtr = apiKey.toNativeUtf8();
     final baseUrlPtr = baseUrl?.toNativeUtf8() ?? ffi.nullptr;
     try {
@@ -152,6 +170,7 @@ final class AuwgentNative {
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('setOpenaiDriver complete', watch);
     } finally {
       malloc.free(apiKeyPtr);
       if (baseUrlPtr != ffi.nullptr) {
@@ -162,12 +181,14 @@ final class AuwgentNative {
 
   void setGroqDriver(String apiKey) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final apiKeyPtr = apiKey.toNativeUtf8();
     try {
       final ok = _bindings.engineSetGroqDriver(_handle, apiKeyPtr);
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('setGroqDriver complete', watch);
     } finally {
       malloc.free(apiKeyPtr);
     }
@@ -179,6 +200,7 @@ final class AuwgentNative {
     required String baseUrl,
   }) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final idPtr = id.toNativeUtf8();
     final apiKeyPtr = apiKey.toNativeUtf8();
     final baseUrlPtr = baseUrl.toNativeUtf8();
@@ -192,6 +214,7 @@ final class AuwgentNative {
       if (!ok) {
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('setCustomDriver complete id=$id', watch);
     } finally {
       malloc.free(idPtr);
       malloc.free(apiKeyPtr);
@@ -204,6 +227,7 @@ final class AuwgentNative {
     FutureOr<Object?> Function(Map<String, Object?> args) handler,
   ) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final toolNamePtr = name.toNativeUtf8();
     final callable = ffi.NativeCallable<NativeAsyncToolCallback>.listener((
       ffi.Pointer<Utf8> requestIdPtr,
@@ -259,6 +283,7 @@ final class AuwgentNative {
         throw StateError(_readLastError(_bindings));
       }
       _callbacks.add(_RegisteredCallable(callable.close));
+      _timingLog('registerTool complete name=$name', watch);
     } finally {
       malloc.free(toolNamePtr);
     }
@@ -266,38 +291,44 @@ final class AuwgentNative {
 
   void onMiddlewareEvent(FutureOr<String?> Function(String eventJson) handler) {
     _checkNotDisposed();
-    final callable = ffi.NativeCallable<NativeAsyncMiddlewareEventCallback>.listener(
-      (
-        ffi.Pointer<Utf8> requestIdPtr,
-        ffi.Pointer<Utf8> eventJsonPtr,
-        ffi.Pointer<ffi.Void> _,
-      ) {
-        try {
-          final requestId = requestIdPtr.toDartString();
-          final eventJson = eventJsonPtr.toDartString();
-          Future.sync(() => handler(eventJson)).then(
-            (result) {
-              _completeMiddlewareEvent(requestId, result);
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              _failMiddlewareEvent(requestId, '$error\n$stackTrace');
-            },
-          );
-        } catch (error, stackTrace) {
-          final requestId = requestIdPtr == ffi.nullptr
-              ? ''
-              : requestIdPtr.toDartString();
-          _failMiddlewareEvent(requestId, '$error\n$stackTrace');
-        } finally {
-          if (requestIdPtr != ffi.nullptr) {
-            _bindings.stringFree(requestIdPtr, ffi.nullptr);
+    final watch = Stopwatch()..start();
+    final callable =
+        ffi.NativeCallable<NativeAsyncMiddlewareEventCallback>.listener((
+          ffi.Pointer<Utf8> requestIdPtr,
+          ffi.Pointer<Utf8> eventJsonPtr,
+          ffi.Pointer<ffi.Void> _,
+        ) {
+          final callbackWatch = Stopwatch()..start();
+          try {
+            final requestId = requestIdPtr.toDartString();
+            final eventJson = eventJsonPtr.toDartString();
+            _timingLog(
+              'middleware callback received bytes=${eventJson.length}',
+              callbackWatch,
+            );
+            Future.sync(() => handler(eventJson)).then(
+              (result) {
+                _timingLog('middleware callback completed', callbackWatch);
+                _completeMiddlewareEvent(requestId, result);
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                _failMiddlewareEvent(requestId, '$error\n$stackTrace');
+              },
+            );
+          } catch (error, stackTrace) {
+            final requestId = requestIdPtr == ffi.nullptr
+                ? ''
+                : requestIdPtr.toDartString();
+            _failMiddlewareEvent(requestId, '$error\n$stackTrace');
+          } finally {
+            if (requestIdPtr != ffi.nullptr) {
+              _bindings.stringFree(requestIdPtr, ffi.nullptr);
+            }
+            if (eventJsonPtr != ffi.nullptr) {
+              _bindings.stringFree(eventJsonPtr, ffi.nullptr);
+            }
           }
-          if (eventJsonPtr != ffi.nullptr) {
-            _bindings.stringFree(eventJsonPtr, ffi.nullptr);
-          }
-        }
-      },
-    );
+        });
 
     final ok = _bindings.engineOnMiddlewareEventAsync(
       _handle,
@@ -309,6 +340,7 @@ final class AuwgentNative {
       throw StateError(_readLastError(_bindings));
     }
     _callbacks.add(_RegisteredCallable(callable.close));
+    _timingLog('onMiddlewareEvent registered', watch);
   }
 
   void _completeMiddlewareEvent(String requestId, String? result) {
@@ -516,6 +548,8 @@ final class AuwgentNative {
 
   Future<void> runTextAsync(String input, {List<String>? initialStack}) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
+    _timingLog('runTextAsync start bytes=${input.length}', watch);
     final completer = Completer<void>();
     final inputPtr = input.toNativeUtf8();
     final stackPtr = initialStack == null
@@ -531,6 +565,7 @@ final class AuwgentNative {
       try {
         callable.close();
         if (success) {
+          _timingLog('runTextAsync complete callback success', watch);
           completer.complete();
         } else {
           final message = errorMessagePtr == ffi.nullptr
@@ -557,6 +592,7 @@ final class AuwgentNative {
         callable.close();
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('engineRunTextAsync returned ok', watch);
     } finally {
       malloc.free(inputPtr);
       if (stackPtr != ffi.nullptr) {
@@ -569,6 +605,8 @@ final class AuwgentNative {
 
   Future<void> runJsonAsync(Object? input, {List<String>? initialStack}) {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
+    _timingLog('runJsonAsync start', watch);
     final completer = Completer<void>();
     final inputPtr = jsonEncode(input).toNativeUtf8();
     final stackPtr = initialStack == null
@@ -584,6 +622,7 @@ final class AuwgentNative {
       try {
         callable.close();
         if (success) {
+          _timingLog('runJsonAsync complete callback success', watch);
           completer.complete();
         } else {
           final message = errorMessagePtr == ffi.nullptr
@@ -610,6 +649,7 @@ final class AuwgentNative {
         callable.close();
         throw StateError(_readLastError(_bindings));
       }
+      _timingLog('engineRunJsonAsync returned ok', watch);
     } finally {
       malloc.free(inputPtr);
       if (stackPtr != ffi.nullptr) {
@@ -660,11 +700,13 @@ final class AuwgentNative {
 
   void clearListeners() {
     _checkNotDisposed();
+    final watch = Stopwatch()..start();
     final ok = _bindings.engineClearListeners(_handle);
     if (!ok) {
       throw StateError(_readLastError(_bindings));
     }
     _releaseCallbacks();
+    _timingLog('clearListeners complete', watch);
   }
 
   void _registerSessionTransform(
@@ -818,6 +860,23 @@ final class AuwgentNative {
       return ptr.toDartString();
     } finally {
       bindings.stringFree(ptr, ffi.nullptr);
+    }
+  }
+
+  static bool _timingEnabled() {
+    final value = Platform.environment['AUWGENT_DEBUG_TIMING'];
+    return value == '1' ||
+        value == 'true' ||
+        value == 'TRUE' ||
+        value == 'yes' ||
+        value == 'YES';
+  }
+
+  static void _timingLog(String message, Stopwatch watch) {
+    if (_timingEnabled()) {
+      stderr.writeln(
+        '[auwgent][timing][dart] native +${watch.elapsedMilliseconds}ms $message',
+      );
     }
   }
 
