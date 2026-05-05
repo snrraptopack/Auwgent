@@ -1,0 +1,167 @@
+---
+// src/components/landing/CodeShowcase.astro
+---
+
+<section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+  <div class="mb-12 text-center">
+    <h2 class="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
+      Write once. Run everywhere.
+    </h2>
+    <p class="mt-4 text-[17px] text-gray-600 max-w-2xl mx-auto">
+      Define your agent in Auwgent, and the compiler instantly generates idiomatic, type-safe code for your entire stack.
+    </p>
+  </div>
+
+  <div class="grid lg:grid-cols-2 gap-8 items-start">
+
+    <!-- LEFT SIDE: Auwgent DSL -->
+    <div class="bg-gray-950 rounded-2xl border border-gray-900 overflow-hidden shadow-2xl">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900/50">
+        <div class="flex gap-2">
+          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
+          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
+          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
+        </div>
+        <span class="text-xs font-mono text-gray-400">weather.agent</span>
+      </div>
+      <div class="p-5 overflow-x-auto">
+<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-300"><code><span class="text-brand-500">agent</span> <span class="text-white font-semibold">WeatherBot</span> {
+  <span class="text-brand-500">default config</span> {
+    <span class="text-gray-400">model:</span> <span class="text-blue-300">gemini</span>(<span class="text-green-400">"gemini-2.5-flash"</span>)
+    <span class="text-gray-400">prompt:</span> <span class="text-green-400">"You are a helpful meteorologist."</span>
+  }
+
+  <span class="text-brand-500">tool</span> <span class="text-blue-300">get_weather</span>(): <span class="text-blue-400">string</span> <span class="text-brand-500">@desc</span> <span class="text-green-400">"use this to get the weather"</span>
+}</code></pre>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDE: Target Code with Tabs -->
+    <div class="bg-surface-alt rounded-2xl border border-gray-950/10 overflow-hidden">
+      <!-- Tabs Header -->
+      <div class="flex items-center border-b border-gray-950/10 bg-white px-2 pt-2 gap-1 overflow-x-auto hide-scrollbar" id="code-tabs">
+        <button class="tab-btn active px-4 py-2.5 text-sm font-semibold text-gray-900 border-b-2 border-brand-500 transition-colors" data-target="rust">Rust</button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent transition-colors" data-target="dart">Dart</button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent transition-colors" data-target="python">Python</button>
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-900 border-b-2 border-transparent transition-colors" data-target="typescript">TypeScript</button>
+      </div>
+
+      <!-- Tab Contents -->
+      <div class="p-5 bg-white min-h-[340px]">
+
+        <!-- RUST CONTENT -->
+        <div class="tab-content block" id="tab-rust">
+<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-800"><code><span class="text-brand-600">let</span> config = AuwgentConfig {
+    api_keys: AuwgentApiKeys { gemini_api_key: <span class="text-green-600">"YOUR_API_KEY"</span>.to_string() }
+};
+
+<span class="text-brand-600">impl</span> AuwgentIntentHandler <span class="text-brand-600">for</span> IntentLogger {
+    <span class="text-brand-600">fn</span> <span class="text-blue-600">response_text</span>(&<span class="text-brand-600">self</span>, value: &ResponseText, _agent: &<span class="text-blue-600">str</span>) {
+        println!(<span class="text-green-600">"{:?}"</span>, value.text);
+    }
+}
+
+<span class="text-brand-600">let</span> agent = auwgent(config).unwrap();
+agent.on_intent_handler(IntentLogger);
+<span class="text-brand-600">let</span> _session = agent.run(Some(json!(<span class="text-green-600">"What is the weather?"</span>))).<span class="text-blue-600">await</span>;</code></pre>
+        </div>
+
+        <!-- DART CONTENT -->
+        <div class="tab-content hidden" id="tab-dart">
+<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-800"><code><span class="text-brand-600">final</span> config = AuwgentConfig(
+  apiKeys: AuwgentApiKeys(
+    geminiApiKey: <span class="text-green-600">'YOUR_API_KEY'</span>,
+  ),
+);
+
+<span class="text-brand-600">final class</span> HelloLogger <span class="text-brand-600">extends</span> AuwgentBaseIntentHandler {
+  <span class="text-blue-600">responseText</span>(value) {
+    print(value.text);
+  }
+}
+
+<span class="text-brand-600">final</span> agent = auwgent(config);
+agent.onIntentHandler(HelloLogger());
+<span class="text-brand-600">await</span> agent.run(<span class="text-green-600">'What is the weather?'</span>);</code></pre>
+        </div>
+
+        <!-- PYTHON CONTENT -->
+        <div class="tab-content hidden" id="tab-python">
+<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-800"><code>agent = auwgent({
+    <span class="text-green-600">"apiKeys"</span>: { <span class="text-green-600">"geminiApiKey"</span>: <span class="text-green-600">"YOUR_API_KEY"</span> }
+})
+
+<span class="text-brand-600">class</span> HandleIntent(AuwgentBaseIntentHandler):
+    <span class="text-brand-600">async def</span> <span class="text-blue-600">response_text</span>(<span class="text-brand-600">self</span>, intent, agent_name):
+        print(intent.get(<span class="text-green-600">'text'</span>))
+
+agent.on_intent(HandleIntent)
+<span class="text-brand-600">await</span> agent.run(<span class="text-green-600">"What is the weather?"</span>)</code></pre>
+        </div>
+
+        <!-- TYPESCRIPT CONTENT -->
+        <div class="tab-content hidden" id="tab-typescript">
+<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-800"><code><span class="text-brand-600">const</span> config: <span class="text-blue-600">AuwgentConfig</span> = {
+    apiKeys: { geminiApiKey: <span class="text-green-600">"YOUR_API_KEY"</span> }
+}
+
+<span class="text-brand-600">const</span> agent = auwgent(config)
+
+agent.onIntent((name, value, agentName) => {
+    <span class="text-brand-600">if</span> (name === <span class="text-green-600">"response_text"</span>) {
+        console.log(value.text)
+    }
+})
+
+<span class="text-brand-600">await</span> agent.run(<span class="text-green-600">"What is the weather?"</span>)</code></pre>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Vanilla JS for Tab Switching -->
+<script>
+  // Wait for Astro to load the DOM
+  document.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.tab-content');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // 1. Remove active state from all tabs
+        tabs.forEach(t => {
+          t.classList.remove('active', 'text-gray-900', 'border-brand-500', 'font-semibold');
+          t.classList.add('text-gray-500', 'border-transparent', 'font-medium');
+        });
+
+        // 2. Add active state to clicked tab
+        tab.classList.remove('text-gray-500', 'border-transparent', 'font-medium');
+        tab.classList.add('active', 'text-gray-900', 'border-brand-500', 'font-semibold');
+
+        // 3. Hide all contents
+        contents.forEach(c => {
+          c.classList.remove('block');
+          c.classList.add('hidden');
+        });
+
+        // 4. Show target content
+        const targetId = `tab-${tab.getAttribute('data-target')}`;
+        document.getElementById(targetId)?.classList.remove('hidden');
+        document.getElementById(targetId)?.classList.add('block');
+      });
+    });
+  });
+</script>
+
+<style>
+  /* Hide scrollbar for tabs on mobile but keep functionality */
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+</style>

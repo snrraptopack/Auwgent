@@ -65,6 +65,8 @@ config = AuwgentConfig(
 
 async def main():
 
+    print("before auwgent config")
+
     # agent initializaton
     agent = auwgent(config)
 
