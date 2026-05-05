@@ -1,0 +1,46 @@
+---
+// src/components/common/Footer.astro
+---
+
+<footer class="border-t border-gray-950/10 bg-white pt-16 pb-8 mt-10">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="flex flex-col md:flex-row justify-between items-start gap-12 md:gap-8">
+      
+      <!-- Brand & Copyright -->
+      <div class="flex flex-col max-w-xs">
+        <div class="flex items-center gap-2 mb-4">
+          <div class="w-6 h-6 bg-gray-900 rounded-md flex items-center justify-center text-white font-bold text-xs">
+            A
+          </div>
+          <span class="font-bold text-lg text-gray-900 tracking-tight">Auwgent</span>
+        </div>
+        <p class="text-sm text-gray-500 leading-relaxed mb-6">
+          The first compiler-driven AI agent engine. Write once, run everywhere natively.
+        </p>
+        <p class="text-xs text-gray-400">
+          &copy; {new Date().getFullYear()} Auwgent. MIT Licensed.
+        </p>
+      </div>
+
+      <!-- Links Grid -->
+      <div class="flex gap-16 sm:gap-24">
+        <!-- Resources -->
+        <div class="flex flex-col gap-3">
+          <h4 class="font-semibold text-gray-900 text-sm tracking-tight mb-1">Resources</h4>
+          <a href="/docs" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">Documentation</a>
+          <a href="/playground" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">Playground</a>
+          <a href="/examples" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">Examples</a>
+        </div>
+        
+        <!-- Community -->
+        <div class="flex flex-col gap-3">
+          <h4 class="font-semibold text-gray-900 text-sm tracking-tight mb-1">Community</h4>
+          <a href="https://github.com/snrraptopack/auwgent" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">GitHub</a>
+          <a href="#" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">Discord</a>
+          <a href="#" class="text-sm text-gray-500 hover:text-gray-900 transition-colors">Twitter / X</a>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</footer>
