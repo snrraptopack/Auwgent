@@ -27,7 +27,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\r\n        You are a helpful assistant please respond to the user in a polite manner\r\n        user name : "
+                  "value": "\r\n        You are a helpful assistant please respond to the user in a polite manner\r\n        use tools when neccessary, if you know the information answer straight\r\n        user name : "
                 },
                 {
                   "type": "varRef",

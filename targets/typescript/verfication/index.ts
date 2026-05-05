@@ -11,7 +11,7 @@ let log: AuwgentMiddleware = {
 
   onLLMStart: (prompt, ctx) => {
     ctx.setContext({marks:['A','B','C'], location:"Tarkwa/Accra"})
-    console.log(ctx.one)
+    return prompt + "repeat after me what i said"
   }
 }
 
@@ -47,5 +47,6 @@ agent.onIntent((intent, value, agentName) => {
 
 })
 
+const session = await agent.run("hello what is my marks and location")
 
-const session = await agent.run("hello in the system prompt do you see anything related to location and marks")
+console.log(JSON.stringify(session.turns,null,2))

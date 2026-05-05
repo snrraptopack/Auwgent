@@ -11,7 +11,7 @@ final class ML extends AuwgentMiddleware {
   onLLMStart(prompt, ctx) {
     print("llm start");
     print(ctx.data.toString());
-    return prompt;
+    return prompt + "repeat what i said exactly";
   }
 }
 
@@ -70,8 +70,8 @@ Future<void> main() async {
   //   return null;
   // });
 
-  await agent.run('Hello get my name and my location');
-
+  final session = await agent.run('Hello get my name and my location');
+  print(session.turns);
 }
 
 

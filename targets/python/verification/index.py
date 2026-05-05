@@ -11,14 +11,15 @@ class MLogger(AuwgentMiddleware):
     name = "simple loggler"
 
     async def onRunStart(self, session, ctx):
-        print("this logged",json.dumps(session,indent=2))
+        ctx["one"] = "coming from one"
+        print("middleware needs to log")
         return session
 
 
     async def onLLMStart(self, prompt, ctx):
         simple = "my name is Theophilus Amihere Junior I come from Ghana i am 10" + prompt
-        print(f"sending prompt {simple}")
-        print(f"context is {ctx}")
+
+        print(f"context is {ctx['one']}")
         return simple
 
 
@@ -54,7 +55,7 @@ groq_key = os.getenv("GROQ_API_KEY", "")
 config = AuwgentConfig(
     apiKeys=AuwgentApiKeys(groqApiKey=groq_key),
     tools=Tools(),
-    # middleware=[MLogger],
+     middleware=[MLogger],
     context= AuwgentContext(
         age=10,
         user_name= "Amihere",
@@ -69,11 +70,10 @@ async def main():
 
     agent.on_intent(Logger)
 
-    print(agent.generate_prompt())
+    #print(agent.generate_prompt())
 
     _result = await agent.run("Hello get my marks and my location and by the how are you?")
-    print(json.dumps(agent.get_metadata(), indent=2))
-    print(json.dumps(_result['turns'], indent=2))
+    print(json.dumps(_result['turns']))
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -6,6 +6,7 @@ prompt Simple(user_name:string){
 
     """
         You are a helpful assistant please respond to the user in a polite manner
+        use tools when neccessary, if you know the information answer straight
         user name : {{user_name}}
     """
 }

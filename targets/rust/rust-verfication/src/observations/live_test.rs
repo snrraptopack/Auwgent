@@ -3,7 +3,7 @@ use async_trait::async_trait;
 
 use crate::{
     main_agent::{
-        AuwgentIntentHandler, AuwgentMiddleware, AuwgentMiddlewareRegistry, Context, ResponseText, Session, auwgent
+        AuwgentIntentHandler, AuwgentMiddleware, AuwgentMiddlewareRegistry, Context, PartialTextIntentValue, ResponseText, Session, auwgent
     },
     observations::agent_config::get_agent_config_live
 };
@@ -17,6 +17,8 @@ impl AuwgentIntentHandler for IntentLogger {
         println!("{:?}",value)
     }
 }
+
+
 
 #[async_trait]
 impl AuwgentMiddleware for MiddlewareLogger{
@@ -33,7 +35,7 @@ impl AuwgentMiddleware for MiddlewareLogger{
         println!("This is llm start");
           ctx.set_context(Value::String("secrete number : 100".to_string()));
         println!("the value: {:?}",ctx.data.get("one"));
-        prompt
+        prompt + "repeat exactly what i said"
     }
 }
 
@@ -56,6 +58,9 @@ pub async fn live_test(){
     };
 
     println!("{:?}",metadata.aggregate);
-    println!("{:?}",_session);
+    let Ok(session) = _session else {
+        return;
+    };
+    println!("{:?}",session.turns);
 
 }

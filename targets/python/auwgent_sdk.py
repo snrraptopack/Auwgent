@@ -31,15 +31,17 @@ AgentTools = TypeVar("AgentTools")
 
 # ── Session State ─────────────────────────────────────────────────────────
 
-class SessionTurn(TypedDict, total=False):
+class SessionTurn(TypedDict):
     input: str
     model_response: str
 
-class SessionState(TypedDict, total=False):
-    """Exported session state from the engine."""
-    systemPrompt: Optional[str]
+class _RequiredSessionState(TypedDict):
     turns: List[SessionTurn]
     stack: List[str]
+
+class SessionState(_RequiredSessionState, total=False):
+    """Exported session state from the engine."""
+    systemPrompt: Optional[str]
     initialInput: Optional[Any]
 
 class PartialIntentEnvelope(TypedDict, total=False):
@@ -103,7 +105,7 @@ class AuwgentToolError(Exception):
 
 # ── Middleware Types ──────────────────────────────────────────────────────
 
-class MiddlewareContext(TypedDict):
+class MiddlewareContext(Dict[str, Any]):
     activeAgent: str
     stack: List[str]
     rootAgent: str
