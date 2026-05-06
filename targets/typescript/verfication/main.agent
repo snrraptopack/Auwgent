@@ -20,6 +20,8 @@ agent Asisstant{
         user_name:string,
     }
 
+    input: Image | File
+
     tools {
         get_user_marks():string[] @desc "use this to get the marks of the user"
         get_location():string @desc "use this to get the location of the user"

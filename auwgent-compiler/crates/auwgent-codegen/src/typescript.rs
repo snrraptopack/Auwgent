@@ -562,6 +562,11 @@ fn generate_input_part_aliases() -> String {
         "export type AudioPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentAudioPart;",
         "export type VideoPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentVideoPart;",
         "export type InputPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentInputPart;",
+        "export type MediaSource = import(\"@snrraptopack/auwgent-sdk\").AuwgentBinarySource;",
+        "export type ImageInput = MediaSource & { mimeType?: string; detail?: \"auto\" | \"low\" | \"high\" };",
+        "export type FileInput = MediaSource & { mimeType?: string; name?: string };",
+        "export type AudioInput = MediaSource & { mimeType?: string; transcript?: string };",
+        "export type VideoInput = MediaSource & { mimeType?: string; transcript?: string; sampledFrames?: ImagePart[] };",
     ]
     .join("\n")
 }
@@ -638,16 +643,16 @@ fn generate_input_builders(input: Option<&Value>) -> Option<String> {
     ];
 
     if media.contains(&"image") {
-        lines.push("    image(source: Omit<ImagePart, \"type\">): ImagePart { return { type: \"image\", ...source }; },".to_string());
+        lines.push("    image(source: ImageInput): ImagePart { return { type: \"image\", ...source }; },".to_string());
     }
     if media.contains(&"file") {
-        lines.push("    file(source: Omit<FilePart, \"type\">): FilePart { return { type: \"file\", ...source }; },".to_string());
+        lines.push("    file(source: FileInput): FilePart { return { type: \"file\", ...source }; },".to_string());
     }
     if media.contains(&"audio") {
-        lines.push("    audio(source: Omit<AudioPart, \"type\">): AudioPart { return { type: \"audio\", ...source }; },".to_string());
+        lines.push("    audio(source: AudioInput): AudioPart { return { type: \"audio\", ...source }; },".to_string());
     }
     if media.contains(&"video") {
-        lines.push("    video(source: Omit<VideoPart, \"type\">): VideoPart { return { type: \"video\", ...source }; },".to_string());
+        lines.push("    video(source: VideoInput): VideoPart { return { type: \"video\", ...source }; },".to_string());
     }
 
     lines.push("};\n".to_string());
@@ -916,7 +921,9 @@ mod tests {
         assert!(output.contains("export type ImagePart = import(\"@snrraptopack/auwgent-sdk\").AuwgentImagePart;"));
         assert!(output.contains("export type Input = readonly (TextPart | ImagePart | FilePart)[]"));
         assert!(output.contains("export const input = {"));
-        assert!(output.contains("image(source: Omit<ImagePart, \"type\">): ImagePart"));
+        assert!(output.contains("export type MediaSource = import(\"@snrraptopack/auwgent-sdk\").AuwgentBinarySource;"));
+        assert!(output.contains("export type ImageInput = MediaSource & { mimeType?: string; detail?: \"auto\" | \"low\" | \"high\" };"));
+        assert!(output.contains("image(source: ImageInput): ImagePart"));
         assert!(!output.contains("audio(source:"));
     }
 }

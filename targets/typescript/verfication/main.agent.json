@@ -45,7 +45,13 @@
       "namedConfig": []
     }
   ],
-  "input": null,
+  "input": {
+    "type": "union",
+    "options": [
+      "image",
+      "file"
+    ]
+  },
   "output": null,
   "context": {
     "user_name": {

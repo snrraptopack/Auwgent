@@ -64,19 +64,19 @@ impl ModelDriver for OpenAIDriver {
             .map(|m| match m.role {
                 Role::System => json!({
                     "role": "system",
-                    "content": m.content
+                    "content": m.content.text()
                 }),
                 Role::User => json!({
                     "role": "user",
-                    "content": m.content
+                    "content": openai_content(m)
                 }),
                 Role::Model => json!({
                     "role": "assistant",
-                    "content": m.content
+                    "content": m.content.text()
                 }),
                 Role::ToolResult => json!({
                     "role": "user",
-                    "content": m.content
+                    "content": m.content.text()
                 }),
             })
             .collect();
@@ -368,6 +368,123 @@ impl ModelDriver for OpenAIDriver {
     }
 }
 
+fn openai_content(message: &Message) -> Value {
+    let Some(parts) = message.content.parts() else {
+        return json!(message.content.text());
+    };
+
+    let mut content = Vec::new();
+    for part in parts {
+        let Some(part_type) = part.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        match part_type {
+            "text" => {
+                if let Some(text) = part.get("text").and_then(Value::as_str) {
+                    content.push(json!({ "type": "text", "text": text }));
+                }
+            }
+            "image" => {
+                if let Some(url) = media_url(part) {
+                    let mut image_url = json!({ "url": url });
+                    if let Some(detail) = part.get("detail").and_then(Value::as_str)
+                        && let Some(obj) = image_url.as_object_mut()
+                    {
+                        obj.insert("detail".to_string(), json!(detail));
+                    }
+                    content.push(json!({ "type": "image_url", "image_url": image_url }));
+                } else {
+                    content.push(json!({
+                        "type": "text",
+                        "text": format!("[image: {}]", media_label(part))
+                    }));
+                }
+            }
+            "file" | "audio" | "video" => {
+                content.push(json!({
+                    "type": "text",
+                    "text": format!("[{}: {}]", part_type, media_label(part))
+                }));
+            }
+            _ => {}
+        }
+    }
+
+    if content.is_empty() {
+        json!(message.content.text())
+    } else {
+        Value::Array(content)
+    }
+}
+
+fn media_url(part: &Value) -> Option<String> {
+    if let Some(url) = part.get("url").and_then(Value::as_str) {
+        return Some(url.to_string());
+    }
+    if let Some(data) = part.get("data").and_then(Value::as_str) {
+        let mime = part
+            .get("mimeType")
+            .and_then(Value::as_str)
+            .unwrap_or("application/octet-stream");
+        if matches!(
+            part.get("encoding").and_then(Value::as_str),
+            Some("utf8" | "utf-8")
+        ) {
+            return Some(format!("data:{mime};base64,{}", encode_base64(data.as_bytes())));
+        }
+        return Some(format!("data:{mime};base64,{data}"));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(path) = part.get("path").and_then(Value::as_str)
+        && let Ok(bytes) = std::fs::read(path)
+    {
+        let mime = part
+            .get("mimeType")
+            .and_then(Value::as_str)
+            .unwrap_or("application/octet-stream");
+        return Some(format!("data:{mime};base64,{}", encode_base64(&bytes)));
+    }
+    None
+}
+
+fn media_label(part: &Value) -> String {
+    for key in ["name", "path", "url", "ref", "mimeType"] {
+        if let Some(value) = part.get(key).and_then(Value::as_str)
+            && !value.is_empty()
+        {
+            return value.to_string();
+        }
+    }
+    if part.get("data").is_some() {
+        "inline data".to_string()
+    } else {
+        "attached".to_string()
+    }
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -483,5 +600,50 @@ mod tests {
 
         assert_eq!(token_usage.cached_tokens, 1920);
         assert_eq!(token_usage.reasoning_tokens, 17);
+    }
+
+    #[test]
+    fn maps_structured_image_parts_to_openai_content_array() {
+        let message = Message::user_parts(vec![
+            json!({ "type": "text", "text": "What is this?" }),
+            json!({
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "encoding": "base64",
+                "mimeType": "image/png",
+                "detail": "auto"
+            }),
+        ]);
+
+        let content = openai_content(&message);
+
+        assert_eq!(
+            content,
+            json!([
+                { "type": "text", "text": "What is this?" },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "data:image/png;base64,aW1hZ2U=",
+                        "detail": "auto"
+                    }
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn encodes_utf8_inline_data_before_openai_submission() {
+        let part = json!({
+            "type": "image",
+            "data": "hello",
+            "encoding": "utf8",
+            "mimeType": "text/plain"
+        });
+
+        assert_eq!(
+            media_url(&part),
+            Some("data:text/plain;base64,aGVsbG8=".to_string())
+        );
     }
 }

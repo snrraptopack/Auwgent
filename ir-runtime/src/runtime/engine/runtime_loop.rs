@@ -3,6 +3,7 @@
 // and event-context helpers. Execution of tools/workflows/helpers belongs in
 // the execution modules instead of here.
 use super::*;
+use crate::runtime::session::{display_input_value, input_parts_value};
 use std::time::Instant;
 
 impl AuwgentEngine {
@@ -104,12 +105,14 @@ impl AuwgentEngine {
         }
 
         if let Some(user_input) = input {
-            let user_text = match &user_input {
-                Value::String(text) => text.clone(),
-                value => serde_json::to_string(value).map_err(AuwgentError::Serialization)?,
-            };
+            let user_text = display_input_value(&user_input);
+            let input_parts = input_parts_value(&user_input);
             *self.user_input.lock().unwrap() = Some(user_input);
-            self.session.lock().unwrap().start_turn(user_text);
+            if let Some(parts) = input_parts {
+                self.session.lock().unwrap().start_turn_parts(user_text, parts);
+            } else {
+                self.session.lock().unwrap().start_turn(user_text);
+            }
         }
 
         self.pending_tool_results.lock().unwrap().clear();
@@ -328,11 +331,8 @@ impl AuwgentEngine {
             timing.mark("regenerated prompt after run_start middleware");
         }
 
-        let initial_user_input = match input.as_ref() {
-            Some(Value::String(text)) => Some(text.clone()),
-            Some(value) => Some(serde_json::to_string(value).map_err(AuwgentError::Serialization)?),
-            None => None,
-        };
+        let initial_user_input = input.as_ref().map(display_input_value);
+        let initial_input_parts = input.as_ref().and_then(input_parts_value);
 
         *self.terminal_response_emitted.lock().unwrap() = false;
         *self.final_response_emitted.lock().unwrap() = false;
@@ -341,9 +341,13 @@ impl AuwgentEngine {
 
         let is_teleporting = self.fast_forward_stack.lock().unwrap().is_some();
         if let Some(user_text) = initial_user_input.clone() {
-            *self.user_input.lock().unwrap() = Some(Value::String(user_text.clone()));
+            *self.user_input.lock().unwrap() = input.clone();
             if !is_teleporting {
-                self.session.lock().unwrap().start_turn(&user_text);
+                if let Some(parts) = initial_input_parts.clone() {
+                    self.session.lock().unwrap().start_turn_parts(&user_text, parts);
+                } else {
+                    self.session.lock().unwrap().start_turn(&user_text);
+                }
             }
         }
 

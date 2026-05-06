@@ -41,7 +41,7 @@ impl ModelDriver for GeminiDriver {
         if let Some(sys_msg) = messages.iter().find(|m| m.role == Role::System) {
             body_obj.insert(
                 "system_instruction".to_string(),
-                json!({ "parts": [{ "text": sys_msg.content }] }),
+                json!({ "parts": [{ "text": sys_msg.content.text() }] }),
             );
         }
 
@@ -54,18 +54,18 @@ impl ModelDriver for GeminiDriver {
                 match m.role {
                     Role::User => json!({
                         "role": "user",
-                        "parts": [{ "text": m.content }]
+                        "parts": gemini_parts(m)
                     }),
                     Role::Model => json!({
                         "role": "model",
-                        "parts": [{ "text": m.content }]
+                        "parts": [{ "text": m.content.text() }]
                     }),
                     Role::ToolResult => json!({
                         "role": "user",
                         "parts": [{
                             "functionResponse": {
                                 "name": "tool_result",
-                                "response": { "output": m.content }
+                                "response": { "output": m.content.text() }
                             }
                         }]
                     }),
@@ -336,5 +336,174 @@ impl ModelDriver for GeminiDriver {
         }
 
         Ok(results)
+    }
+}
+
+fn gemini_parts(message: &Message) -> Vec<Value> {
+    let Some(parts) = message.content.parts() else {
+        return vec![json!({ "text": message.content.text() })];
+    };
+
+    let mut out = Vec::new();
+    for part in parts {
+        let Some(part_type) = part.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        match part_type {
+            "text" => {
+                if let Some(text) = part.get("text").and_then(Value::as_str) {
+                    out.push(json!({ "text": text }));
+                }
+            }
+            "image" | "file" | "audio" | "video" => {
+                if let Some(inline) = inline_data_part(part) {
+                    out.push(inline);
+                } else if let Some(url) = part.get("url").and_then(Value::as_str) {
+                    let mime = part
+                        .get("mimeType")
+                        .and_then(Value::as_str)
+                        .unwrap_or("application/octet-stream");
+                    out.push(json!({
+                        "file_data": {
+                            "mime_type": mime,
+                            "file_uri": url
+                        }
+                    }));
+                } else {
+                    out.push(json!({ "text": format!("[{}: {}]", part_type, media_label(part)) }));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if out.is_empty() {
+        vec![json!({ "text": message.content.text() })]
+    } else {
+        out
+    }
+}
+
+fn inline_data_part(part: &Value) -> Option<Value> {
+    let mime = part
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .unwrap_or("application/octet-stream");
+    if let Some(data) = part.get("data").and_then(Value::as_str) {
+        let data = if matches!(
+            part.get("encoding").and_then(Value::as_str),
+            Some("utf8" | "utf-8")
+        ) {
+            encode_base64(data.as_bytes())
+        } else {
+            data.to_string()
+        };
+        return Some(json!({
+            "inline_data": {
+                "mime_type": mime,
+                "data": data
+            }
+        }));
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(path) = part.get("path").and_then(Value::as_str)
+        && let Ok(bytes) = std::fs::read(path)
+    {
+        return Some(json!({
+            "inline_data": {
+                "mime_type": mime,
+                "data": encode_base64(&bytes)
+            }
+        }));
+    }
+    None
+}
+
+fn media_label(part: &Value) -> String {
+    for key in ["name", "path", "url", "ref", "mimeType"] {
+        if let Some(value) = part.get(key).and_then(Value::as_str)
+            && !value.is_empty()
+        {
+            return value.to_string();
+        }
+    }
+    if part.get("data").is_some() {
+        "inline data".to_string()
+    } else {
+        "attached".to_string()
+    }
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = *chunk.get(1).unwrap_or(&0);
+        let b2 = *chunk.get(2).unwrap_or(&0);
+        out.push(TABLE[(b0 >> 2) as usize] as char);
+        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_structured_media_parts_to_gemini_parts() {
+        let message = Message::user_parts(vec![
+            json!({ "type": "text", "text": "What is this?" }),
+            json!({
+                "type": "image",
+                "data": "aW1hZ2U=",
+                "encoding": "base64",
+                "mimeType": "image/png"
+            }),
+        ]);
+
+        assert_eq!(
+            gemini_parts(&message),
+            vec![
+                json!({ "text": "What is this?" }),
+                json!({
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": "aW1hZ2U="
+                    }
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn encodes_utf8_inline_data_before_gemini_submission() {
+        let part = json!({
+            "type": "file",
+            "data": "hello",
+            "encoding": "utf8",
+            "mimeType": "text/plain"
+        });
+
+        assert_eq!(
+            inline_data_part(&part),
+            Some(json!({
+                "inline_data": {
+                    "mime_type": "text/plain",
+                    "data": "aGVsbG8="
+                }
+            }))
+        );
     }
 }

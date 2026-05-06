@@ -10,9 +10,24 @@ type AsisstantIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers"> & 
   helpers: undefined;
 };
 const agentIR = _importedIR as unknown as AsisstantIR;
-export type AuwgentInput = {
+export type TextPart = import("@snrraptopack/auwgent-sdk").AuwgentTextPart;
+export type ImagePart = import("@snrraptopack/auwgent-sdk").AuwgentImagePart;
+export type FilePart = import("@snrraptopack/auwgent-sdk").AuwgentFilePart;
+export type AudioPart = import("@snrraptopack/auwgent-sdk").AuwgentAudioPart;
+export type VideoPart = import("@snrraptopack/auwgent-sdk").AuwgentVideoPart;
+export type InputPart = import("@snrraptopack/auwgent-sdk").AuwgentInputPart;
+export type MediaSource = import("@snrraptopack/auwgent-sdk").AuwgentBinarySource;
+export type ImageInput = MediaSource & { mimeType?: string; detail?: "auto" | "low" | "high" };
+export type FileInput = MediaSource & { mimeType?: string; name?: string };
+export type AudioInput = MediaSource & { mimeType?: string; transcript?: string };
+export type VideoInput = MediaSource & { mimeType?: string; transcript?: string; sampledFrames?: ImagePart[] };
+export type Input = readonly (TextPart | ImagePart | FilePart)[]
 
-}
+export const input = {
+    text(text: string): TextPart { return { type: "text", text }; },
+    image(source: ImageInput): ImagePart { return { type: "image", ...source }; },
+    file(source: FileInput): FilePart { return { type: "file", ...source }; },
+};
 
 export type AuwgentOutput = {
 

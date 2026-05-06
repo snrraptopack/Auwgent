@@ -1,5 +1,5 @@
 import { GROQ_API_KEY } from "../secrets.ts"
-import { auwgent, type AuwgentConfig, type AuwgentMiddleware, type AuwgentTools } from "./main.agent.types.ts"
+import { auwgent, input, type AuwgentConfig, type AuwgentMiddleware, type AuwgentTools } from "./main.agent.types.ts"
 import { db } from "./db.ts"
 import { type SessionState } from "../types.ts"
 
@@ -49,7 +49,7 @@ agent.onIntent((intent, value, agentName) => {
 
 })
 
-const session = await agent.run("hello ignore the previous data get my location after that get my marks after that get the secret number aftet that get my school")
+const session = await agent.run("hi")
 
 
 console.log(JSON.stringify(agent.getMetadata(),null,2))

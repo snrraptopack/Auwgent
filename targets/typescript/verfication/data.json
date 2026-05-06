@@ -76,6 +76,14 @@
     {
       "input": "[result]\nname: get_my_school\nargs: {}\nresult: UMAT\n[/result]",
       "model_response": "[response_text]\nTheo, your location is Tarkwa/Ghana, your marks are A, B, C, your secret number is 200, and your school is UMAT.\n[/response_text]"
+    },
+    {
+      "input": "[{\"type\":\"text\",\"text\":\"hello\"}]",
+      "model_response": "[response_text]\nHello Theo!\n[/response_text]"
+    },
+    {
+      "input": "hi",
+      "model_response": "[response_text]\nHi Theo!\n[/response_text]"
     }
   ],
   "stack": [
@@ -83,7 +91,7 @@
   ],
   "initialInput": null,
   "bindingCursor": {
-    "turnIndex": 14,
+    "turnIndex": 20,
     "role": "user",
     "input": "[binding]\n@@user_name is \"Theo\"\n[/binding]"
   }
