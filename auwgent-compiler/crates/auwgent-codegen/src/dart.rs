@@ -24,6 +24,8 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "import 'package:auwgent_sdk_dart/auwgent.dart' as sdk;".to_string(),
         format!("import '{base_name}.agent.ir.dart';"),
         String::new(),
+        generate_input_part_aliases(),
+        String::new(),
     ];
 
     if let Some(types) = ir.get("types").and_then(Value::as_object) {
@@ -31,11 +33,14 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     }
 
     sections.push(generate_named_shape(
-        &format!("{public_name}Input"),
+        "Input",
         ir.get("input"),
         true,
         "String",
     ));
+    if let Some(builders) = generate_input_builders(ir.get("input")) {
+        sections.push(builders);
+    }
 
     for helper in output_helpers {
         if let Some(name) = string_at(helper, &["name"]) {
@@ -163,6 +168,47 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
         ));
     }
     blocks.join("\n")
+}
+
+fn generate_input_part_aliases() -> String {
+    [
+        "typedef TextPart = sdk.AuwgentTextPart;",
+        "typedef ImagePart = sdk.AuwgentImagePart;",
+        "typedef FilePart = sdk.AuwgentFilePart;",
+        "typedef AudioPart = sdk.AuwgentAudioPart;",
+        "typedef VideoPart = sdk.AuwgentVideoPart;",
+        "typedef InputPart = sdk.AuwgentInputPart;",
+    ]
+    .join("\n")
+}
+
+fn generate_input_builders(input: Option<&Value>) -> Option<String> {
+    let media = media_input_names(input?);
+    if media.is_empty() {
+        return None;
+    }
+
+    let mut methods = vec![
+        "  TextPart text(String text) => TextPart(text);".to_string(),
+    ];
+
+    if media.contains(&"image") {
+        methods.push("  ImagePart image({Object? data, String? encoding, String? path, String? url, String? ref, String? mimeType, String? detail}) => ImagePart(data: data, encoding: encoding, path: path, url: url, ref: ref, mimeType: mimeType, detail: detail);".to_string());
+    }
+    if media.contains(&"file") {
+        methods.push("  FilePart file({Object? data, String? encoding, String? path, String? url, String? ref, String? mimeType, String? name}) => FilePart(data: data, encoding: encoding, path: path, url: url, ref: ref, mimeType: mimeType, name: name);".to_string());
+    }
+    if media.contains(&"audio") {
+        methods.push("  AudioPart audio({Object? data, String? encoding, String? path, String? url, String? ref, String? mimeType, String? transcript}) => AudioPart(data: data, encoding: encoding, path: path, url: url, ref: ref, mimeType: mimeType, transcript: transcript);".to_string());
+    }
+    if media.contains(&"video") {
+        methods.push("  VideoPart video({Object? data, String? encoding, String? path, String? url, String? ref, String? mimeType, String? transcript, List<ImagePart>? sampledFrames}) => VideoPart(data: data, encoding: encoding, path: path, url: url, ref: ref, mimeType: mimeType, transcript: transcript, sampledFrames: sampledFrames);".to_string());
+    }
+
+    Some(format!(
+        "final class InputBuilder {{\n  const InputBuilder();\n\n{}\n}}\n\nconst input = InputBuilder();\n",
+        methods.join("\n")
+    ))
 }
 
 fn generate_type_alias(
@@ -1735,6 +1781,14 @@ fn type_to_dart_string(
                 Some("properties") => return "sdk.JsonMap".to_string(),
                 _ => {}
             }
+            if obj.get("type").and_then(Value::as_str) == Some("union")
+                && obj
+                    .get("options")
+                    .and_then(Value::as_array)
+                    .is_some_and(|options| options.iter().filter_map(Value::as_str).any(is_media_ir_name))
+            {
+                return "List<InputPart>".to_string();
+            }
         }
     }
 
@@ -1743,6 +1797,9 @@ fn type_to_dart_string(
     }
 
     if let Some(raw) = value.as_str() {
+        if unwrap_input_kind && is_media_ir_name(raw) {
+            return "List<InputPart>".to_string();
+        }
         return normalize_dart_type(raw);
     }
 
@@ -1787,11 +1844,43 @@ fn normalize_dart_type(raw: &str) -> String {
         "float" | "number" => "double".to_string(),
         "bool" | "boolean" => "bool".to_string(),
         "text" | "string" => "String".to_string(),
-        "image" => "sdk.AuwgentImagePart".to_string(),
-        "file" => "sdk.AuwgentFilePart".to_string(),
-        "audio" => "sdk.AuwgentAudioPart".to_string(),
-        "video" => "sdk.AuwgentVideoPart".to_string(),
+        "image" => "ImagePart".to_string(),
+        "file" => "FilePart".to_string(),
+        "audio" => "AudioPart".to_string(),
+        "video" => "VideoPart".to_string(),
         other => other.to_string(),
+    }
+}
+
+fn is_media_ir_name(raw: &str) -> bool {
+    matches!(raw, "image" | "file" | "audio" | "video")
+}
+
+fn media_input_names(input: &Value) -> Vec<&'static str> {
+    match input {
+        Value::String(raw) => media_ir_name(raw).into_iter().collect(),
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => obj
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|options| {
+                options
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(media_ir_name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn media_ir_name(raw: &str) -> Option<&'static str> {
+    match raw {
+        "image" => Some("image"),
+        "file" => Some("file"),
+        "audio" => Some("audio"),
+        "video" => Some("video"),
+        _ => None,
     }
 }
 
@@ -2150,5 +2239,27 @@ mod tests {
         assert!(!output.contains("typedef HelloGetDetailsToolResultValue = Person;"));
         assert!(!output.contains("typedef AuwgentGetDetailsToolResultValue = Person;"));
         assert!(!output.contains("typedef Person = sdk.JsonMap;"));
+    }
+
+    #[test]
+    fn emits_generated_media_input_aliases() {
+        let ir = json!({
+            "name": "Vision",
+            "input": { "type": "union", "options": ["image", "file"] },
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "modelConfig": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "vision");
+        assert!(output.contains("typedef ImagePart = sdk.AuwgentImagePart;"));
+        assert!(output.contains("typedef Input = List<InputPart>;"));
+        assert!(output.contains("const input = InputBuilder();"));
+        assert!(output.contains("ImagePart image({"));
+        assert!(!output.contains("AudioPart audio({"));
     }
 }

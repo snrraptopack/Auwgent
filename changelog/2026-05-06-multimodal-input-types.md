@@ -104,65 +104,31 @@ await agent.run("hello")
 For media-capable agents, generated code expects an array of input parts:
 
 ```ts
+import { input } from "./main.agent.types"
+import type { Input } from "./main.agent.types"
+
 await agent.run([
-  { type: "text", text: "What is in this image?" },
-  { type: "image", path: "./photo.png", mimeType: "image/png" },
-])
+  input.text("What is in this image?"),
+  input.image({ path: "./photo.png", mimeType: "image/png" }),
+] satisfies Input)
 ```
 
-The supported part shapes are:
+The generated types file exposes the agent-specific input type, shared part aliases, and the generated `input` builder:
 
 ```ts
-type AuwgentTextPart = {
-  type: "text"
-  text: string
-}
-
-type AuwgentImagePart = {
-  type: "image"
-  data?: ArrayBuffer | Uint8Array | string
-  encoding?: "base64" | "utf8"
-  path?: string
-  url?: string
-  ref?: string
-  mimeType?: string
-  detail?: "auto" | "low" | "high"
-}
-
-type AuwgentFilePart = {
-  type: "file"
-  data?: ArrayBuffer | Uint8Array | string
-  encoding?: "base64" | "utf8"
-  path?: string
-  url?: string
-  ref?: string
-  mimeType?: string
-  name?: string
-}
-
-type AuwgentAudioPart = {
-  type: "audio"
-  data?: ArrayBuffer | Uint8Array | string
-  encoding?: "base64" | "utf8"
-  path?: string
-  url?: string
-  ref?: string
-  mimeType?: string
-  transcript?: string
-}
-
-type AuwgentVideoPart = {
-  type: "video"
-  data?: ArrayBuffer | Uint8Array | string
-  encoding?: "base64" | "utf8"
-  path?: string
-  url?: string
-  ref?: string
-  mimeType?: string
-  transcript?: string
-  sampledFrames?: AuwgentImagePart[]
-}
+import { input } from "./main.agent.types"
+import type {
+  Input,
+  InputPart,
+  TextPart,
+  ImagePart,
+  FilePart,
+  AudioPart,
+  VideoPart,
+} from "./main.agent.types"
 ```
+
+The base SDK still defines the low-level shapes, but application code should import the public names from the generated file. That keeps the user-facing API tied to what the compiler knows about that specific agent.
 
 If the DSL says:
 
@@ -174,9 +140,9 @@ then TypeScript permits text, image, and file parts:
 
 ```ts
 await agent.run([
-  { type: "text", text: "Summarize this" },
-  { type: "file", path: "./report.pdf", mimeType: "application/pdf" },
-])
+  input.text("Summarize this"),
+  input.file({ path: "./report.pdf", mimeType: "application/pdf" }),
+] satisfies Input)
 ```
 
 It does not permit audio or video parts for that agent.
@@ -196,36 +162,35 @@ The compiler codegen maps IR media names to the corresponding target SDK types:
 - `audio` -> audio input part
 - `video` -> video input part
 
+Each generated target layer now exposes those media names back out through generated aliases. User code should import the generated file/module first and treat direct SDK imports as an implementation detail.
+
 ## Rust Usage
 
-Text-only generated Rust agents keep the existing string-like path through `Option<AuwgentInput>` for the generated input type.
+Text-only generated Rust agents keep the existing string-like path through `Option<Input>` for the generated input type.
 
-For media-capable agents, construct input parts from the target SDK types and pass them through the generated agent input type. A direct SDK-level media part looks like:
+For media-capable agents, construct input parts from the generated module. The generated module re-exports the shared media part aliases, so user code does not need to import from `auwgent_sdk_rust` directly.
 
 ```rust
-use auwgent_sdk::{
-    AuwgentImagePart,
-    AuwgentInputPart,
-    AuwgentMediaSource,
-    AuwgentTextPart,
+use crate::main_agent::{
+    input,
+    Input,
+    MediaSource,
 };
 
-let input = vec![
-    AuwgentInputPart::Text(AuwgentTextPart {
-        text: "What is in this image?".to_string(),
-    }),
-    AuwgentInputPart::Image(AuwgentImagePart {
-        source: AuwgentMediaSource {
+let user_input: Input = vec![
+    input::text("What is in this image?"),
+    input::image(
+        MediaSource {
             path: Some("./photo.png".to_string()),
             mime_type: Some("image/png".to_string()),
             ..Default::default()
         },
-        detail: Some("auto".to_string()),
-    }),
+        Some("auto".to_string()),
+    ),
 ];
 ```
 
-For `input: Image | File`, the generated Rust input type should only allow text, image, and file-compatible values. Audio and video should remain outside that generated type.
+For `input: Image | File`, user code should still import the input aliases from the generated module. The generated module owns the public input type, even when the underlying representation delegates to shared SDK media parts.
 
 ## Python Usage
 
@@ -235,19 +200,14 @@ Text-only generated Python agents keep the simple string call:
 session = await agent.run("hello")
 ```
 
-For media-capable agents, pass a list of typed input-part dictionaries:
+For media-capable agents, import the generated aliases from the generated Python types file:
 
 ```python
-from auwgent_sdk import AuwgentImagePart, AuwgentTextPart
+from main_types import Input, input
 
-input_parts: list[AuwgentTextPart | AuwgentImagePart] = [
-    {"type": "text", "text": "What is in this image?"},
-    {
-        "type": "image",
-        "path": "./photo.png",
-        "mimeType": "image/png",
-        "detail": "auto",
-    },
+input_parts: Input = [
+    input.text("What is in this image?"),
+    input.image(path="./photo.png", mimeType="image/png", detail="auto"),
 ]
 
 session = await agent.run(input_parts)
@@ -256,15 +216,14 @@ session = await agent.run(input_parts)
 For file input:
 
 ```python
-session = await agent.run([
-    {"type": "text", "text": "Summarize this document"},
-    {
-        "type": "file",
-        "path": "./report.pdf",
-        "mimeType": "application/pdf",
-        "name": "report.pdf",
-    },
-])
+from main_types import Input, input
+
+input_parts: Input = [
+    input.text("Summarize this document"),
+    input.file(path="./report.pdf", mimeType="application/pdf", name="report.pdf"),
+]
+
+session = await agent.run(input_parts)
 ```
 
 ## Dart Usage
@@ -278,9 +237,11 @@ final session = await agent.run('hello');
 For media-capable agents, use the shared sealed input part classes:
 
 ```dart
+import 'main.agent.dart';
+
 final session = await agent.run([
-  const sdk.AuwgentTextPart('What is in this image?'),
-  const sdk.AuwgentImagePart(
+  input.text('What is in this image?'),
+  input.image(
     path: './photo.png',
     mimeType: 'image/png',
     detail: 'auto',
@@ -292,8 +253,8 @@ For `input: Image | File`, use text, image, and file parts:
 
 ```dart
 final session = await agent.run([
-  const sdk.AuwgentTextPart('Summarize this document'),
-  const sdk.AuwgentFilePart(
+  input.text('Summarize this document'),
+  input.file(
     path: './report.pdf',
     mimeType: 'application/pdf',
     name: 'report.pdf',
@@ -326,6 +287,7 @@ Target SDKs:
 - `targets/typescript/types.ts`
 - `targets/typescript/auwgent.ts`
 - `targets/python/auwgent_sdk.py`
+- `targets/python/auwgent_sdk/__init__.py`
 - `targets/dart/lib/src/types.dart`
 - `targets/rust/src/lib.rs`
 

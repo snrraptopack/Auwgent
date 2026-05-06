@@ -89,13 +89,18 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         String::new(),
         ir_import,
         String::new(),
+        generate_input_part_aliases(),
+        String::new(),
     ];
 
     if let Some(types) = ir.get("types").and_then(Value::as_object) {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_input_alias(public_name, ir.get("input")));
+    sections.push(generate_input_alias(ir.get("input")));
+    if let Some(builders) = generate_input_builders(ir.get("input")) {
+        sections.push(builders);
+    }
     for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
@@ -549,31 +554,48 @@ fn generate_object_alias(name: &str, suffix: &str, value: Option<&Value>) -> Str
     )
 }
 
-fn generate_input_alias(name: &str, input: Option<&Value>) -> String {
+fn generate_input_part_aliases() -> String {
+    [
+        "export type TextPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentTextPart;",
+        "export type ImagePart = import(\"@snrraptopack/auwgent-sdk\").AuwgentImagePart;",
+        "export type FilePart = import(\"@snrraptopack/auwgent-sdk\").AuwgentFilePart;",
+        "export type AudioPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentAudioPart;",
+        "export type VideoPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentVideoPart;",
+        "export type InputPart = import(\"@snrraptopack/auwgent-sdk\").AuwgentInputPart;",
+    ]
+    .join("\n")
+}
+
+fn generate_input_alias(input: Option<&Value>) -> String {
     if matches!(input, None | Some(Value::Null)) {
-        return format!("export type {name}Input = string\n");
+        return "export type Input = string\n".to_string();
     }
 
     if let Some(Value::Object(obj)) = input {
         if obj.get("kind").and_then(Value::as_str) == Some("properties") {
-            return generate_object_alias(name, "Input", obj.get("fields"));
+            return generate_named_object_alias("Input", obj.get("fields"));
         }
         if !obj.contains_key("type") && !obj.contains_key("kind") {
-            return generate_object_alias(name, "Input", input);
+            return generate_named_object_alias("Input", input);
         }
     }
 
     let input_type = input
         .map(input_to_ts_string)
         .unwrap_or_else(|| "string".to_string());
-    format!("export type {name}Input = {input_type}\n")
+    format!("export type Input = {input_type}\n")
+}
+
+fn generate_named_object_alias(name: &str, value: Option<&Value>) -> String {
+    let props = object_lines(value);
+    format!("export type {name} = {{\n{}\n}}\n", props.join("\n"))
 }
 
 fn input_to_ts_string(input: &Value) -> String {
     match input {
         Value::String(raw) if is_media_ir_name(raw) => {
             format!(
-                "readonly (import(\"@snrraptopack/auwgent-sdk\").AuwgentTextPart | {})[]",
+                "readonly (TextPart | {})[]",
                 normalize_ts_type(raw)
             )
         }
@@ -595,13 +617,41 @@ fn input_to_ts_string(input: &Value) -> String {
                 type_to_ts_string(input)
             } else {
                 format!(
-                    "readonly (import(\"@snrraptopack/auwgent-sdk\").AuwgentTextPart | {})[]",
+                    "readonly (TextPart | {})[]",
                     media.join(" | ")
                 )
             }
         }
         _ => type_to_ts_string(input),
     }
+}
+
+fn generate_input_builders(input: Option<&Value>) -> Option<String> {
+    let media = media_input_names(input?);
+    if media.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec![
+        "export const input = {".to_string(),
+        "    text(text: string): TextPart { return { type: \"text\", text }; },".to_string(),
+    ];
+
+    if media.contains(&"image") {
+        lines.push("    image(source: Omit<ImagePart, \"type\">): ImagePart { return { type: \"image\", ...source }; },".to_string());
+    }
+    if media.contains(&"file") {
+        lines.push("    file(source: Omit<FilePart, \"type\">): FilePart { return { type: \"file\", ...source }; },".to_string());
+    }
+    if media.contains(&"audio") {
+        lines.push("    audio(source: Omit<AudioPart, \"type\">): AudioPart { return { type: \"audio\", ...source }; },".to_string());
+    }
+    if media.contains(&"video") {
+        lines.push("    video(source: Omit<VideoPart, \"type\">): VideoPart { return { type: \"video\", ...source }; },".to_string());
+    }
+
+    lines.push("};\n".to_string());
+    Some(lines.join("\n"))
 }
 
 fn object_lines(value: Option<&Value>) -> Vec<String> {
@@ -692,16 +742,44 @@ fn normalize_ts_type(raw: &str) -> String {
         "int" | "float" | "number" => "number".to_string(),
         "bool" | "boolean" => "boolean".to_string(),
         "string" => "string".to_string(),
-        "image" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentImagePart".to_string(),
-        "file" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentFilePart".to_string(),
-        "audio" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentAudioPart".to_string(),
-        "video" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentVideoPart".to_string(),
+        "image" => "ImagePart".to_string(),
+        "file" => "FilePart".to_string(),
+        "audio" => "AudioPart".to_string(),
+        "video" => "VideoPart".to_string(),
         other => other.to_string(),
     }
 }
 
 fn is_media_ir_name(raw: &str) -> bool {
     matches!(raw, "image" | "file" | "audio" | "video")
+}
+
+fn media_input_names(input: &Value) -> Vec<&'static str> {
+    match input {
+        Value::String(raw) => media_ir_name(raw).into_iter().collect(),
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => obj
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|options| {
+                options
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(media_ir_name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn media_ir_name(raw: &str) -> Option<&'static str> {
+    match raw {
+        "image" => Some("image"),
+        "file" => Some("file"),
+        "audio" => Some("audio"),
+        "video" => Some("video"),
+        _ => None,
+    }
 }
 
 fn sanitize_ts_identifier(name: &str) -> String {
@@ -755,7 +833,7 @@ mod tests {
         assert!(output.contains("./main.agent.json"));
         assert!(output.contains("my_groqApiKey: string;"));
         assert!(!output.contains("customUrl?: string;"));
-        assert!(output.contains("export type AuwgentInput = {"));
+        assert!(output.contains("export type Input = {"));
         assert!(output.contains("export type AuwgentOutput = {"));
         assert!(output.contains("export type AuwgentContext = {"));
         assert!(output.contains("export type AuwgentCustomIntents ="));
@@ -819,5 +897,26 @@ mod tests {
         assert!(output.contains(
             "name: \"Reviewer\"; input: { text: string }; output: { approved: boolean }"
         ));
+    }
+
+    #[test]
+    fn emits_generated_media_input_aliases() {
+        let ir = json!({
+            "name": "Vision",
+            "modelConfig": [],
+            "input": { "type": "union", "options": ["image", "file"] },
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "vision");
+        assert!(output.contains("export type ImagePart = import(\"@snrraptopack/auwgent-sdk\").AuwgentImagePart;"));
+        assert!(output.contains("export type Input = readonly (TextPart | ImagePart | FilePart)[]"));
+        assert!(output.contains("export const input = {"));
+        assert!(output.contains("image(source: Omit<ImagePart, \"type\">): ImagePart"));
+        assert!(!output.contains("audio(source:"));
     }
 }

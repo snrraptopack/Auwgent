@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 const AGENT_TYPE: &str = "AuwgentAgent";
 const CONFIG_TYPE: &str = "AuwgentConfig";
-const INPUT_TYPE: &str = "AuwgentInput";
+const INPUT_TYPE: &str = "Input";
 const OUTPUT_TYPE: &str = "AuwgentOutput";
 const BASE_OUTPUT_TYPE: &str = "AuwgentBaseOutput";
 const CONTEXT_TYPE: &str = "AuwgentContext";
@@ -60,6 +60,9 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         sections.push(generate_custom_types(types));
     }
     sections.push(generate_input_type(agent_name, ir.get("input")));
+    if let Some(builders) = generate_input_builders(ir.get("input")) {
+        sections.push(builders);
+    }
     for helper in helpers {
         sections.push(generate_helper_output_type(helper));
     }
@@ -193,6 +196,13 @@ fn generate_runtime_support() -> String {
 "pub type SessionState = sdk::SessionState;".to_string(),
 "pub type Session = SessionState;".to_string(),
 "pub type Context = sdk::MiddlewareContext;".to_string(),
+"pub type TextPart = sdk::AuwgentTextPart;".to_string(),
+"pub type ImagePart = sdk::AuwgentImagePart;".to_string(),
+"pub type FilePart = sdk::AuwgentFilePart;".to_string(),
+"pub type AudioPart = sdk::AuwgentAudioPart;".to_string(),
+"pub type VideoPart = sdk::AuwgentVideoPart;".to_string(),
+"pub type InputPart = sdk::AuwgentInputPart;".to_string(),
+"pub type MediaSource = sdk::AuwgentMediaSource;".to_string(),
 "#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]\npub struct NoArgs {}\n".to_string(),
 "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(rename_all = \"snake_case\")]\npub enum PartialIntentMode {\n    Text,\n    Structured,\n}\n".to_string(),
 "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\npub struct PartialIntentEnvelope {\n    pub partial: bool,\n    pub complete: bool,\n    pub mode: PartialIntentMode,\n    pub segment: i64,\n    pub raw: String,\n}\n".to_string(),
@@ -206,7 +216,74 @@ fn generate_input_type(agent_name: &str, input: Option<&Value>) -> String {
     if input.is_none() {
         return format!("pub type {INPUT_TYPE} = String;\n");
     }
+    if input.is_some_and(is_media_input_shape) {
+        return format!("pub type {INPUT_TYPE} = Vec<InputPart>;\n");
+    }
     generate_named_shape(INPUT_TYPE, unwrap_input_fields(input).as_ref())
+}
+
+fn is_media_input_shape(input: &Value) -> bool {
+    match input {
+        Value::String(raw) => is_media_ir_name(raw),
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => obj
+            .get("options")
+            .and_then(Value::as_array)
+            .is_some_and(|options| options.iter().filter_map(Value::as_str).any(is_media_ir_name)),
+        _ => false,
+    }
+}
+
+fn generate_input_builders(input: Option<&Value>) -> Option<String> {
+    let media = media_input_names(input?);
+    if media.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec![
+        "pub mod input {".to_string(),
+        "    use super::*;".to_string(),
+        String::new(),
+        "    pub fn text(text: impl Into<String>) -> InputPart {".to_string(),
+        "        InputPart::Text(TextPart { text: text.into() })".to_string(),
+        "    }".to_string(),
+        String::new(),
+    ];
+
+    if media.contains(&"image") {
+        lines.extend([
+            "    pub fn image(source: MediaSource, detail: Option<String>) -> InputPart {".to_string(),
+            "        InputPart::Image(ImagePart { source, detail })".to_string(),
+            "    }".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"file") {
+        lines.extend([
+            "    pub fn file(source: MediaSource, name: Option<String>) -> InputPart {".to_string(),
+            "        InputPart::File(FilePart { source, name })".to_string(),
+            "    }".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"audio") {
+        lines.extend([
+            "    pub fn audio(source: MediaSource, transcript: Option<String>) -> InputPart {".to_string(),
+            "        InputPart::Audio(AudioPart { source, transcript })".to_string(),
+            "    }".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"video") {
+        lines.extend([
+            "    pub fn video(source: MediaSource, transcript: Option<String>, sampled_frames: Option<Vec<ImagePart>>) -> InputPart {".to_string(),
+            "        InputPart::Video(VideoPart { source, transcript, sampled_frames })".to_string(),
+            "    }".to_string(),
+            String::new(),
+        ]);
+    }
+
+    lines.push("}".to_string());
+    Some(lines.join("\n"))
 }
 
 fn generate_custom_types(types: &Map<String, Value>) -> String {
@@ -1149,10 +1226,10 @@ fn rust_type_base(value: Option<&Value>, fallback: &str) -> String {
                 "string" => "String".to_string(),
                 "number" | "int" | "float" => "f64".to_string(),
                 "boolean" | "bool" => "bool".to_string(),
-                "image" => "sdk::AuwgentImagePart".to_string(),
-                "file" => "sdk::AuwgentFilePart".to_string(),
-                "audio" => "sdk::AuwgentAudioPart".to_string(),
-                "video" => "sdk::AuwgentVideoPart".to_string(),
+                "image" => "ImagePart".to_string(),
+                "file" => "FilePart".to_string(),
+                "audio" => "AudioPart".to_string(),
+                "video" => "VideoPart".to_string(),
                 "array" => {
                     let item_type = rust_type(obj.get("items"), false, "JsonValue");
                     format!("Vec<{item_type}>")
@@ -1186,10 +1263,10 @@ fn rust_type_base(value: Option<&Value>, fallback: &str) -> String {
     }
     match value {
         Value::String(raw) => match raw.as_str() {
-            "image" => "sdk::AuwgentImagePart".to_string(),
-            "file" => "sdk::AuwgentFilePart".to_string(),
-            "audio" => "sdk::AuwgentAudioPart".to_string(),
-            "video" => "sdk::AuwgentVideoPart".to_string(),
+            "image" => "ImagePart".to_string(),
+            "file" => "FilePart".to_string(),
+            "audio" => "AudioPart".to_string(),
+            "video" => "VideoPart".to_string(),
             _ => "String".to_string(),
         },
         Value::Number(_) => "f64".to_string(),
@@ -1197,6 +1274,38 @@ fn rust_type_base(value: Option<&Value>, fallback: &str) -> String {
         Value::Array(_) => "Vec<JsonValue>".to_string(),
         Value::Object(_) => "JsonValue".to_string(),
         Value::Null => fallback.to_string(),
+    }
+}
+
+fn is_media_ir_name(raw: &str) -> bool {
+    matches!(raw, "image" | "file" | "audio" | "video")
+}
+
+fn media_input_names(input: &Value) -> Vec<&'static str> {
+    match input {
+        Value::String(raw) => media_ir_name(raw).into_iter().collect(),
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => obj
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|options| {
+                options
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(media_ir_name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn media_ir_name(raw: &str) -> Option<&'static str> {
+    match raw {
+        "image" => Some("image"),
+        "file" => Some("file"),
+        "audio" => Some("audio"),
+        "video" => Some("video"),
+        _ => None,
     }
 }
 
@@ -1332,5 +1441,27 @@ mod tests {
         assert!(output.contains("tools: (),"));
         assert!(output.contains("context: None,"));
         assert!(output.contains("api_keys: sdk::AuwgentApiKeys::default()"));
+    }
+
+    #[test]
+    fn emits_generated_media_input_aliases() {
+        let ir = json!({
+            "name": "Vision",
+            "input": { "type": "union", "options": ["image", "file"] },
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "modelConfig": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "vision");
+        assert!(output.contains("pub type ImagePart = sdk::AuwgentImagePart;"));
+        assert!(output.contains("pub type Input = Vec<InputPart>;"));
+        assert!(output.contains("pub mod input"));
+        assert!(output.contains("pub fn image(source: MediaSource"));
+        assert!(!output.contains("pub fn audio(source:"));
     }
 }

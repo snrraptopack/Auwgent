@@ -32,12 +32,12 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "    from typing_extensions import Required, NotRequired",
         "",
         "try:",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentTextPart, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentTextPart, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
         "",
     ]
     .join("\n");
@@ -47,17 +47,18 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "# Do not edit manually".to_string(),
         String::new(),
         imports,
+        generate_input_part_aliases(),
+        String::new(),
     ];
 
     if let Some(types) = ir.get("types").and_then(Value::as_object) {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_typed_dict(
-        public_name,
-        "Input",
-        unwrap_input_fields(ir.get("input")).as_ref(),
-    ));
+    sections.push(generate_input_alias(ir.get("input")));
+    if let Some(builders) = generate_input_builders(ir.get("input")) {
+        sections.push(builders);
+    }
     for helper in all_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
@@ -119,6 +120,18 @@ fn generate_custom_types(types: &Map<String, Value>) -> String {
         blocks.push(lines.join("\n"));
     }
     blocks.join("\n\n")
+}
+
+fn generate_input_part_aliases() -> String {
+    [
+        "TextPart = AuwgentTextPart",
+        "ImagePart = AuwgentImagePart",
+        "FilePart = AuwgentFilePart",
+        "AudioPart = AuwgentAudioPart",
+        "VideoPart = AuwgentVideoPart",
+        "InputPart = Union[TextPart, ImagePart, FilePart, AudioPart, VideoPart]",
+    ]
+    .join("\n")
 }
 
 fn generate_helper_output_interface(helper: &Value) -> String {
@@ -1006,6 +1019,110 @@ fn generate_typed_dict(name: &str, suffix: &str, value: Option<&Value>) -> Strin
     generate_typed_dict_raw(&format!("{name}{suffix}"), value)
 }
 
+fn generate_input_alias(input: Option<&Value>) -> String {
+    if matches!(input, None | Some(Value::Null)) {
+        return "Input = str\n".to_string();
+    }
+
+    if let Some(Value::Object(obj)) = input {
+        if obj.get("kind").and_then(Value::as_str) == Some("properties") {
+            return generate_typed_dict_raw("Input", obj.get("fields"));
+        }
+        if !obj.contains_key("type") && !obj.contains_key("kind") {
+            return generate_typed_dict_raw("Input", input);
+        }
+    }
+
+    let input_type = input
+        .map(input_to_python_string)
+        .unwrap_or_else(|| "str".to_string());
+    format!("Input = {input_type}\n")
+}
+
+fn input_to_python_string(input: &Value) -> String {
+    match input {
+        Value::String(raw) if is_media_ir_name(raw) => {
+            format!("List[Union[TextPart, {}]]", normalize_python_type(raw))
+        }
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => {
+            let media = obj
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|option| is_media_ir_name(option))
+                        .map(normalize_python_type)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            if media.is_empty() {
+                type_to_python_string(input)
+            } else {
+                format!("List[Union[TextPart, {}]]", media.join(", "))
+            }
+        }
+        _ => type_to_python_string(input),
+    }
+}
+
+fn generate_input_builders(input: Option<&Value>) -> Option<String> {
+    let media = media_input_names(input?);
+    if media.is_empty() {
+        return None;
+    }
+
+    let mut lines = vec![
+        "class _InputBuilder:".to_string(),
+        "    def text(self, text: str) -> TextPart:".to_string(),
+        "        return {\"type\": \"text\", \"text\": text}".to_string(),
+        String::new(),
+    ];
+
+    if media.contains(&"image") {
+        lines.extend([
+            "    def image(self, *, data: Any = None, encoding: Optional[str] = None, path: Optional[str] = None, url: Optional[str] = None, ref: Optional[str] = None, mimeType: Optional[str] = None, detail: Optional[str] = None) -> ImagePart:".to_string(),
+            "        return _media_part(\"image\", data=data, encoding=encoding, path=path, url=url, ref=ref, mimeType=mimeType, detail=detail)".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"file") {
+        lines.extend([
+            "    def file(self, *, data: Any = None, encoding: Optional[str] = None, path: Optional[str] = None, url: Optional[str] = None, ref: Optional[str] = None, mimeType: Optional[str] = None, name: Optional[str] = None) -> FilePart:".to_string(),
+            "        return _media_part(\"file\", data=data, encoding=encoding, path=path, url=url, ref=ref, mimeType=mimeType, name=name)".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"audio") {
+        lines.extend([
+            "    def audio(self, *, data: Any = None, encoding: Optional[str] = None, path: Optional[str] = None, url: Optional[str] = None, ref: Optional[str] = None, mimeType: Optional[str] = None, transcript: Optional[str] = None) -> AudioPart:".to_string(),
+            "        return _media_part(\"audio\", data=data, encoding=encoding, path=path, url=url, ref=ref, mimeType=mimeType, transcript=transcript)".to_string(),
+            String::new(),
+        ]);
+    }
+    if media.contains(&"video") {
+        lines.extend([
+            "    def video(self, *, data: Any = None, encoding: Optional[str] = None, path: Optional[str] = None, url: Optional[str] = None, ref: Optional[str] = None, mimeType: Optional[str] = None, transcript: Optional[str] = None, sampledFrames: Optional[List[ImagePart]] = None) -> VideoPart:".to_string(),
+            "        return _media_part(\"video\", data=data, encoding=encoding, path=path, url=url, ref=ref, mimeType=mimeType, transcript=transcript, sampledFrames=sampledFrames)".to_string(),
+            String::new(),
+        ]);
+    }
+
+    lines.extend([
+        "def _media_part(type_name: str, **values: Any) -> Dict[str, Any]:".to_string(),
+        "    part = {\"type\": type_name}".to_string(),
+        "    part.update({key: value for key, value in values.items() if value is not None})".to_string(),
+        "    return part".to_string(),
+        String::new(),
+        "input = _InputBuilder()".to_string(),
+        String::new(),
+    ]);
+
+    Some(lines.join("\n"))
+}
+
 fn generate_typed_dict_raw(class_name: &str, value: Option<&Value>) -> String {
     let mut lines = vec![format!("class {class_name}(TypedDict, total=False):")];
 
@@ -1119,39 +1236,42 @@ fn normalize_python_type(raw: &str) -> String {
         "int" | "number" | "float" => "float".to_string(),
         "bool" | "boolean" => "bool".to_string(),
         "string" => "str".to_string(),
-        "image" => "AuwgentImagePart".to_string(),
-        "file" => "AuwgentFilePart".to_string(),
-        "audio" => "AuwgentAudioPart".to_string(),
-        "video" => "AuwgentVideoPart".to_string(),
+        "image" => "ImagePart".to_string(),
+        "file" => "FilePart".to_string(),
+        "audio" => "AudioPart".to_string(),
+        "video" => "VideoPart".to_string(),
         other => other.to_string(),
     }
 }
 
-/// Unwrap the input field from the IR format to the flat format expected by codegen.
-/// IR format: { "kind": "properties", "fields": {...} } or { "kind": "direct", "type": "string" }
-/// Codegen format: {...} (just the fields object)
-fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
+fn is_media_ir_name(raw: &str) -> bool {
+    matches!(raw, "image" | "file" | "audio" | "video")
+}
+
+fn media_input_names(input: &Value) -> Vec<&'static str> {
     match input {
-        Some(Value::Object(obj)) => {
-            // Check if it has the "kind" wrapper
-            if let Some(kind) = obj.get("kind").and_then(Value::as_str) {
-                match kind {
-                    "properties" => {
-                        // Return the fields object directly
-                        obj.get("fields").cloned()
-                    }
-                    "direct" => {
-                        // For direct input (input: Text), return null since codegen expects
-                        // properties format. Python will default to str.
-                        None
-                    }
-                    _ => Some(Value::Object(obj.clone())),
-                }
-            } else {
-                // Already in flat format
-                Some(Value::Object(obj.clone()))
-            }
-        }
+        Value::String(raw) => media_ir_name(raw).into_iter().collect(),
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => obj
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|options| {
+                options
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter_map(media_ir_name)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn media_ir_name(raw: &str) -> Option<&'static str> {
+    match raw {
+        "image" => Some("image"),
+        "file" => Some("file"),
+        "audio" => Some("audio"),
+        "video" => Some("video"),
         _ => None,
     }
 }
@@ -1410,5 +1530,26 @@ mod tests {
         assert!(!output.contains("AuwgentComponentIntent"));
         assert!(!output.contains("AuwgentRenderComponentIntent"));
         assert!(!output.contains("UiAgentComponentIntent"));
+    }
+
+    #[test]
+    fn emits_generated_media_input_aliases() {
+        let ir = json!({
+            "name": "Vision",
+            "modelConfig": [],
+            "input": { "type": "union", "options": ["image", "file"] },
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "vision");
+        assert!(output.contains("InputPart = Union[TextPart, ImagePart, FilePart, AudioPart, VideoPart]"));
+        assert!(output.contains("Input = List[Union[TextPart, ImagePart, FilePart]]"));
+        assert!(output.contains("input = _InputBuilder()"));
+        assert!(output.contains("def image(self, *"));
+        assert!(!output.contains("def audio(self, *"));
     }
 }
