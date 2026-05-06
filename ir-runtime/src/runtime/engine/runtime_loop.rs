@@ -466,7 +466,12 @@ impl AuwgentEngine {
                     }
                 }
 
-                let messages = self.session.lock().unwrap().to_messages();
+                let binding_block = self.render_binding_block();
+                let messages = self
+                    .session
+                    .lock()
+                    .unwrap()
+                    .to_messages_with_bindings(binding_block.clone());
                 timing.mark("built provider messages");
                 let stream_res = {
                     let driver = self

@@ -11,6 +11,13 @@ use std::collections::HashMap;
 // ═══════════════════════════════════════════════════════════════════════════
 
 pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
+    generate_block_protocol_prompt_with_binding_rules(ir, false)
+}
+
+pub fn generate_block_protocol_prompt_with_binding_rules(
+    ir: &AgentIR,
+    has_binding_symbols: bool,
+) -> String {
     let mut sections = Vec::new();
 
     let has_tools = !ir.tools.is_empty();
@@ -257,6 +264,10 @@ pub fn generate_block_protocol_prompt(ir: &AgentIR) -> String {
     }
     if has_output {
         constraints.push("- Schema output must match listed shape.".to_string());
+    }
+    if has_binding_symbols {
+        constraints.push("- For any @@symbol in the system prompt, resolve it from the latest [binding] block before using it.".to_string());
+        constraints.push("- Never output @@symbols in tool, workflow, helper, custom, schema, or response fields; output the resolved value.".to_string());
     }
 
     if !constraints.is_empty() {

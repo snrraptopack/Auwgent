@@ -266,13 +266,14 @@ impl AuwgentEngine {
                         .cloned()
                         .ok_or_else(|| AuwgentError::UnknownFunction(func_name.clone()))?;
 
-                    tool(arg_val).await.map_err(|message| AuwgentError::ToolExecution {
-                        tool_name: func_name.clone(),
-                        message,
-                    })
+                    tool(arg_val)
+                        .await
+                        .map_err(|message| AuwgentError::ToolExecution {
+                            tool_name: func_name.clone(),
+                            message,
+                        })
                 }
-                Expression::Return { value }
-                | Expression::Expression { value } => {
+                Expression::Return { value } | Expression::Expression { value } => {
                     self.evaluate_workflow_expr_wasm(value, scope).await
                 }
                 _ => {

@@ -20,7 +20,7 @@ use crate::runtime::streaming::{JsonlEventBuffer, PartialIntentState, Structured
 use crate::types::*;
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::time::{Duration, sleep};
 
@@ -87,6 +87,7 @@ pub struct AuwgentEngine {
     terminal_response_emitted: Arc<Mutex<bool>>,
     final_response_emitted: Arc<Mutex<bool>>,
     user_input: Arc<Mutex<Option<serde_json::Value>>>,
+    binding_context_keys: Arc<Mutex<HashSet<String>>>,
     pub last_run_metadata: Arc<Mutex<RunMetadata>>,
 }
 
@@ -216,6 +217,7 @@ impl AuwgentEngine {
             terminal_response_emitted: Arc::new(Mutex::new(false)),
             final_response_emitted: Arc::new(Mutex::new(false)),
             user_input: Arc::new(Mutex::new(None)),
+            binding_context_keys: Arc::new(Mutex::new(HashSet::new())),
             last_run_metadata: Arc::new(Mutex::new(RunMetadata::default())),
         }
     }
@@ -346,11 +348,9 @@ impl AuwgentEngine {
     }
 
     pub fn export_session(&self) -> AuwgentResult<String> {
-        self.session
-            .lock()
-            .unwrap()
-            .export()
-            .map_err(AuwgentError::Serialization)
+        let mut session = self.session.lock().unwrap().clone();
+        session.binding_cursor = self.render_binding_cursor();
+        session.export().map_err(AuwgentError::Serialization)
     }
 
     pub fn import_session(&self, json: &str) -> AuwgentResult<()> {

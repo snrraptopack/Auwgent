@@ -21,7 +21,7 @@ fn build_ir(prompt: serde_json::Value) -> AgentIR {
 }
 
 #[test]
-fn referenced_context_is_rendered_inline_without_static_duplication() {
+fn referenced_context_is_rendered_as_symbol_without_static_duplication() {
     let ir = build_ir(json!({
         "type": "parts",
         "value": [
@@ -37,11 +37,10 @@ fn referenced_context_is_rendered_inline_without_static_duplication() {
 
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
-    assert!(prompt.contains("Name: Ada"));
-    assert_eq!(prompt.matches("Ada").count(), 1);
-    assert!(prompt.contains("# ADDITIONAL CONTEXT"));
-    assert!(prompt.contains("role: Engineer"));
-    assert!(!prompt.contains("name: Ada\nrole: Engineer"));
+    assert!(prompt.contains("Name: @@name"));
+    assert!(!prompt.contains("Ada"));
+    assert!(!prompt.contains("# ADDITIONAL CONTEXT"));
+    assert!(!prompt.contains("role: Engineer"));
 }
 
 #[test]
@@ -70,11 +69,11 @@ fn set_context_merges_object_context_updates() {
 
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
-    assert!(prompt.contains("Age: 100"));
-    assert!(prompt.contains("id: '100'"));
-    assert!(prompt.contains("user_name: Amihere"));
-    assert!(prompt.contains("location: Tarkwa"));
-    assert!(prompt.contains("- A"));
+    assert!(prompt.contains("Age: @@age"));
+    assert!(!prompt.contains("id: '100'"));
+    assert!(!prompt.contains("user_name: Amihere"));
+    assert!(!prompt.contains("location: Tarkwa"));
+    assert!(!prompt.contains("marks:"));
 }
 
 #[test]
@@ -99,13 +98,13 @@ fn scalar_set_context_is_added_without_replacing_object_context() {
 
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
-    assert!(prompt.contains("Age: 100"));
-    assert!(prompt.contains("id: '100'"));
-    assert!(prompt.contains("dynamic_context: 'secret number: 100'"));
+    assert!(prompt.contains("Age: @@age"));
+    assert!(!prompt.contains("id: '100'"));
+    assert!(!prompt.contains("dynamic_context: 'secret number: 100'"));
 }
 
 #[test]
-fn conditional_context_stays_in_additional_context_when_not_rendered() {
+fn conditional_context_is_not_appended_to_system_prompt_when_not_rendered() {
     let ir = build_ir(json!({
         "type": "parts",
         "value": [
@@ -134,9 +133,9 @@ fn conditional_context_stays_in_additional_context_when_not_rendered() {
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
     assert!(prompt.contains("Hello"));
-    assert!(prompt.contains("is_vip: false"));
-    assert!(prompt.contains("vip_note: gold-tier"));
-    assert!(prompt.contains("region: EU"));
+    assert!(!prompt.contains("is_vip: false"));
+    assert!(!prompt.contains("vip_note: gold-tier"));
+    assert!(!prompt.contains("region: EU"));
 }
 
 #[test]
@@ -180,9 +179,9 @@ fn numeric_context_in_rendered_conditional_branch_keeps_prompt_text() {
     let prompt = engine.generate_prompt(None).expect("prompt should render");
 
     assert!(prompt.contains("You are a helpful assistant"));
-    assert!(prompt.contains("The person is old 25.4"));
+    assert!(prompt.contains("The person is old @@age"));
     assert!(!prompt.contains("age: 25.4"));
-    assert!(prompt.contains("user_name: Amihere"));
+    assert!(!prompt.contains("user_name: Amihere"));
 }
 
 #[test]
@@ -222,6 +221,48 @@ fn condition_only_context_is_not_treated_as_rendered() {
 
     assert!(prompt.contains("You are a helpful assistant"));
     assert!(prompt.contains("not that old"));
-    assert!(prompt.contains("age: 18"));
-    assert!(prompt.contains("user_name: Amihere"));
+    assert!(!prompt.contains("age: 18"));
+    assert!(!prompt.contains("user_name: Amihere"));
+}
+
+#[test]
+fn binding_cursor_splits_symbol_bindings_from_injected_context() {
+    let ir = build_ir(json!({
+        "type": "template",
+        "value": [
+            { "type": "literal", "value": "User: " },
+            {
+                "type": "memberAccess",
+                "object": { "type": "varRef", "value": "ctx" },
+                "properties": ["user_name"]
+            }
+        ]
+    }));
+    let engine = AuwgentEngine::new(ir);
+    engine.set_context(json!({
+        "user_name": "Theo",
+        "location": "Tarkwa/Accra",
+        "marks": ["A", "B", "C"]
+    }));
+
+    let prompt = engine.generate_prompt(None).expect("prompt should render");
+    assert!(prompt.contains("User: @@user_name"));
+    assert!(prompt.contains("latest [binding] block"));
+
+    let exported: serde_json::Value =
+        serde_json::from_str(&engine.export_session().expect("session should export"))
+            .expect("exported session should be json");
+    let input = exported
+        .get("bindingCursor")
+        .and_then(|cursor| cursor.get("input"))
+        .and_then(serde_json::Value::as_str)
+        .expect("binding cursor input should exist");
+
+    assert!(input.contains("[binding]"));
+    assert!(input.contains("@@user_name is \"Theo\""));
+    assert!(input.contains("[injected_context]"));
+    assert!(input.contains("location = \"Tarkwa/Accra\""));
+    assert!(input.contains("marks = [\"A\",\"B\",\"C\"]"));
+    assert!(!input.contains("@@location"));
+    assert!(!input.contains("@@marks"));
 }

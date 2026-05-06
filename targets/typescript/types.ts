@@ -562,6 +562,7 @@ export interface SessionState {
     turns: Turn[];
     stack: string[];
     initialInput?: any;
+    bindingCursor?: BindingCursor | null;
 }
 
 export interface TokenUsage {
@@ -592,6 +593,12 @@ export interface AggregateUsage {
     total_tokens: number;
     reasoning_tokens: number;
     cached_tokens: number;
+}
+
+export interface BindingCursor {
+    turnIndex: number | null;
+    role: string;
+    input: string | null;
 }
 
 export interface RunMetadata {

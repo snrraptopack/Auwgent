@@ -34,12 +34,14 @@ pub struct RunMetadata {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub type ToolImplementation =
-    RuntimeCallback<dyn Fn(Value) -> RuntimeBoxFuture<'static, Result<Value, String>> + Send + Sync>;
+pub type ToolImplementation = RuntimeCallback<
+    dyn Fn(Value) -> RuntimeBoxFuture<'static, Result<Value, String>> + Send + Sync,
+>;
 
 #[cfg(target_arch = "wasm32")]
-pub type ToolImplementation =
-    RuntimeCallback<dyn Fn(Value) -> RuntimeBoxFuture<'static, Result<Value, String>> + Send + Sync>;
+pub type ToolImplementation = RuntimeCallback<
+    dyn Fn(Value) -> RuntimeBoxFuture<'static, Result<Value, String>> + Send + Sync,
+>;
 
 /// Control returned by an intent handler to override default behavior.
 #[derive(Debug, Clone)]
@@ -64,25 +66,19 @@ pub type IntentCallback =
 /// Receives (intent_name, intent_value, agent_name).
 #[cfg(not(target_arch = "wasm32"))]
 pub type AsyncIntentCallback = RuntimeCallback<
-    dyn Fn(String, Value, String) -> RuntimeBoxFuture<'static, Option<IntentControl>>
-        + Send
-        + Sync,
+    dyn Fn(String, Value, String) -> RuntimeBoxFuture<'static, Option<IntentControl>> + Send + Sync,
 >;
 
 #[cfg(target_arch = "wasm32")]
 pub type AsyncIntentCallback = RuntimeCallback<
-    dyn Fn(String, Value, String) -> RuntimeBoxFuture<'static, Option<IntentControl>>
-        + Send
-        + Sync,
+    dyn Fn(String, Value, String) -> RuntimeBoxFuture<'static, Option<IntentControl>> + Send + Sync,
 >;
 
 #[cfg(not(target_arch = "wasm32"))]
-pub type PartialIntentCallback =
-    RuntimeCallback<dyn Fn(String, Value, String) + Send + Sync>;
+pub type PartialIntentCallback = RuntimeCallback<dyn Fn(String, Value, String) + Send + Sync>;
 
 #[cfg(target_arch = "wasm32")]
-pub type PartialIntentCallback =
-    RuntimeCallback<dyn Fn(String, Value, String) + Send + Sync>;
+pub type PartialIntentCallback = RuntimeCallback<dyn Fn(String, Value, String) + Send + Sync>;
 
 /// Async callback for preloading a helper's session history before it runs.
 /// Receives `(helper_name, empty_session_json)`. Returns an optional `SessionState` JSON string.
@@ -92,8 +88,9 @@ pub type AsyncSessionPreloadCallback = RuntimeCallback<
 >;
 
 #[cfg(target_arch = "wasm32")]
-pub type AsyncSessionPreloadCallback =
-    RuntimeCallback<dyn Fn(String, String) -> RuntimeBoxFuture<'static, Option<String>> + Send + Sync>;
+pub type AsyncSessionPreloadCallback = RuntimeCallback<
+    dyn Fn(String, String) -> RuntimeBoxFuture<'static, Option<String>> + Send + Sync,
+>;
 
 /// Async callback for saving a helper's session history after it completes.
 /// Receives `(helper_name, completed_session_json)`.

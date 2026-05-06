@@ -49,4 +49,5 @@ agent.onIntent((intent, value, agentName) => {
 
 const session = await agent.run("hello what is my marks and location")
 
-console.log(JSON.stringify(session.turns,null,2))
+console.log(JSON.stringify(session.systemPrompt, null, 2))
+console.log(JSON.stringify(session.bindingCursor,null,2))

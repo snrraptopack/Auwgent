@@ -1,101 +1,278 @@
-what i noticed in the python when i do something like ctx["any"] = value  i  get pydict error signalig ctx is closed
+I was looking into how to improve the prompt cahching and i found this
+"people often say some ai agent frameworks dont have a good cache hit and i am confused caching is from the llm providers and they do it on the server side and the caching is based on how consistent your input tokens are so why do people blaim other ai agent frameworks? meanwhile they dont have control on it"
+
+You're right that the caching mechanism itself lives on the provider's server — but frameworks are very much responsible for *whether your inputs are cache-friendly*. The blame is legitimate, just often poorly explained. Here's the full picture:
+
+## What providers actually cache
+
+Anthropic (and others) do **prefix caching** — they hash a contiguous prefix of your input tokens and serve a cached KV state if the prefix matches exactly. Even one token difference at position N invalidates everything after N.
+
+So the real question is: **who controls how stable that prefix is?** The framework does.
+
+---
+
+## How frameworks actively destroy cache hit rates
+
+**1. Dynamic content injected too early**
+
+If a framework puts anything volatile near the top of the system prompt — timestamps, session IDs, user metadata, retrieved memory — it breaks the prefix for *everything* that follows, including your static tool schemas and instructions.
+
+```
+// Bad — volatile content breaks the prefix early
+System: "Session: abc123. Time: 2026-05-05T10:32Z. You are a helpful..."
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         Everything after this is uncacheable
+
+// Good — static content first, dynamic content last
+System: "You are a helpful assistant. Tools: [...]. Rules: [...]"
+User:   "[Retrieved context injected here instead]"
+```
+
+**2. Inconsistent tool schema ordering**
+
+Some frameworks regenerate or reorder tool definitions per request. Since tool schemas are part of the input token stream, any reordering breaks the hash — even if the actual schemas are identical.
+
+**3. For Anthropic specifically — missing explicit cache breakpoints**
+
+Anthropic's caching isn't fully implicit like some other providers. You have to explicitly mark breakpoints with `cache_control: { "type": "ephemeral" }`. A framework that doesn't implement this correctly gets **zero** prompt caching benefit, regardless of how stable the prefix is. The framework has to actually call the API correctly.
+
+**4. Non-deterministic message serialization**
+
+Frameworks that re-serialize conversation history with slightly different whitespace, escape sequences, or field ordering across turns break prefix consistency even when the semantic content is the same.
+
+---
+
+## The split responsibility
+
+| Responsibility | Who owns it |
+|---|---|
+| Actually storing/serving the cache | LLM provider |
+| Placing `cache_control` breakpoints | **Framework / your code** |
+| Keeping static content prefix-stable | **Framework architecture** |
+| Not injecting volatile tokens early | **Framework architecture** |
+| Cache TTL, eviction policy | LLM provider |
+
+---
+
+## Why this matters for Auwgent
+
+This is actually a design advantage you can document. Since `prompt_gen.rs` has explicit control over how system prompts are assembled, you can guarantee:
+
+1. Static blocks (agent persona, compiled tool schemas, rules) always come first and are stable across turns
+2. Dynamic content (retrieved context, CFS temporal windows, prior turn summaries) gets appended at the end or injected at the user turn
+3. Anthropic `cache_control` breakpoints are placed correctly at the boundary between static and dynamic sections
+
+Frameworks like LangChain that build prompts through a pipeline of middleware chaining often can't give you this guarantee because intermediate steps can inject content anywhere. That's the architectural root of the problem — not the caching mechanism itself.
+
+after further discussion i realized how we compose prompt arent good enough, because there no determinism in it
+
+look at this, "
+{"systemPrompt": "\nYou are a helpful assistant\n\"not that old\"\n        \n\n# ADDITIONAL CONTEXT\nage: 10\nuser_name: Amihere\nid: '100'\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- For actions: emit only action block(s) for that turn and stop. Wait for [result] before replying.\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [tool_call: name] key: value per line [/tool_call]\n- [workflow_call: name] key: value per line [/workflow]\n- [helper_call: name] key: value per line [/helper]\n- [custom: name] key: value per line [/custom]\n- Values: string, number, boolean, null, [list of items], {object}\nTools:\n- get_location // Return the current location for the active user\n- get_marks(id: string /* the id of the user */) // Return the user's score\n\nTool examples:\n[tool_call: get_marks]\nid: \"10\"\n[/tool]\n\nWorkflows:\n- marks_and_location(user_id: string) // This is used to get the location and the marks of the user at once\n\nWorkflow example:\n[workflow_call: marks_and_location]\nuser_id: \"100\"\n[/workflow]\n\nHelpers:\n- Joker(input: string) // Is A Joker Helper use it for jokes\n- Plan(input: string) // Is a helper specialized at planning and decomposing tasks\n- Fact(input: string) // Is a helper for checking fact\n\nHelper example:\n[helper_call: Fact]\ninput: \"give me a nice joke\"\n[/helper]\n\nCustom intents:\n- Loud(actions: string /* the action about to take */, reason: string /* the reasons behind those actions */) // use this to explain your thought and actions loud\n\nCustom example:\n[custom: Loud]\nactions: \"I will first do that\"\nreason: \"because of nothing\"\n[/custom]\n\nConstraints:\n- One action type per response. No mixing tool_call, workflow_call, helper_call.\n- No response_text in the same response as action blocks.\n- Tool fields must match listed signatures.\n- Workflow fields must match listed signatures.\n- Helper fields must match listed signatures.", "turns": [{"input": "my name is Theophilus Amihere Junior I come from Ghana i am 10Hello get my marks and my location and by the how are you?", "model_response": "[workflow_call: marks_and_location]\nuser_id: \"100\"\n[/workflow]"}, {"input": "[result]\nname: workflow:marks_and_location\nargs:\n  user_id: '100'\nresult: \"\\nuser location: Tarkwa\\nuser marks: A,B,C,D\\n        \"\n[/result]", "model_response": "[response_text]Your location: Tarkwa  \nYour marks: A, B, C, D  \n\nI'm doing great, thank you! How can I help you today?[/response_text]"}], "stack": ["SimpleTool"], "initialInput": null}
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\python\verification>" note only the system and turns side get to the model
+
+The caching problem is right here, and it's a structural issue in how the system prompt is assembled. Look at this section:
+
+```
+You are a helpful assistant
+"not that old"
 
 
-Could not access item in TypedDict
-  "turns" is not a required key in "SessionState", so access may result in runtime exception (basedpyright reportTypedDictNotRequiredAccess) i get this error when i want to access the turns on the session
-_result = await agent.run("Hello get my marks and my location and by the how are you?")
-    print(json.dumps(agent.get_metadata(), indent=2))
-    print(json.dumps(_result['turns'], indent=2))
+# ADDITIONAL CONTEXT
+age: 10
+user_name: Amihere
+id: '100'
+
+You are an execution engine...
+```
+
+**The `ADDITIONAL CONTEXT` block is injected inside the system prompt, before all your static protocol content.** This means:
+
+- Every different user → different system prompt → cache miss
+- Every session with different metadata → cache miss
+- All the valuable static content below it (blocks, tools, workflows, helpers, constraints) **never gets cached** because the prefix is already broken
+
+---
+
+## What the structure should look like
+
+**System prompt** — 100% static, never changes between users or sessions:
+```
+You are an execution engine. Respond only with valid protocol blocks.
+...
+[all your blocks, tools, workflows, helpers, constraints]
+```
+
+**First user turn** — inject the dynamic context here instead:
+```
+[context]
+age: 10
+user_name: Amihere
+id: '100'
+[/context]
+
+my name is Theophilus Amihere Junior...
+```
+
+Or alternatively, as a synthetic `assistant` prefill or a leading user message that carries session context. The key is: **anything that changes per user/session must never touch the system prompt.**
+
+---
+
+## The practical fix in `prompt_gen.rs`
+
+Right now your prompt generator is probably doing something like:
+
+```rust
+// Bad — dynamic data bleeds into system prompt
+let system = format!(
+    "{base_persona}\n\n# ADDITIONAL CONTEXT\n{context}\n\n{protocol}",
+    base_persona = ...,
+    context = render_context(user_meta),  // <-- the problem
+    protocol = ...
+);
+```
+
+It should be:
+
+```rust
+// Good — system prompt is pure static
+let system = format!("{base_persona}\n\n{protocol}");
+
+// Dynamic context goes into the turns array, prepended to the first user message
+let first_user_turn = format!("[context]\n{context}\n[/context]\n\n{user_input}",
+    context = render_context(user_meta),
+    user_input = initial_input
+);
+```
+
+---
+
+## What you gain
+
+| | Before | After |
+|---|---|---|
+| System prompt | Unique per user | Shared across all users |
+| Cache hit on system prompt | Never | Always (after first request) |
+| Anthropic cache breakpoint placement | Meaningless | Goes at end of static system prompt |
+| Cost over N turns | Full token price every time | KV cache served from turn 2+ |
+
+This is also a strong design point to document in Auwgent — that the runtime enforces cache-safe prompt construction by contract, which most frameworks don't guarantee.
 
 
-async def onLLMStart(self, prompt, ctx):
-        simple = "my name is Theophilus Amihere Junior I come from Ghana i am 10" + prompt
 
-        print(f"context is {ctx["one"]}")
-        return simple
+but upon doing further analysis it all about the system being effective and doing things right at prompt composition..
 
-        this is supposed to overide the propmt here
-_result = await agent.run("Hello get my marks and my location and by the how are you?")
-{
-    "input": "Hello get my marks and my location and by the how are you?",
-    "model_response": "[workflow_call: marks_and_location]\nuser_id: \"100\"\n[/workflow]"
-  }, only this was sent
+or what i can do by referencing a static referenceing so if it is {{ctx.age}} i will just put @@age there then in the first turn i say @@age = 10 or any of the resulting value this way we can practically do  alot of optimization
 
+This is a genuinely clever optimization. You're essentially doing **symbolic indirection** — the system prompt stays structurally stable because it never contains the actual value, only a stable symbol name. The value binding gets deferred to the user turn.
 
-it looks it a general error because in the typescript too
+```
+System: "The person is old @@age"   ← same tokens every request, cache hit
+User:   "@@age = 10\n<actual message>"
+```
 
-see onLLMStart: (prompt, ctx) => {
-    ctx.setContext({marks:['A','B','C'], location:"Tarkwa/Accra"})
-    prompt + "repeat after me what i said"
-  }
+The system prompt is now **identical** for every user regardless of their age. The cache hits on the full system prompt every single time.
 
-tool call {
-  type: "get_user_marks",
-  args: {},
-}
-tool result {
-  name: "get_user_marks",
-  args: {},
-  result: [ "A", "B", "C" ],
-}
-tool call {
-  type: "get_location",
-  args: {},
-}
-tool result {
-  name: "get_location",
-  args: {},
-  result: "Tarkwa/Ghana",
-}
-Your marks are A, B, C and your location is Tarkwa/Ghana.
-[
-  {
-    "input": "hello what is my marks and location",
-    "model_response": "[tool_call: get_user_marks]\n[/tool_call]\n[tool_call: get_location]\n[/tool_call]"
-  },
-  {
-    "input": "[result]\nname: get_user_marks\nargs: {}\nresult:\n- A\n- B\n- C\n[/result]\n\n[result]\nname: get_location\nargs: {}\nresult: Tarkwa/Ghana\n[/result]",
-    "model_response": "[response_text]Your marks are A, B, C and your location is Tarkwa/Ghana.[/response_text]"
-  }
-]
-PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication>
-const session = await agent.run("hello what is my marks and location") only this was sent... i suggest you do thorough research on the rust,dart,python and ts
+---
+
+## What this unlocks
+
+This means you can now keep **everything** in the system prompt — including conditionals with interpolations — because the interpolated part is just a stable symbol:
+
+```
+{{#if ctx.age > 20}}
+    "The person is old {{ctx.age}}"   →  "The person is old @@age"
+{{else}}
+    "not that old"
+{{/if}}
+```
+
+The compiler no longer needs to evict the conditional to the user turn at all. The entire system prompt stays intact and cacheable. The only thing that goes to the first turn is the binding declarations the compiler generates automatically:
+
+```
+@@age = 10
+@@user_name = Amihere
+@@id = 100
+```
+
+---
+
+## What the compiler does
+
+At compile time it scans for all interpolations in the prompt, replaces each with a stable `@@symbol`, and generates the binding block. At runtime it just fills the values into the binding block and prepends it to the first user turn. The system prompt never changes.
+
+This is also very consistent with how Auwgent already thinks — decouple the schema from the values, same principle your IMP paper is built on.
+
+this way even if we use condtionals and the resulting output is static we get put it there if it dynamic this case interpolation we reference it with @@ followed by the name then in then in another user model we append it there
 
 
-gregateUsage { prompt_tokens: 600, completion_tokens: 199, total_tokens: 799, reasoning_tokens: 181, cached_tokens: 0 }
-[Turn { input: "hello what is the seceret numberrepeat exactly what i said", model_response: "[response_text]100[/response_text]" }]
-PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\rust\rust-verfication> the rust version works so it an issue from the other ffi
-let _session = agent.run(Some(json!("hello what is the seceret number"))).await;
- async fn on_llm_start(&self,prompt:String,ctx:&mut Context)->String{
-        println!("This is llm start");
-          ctx.set_context(Value::String("secrete number : 100".to_string()));
-        println!("the value: {:?}",ctx.data.get("one"));
-        prompt + "repeat exactly what i said"
-    }
-
- tool called: Hello ,GetUserNameAgeToolCall(type: get_user_name_age, args: {})
- tool called: Hello ,GetLocationToolCall(type: get_location, args: {})
-text
-Hello get my name and my locationrepeat what i said exactly by Hello
-schema
-{
-  "name": "ama",
-  "age": 10.0,
-  "location": "Tarkwa"
-} by Hello
-[{
-  "input": "Hello get my name and my locationrepeat what i said exactly",
-  "model_response": "[tool_call: get_user_name_age]\n[/tool_call]\n\n[tool_call: get_location]\n[/tool_call]"
-}, {
-  "input": "[result]\nname: get_user_name_age\nargs: {}\nresult:\n  age: 10.0\n  name: ama\n  location: tarkwa\n[/result]\n\n[result]\nname: get_location\nargs: {}\nresult: Tarkwa\n[/result]",
-  "model_response": "[response_text]Hello get my name and my locationrepeat what i said exactly[/response_text]\n\n[schema: Output]\nage: 10\nlocation: Tarkwa\nname: ama\n[/schema]"
-}]
-PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\dart\example> the dart ffi too works
- onLLMStart(prompt, ctx) {
-    print("llm start");
-    print(ctx.data.toString());
-    return prompt + "repeat what i said exactly";
-  }
 
 
-over all the dart layer is the only one we are using c-abi so far honestly the time it even take for the system to boot up is very bad initially i thought it was from the generate prompt in the  dart layer so we did some caching it looks like it an issue from the c-abi itself the time it took the middleware to log shows the engine doesnt start fast because it was like 15 to 30 sec before we had this {one: hellosss} note now i dont think the issue leaves in dart anymore but rather it the c-abi and probably how we using rust with it... because after cahcing the generate prompt the same issue persist signaling it wasnt it that was the problem
+check this
+
+
+# Cache-Aware Prompt Compilation in Auwgent
+
+## The Problem
+
+LLM providers implement prefix caching — if the leading tokens of a request match a previously cached sequence, the provider serves the KV state directly, cutting both cost and latency significantly. The cache breaks the moment any token in the prefix changes.
+
+Agent frameworks routinely destroy cache efficiency by injecting dynamic, user-specific content directly into the system prompt. Every unique user produces a unique system prompt, which means a cache miss on every single request regardless of how much of the content is shared.
+
+## The Root Cause
+
+Auwgent's DSL allows inline interpolation inside the `prompt` block:
+
+```
+prompt: """
+You are a helpful assistant
+"The person is old {{ctx.age}}"
+"""
+```
+
+At runtime, `{{ctx.age}}` produces a different token sequence per user — `10`, `25`, `47` — making the system prompt unique per request. Branch conditionals with static bodies are not a problem; they converge to a finite set of stable strings and cache naturally. The only expression that genuinely breaks caching is an inline value interpolation.
+
+## Our Approach: Symbolic Indirection
+
+The Auwgent compiler performs static analysis on the prompt AST. Any inline interpolation `{{ctx.x}}` found in the `prompt` block is replaced with a stable symbolic reference `@@x` at compile time. The system prompt becomes structurally identical across all users and sessions.
+
+```
+# Compiled system prompt — identical for every user
+"The person is old @@age"
+```
+
+The actual values are deferred to a synthetic binding turn injected by the runtime at the start of each conversation, separate from any user message:
+
+```
+[bindings]
+@@age = 10
+@@user_name = Amihere
+[/bindings]
+```
+
+## The Floating Binding Cursor
+
+Across a multi-turn conversation, the synthetic binding turn always sits immediately before the current frontier user message. Once a turn receives a response and moves into history, the binding turn before it becomes a stable, cacheable entry. The bindings then re-attach before the next user message.
+
+```
+Request N:
+  [SYSTEM]              ✓ cache hit
+  [USER turn 1]         ✓ cache hit
+  [ASSISTANT turn 1]    ✓ cache hit
+  ...
+  [SYNTHETIC bindings]  ✗ miss  (frontier)
+  [USER turn N]         ✗ miss  (frontier)
+
+Request N+1:
+  [SYSTEM]              ✓ cache hit
+  [USER turn 1]         ✓ cache hit
+  [ASSISTANT turn 1]    ✓ cache hit
+  ...
+  [SYNTHETIC bindings]  ✓ cache hit  (now history, values fixed)
+  [USER turn N]         ✓ cache hit  (now history, pure)
+  [SYNTHETIC bindings]  ✗ miss  (new frontier)
+  [USER turn N+1]       ✗ miss  (new frontier)
+```
+
+The cache miss is always exactly **-1 + all** — one miss on the current frontier, every prior turn a hit. This is the theoretical optimum for a system with dynamic runtime values.
+
+The synthetic turn is a first-class runtime construct, distinct from user and assistant turns. This guarantees clean session management — user turns remain pure conversational content, and the binding layer is fully controlled by the runtime, invisible to both the developer and the model.

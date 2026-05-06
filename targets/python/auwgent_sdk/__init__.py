@@ -45,10 +45,16 @@ class _RequiredSessionState(TypedDict):
     turns: List[SessionTurn]
     stack: List[str]
 
+class BindingCursor(TypedDict):
+    turnIndex: Optional[int]
+    role: str
+    input: Optional[str]
+
 class SessionState(_RequiredSessionState, total=False):
     """Exported session state from the engine."""
     systemPrompt: Optional[str]
     initialInput: Optional[Any]
+    bindingCursor: Optional[BindingCursor]
 
 class PartialIntentEnvelope(TypedDict, total=False):
     partial: bool

@@ -14,6 +14,7 @@ pub struct Evaluator<'a> {
     /// Optional tool registry for resolving FunctionCall expressions within workflows.
     tools: HashMap<String, SyncToolFn>,
     context_usage: RefCell<HashSet<String>>,
+    symbol_context_usage: RefCell<HashSet<String>>,
     context_tracking_suppressed: Cell<usize>,
 }
 
@@ -23,6 +24,7 @@ impl<'a> Evaluator<'a> {
             ir,
             tools: HashMap::new(),
             context_usage: RefCell::new(HashSet::new()),
+            symbol_context_usage: RefCell::new(HashSet::new()),
             context_tracking_suppressed: Cell::new(0),
         }
     }
@@ -33,6 +35,7 @@ impl<'a> Evaluator<'a> {
             ir,
             tools,
             context_usage: RefCell::new(HashSet::new()),
+            symbol_context_usage: RefCell::new(HashSet::new()),
             context_tracking_suppressed: Cell::new(0),
         }
     }
@@ -44,10 +47,15 @@ impl<'a> Evaluator<'a> {
 
     pub fn clear_context_usage(&self) {
         self.context_usage.borrow_mut().clear();
+        self.symbol_context_usage.borrow_mut().clear();
     }
 
     pub fn context_usage(&self) -> HashSet<String> {
         self.context_usage.borrow().clone()
+    }
+
+    pub fn symbol_context_usage(&self) -> HashSet<String> {
+        self.symbol_context_usage.borrow().clone()
     }
 
     pub fn collect_context_references(
@@ -66,6 +74,13 @@ impl<'a> Evaluator<'a> {
         }
 
         self.context_usage.borrow_mut().insert(property.to_string());
+    }
+
+    fn record_context_symbol_property(&self, property: &str) {
+        self.record_context_property(property);
+        self.symbol_context_usage
+            .borrow_mut()
+            .insert(property.to_string());
     }
 
     fn with_context_tracking_suppressed<T>(
@@ -638,6 +653,220 @@ impl<'a> Evaluator<'a> {
         }
     }
 
+    pub fn evaluate_prompt_with_context_symbols(
+        &self,
+        expr: &Expression,
+        scope: &mut HashMap<String, Value>,
+    ) -> AuwgentResult<Value> {
+        match expr {
+            Expression::ContextRef { property } => {
+                self.record_context_symbol_property(property);
+                Ok(Value::String(context_symbol(&[property.as_str()])))
+            }
+            Expression::MemberAccess { object, properties } => {
+                if let Some(props) = self.extract_context_member_access(expr) {
+                    if let Some(first) = props.first() {
+                        self.record_context_symbol_property(first);
+                    }
+                    let path = props.iter().map(String::as_str).collect::<Vec<_>>();
+                    return Ok(Value::String(context_symbol(&path)));
+                }
+
+                let mut current = self.evaluate_prompt_with_context_symbols(object, scope)?;
+                for prop in properties {
+                    match current {
+                        Value::Object(map) => {
+                            if let Some(val) = map.get(prop) {
+                                current = val.clone();
+                            } else {
+                                return Err(AuwgentError::PropertyNotFound {
+                                    property: prop.clone(),
+                                    context: "object".to_string(),
+                                });
+                            }
+                        }
+                        _ => {
+                            return Err(AuwgentError::PropertyNotFound {
+                                property: prop.clone(),
+                                context: "non-object value".to_string(),
+                            });
+                        }
+                    }
+                }
+                Ok(current)
+            }
+            Expression::Template { value } => {
+                let mut results = Vec::new();
+                let mut parsed_exprs = Vec::new();
+                for part in value {
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    parsed_exprs.push(parsed);
+                }
+
+                for parsed in &parsed_exprs {
+                    let val = self.evaluate_prompt_with_context_symbols(parsed, scope)?;
+                    results.push((parsed, val));
+                }
+
+                Ok(Value::String(self.join_and_dedent(results)))
+            }
+            Expression::Parts { value } => {
+                let mut results = Vec::new();
+                for part in value {
+                    let val = self.evaluate_prompt_with_context_symbols(part, scope)?;
+                    results.push((part, val));
+                }
+                Ok(Value::String(
+                    self.join_and_dedent(results).trim().to_string(),
+                ))
+            }
+            Expression::InlineIf {
+                condition,
+                then,
+                else_block,
+            } => {
+                let parsed_cond: crate::types::Condition =
+                    serde_json::from_value(condition.0.clone()).map_err(|e| {
+                        AuwgentError::Evaluation(format!("Condition parse error: {}", e))
+                    })?;
+                let is_true = self.with_context_tracking_suppressed(|| {
+                    self.evaluate_condition(&parsed_cond, scope)
+                })?;
+                let block = if is_true { then } else { else_block };
+                let mut results = Vec::new();
+                for part in block {
+                    let val = self.evaluate_prompt_with_context_symbols(part, scope)?;
+                    results.push((part, val));
+                }
+
+                if results.is_empty() {
+                    return Ok(Value::Null);
+                }
+
+                Ok(Value::String(
+                    self.join_and_dedent(results).trim().to_string(),
+                ))
+            }
+            Expression::If {
+                condition,
+                then,
+                else_block,
+            } => {
+                let parsed_cond: crate::types::Condition =
+                    serde_json::from_value(condition.0.clone()).map_err(|e| {
+                        AuwgentError::Evaluation(format!("Condition parse error: {}", e))
+                    })?;
+                let is_true = self.with_context_tracking_suppressed(|| {
+                    self.evaluate_condition(&parsed_cond, scope)
+                })?;
+                let block = if is_true { then } else { else_block };
+                let mut last_result = Value::Null;
+                for stmt in block {
+                    last_result = self.evaluate_prompt_with_context_symbols(stmt, scope)?;
+                }
+                Ok(last_result)
+            }
+            Expression::PromptRef {
+                params,
+                args,
+                value,
+                ..
+            } => {
+                let mut local_scope = scope.clone();
+                for (param, arg) in params.iter().zip(args.iter()) {
+                    let evaluated_arg = self.evaluate_prompt_with_context_symbols(arg, scope)?;
+                    local_scope.insert(param.clone(), evaluated_arg);
+                }
+
+                let mut results = Vec::new();
+                let mut parsed_exprs = Vec::new();
+                for part in value {
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    parsed_exprs.push(parsed);
+                }
+                for parsed in &parsed_exprs {
+                    let val =
+                        self.evaluate_prompt_with_context_symbols(parsed, &mut local_scope)?;
+                    results.push((parsed, val));
+                }
+
+                let mut s = String::new();
+                for (_expr, val) in results {
+                    if let Some(str_val) = val.as_str() {
+                        s.push_str(str_val);
+                    }
+                }
+                Ok(Value::String(s.trim().to_string()))
+            }
+            Expression::BinaryOp { left, op, right } if op == "+" => {
+                let l = self.evaluate_prompt_with_context_symbols(left, scope)?;
+                let r = self.evaluate_prompt_with_context_symbols(right, scope)?;
+                let l_str = self.value_to_prompt_string(&l);
+                let r_str = self.value_to_prompt_string(&r);
+                let separator = if r_str.starts_with('\n') || r_str.starts_with("\r\n") {
+                    ""
+                } else {
+                    "\n"
+                };
+                Ok(Value::String(format!(
+                    "{}{}{}",
+                    l_str.trim_end(),
+                    separator,
+                    r_str.trim_start()
+                )))
+            }
+            Expression::InlinePrompt { parts } => {
+                let mut results = Vec::new();
+                for part in parts {
+                    let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
+                    results.push(self.evaluate_prompt_with_context_symbols(&parsed, scope)?);
+                }
+
+                if results.iter().all(|v| v.is_string()) {
+                    let mut s = String::new();
+                    for val in results {
+                        s.push_str(val.as_str().unwrap());
+                    }
+                    Ok(Value::String(s))
+                } else {
+                    Ok(Value::Array(results))
+                }
+            }
+            Expression::Return { value }
+            | Expression::Expression { value }
+            | Expression::Transfer { target: value, .. } => {
+                self.evaluate_prompt_with_context_symbols(value, scope)
+            }
+            Expression::VariableDeclaration { name, value } => {
+                let val = self.evaluate_prompt_with_context_symbols(value, scope)?;
+                scope.insert(name.clone(), val.clone());
+                Ok(val)
+            }
+            Expression::Object { value } => {
+                let mut map = serde_json::Map::new();
+                for (key, expr) in value {
+                    map.insert(
+                        key.clone(),
+                        self.evaluate_prompt_with_context_symbols(expr, scope)?,
+                    );
+                }
+                Ok(Value::Object(map))
+            }
+            Expression::Array { value } => {
+                let mut values = Vec::new();
+                for expr in value {
+                    values.push(self.evaluate_prompt_with_context_symbols(expr, scope)?);
+                }
+                Ok(Value::Array(values))
+            }
+            Expression::SchemaDirective { path } if path == "context" => {
+                self.record_all_context_properties(scope);
+                self.evaluate(expr, scope)
+            }
+            _ => self.evaluate(expr, scope),
+        }
+    }
+
     fn evaluate_model_config_expr(
         &self,
         expr: &Expression,
@@ -974,6 +1203,27 @@ impl<'a> Evaluator<'a> {
 
         dedented
     }
+}
+
+fn context_symbol(path: &[&str]) -> String {
+    let name = path
+        .iter()
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.chars()
+                .map(|ch| {
+                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                        ch
+                    } else {
+                        '_'
+                    }
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("_");
+
+    format!("@@{}", name)
 }
 
 #[cfg(test)]

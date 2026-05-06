@@ -297,6 +297,35 @@ final class RunMetadata {
   String toString() => prettyJson(toJson());
 }
 
+final class BindingCursor {
+  const BindingCursor({
+    required this.turnIndex,
+    required this.role,
+    required this.input,
+  });
+
+  final int? turnIndex;
+  final String role;
+  final String? input;
+
+  factory BindingCursor.fromJson(JsonMap json) {
+    return BindingCursor(
+      turnIndex: (json['turnIndex'] as num?)?.toInt(),
+      role: (json['role'] as String?) ?? 'user',
+      input: json['input'] as String?,
+    );
+  }
+
+  JsonMap toJson() => {
+    'turnIndex': turnIndex,
+    'role': role,
+    'input': input,
+  };
+
+  @override
+  String toString() => prettyJson(toJson());
+}
+
 final class PartialIntentEnvelope {
   const PartialIntentEnvelope({
     required this.partial,
@@ -463,12 +492,14 @@ final class SessionState {
     this.turns = const [],
     this.stack = const [],
     this.initialInput,
+    this.bindingCursor,
   });
 
   final String? systemPrompt;
   final List<SessionTurn> turns;
   final List<String> stack;
   final Object? initialInput;
+  final BindingCursor? bindingCursor;
 
   factory SessionState.fromJson(JsonMap json) {
     final turnsRaw = (json['turns'] as List?) ?? const [];
@@ -482,6 +513,11 @@ final class SessionState {
           .map((item) => item.toString())
           .toList(growable: false),
       initialInput: json['initialInput'],
+      bindingCursor: json['bindingCursor'] is Map
+          ? BindingCursor.fromJson(
+              Map<String, Object?>.from(json['bindingCursor'] as Map),
+            )
+          : null,
     );
   }
 
@@ -490,6 +526,7 @@ final class SessionState {
     'turns': turns.map((turn) => turn.toJson()).toList(growable: false),
     'stack': stack,
     if (initialInput != null) 'initialInput': initialInput,
+    if (bindingCursor != null) 'bindingCursor': bindingCursor!.toJson(),
   };
 
   @override

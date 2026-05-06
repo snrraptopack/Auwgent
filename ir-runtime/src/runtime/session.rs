@@ -80,6 +80,14 @@ impl Turn {
 // SESSION STATE — the temporal conversation state
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BindingCursor {
+    pub turn_index: Option<usize>,
+    pub role: String,
+    pub input: Option<String>,
+}
+
 /// Temporal conversation state for the engine. This provides in-engine
 /// memory that can be:
 /// - Exported to JSON for the host runtime to persist (e.g. to a DB via hooks)
@@ -99,6 +107,9 @@ pub struct SessionState {
     pub stack: Vec<String>,
     /// The initial input that started this session (for structured scope)
     pub initial_input: Option<Value>,
+    /// Runtime-rendered binding cursor preview. Bindings are not stored as turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_cursor: Option<BindingCursor>,
 }
 
 impl SessionState {
@@ -137,7 +148,20 @@ impl SessionState {
     /// Build the full message history for the model driver.
     /// This reconstructs the conversation from all turns.
     pub fn to_messages(&self) -> Vec<Message> {
+        self.to_messages_with_bindings(None)
+    }
+
+    /// Build message history with a runtime-managed binding block.
+    ///
+    /// Binding messages are render-time artifacts: they are sent to the model
+    /// but are not stored in `turns`, so exported sessions remain clean and can
+    /// reconstruct the cursor position from normal turn history.
+    pub fn to_messages_with_bindings(&self, bindings: Option<String>) -> Vec<Message> {
         let mut messages = Vec::new();
+        let binding_cursor = bindings
+            .as_ref()
+            .filter(|block| !block.trim().is_empty())
+            .and_then(|_| self.binding_cursor_turn_index());
 
         // System prompt
         if let Some(ref prompt) = self.system_prompt {
@@ -145,7 +169,13 @@ impl SessionState {
         }
 
         // Each turn contributes user + model messages
-        for turn in &self.turns {
+        for (index, turn) in self.turns.iter().enumerate() {
+            if binding_cursor == Some(index)
+                && let Some(block) = bindings.as_ref()
+            {
+                messages.push(Message::user(block.clone()));
+            }
+
             // The input for this turn
             messages.push(Message::user(turn.input.clone()));
 
@@ -163,6 +193,17 @@ impl SessionState {
         messages
     }
 
+    /// Return the turn index before which the latest binding block should be
+    /// rendered. Internal result turns do not advance the cursor; only external
+    /// user inputs do.
+    pub fn binding_cursor_turn_index(&self) -> Option<usize> {
+        self.turns
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, turn)| (!is_runtime_result_turn(&turn.input)).then_some(index))
+    }
+
     /// Export session to JSON string for the host to persist
     pub fn export(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
@@ -178,4 +219,8 @@ impl SessionState {
         self.turns.clear();
         self.stack.clear();
     }
+}
+
+fn is_runtime_result_turn(input: &str) -> bool {
+    input.trim_start().starts_with("[result]")
 }
