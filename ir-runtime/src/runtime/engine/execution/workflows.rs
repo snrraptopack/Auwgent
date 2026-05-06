@@ -30,10 +30,12 @@ impl AuwgentEngine {
         {
             let tools = self.tools.lock().unwrap();
             let ir_tools = &self.ir.tools;
+            let rt = tokio::runtime::Handle::current();
 
             for (name, imp) in &*tools {
                 let imp = imp.clone();
                 let name_clone = name.clone();
+                let rt = rt.clone();
 
                 let param_names: Vec<String> = ir_tools
                     .iter()
@@ -66,8 +68,8 @@ impl AuwgentEngine {
                             Value::Object(args_obj)
                         };
 
-                        let rt = tokio::runtime::Handle::current();
                         let imp = imp.clone();
+                        let rt = rt.clone();
                         std::thread::spawn(move || rt.block_on(imp(arg_val)))
                             .join()
                             .map_err(|_| format!("Tool '{}' panicked", name_clone))?

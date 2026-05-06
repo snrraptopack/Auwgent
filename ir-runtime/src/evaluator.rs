@@ -613,15 +613,7 @@ impl<'a> Evaluator<'a> {
                 }))
             }
 
-            Expression::Parallel { body } => {
-                println!("Executing Parallel Block ({} tasks)...", body.len());
-                let mut results = Vec::new();
-                // TODO: Implement actual parallel execution (requires async/threading)
-                for expr in body {
-                    results.push(self.evaluate(expr, scope)?);
-                }
-                Ok(Value::Array(results))
-            }
+            Expression::Parallel { body } => self.evaluate_parallel(body, scope),
 
             Expression::Expression { value } => self.evaluate(value, scope),
             Expression::Array { value } => {
@@ -877,6 +869,56 @@ impl<'a> Evaluator<'a> {
             Err(AuwgentError::VariableNotFound(_)) => self.evaluate_json_like_expr(expr, scope),
             Err(err) => Err(err),
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn evaluate_parallel(
+        &self,
+        body: &[Expression],
+        scope: &HashMap<String, Value>,
+    ) -> AuwgentResult<Value> {
+        std::thread::scope(|thread_scope| {
+            let mut handles = Vec::with_capacity(body.len());
+
+            for expr in body.iter().cloned() {
+                let ir = self.ir;
+                let tools = self.tools.clone();
+                let mut branch_scope = scope.clone();
+
+                handles.push(thread_scope.spawn(move || {
+                    let evaluator = Evaluator::with_tools(ir, tools);
+                    evaluator.evaluate(&expr, &mut branch_scope)
+                }));
+            }
+
+            let mut results = Vec::with_capacity(handles.len());
+            for handle in handles {
+                match handle.join() {
+                    Ok(result) => results.push(result?),
+                    Err(_) => {
+                        return Err(AuwgentError::Evaluation(
+                            "Parallel workflow branch panicked".to_string(),
+                        ));
+                    }
+                }
+            }
+
+            Ok(Value::Array(results))
+        })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn evaluate_parallel(
+        &self,
+        body: &[Expression],
+        scope: &mut HashMap<String, Value>,
+    ) -> AuwgentResult<Value> {
+        let mut results = Vec::with_capacity(body.len());
+        for expr in body {
+            let mut branch_scope = scope.clone();
+            results.push(self.evaluate(expr, &mut branch_scope)?);
+        }
+        Ok(Value::Array(results))
     }
 
     fn evaluate_json_like_expr(
@@ -1230,6 +1272,11 @@ fn context_symbol(path: &[&str]) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use std::time::Duration;
 
     #[test]
     fn model_config_allows_json_like_bare_identifiers() {
@@ -1269,5 +1316,61 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, json!({ "somefield": { "another": "value" } }));
+    }
+
+    fn empty_ir() -> AgentIR {
+        serde_json::from_value(json!({
+            "name": "Hello",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": [],
+            "components": [],
+            "tests": []
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn parallel_evaluates_tool_calls_concurrently_and_preserves_order() {
+        let ir = empty_ir();
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+
+        let make_tool = |label: &'static str, delay_ms: u64| {
+            let active = Arc::clone(&active);
+            let max_active = Arc::clone(&max_active);
+
+            std::sync::Arc::new(move |_args: Vec<Value>| {
+                let now_active = active.fetch_add(1, Ordering::SeqCst) + 1;
+                max_active.fetch_max(now_active, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(delay_ms));
+                active.fetch_sub(1, Ordering::SeqCst);
+                Ok(Value::String(label.to_string()))
+            }) as SyncToolFn
+        };
+
+        let mut tools = HashMap::new();
+        tools.insert("slow".to_string(), make_tool("slow", 100));
+        tools.insert("fast".to_string(), make_tool("fast", 10));
+
+        let evaluator = Evaluator::with_tools(&ir, tools);
+        let expr: Expression = serde_json::from_value(json!({
+            "type": "parallel",
+            "body": [
+                { "type": "functionCall", "value": "slow", "args": [] },
+                { "type": "functionCall", "value": "fast", "args": [] }
+            ]
+        }))
+        .unwrap();
+
+        let mut scope = HashMap::new();
+        let result = evaluator.evaluate(&expr, &mut scope).unwrap();
+
+        assert_eq!(result, json!(["slow", "fast"]));
+        assert_eq!(max_active.load(Ordering::SeqCst), 2);
     }
 }

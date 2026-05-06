@@ -2,10 +2,24 @@
 // This file decides how parsed intents are routed and recorded. Concrete tool,
 // workflow, and helper execution lives in the execution submodules.
 use super::*;
+use futures_util::future::join_all;
 
 mod helpers;
 mod tools;
 mod workflows;
+
+enum PendingAction {
+    Tool(Value),
+    Workflow(Value),
+}
+
+struct CompletedAction {
+    event_name: &'static str,
+    result_name: String,
+    result_key: String,
+    args: Value,
+    result: Value,
+}
 
 impl AuwgentEngine {
     pub(super) fn build_results_payload(&self) -> String {
@@ -90,6 +104,7 @@ impl AuwgentEngine {
         let mut has_actions = false;
         let mut hard_stop = false;
         let mut tool_results: Vec<(String, Value, Value)> = Vec::new();
+        let mut pending_actions: Vec<PendingAction> = Vec::new();
 
         for (name, mut value) in intents {
             if contains_actions && matches!(name.as_str(), "response_text" | "response_schema") {
@@ -136,17 +151,7 @@ impl AuwgentEngine {
                         has_actions = true;
                     }
                     None => {
-                        let (tool_name, args, result) = self.execute_tool(&value).await?;
-                        self.fire_generated_intent(
-                            "tool_result".to_string(),
-                            serde_json::json!({
-                                "name": tool_name,
-                                "args": args,
-                                "result": result,
-                            }),
-                        )
-                        .await;
-                        tool_results.push((tool_name, args, result));
+                        pending_actions.push(PendingAction::Tool(value));
                         has_actions = true;
                     }
                 },
@@ -169,17 +174,7 @@ impl AuwgentEngine {
                         has_actions = true;
                     }
                     None => {
-                        let (wf_name, args, result) = self.execute_workflow(&value).await?;
-                        self.fire_generated_intent(
-                            "workflow_result".to_string(),
-                            serde_json::json!({
-                                "name": wf_name,
-                                "args": args,
-                                "result": result,
-                            }),
-                        )
-                        .await;
-                        tool_results.push((format!("workflow:{}", wf_name), args, result));
+                        pending_actions.push(PendingAction::Workflow(value));
                         has_actions = true;
                     }
                 },
@@ -238,6 +233,48 @@ impl AuwgentEngine {
                     *self.last_turn_response_value.lock().unwrap() = value.clone();
                     *self.terminal_response_emitted.lock().unwrap() = true;
                 }
+            }
+        }
+
+        if !pending_actions.is_empty() {
+            let completed = join_all(pending_actions.into_iter().map(|action| async move {
+                match action {
+                    PendingAction::Tool(value) => {
+                        let (tool_name, args, result) = self.execute_tool(&value).await?;
+                        Ok::<CompletedAction, AuwgentError>(CompletedAction {
+                            event_name: "tool_result",
+                            result_name: tool_name.clone(),
+                            result_key: tool_name,
+                            args,
+                            result,
+                        })
+                    }
+                    PendingAction::Workflow(value) => {
+                        let (wf_name, args, result) = self.execute_workflow(&value).await?;
+                        Ok::<CompletedAction, AuwgentError>(CompletedAction {
+                            event_name: "workflow_result",
+                            result_name: wf_name.clone(),
+                            result_key: format!("workflow:{}", wf_name),
+                            args,
+                            result,
+                        })
+                    }
+                }
+            }))
+            .await;
+
+            for completed in completed {
+                let completed = completed?;
+                self.fire_generated_intent(
+                    completed.event_name.to_string(),
+                    serde_json::json!({
+                        "name": completed.result_name,
+                        "args": completed.args,
+                        "result": completed.result,
+                    }),
+                )
+                .await;
+                tool_results.push((completed.result_key, completed.args, completed.result));
             }
         }
 
