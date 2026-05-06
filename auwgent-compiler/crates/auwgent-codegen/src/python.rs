@@ -32,12 +32,12 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         "    from typing_extensions import Required, NotRequired",
         "",
         "try:",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
         "except ImportError:",
         "    # For local testing if auwgent is not installed via pip",
         "    import sys",
         "    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))",
-        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError",
+        "    from auwgent_sdk import TypedAuwgent, create_auwgent, Middleware, MiddlewareContext, SessionState, PartialIntentValue, PartialTextIntentValue, PartialStructuredIntentValue, AuwgentToolError, AuwgentImagePart, AuwgentFilePart, AuwgentAudioPart, AuwgentVideoPart",
         "",
     ]
     .join("\n");
@@ -1119,6 +1119,10 @@ fn normalize_python_type(raw: &str) -> String {
         "int" | "number" | "float" => "float".to_string(),
         "bool" | "boolean" => "bool".to_string(),
         "string" => "str".to_string(),
+        "image" => "AuwgentImagePart".to_string(),
+        "file" => "AuwgentFilePart".to_string(),
+        "audio" => "AuwgentAudioPart".to_string(),
+        "video" => "AuwgentVideoPart".to_string(),
         other => other.to_string(),
     }
 }

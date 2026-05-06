@@ -516,19 +516,29 @@ impl Checker {
         match &ic.shape {
             InputShape::Direct(ty) => {
                 if is_root {
-                    // Enforce that main agent input is Text (String)
-                    // We allow 'Text' as a TypeRef or explicit 'string' keyword
+                    // Root input can be Text or media primitives. Media input
+                    // implicitly includes text at runtime/codegen.
                     let is_valid = match ty {
                         TypeExpr::String(_) => true,
                         TypeExpr::Text(_) => true,
+                        TypeExpr::Image(_) => true,
+                        TypeExpr::File(_) => true,
+                        TypeExpr::Audio(_) => true,
+                        TypeExpr::Video(_) => true,
                         TypeExpr::TypeRef(name) if name.value == "Text" => true,
+                        TypeExpr::Union { options, .. } => options
+                            .iter()
+                            .all(|option| is_input_modality_name(&option.value)),
                         _ => false,
                     };
 
                     if !is_valid {
                         diags.push(
-                            Diagnostic::error("Main agent input must be 'Text' for now", ic.span)
-                                .with_help("Change to: input: Text"),
+                            Diagnostic::error(
+                                "Main agent input must be Text or media input types",
+                                ic.span,
+                            )
+                            .with_help("Use input: Text, Image, File, Audio, Video, or a union like Image | File."),
                         );
                     }
                 }
@@ -587,6 +597,13 @@ impl Checker {
             }
         }
     }
+}
+
+fn is_input_modality_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Text" | "string" | "Image" | "File" | "Audio" | "Video"
+    )
 }
 
 #[cfg(test)]
@@ -699,6 +716,27 @@ mod tests {
                 .iter()
                 .any(|message| message.contains("Unknown component 'MissingCard'")),
             "expected unknown component error, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_root_media_input_primitives() {
+        let diagnostics = check_source(
+            r#"
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Image | File
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics.is_empty(),
+            "expected media input to be accepted, got {diagnostics:?}"
         );
     }
 }

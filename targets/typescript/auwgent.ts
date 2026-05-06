@@ -36,7 +36,8 @@ import type {
     ExtractHelperNames,
     CollectAllOutputs,
     RunMetadata,
-    TurnMetadata
+    TurnMetadata,
+    ExtractInputShape
 } from './types.js';
 
 import type { Middleware, MiddlewareContext } from './middleware.js';
@@ -721,7 +722,7 @@ export class TypedAuwgent<
     }
 
     /** Run the agentic loop. Returns the exported session state. */
-    async run(input?: string): Promise<SessionState> {
+    async run(input?: ExtractInputShape<IR>): Promise<SessionState> {
         const native = await this.ensureNative();
         this.sharedContext = {}; // Clear context for new run
         this.lastTurnRawBlock = undefined; // Reset raw block for new run
@@ -730,8 +731,12 @@ export class TypedAuwgent<
         this.activateListeners();
 
         try {
+            const runtimeInput =
+                typeof input === 'string' || input == null
+                    ? input ?? null
+                    : JSON.stringify(input);
             const json = await (native.run as any)(
-                input ?? null,
+                runtimeInput,
                 null
             );
             const currentSession = JSON.parse(json) as SessionState;

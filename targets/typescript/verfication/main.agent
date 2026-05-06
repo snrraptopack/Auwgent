@@ -5,9 +5,8 @@ model Groq{
 prompt Simple(user_name:string){
 
     """
-        You are a helpful assistant please respond to the user in a polite manner
-        use tools when neccessary, if you know the information answer straight
-        user name : {{user_name}}
+        we are testing how sequencial our tool calling is make sure to execute the tool one after the other
+        until a tool result are in, you should not make another too call {{user_name}}
     """
 }
 
@@ -24,5 +23,7 @@ agent Asisstant{
     tools {
         get_user_marks():string[] @desc "use this to get the marks of the user"
         get_location():string @desc "use this to get the location of the user"
+        get_secrete_number():string @desc "use this to get secrete number"
+        get_my_school():string @desc "use this to get my school"
     }
 }

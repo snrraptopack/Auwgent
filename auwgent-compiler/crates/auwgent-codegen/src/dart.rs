@@ -1787,6 +1787,10 @@ fn normalize_dart_type(raw: &str) -> String {
         "float" | "number" => "double".to_string(),
         "bool" | "boolean" => "bool".to_string(),
         "text" | "string" => "String".to_string(),
+        "image" => "sdk.AuwgentImagePart".to_string(),
+        "file" => "sdk.AuwgentFilePart".to_string(),
+        "audio" => "sdk.AuwgentAudioPart".to_string(),
+        "video" => "sdk.AuwgentVideoPart".to_string(),
         other => other.to_string(),
     }
 }

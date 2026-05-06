@@ -27,7 +27,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\r\n        You are a helpful assistant please respond to the user in a polite manner\r\n        use tools when neccessary, if you know the information answer straight\r\n        user name : "
+                  "value": "\r\n        we are testing how sequencial our tool calling is make sure to execute the tool one after the other\r\n        until a tool result are in, you should not make another too call "
                 },
                 {
                   "type": "varRef",
@@ -67,6 +67,20 @@
     {
       "name": "get_location",
       "description": "use this to get the location of the user",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_secrete_number",
+      "description": "use this to get secrete number",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_my_school",
+      "description": "use this to get my school",
       "params": {},
       "returns": "string",
       "examples": []

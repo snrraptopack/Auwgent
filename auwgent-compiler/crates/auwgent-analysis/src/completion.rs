@@ -857,6 +857,10 @@ pub(crate) fn value_type_from_type_expr(
     match ty {
         TypeExpr::String(_) => ValueType::Scalar("string".to_string()),
         TypeExpr::Text(_) => ValueType::Scalar("Text".to_string()),
+        TypeExpr::Image(_) => ValueType::Scalar("Image".to_string()),
+        TypeExpr::File(_) => ValueType::Scalar("File".to_string()),
+        TypeExpr::Audio(_) => ValueType::Scalar("Audio".to_string()),
+        TypeExpr::Video(_) => ValueType::Scalar("Video".to_string()),
         TypeExpr::Number(_) => ValueType::Scalar("number".to_string()),
         TypeExpr::Boolean(_) => ValueType::Scalar("boolean".to_string()),
         TypeExpr::Array { element, .. } => {

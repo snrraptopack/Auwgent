@@ -142,6 +142,14 @@ pub enum TokenKind {
     BooleanType,
     #[token("Text")]
     TextType,
+    #[token("Image")]
+    ImageType,
+    #[token("File")]
+    FileType,
+    #[token("Audio")]
+    AudioType,
+    #[token("Video")]
+    VideoType,
 
     // ── Operators ────────────────────────────────────────────────────
     #[token("==")]
@@ -308,6 +316,10 @@ impl fmt::Display for TokenKind {
             Self::NumberType => write!(f, "'number'"),
             Self::BooleanType => write!(f, "'boolean'"),
             Self::TextType => write!(f, "'Text'"),
+            Self::ImageType => write!(f, "'Image'"),
+            Self::FileType => write!(f, "'File'"),
+            Self::AudioType => write!(f, "'Audio'"),
+            Self::VideoType => write!(f, "'Video'"),
             Self::EqEq => write!(f, "'=='"),
             Self::NotEq => write!(f, "'!='"),
             Self::GtEq => write!(f, "'>='"),

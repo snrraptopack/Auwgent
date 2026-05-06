@@ -95,11 +95,7 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         sections.push(generate_custom_types(types));
     }
 
-    sections.push(generate_object_alias(
-        public_name,
-        "Input",
-        unwrap_input_fields(ir.get("input")).as_ref(),
-    ));
+    sections.push(generate_input_alias(public_name, ir.get("input")));
     for helper in output_helpers {
         sections.push(generate_helper_output_interface(helper));
     }
@@ -553,6 +549,61 @@ fn generate_object_alias(name: &str, suffix: &str, value: Option<&Value>) -> Str
     )
 }
 
+fn generate_input_alias(name: &str, input: Option<&Value>) -> String {
+    if matches!(input, None | Some(Value::Null)) {
+        return format!("export type {name}Input = string\n");
+    }
+
+    if let Some(Value::Object(obj)) = input {
+        if obj.get("kind").and_then(Value::as_str) == Some("properties") {
+            return generate_object_alias(name, "Input", obj.get("fields"));
+        }
+        if !obj.contains_key("type") && !obj.contains_key("kind") {
+            return generate_object_alias(name, "Input", input);
+        }
+    }
+
+    let input_type = input
+        .map(input_to_ts_string)
+        .unwrap_or_else(|| "string".to_string());
+    format!("export type {name}Input = {input_type}\n")
+}
+
+fn input_to_ts_string(input: &Value) -> String {
+    match input {
+        Value::String(raw) if is_media_ir_name(raw) => {
+            format!(
+                "readonly (import(\"@snrraptopack/auwgent-sdk\").AuwgentTextPart | {})[]",
+                normalize_ts_type(raw)
+            )
+        }
+        Value::Object(obj) if obj.get("type").and_then(Value::as_str) == Some("union") => {
+            let media = obj
+                .get("options")
+                .and_then(Value::as_array)
+                .map(|options| {
+                    options
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|option| is_media_ir_name(option))
+                        .map(normalize_ts_type)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            if media.is_empty() {
+                type_to_ts_string(input)
+            } else {
+                format!(
+                    "readonly (import(\"@snrraptopack/auwgent-sdk\").AuwgentTextPart | {})[]",
+                    media.join(" | ")
+                )
+            }
+        }
+        _ => type_to_ts_string(input),
+    }
+}
+
 fn object_lines(value: Option<&Value>) -> Vec<String> {
     value
         .and_then(Value::as_object)
@@ -600,7 +651,14 @@ fn type_to_ts_string(type_val: &Value) -> String {
             return options
                 .iter()
                 .filter_map(Value::as_str)
-                .map(|option| format!("\"{}\"", option.trim_matches(|c| c == '\'' || c == '\"')))
+                .map(|option| {
+                    let normalized = normalize_ts_type(option);
+                    if normalized == option {
+                        format!("\"{}\"", option.trim_matches(|c| c == '\'' || c == '\"'))
+                    } else {
+                        normalized
+                    }
+                })
                 .collect::<Vec<_>>()
                 .join(" | ");
         }
@@ -634,8 +692,16 @@ fn normalize_ts_type(raw: &str) -> String {
         "int" | "float" | "number" => "number".to_string(),
         "bool" | "boolean" => "boolean".to_string(),
         "string" => "string".to_string(),
+        "image" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentImagePart".to_string(),
+        "file" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentFilePart".to_string(),
+        "audio" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentAudioPart".to_string(),
+        "video" => "import(\"@snrraptopack/auwgent-sdk\").AuwgentVideoPart".to_string(),
         other => other.to_string(),
     }
+}
+
+fn is_media_ir_name(raw: &str) -> bool {
+    matches!(raw, "image" | "file" | "audio" | "video")
 }
 
 fn sanitize_ts_identifier(name: &str) -> String {
@@ -660,35 +726,6 @@ fn sanitize_ts_identifier(name: &str) -> String {
             }
             _ => out,
         }
-    }
-}
-
-/// Unwrap the input field from the IR format to the flat format expected by codegen.
-/// IR format: { "kind": "properties", "fields": {...} } or { "kind": "direct", "type": "string" }
-/// Codegen format: {...} (just the fields object)
-fn unwrap_input_fields(input: Option<&Value>) -> Option<Value> {
-    match input {
-        Some(Value::Object(obj)) => {
-            // Check if it has the "kind" wrapper
-            if let Some(kind) = obj.get("kind").and_then(Value::as_str) {
-                match kind {
-                    "properties" => {
-                        // Return the fields object directly
-                        obj.get("fields").cloned()
-                    }
-                    "direct" => {
-                        // For direct input (input: Text), return null since codegen expects
-                        // properties format. The TypeScript ExtractInputShape will default to string.
-                        None
-                    }
-                    _ => Some(Value::Object(obj.clone())),
-                }
-            } else {
-                // Already in flat format
-                Some(Value::Object(obj.clone()))
-            }
-        }
-        _ => None,
     }
 }
 

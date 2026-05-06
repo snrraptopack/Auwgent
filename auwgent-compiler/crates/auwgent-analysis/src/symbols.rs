@@ -673,9 +673,14 @@ fn symbol_in_type_expr(ty: &TypeExpr, offset: usize) -> Option<SymbolTarget> {
                 span: option.span,
             })
         }),
-        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => {
-            None
-        }
+        TypeExpr::String(_)
+        | TypeExpr::Number(_)
+        | TypeExpr::Boolean(_)
+        | TypeExpr::Text(_)
+        | TypeExpr::Image(_)
+        | TypeExpr::File(_)
+        | TypeExpr::Audio(_)
+        | TypeExpr::Video(_) => None,
     }
 }
 
@@ -1137,6 +1142,13 @@ fn collect_type_expr_symbols(ty: &TypeExpr, symbols: &mut Vec<SymbolTarget>) {
                 });
             }
         }
-        TypeExpr::String(_) | TypeExpr::Number(_) | TypeExpr::Boolean(_) | TypeExpr::Text(_) => {}
+        TypeExpr::String(_)
+        | TypeExpr::Number(_)
+        | TypeExpr::Boolean(_)
+        | TypeExpr::Text(_)
+        | TypeExpr::Image(_)
+        | TypeExpr::File(_)
+        | TypeExpr::Audio(_)
+        | TypeExpr::Video(_) => {}
     }
 }

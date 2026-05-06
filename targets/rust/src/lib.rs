@@ -19,6 +19,76 @@ use std::sync::{Arc, Mutex};
 pub type AuwgentResult<T> = Result<T, String>;
 pub type MiddlewareRegistry = Arc<dyn Middleware>;
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuwgentInputPart {
+    Text(AuwgentTextPart),
+    Image(AuwgentImagePart),
+    File(AuwgentFilePart),
+    Audio(AuwgentAudioPart),
+    Video(AuwgentVideoPart),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AuwgentTextPart {
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AuwgentMediaSource {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub ref_: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuwgentImagePart {
+    #[serde(flatten)]
+    pub source: AuwgentMediaSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuwgentFilePart {
+    #[serde(flatten)]
+    pub source: AuwgentMediaSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuwgentAudioPart {
+    #[serde(flatten)]
+    pub source: AuwgentMediaSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuwgentVideoPart {
+    #[serde(flatten)]
+    pub source: AuwgentMediaSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcript: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sampled_frames: Option<Vec<AuwgentImagePart>>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AuwgentApiKeys {
     pub openai_api_key: Option<String>,

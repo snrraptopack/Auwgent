@@ -626,7 +626,12 @@ impl Checker {
 
     pub(crate) fn map_type_expr(&self, ty: &TypeExpr) -> Type {
         match ty {
-            TypeExpr::String(_) | TypeExpr::Text(_) => Type::string(),
+            TypeExpr::String(_)
+            | TypeExpr::Text(_)
+            | TypeExpr::Image(_)
+            | TypeExpr::File(_)
+            | TypeExpr::Audio(_)
+            | TypeExpr::Video(_) => Type::string(),
             TypeExpr::Number(_) => Type::number(),
             TypeExpr::Boolean(_) => Type::boolean(),
             TypeExpr::Array { element, .. } => Type::Array(Box::new(self.map_type_expr(element))),

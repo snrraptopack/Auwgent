@@ -407,6 +407,10 @@ pub enum TypeExpr {
     Number(Span),
     Boolean(Span),
     Text(Span),
+    Image(Span),
+    File(Span),
+    Audio(Span),
+    Video(Span),
     Array {
         element: Box<TypeExpr>,
         span: Span,

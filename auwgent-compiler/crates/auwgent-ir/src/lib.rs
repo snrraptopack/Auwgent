@@ -197,8 +197,12 @@ fn lower_input(ic: &InputConfig) -> Value {
     match &ic.shape {
         InputShape::Direct(ty) => {
             // If input is just Text/string, return null (engine defaults to string)
-            if matches!(ty, TypeExpr::String(_) | TypeExpr::Text(_)) {
+            if is_text_input_type(ty) {
                 return Value::Null;
+            }
+
+            if is_media_input_type(ty) {
+                return lower_media_input_type(ty);
             }
 
             json!({
@@ -212,6 +216,62 @@ fn lower_input(ic: &InputConfig) -> Value {
                 "fields": lower_properties(props)
             })
         }
+    }
+}
+
+fn is_text_input_type(ty: &TypeExpr) -> bool {
+    matches!(ty, TypeExpr::String(_) | TypeExpr::Text(_))
+}
+
+fn is_media_name(name: &str) -> bool {
+    matches!(name, "Image" | "File" | "Audio" | "Video")
+}
+
+fn media_name_to_ir(name: &str) -> &'static str {
+    match name {
+        "Image" => "image",
+        "File" => "file",
+        "Audio" => "audio",
+        "Video" => "video",
+        _ => "unknown",
+    }
+}
+
+fn is_media_input_type(ty: &TypeExpr) -> bool {
+    match ty {
+        TypeExpr::Image(_) | TypeExpr::File(_) | TypeExpr::Audio(_) | TypeExpr::Video(_) => true,
+        TypeExpr::Union { options, .. } => options
+            .iter()
+            .all(|option| option.value == "Text" || option.value == "string" || is_media_name(&option.value))
+            && options.iter().any(|option| is_media_name(&option.value)),
+        _ => false,
+    }
+}
+
+fn lower_media_input_type(ty: &TypeExpr) -> Value {
+    match ty {
+        TypeExpr::Image(_) => json!("image"),
+        TypeExpr::File(_) => json!("file"),
+        TypeExpr::Audio(_) => json!("audio"),
+        TypeExpr::Video(_) => json!("video"),
+        TypeExpr::Union { options, .. } => {
+            let mut lowered = Vec::new();
+            for option in options {
+                if is_media_name(&option.value) {
+                    let value = json!(media_name_to_ir(&option.value));
+                    if !lowered.contains(&value) {
+                        lowered.push(value);
+                    }
+                }
+            }
+
+            if lowered.len() == 1 {
+                lowered.into_iter().next().unwrap_or(Value::Null)
+            } else {
+                json!({ "type": "union", "options": lowered })
+            }
+        }
+        _ => lower_type_expr_value(ty),
     }
 }
 
@@ -398,6 +458,10 @@ fn lower_output_type_decl_fields(type_decl: &TypeDeclaration) -> Value {
 fn lower_type_expr_value(ty: &TypeExpr) -> Value {
     match ty {
         TypeExpr::String(_) | TypeExpr::Text(_) => json!("string"),
+        TypeExpr::Image(_) => json!("image"),
+        TypeExpr::File(_) => json!("file"),
+        TypeExpr::Audio(_) => json!("audio"),
+        TypeExpr::Video(_) => json!("video"),
         TypeExpr::Number(_) => json!("number"),
         TypeExpr::Boolean(_) => json!("boolean"),
         TypeExpr::Array { element, .. } => {
@@ -1490,6 +1554,58 @@ mod tests {
         assert_eq!(ir["input"], Value::Null); // input: Text compiles to null
         assert_eq!(ir["output"]["name"]["description"], json!("no description"));
         assert_eq!(ir["output"]["age"]["description"], json!("no description"));
+    }
+
+    #[test]
+    fn media_input_primitives_lower_to_existing_type_shape() {
+        let image_ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Image
+            }
+            "#,
+        );
+
+        assert_eq!(image_ir["input"], json!("image"));
+
+        let union_ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Image | File
+            }
+            "#,
+        );
+
+        assert_eq!(union_ir["input"]["type"], json!("union"));
+        assert_eq!(union_ir["input"]["options"], json!(["image", "file"]));
+    }
+
+    #[test]
+    fn text_in_media_input_union_is_implicit_and_not_emitted() {
+        let ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text | Image
+            }
+            "#,
+        );
+
+        assert_eq!(ir["input"], json!("image"));
     }
 
     #[test]

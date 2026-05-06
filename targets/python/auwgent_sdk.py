@@ -93,6 +93,46 @@ class AgentIRShape(TypedDict, total=False):
     modelConfig: List[Dict[str, Any]]
     customIntents: List[Dict[str, Any]]
 
+class AuwgentTextPart(TypedDict):
+    type: typing.Literal["text"]
+    text: str
+
+class AuwgentBinarySource(TypedDict, total=False):
+    data: Union[bytes, str]
+    encoding: typing.Literal["base64", "utf8"]
+    path: str
+    url: str
+    ref: str
+
+class AuwgentImagePart(AuwgentBinarySource, total=False):
+    type: typing.Literal["image"]
+    mimeType: str
+    detail: typing.Literal["auto", "low", "high"]
+
+class AuwgentFilePart(AuwgentBinarySource, total=False):
+    type: typing.Literal["file"]
+    mimeType: str
+    name: str
+
+class AuwgentAudioPart(AuwgentBinarySource, total=False):
+    type: typing.Literal["audio"]
+    mimeType: str
+    transcript: str
+
+class AuwgentVideoPart(AuwgentBinarySource, total=False):
+    type: typing.Literal["video"]
+    mimeType: str
+    transcript: str
+    sampledFrames: List[AuwgentImagePart]
+
+AuwgentInputPart = Union[
+    AuwgentTextPart,
+    AuwgentImagePart,
+    AuwgentFilePart,
+    AuwgentAudioPart,
+    AuwgentVideoPart,
+]
+
 # ── Error Types ───────────────────────────────────────────────────────────
 
 class AuwgentToolError(Exception):

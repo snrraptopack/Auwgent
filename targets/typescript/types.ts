@@ -103,14 +103,44 @@ export interface AgentIRShape {
     customIntents?: readonly IRCustomIntentDef[];
 }
 
-type PrimitiveTypeName = 'string' | 'Text' | 'text' | 'number' | 'int' | 'float' | 'boolean' | 'bool';
+export type AuwgentTextPart = { type: 'text'; text: string };
+export type AuwgentBinarySource =
+    | { data: ArrayBuffer | Uint8Array | string; encoding?: 'base64' | 'utf8' }
+    | { path: string }
+    | { url: string }
+    | { ref: string };
+export type AuwgentImagePart = AuwgentBinarySource & { type: 'image'; mimeType?: string; detail?: 'auto' | 'low' | 'high' };
+export type AuwgentFilePart = AuwgentBinarySource & { type: 'file'; mimeType?: string; name?: string };
+export type AuwgentAudioPart = AuwgentBinarySource & { type: 'audio'; mimeType?: string; transcript?: string };
+export type AuwgentVideoPart = AuwgentBinarySource & { type: 'video'; mimeType?: string; transcript?: string; sampledFrames?: AuwgentImagePart[] };
+export type AuwgentInputPart =
+    | AuwgentTextPart
+    | AuwgentImagePart
+    | AuwgentFilePart
+    | AuwgentAudioPart
+    | AuwgentVideoPart;
+
+type PrimitiveTypeName = 'string' | 'Text' | 'text' | 'number' | 'int' | 'float' | 'boolean' | 'bool' | 'image' | 'file' | 'audio' | 'video';
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 type NormalizePrimitive<T> =
     T extends 'string' | 'Text' | 'text' ? string :
     T extends 'number' | 'int' | 'float' ? number :
     T extends 'boolean' | 'bool' ? boolean :
+    T extends 'image' ? AuwgentImagePart :
+    T extends 'file' ? AuwgentFilePart :
+    T extends 'audio' ? AuwgentAudioPart :
+    T extends 'video' ? AuwgentVideoPart :
     never;
+
+type InputMediaPart<T> =
+    T extends 'image' ? AuwgentImagePart :
+    T extends 'file' ? AuwgentFilePart :
+    T extends 'audio' ? AuwgentAudioPart :
+    T extends 'video' ? AuwgentVideoPart :
+    never;
+
+type InputMediaArray<T> = readonly (AuwgentTextPart | InputMediaPart<T>)[];
 
 type NormalizeUnionOption<T> =
     T extends PrimitiveTypeName ? NormalizePrimitive<T> :
@@ -167,6 +197,13 @@ export type IRSchemaToType<T> =
 type ResolveShape<T, NullFallback> =
     [T] extends [null | undefined] ? NullFallback : IRSchemaToType<T>;
 
+type ResolveInputShape<T> =
+    [T] extends [null | undefined] ? string :
+    T extends 'image' | 'file' | 'audio' | 'video' ? InputMediaArray<T> :
+    T extends { type: 'union'; options: infer O extends readonly any[] }
+        ? InputMediaArray<Extract<O[number], 'image' | 'file' | 'audio' | 'video'>>
+        : IRSchemaToType<T>;
+
 export type ExtractToolNames<IR extends AgentIRShape> =
     IR['tools'][number]['name'];
 
@@ -211,7 +248,7 @@ export type ToolRegistry<IR extends AgentIRShape> = {
 };
 
 export type ExtractInputShape<IR extends AgentIRShape> =
-    ResolveShape<IR['input'], string>;
+    ResolveInputShape<IR['input']>;
 
 
 // ── Provider type extraction ─────────────────────────────────────────────

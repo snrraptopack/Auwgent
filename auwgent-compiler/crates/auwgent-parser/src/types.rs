@@ -16,6 +16,13 @@ pub(crate) fn type_expr_parser(
         let bool_t =
             tok(TokenKind::BooleanType).map_with_span(|_, span| TypeExpr::Boolean(s(span)));
         let text_t = tok(TokenKind::TextType).map_with_span(|_, span| TypeExpr::Text(s(span)));
+        let image_t =
+            tok(TokenKind::ImageType).map_with_span(|_, span| TypeExpr::Image(s(span)));
+        let file_t = tok(TokenKind::FileType).map_with_span(|_, span| TypeExpr::File(s(span)));
+        let audio_t =
+            tok(TokenKind::AudioType).map_with_span(|_, span| TypeExpr::Audio(s(span)));
+        let video_t =
+            tok(TokenKind::VideoType).map_with_span(|_, span| TypeExpr::Video(s(span)));
 
         let type_ref = ident().map(TypeExpr::TypeRef);
 
@@ -42,13 +49,28 @@ pub(crate) fn type_expr_parser(
                 span: s(span),
             });
 
-        let base = choice((string_t, number_t, bool_t, text_t, object_type, type_ref));
+        let base = choice((
+            string_t,
+            number_t,
+            bool_t,
+            text_t,
+            image_t,
+            file_t,
+            audio_t,
+            video_t,
+            object_type,
+            type_ref,
+        ));
 
-        // Union: "optA" | "optB" | ...
-        let union_option = string_lit();
-        let union_type = union_option
+        // Literal union: "optA" | "optB" | ...
+        let literal_union_option = string_lit();
+        let literal_union_type = literal_union_option
             .clone()
-            .then(tok(TokenKind::Pipe).ignore_then(union_option).repeated())
+            .then(
+                tok(TokenKind::Pipe)
+                    .ignore_then(literal_union_option)
+                    .repeated(),
+            )
             .map_with_span(|(first, rest), span| {
                 let mut options = vec![first];
                 options.extend(rest);
@@ -58,7 +80,51 @@ pub(crate) fn type_expr_parser(
                 }
             });
 
-        let base_or_union = union_type.or(base);
+        // Named union: Text | Image | File. Used by input/output-like type surfaces.
+        let named_union_option = choice((
+            tok(TokenKind::TextType).map_with_span(|_, span| Spanned {
+                value: "Text".to_string(),
+                span: s(span),
+            }),
+            tok(TokenKind::ImageType).map_with_span(|_, span| Spanned {
+                value: "Image".to_string(),
+                span: s(span),
+            }),
+            tok(TokenKind::FileType).map_with_span(|_, span| Spanned {
+                value: "File".to_string(),
+                span: s(span),
+            }),
+            tok(TokenKind::AudioType).map_with_span(|_, span| Spanned {
+                value: "Audio".to_string(),
+                span: s(span),
+            }),
+            tok(TokenKind::VideoType).map_with_span(|_, span| Spanned {
+                value: "Video".to_string(),
+                span: s(span),
+            }),
+            ident(),
+        ));
+        let named_union_type = named_union_option
+            .clone()
+            .then(
+                tok(TokenKind::Pipe)
+                    .ignore_then(named_union_option)
+                    .repeated(),
+            )
+            .try_map(|(first, rest), span| {
+                if rest.is_empty() {
+                    Err(Simple::custom(span, "expected union option after '|'"))
+                } else {
+                    let mut options = vec![first];
+                    options.extend(rest);
+                    Ok(TypeExpr::Union {
+                        options,
+                        span: s(span),
+                    })
+                }
+            });
+
+        let base_or_union = literal_union_type.or(named_union_type).or(base);
 
         // Array suffix: type[]
         base_or_union

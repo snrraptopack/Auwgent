@@ -3,6 +3,106 @@ import 'dart:convert';
 
 typedef JsonMap = Map<String, Object?>;
 
+sealed class AuwgentInputPart {
+  const AuwgentInputPart();
+
+  String get type;
+  JsonMap toJson();
+}
+
+final class AuwgentTextPart extends AuwgentInputPart {
+  const AuwgentTextPart(this.text);
+
+  final String text;
+
+  @override
+  String get type => 'text';
+
+  @override
+  JsonMap toJson() => {'type': type, 'text': text};
+}
+
+abstract class AuwgentMediaPart extends AuwgentInputPart {
+  const AuwgentMediaPart({
+    this.data,
+    this.encoding,
+    this.path,
+    this.url,
+    this.ref,
+    this.mimeType,
+  });
+
+  final Object? data;
+  final String? encoding;
+  final String? path;
+  final String? url;
+  final String? ref;
+  final String? mimeType;
+
+  JsonMap sourceJson() => {
+    if (data != null) 'data': data,
+    if (encoding != null) 'encoding': encoding,
+    if (path != null) 'path': path,
+    if (url != null) 'url': url,
+    if (ref != null) 'ref': ref,
+    if (mimeType != null) 'mimeType': mimeType,
+  };
+}
+
+final class AuwgentImagePart extends AuwgentMediaPart {
+  const AuwgentImagePart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.detail});
+
+  final String? detail;
+
+  @override
+  String get type => 'image';
+
+  @override
+  JsonMap toJson() => {'type': type, ...sourceJson(), if (detail != null) 'detail': detail};
+}
+
+final class AuwgentFilePart extends AuwgentMediaPart {
+  const AuwgentFilePart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.name});
+
+  final String? name;
+
+  @override
+  String get type => 'file';
+
+  @override
+  JsonMap toJson() => {'type': type, ...sourceJson(), if (name != null) 'name': name};
+}
+
+final class AuwgentAudioPart extends AuwgentMediaPart {
+  const AuwgentAudioPart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.transcript});
+
+  final String? transcript;
+
+  @override
+  String get type => 'audio';
+
+  @override
+  JsonMap toJson() => {'type': type, ...sourceJson(), if (transcript != null) 'transcript': transcript};
+}
+
+final class AuwgentVideoPart extends AuwgentMediaPart {
+  const AuwgentVideoPart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.transcript, this.sampledFrames});
+
+  final String? transcript;
+  final List<AuwgentImagePart>? sampledFrames;
+
+  @override
+  String get type => 'video';
+
+  @override
+  JsonMap toJson() => {
+    'type': type,
+    ...sourceJson(),
+    if (transcript != null) 'transcript': transcript,
+    if (sampledFrames != null) 'sampledFrames': sampledFrames!.map((frame) => frame.toJson()).toList(growable: false),
+  };
+}
+
 String prettyJson(Object? value) {
   const encoder = JsonEncoder.withIndent('  ');
   return encoder.convert(value);

@@ -25,6 +25,8 @@ export type AuwgentContext = {
 export type AuwgentTools = {
     get_user_marks: (args: {  }) => Promise<string[]>;
     get_location: (args: {  }) => Promise<string>;
+    get_secrete_number: (args: {  }) => Promise<string>;
+    get_my_school: (args: {  }) => Promise<string>;
 }
 
 /** Custom intents defined in the DSL (if any) */

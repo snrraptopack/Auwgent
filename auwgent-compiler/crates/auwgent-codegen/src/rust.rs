@@ -1149,6 +1149,10 @@ fn rust_type_base(value: Option<&Value>, fallback: &str) -> String {
                 "string" => "String".to_string(),
                 "number" | "int" | "float" => "f64".to_string(),
                 "boolean" | "bool" => "bool".to_string(),
+                "image" => "sdk::AuwgentImagePart".to_string(),
+                "file" => "sdk::AuwgentFilePart".to_string(),
+                "audio" => "sdk::AuwgentAudioPart".to_string(),
+                "video" => "sdk::AuwgentVideoPart".to_string(),
                 "array" => {
                     let item_type = rust_type(obj.get("items"), false, "JsonValue");
                     format!("Vec<{item_type}>")
@@ -1181,7 +1185,13 @@ fn rust_type_base(value: Option<&Value>, fallback: &str) -> String {
         }
     }
     match value {
-        Value::String(_) => "String".to_string(),
+        Value::String(raw) => match raw.as_str() {
+            "image" => "sdk::AuwgentImagePart".to_string(),
+            "file" => "sdk::AuwgentFilePart".to_string(),
+            "audio" => "sdk::AuwgentAudioPart".to_string(),
+            "video" => "sdk::AuwgentVideoPart".to_string(),
+            _ => "String".to_string(),
+        },
         Value::Number(_) => "f64".to_string(),
         Value::Bool(_) => "bool".to_string(),
         Value::Array(_) => "Vec<JsonValue>".to_string(),
