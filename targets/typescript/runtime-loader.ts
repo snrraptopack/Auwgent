@@ -3,6 +3,12 @@ declare const process: any;
 export type AuwgentRuntime = any;
 
 function isNodeLike(): boolean {
+    if (typeof globalThis !== 'undefined') {
+        if ((globalThis as any).navigator?.userAgent === 'Cloudflare-Workers') return false;
+        if ((globalThis as any).EdgeRuntime) return false;
+        if ((globalThis as any).Deno) return false;
+    }
+
     return (
         typeof process !== 'undefined' &&
         process?.versions != null &&
@@ -30,7 +36,13 @@ function optionalRequire(): ((id: string) => any) | null {
 }
 
 function browserDynamicImport(specifier: string): Promise<any> {
-    return new Function('specifier', 'return import(specifier)')(specifier);
+    try {
+        return new Function('specifier', 'return import(specifier)')(specifier);
+    } catch (e) {
+        // Fallback for environments that disable eval/new Function (like Cloudflare Workers)
+        // @ts-ignore
+        return import(/* @vite-ignore */ /* webpackIgnore: true */ specifier);
+    }
 }
 
 export function createNativeRuntimeSync(irJson: string): AuwgentRuntime | null {
