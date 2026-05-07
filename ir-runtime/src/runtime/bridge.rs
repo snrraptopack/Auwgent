@@ -322,9 +322,22 @@ fn shared_runtime() -> Result<&'static Arc<tokio::runtime::Runtime>, String> {
         .map_err(|err| err.clone())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn current_time_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn current_time_ms() -> u128 {
+    js_sys::Date::now() as u128
+}
+
 struct TimingProbe {
     label: &'static str,
-    start: Instant,
+    start_ms: u128,
     enabled: bool,
 }
 
@@ -333,7 +346,7 @@ impl TimingProbe {
         let enabled = timing_enabled();
         let probe = Self {
             label,
-            start: Instant::now(),
+            start_ms: current_time_ms(),
             enabled,
         };
         if enabled {
@@ -344,10 +357,11 @@ impl TimingProbe {
 
     fn mark(&self, message: &str) {
         if self.enabled {
+            let elapsed = current_time_ms().saturating_sub(self.start_ms);
             eprintln!(
                 "[auwgent][timing][rust] {} +{}ms {}",
                 self.label,
-                self.start.elapsed().as_millis(),
+                elapsed,
                 message
             );
         }

@@ -48,9 +48,19 @@ pub type ModelEventStream = Pin<Box<dyn Stream<Item = Result<ModelEvent, String>
 #[cfg(target_arch = "wasm32")]
 pub type ModelEventStream = Pin<Box<dyn Stream<Item = Result<ModelEvent, String>>>>;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub trait ModelDriverBounds: Send + Sync {}
+#[cfg(not(target_arch = "wasm32"))]
+impl<T: Send + Sync> ModelDriverBounds for T {}
+
+#[cfg(target_arch = "wasm32")]
+pub trait ModelDriverBounds {}
+#[cfg(target_arch = "wasm32")]
+impl<T> ModelDriverBounds for T {}
+
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
-pub trait ModelDriver: Send + Sync {
+pub trait ModelDriver: ModelDriverBounds {
     /// Send a conversation to the LLM and return a stream of text chunks.
     ///
     /// `messages` contains the full conversation history including system prompt,
