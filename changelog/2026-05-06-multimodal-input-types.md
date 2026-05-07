@@ -314,6 +314,8 @@ This means placeholder text like `[image: ./photo.png]` is not a protocol that p
 - image/file/audio/video parts are sent to Gemini as `inline_data` when data/path can be resolved, or `file_data` for URL inputs
 - unresolved non-text media falls back to a compact text label so the model still has a reference instead of losing the part silently
 
+Gemini responses can also contain multiple response parts, especially for image-capable models such as `gemini-2.5-flash-image`. The Gemini driver now scans all returned candidate parts for text instead of only reading `parts[0].text`; otherwise a response that starts with an image/inline-data part can look like an empty completion to the runtime.
+
 Inline `data` supports both base64 and UTF-8 source strings:
 
 ```ts
@@ -330,7 +332,7 @@ input.file({
 })
 ```
 
-For path inputs, native runtimes read the file bytes and encode them for the provider. The wasm runtime cannot read local paths directly, so browser/wasm callers should pass URL, base64 data, or a future uploaded file reference.
+For path inputs, native runtimes read the file bytes and encode them for the provider. The wasm runtime cannot read local paths directly, so browser/wasm callers should pass URL, base64 data, or a provider/app reference.
 
 ## Media Source Flow
 
@@ -379,7 +381,7 @@ type MediaSource =
       mimeType?: string
     }
   | {
-      data: string
+      data: string | ArrayBuffer | Uint8Array
       encoding: "base64" | "utf8"
       mimeType?: string
     }
@@ -555,6 +557,8 @@ input.file({
 
 This is mostly useful for text-like files. It should not be used for binary image/audio/video bytes unless the bytes were intentionally converted into a valid UTF-8 string, which is usually not what is wanted.
 
+TypeScript callers may also pass `ArrayBuffer` or `Uint8Array` as `data`. The TypeScript wrapper normalizes those bytes to a base64 string before crossing the native boundary and sets `encoding: "base64"` in the runtime payload.
+
 ### Internal Base64 Encoding
 
 The runtime still needs an internal base64 encoder, but not because the user selected `encoding: "base64"`.
@@ -568,11 +572,11 @@ It is not used for:
 
 - `encoding: "base64"`: the caller already encoded the bytes
 - `url`: the provider adapter passes the URL or maps it to the provider's URL/file URI shape
-- `ref`: future upload registry should resolve the reference before provider submission
+- `ref`: provider adapter passes the provider-native reference where supported, or a future upload registry resolves it before provider submission
 
-### Future `ref`
+### `ref`
 
-The source shape already reserves the idea of `ref` for runtime-managed or app-managed uploaded files:
+`ref` is an opaque provider/app reference for media that has already been uploaded or registered somewhere else:
 
 ```ts
 input.file({
@@ -581,7 +585,39 @@ input.file({
 })
 ```
 
-`ref` should mean "resolve this through an upload/file registry." That registry does not exist yet in this change. Until it does, users should use `path`, `url`, or `data`.
+It means "do not read bytes from local disk and do not inline base64 data; pass or resolve this reference through the provider/app integration."
+
+Current runtime behavior:
+
+- Gemini maps `ref` to `file_data.file_uri`, the same provider field used for `url`.
+- OpenAI chat-completions does not have a generic file-reference path in this driver yet. Image refs that are not URL/data/path resolvable fall back to a compact text label.
+- The runtime does not yet include a global upload registry that turns app refs into bytes/URLs/provider file IDs.
+
+So today `ref` is useful when the selected provider adapter already knows how to submit that reference directly. For Gemini, this can be a Gemini file URI returned from an upload step.
+
+Example:
+
+```ts
+await agent.run([
+  input.text("Summarize this uploaded PDF"),
+  input.file({
+    ref: "files/report_pdf",
+    mimeType: "application/pdf",
+    name: "report.pdf",
+  }),
+])
+```
+
+The future registry layer can make this more general:
+
+```text
+ref: "upload_123"
+  -> app/runtime lookup
+  -> local path, remote URL, provider file URI, provider file ID, or bytes
+  -> provider adapter submits the resolved source
+```
+
+That registry is separate from the input shape. The input shape now has `ref`; broad cross-provider resolution can be added later without changing generated user code.
 
 ### Provider Submission Summary
 
@@ -618,6 +654,7 @@ Target SDKs:
 
 - `targets/typescript/types.ts`
 - `targets/typescript/auwgent.ts`
+- `targets/typescript/__test__/index.spec.ts`
 - `targets/python/auwgent_sdk.py`
 - `targets/python/auwgent_sdk/__init__.py`
 - `targets/dart/lib/src/types.dart`

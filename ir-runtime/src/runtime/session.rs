@@ -192,6 +192,14 @@ impl SessionState {
         }
     }
 
+    /// Set the display input on the current turn without discarding any
+    /// structured multimodal parts already attached to that turn.
+    pub fn set_display_input(&mut self, input: impl Into<String>) {
+        if let Some(turn) = self.turns.last_mut() {
+            turn.input = input.into();
+        }
+    }
+
     /// Get the current (most recent) turn mutably
     pub fn current_turn_mut(&mut self) -> Option<&mut Turn> {
         self.turns.last_mut()

@@ -177,6 +177,64 @@ export class TypedAuwgent<
         return value;
     }
 
+    private normalizeInputForRuntime<T>(value: T, seen = new WeakMap<object, unknown>()): T {
+        if (Array.isArray(value)) {
+            if (seen.has(value)) return seen.get(value) as T;
+            const normalized = value.map((entry) => this.normalizeInputForRuntime(entry, seen));
+            seen.set(value, normalized);
+            return normalized as T;
+        }
+
+        if (value && typeof value === 'object') {
+            if (seen.has(value as object)) return seen.get(value as object) as T;
+
+            if (value instanceof ArrayBuffer) {
+                return this.bytesToBase64(new Uint8Array(value)) as T;
+            }
+
+            if (ArrayBuffer.isView(value)) {
+                const view = value as ArrayBufferView;
+                return this.bytesToBase64(
+                    new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+                ) as T;
+            }
+
+            const prototype = Object.getPrototypeOf(value);
+            if (prototype === Object.prototype || prototype === null) {
+                const normalized: Record<string, unknown> = {};
+                seen.set(value as object, normalized);
+                for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+                    normalized[key] = this.normalizeInputForRuntime(entry, seen);
+                }
+                if (
+                    'data' in normalized &&
+                    (value as Record<string, unknown>).data !== normalized.data &&
+                    typeof normalized.data === 'string'
+                ) {
+                    normalized.encoding = 'base64';
+                }
+                return normalized as T;
+            }
+        }
+
+        return value;
+    }
+
+    private bytesToBase64(bytes: Uint8Array): string {
+        const bufferCtor = (globalThis as any).Buffer;
+        if (bufferCtor?.from) {
+            return bufferCtor.from(bytes).toString('base64');
+        }
+
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+            const chunk = bytes.subarray(offset, offset + chunkSize);
+            binary += String.fromCharCode(...chunk);
+        }
+        return (globalThis as any).btoa(binary);
+    }
+
     private async ensureNative(): Promise<AuwgentRuntime> {
         if (this.native) return this.native;
         return await this.nativeReady;
@@ -734,7 +792,7 @@ export class TypedAuwgent<
             const runtimeInput =
                 typeof input === 'string' || input == null
                     ? input ?? null
-                    : JSON.stringify(input);
+                    : JSON.stringify(this.normalizeInputForRuntime(input));
             const json = await (native.run as any)(
                 runtimeInput,
                 null

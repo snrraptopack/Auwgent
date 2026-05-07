@@ -4,8 +4,8 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "groq",
-          "modelName": "openai/gpt-oss-120b",
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash-image",
           "config": null
         },
         "embedding": null,
@@ -27,15 +27,7 @@
               "value": [
                 {
                   "type": "literal",
-                  "value": "\r\n        we are testing how sequencial our tool calling is make sure to execute the tool one after the other\r\n        until a tool result are in, you should not make another too call "
-                },
-                {
-                  "type": "varRef",
-                  "value": "user_name"
-                },
-                {
-                  "type": "literal",
-                  "value": "\r\n    "
+                  "value": "\r\n       Be helpful and polite and understand the task\r\n    "
                 }
               ]
             }

@@ -130,11 +130,9 @@ impl ModelDriver for GeminiDriver {
                             && let Ok(json_val) = serde_json::from_str::<Value>(data)
                         {
                             if let Some(candidate) = json_val["candidates"].get(0) {
-                                if let Some(t) = candidate["content"]["parts"][0]["text"].as_str() {
+                                for text in candidate_text_parts(candidate) {
                                     result_events.push(
-                                        crate::runtime::drivers::ModelEvent::ContentChunk(
-                                            t.to_string(),
-                                        ),
+                                        crate::runtime::drivers::ModelEvent::ContentChunk(text),
                                     );
                                 }
 
@@ -358,7 +356,11 @@ fn gemini_parts(message: &Message) -> Vec<Value> {
             "image" | "file" | "audio" | "video" => {
                 if let Some(inline) = inline_data_part(part) {
                     out.push(inline);
-                } else if let Some(url) = part.get("url").and_then(Value::as_str) {
+                } else if let Some(file_uri) = part
+                    .get("url")
+                    .or_else(|| part.get("ref"))
+                    .and_then(Value::as_str)
+                {
                     let mime = part
                         .get("mimeType")
                         .and_then(Value::as_str)
@@ -366,7 +368,7 @@ fn gemini_parts(message: &Message) -> Vec<Value> {
                     out.push(json!({
                         "file_data": {
                             "mime_type": mime,
-                            "file_uri": url
+                            "file_uri": file_uri
                         }
                     }));
                 } else {
@@ -382,6 +384,18 @@ fn gemini_parts(message: &Message) -> Vec<Value> {
     } else {
         out
     }
+}
+
+fn candidate_text_parts(candidate: &Value) -> Vec<String> {
+    candidate["content"]["parts"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part["text"].as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn inline_data_part(part: &Value) -> Option<Value> {
@@ -504,6 +518,51 @@ mod tests {
                     "data": "aGVsbG8="
                 }
             }))
+        );
+    }
+
+    #[test]
+    fn maps_ref_to_gemini_file_uri() {
+        let message = Message::user_parts(vec![json!({
+            "type": "file",
+            "ref": "files/report_pdf",
+            "mimeType": "application/pdf"
+        })]);
+
+        assert_eq!(
+            gemini_parts(&message),
+            vec![json!({
+                "file_data": {
+                    "mime_type": "application/pdf",
+                    "file_uri": "files/report_pdf"
+                }
+            })]
+        );
+    }
+
+    #[test]
+    fn extracts_text_from_all_gemini_candidate_parts() {
+        let candidate = json!({
+            "content": {
+                "parts": [
+                    {
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": "aW1hZ2U="
+                        }
+                    },
+                    { "text": "This image shows " },
+                    { "text": "a processor die." }
+                ]
+            }
+        });
+
+        assert_eq!(
+            candidate_text_parts(&candidate),
+            vec![
+                "This image shows ".to_string(),
+                "a processor die.".to_string()
+            ]
         );
     }
 }

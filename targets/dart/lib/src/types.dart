@@ -50,7 +50,15 @@ abstract class AuwgentMediaPart extends AuwgentInputPart {
 }
 
 final class AuwgentImagePart extends AuwgentMediaPart {
-  const AuwgentImagePart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.detail});
+  const AuwgentImagePart({
+    super.data,
+    super.encoding,
+    super.path,
+    super.url,
+    super.ref,
+    super.mimeType,
+    this.detail,
+  });
 
   final String? detail;
 
@@ -58,11 +66,23 @@ final class AuwgentImagePart extends AuwgentMediaPart {
   String get type => 'image';
 
   @override
-  JsonMap toJson() => {'type': type, ...sourceJson(), if (detail != null) 'detail': detail};
+  JsonMap toJson() => {
+    'type': type,
+    ...sourceJson(),
+    if (detail != null) 'detail': detail,
+  };
 }
 
 final class AuwgentFilePart extends AuwgentMediaPart {
-  const AuwgentFilePart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.name});
+  const AuwgentFilePart({
+    super.data,
+    super.encoding,
+    super.path,
+    super.url,
+    super.ref,
+    super.mimeType,
+    this.name,
+  });
 
   final String? name;
 
@@ -70,11 +90,23 @@ final class AuwgentFilePart extends AuwgentMediaPart {
   String get type => 'file';
 
   @override
-  JsonMap toJson() => {'type': type, ...sourceJson(), if (name != null) 'name': name};
+  JsonMap toJson() => {
+    'type': type,
+    ...sourceJson(),
+    if (name != null) 'name': name,
+  };
 }
 
 final class AuwgentAudioPart extends AuwgentMediaPart {
-  const AuwgentAudioPart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.transcript});
+  const AuwgentAudioPart({
+    super.data,
+    super.encoding,
+    super.path,
+    super.url,
+    super.ref,
+    super.mimeType,
+    this.transcript,
+  });
 
   final String? transcript;
 
@@ -82,11 +114,24 @@ final class AuwgentAudioPart extends AuwgentMediaPart {
   String get type => 'audio';
 
   @override
-  JsonMap toJson() => {'type': type, ...sourceJson(), if (transcript != null) 'transcript': transcript};
+  JsonMap toJson() => {
+    'type': type,
+    ...sourceJson(),
+    if (transcript != null) 'transcript': transcript,
+  };
 }
 
 final class AuwgentVideoPart extends AuwgentMediaPart {
-  const AuwgentVideoPart({super.data, super.encoding, super.path, super.url, super.ref, super.mimeType, this.transcript, this.sampledFrames});
+  const AuwgentVideoPart({
+    super.data,
+    super.encoding,
+    super.path,
+    super.url,
+    super.ref,
+    super.mimeType,
+    this.transcript,
+    this.sampledFrames,
+  });
 
   final String? transcript;
   final List<AuwgentImagePart>? sampledFrames;
@@ -99,7 +144,10 @@ final class AuwgentVideoPart extends AuwgentMediaPart {
     'type': type,
     ...sourceJson(),
     if (transcript != null) 'transcript': transcript,
-    if (sampledFrames != null) 'sampledFrames': sampledFrames!.map((frame) => frame.toJson()).toList(growable: false),
+    if (sampledFrames != null)
+      'sampledFrames': sampledFrames!
+          .map((frame) => frame.toJson())
+          .toList(growable: false),
   };
 }
 
@@ -136,7 +184,11 @@ final class NoResult {
 
 typedef ToolHandler = FutureOr<Object?> Function(JsonMap args);
 typedef IntentHandler =
-    FutureOr<IntentControl?> Function(String name, Object? value, String agentName);
+    FutureOr<IntentControl?> Function(
+      String name,
+      Object? value,
+      String agentName,
+    );
 typedef PartialIntentHandler =
     FutureOr<void> Function(String name, Object? value, String agentName);
 typedef StructuredIntentDecoder<T> = T Function(JsonMap json);
@@ -367,10 +419,7 @@ final class AggregateUsage {
 }
 
 final class RunMetadata {
-  const RunMetadata({
-    required this.aggregate,
-    required this.turns,
-  });
+  const RunMetadata({required this.aggregate, required this.turns});
 
   final AggregateUsage aggregate;
   final List<TurnMetadata> turns;
@@ -416,11 +465,7 @@ final class BindingCursor {
     );
   }
 
-  JsonMap toJson() => {
-    'turnIndex': turnIndex,
-    'role': role,
-    'input': input,
-  };
+  JsonMap toJson() => {'turnIndex': turnIndex, 'role': role, 'input': input};
 
   @override
   String toString() => prettyJson(toJson());
@@ -530,10 +575,7 @@ final class PartialStructuredIntentValue<T> {
     );
   }
 
-  JsonMap toJson() => {
-    ...envelope.toJson(),
-    'value': value,
-  };
+  JsonMap toJson() => {...envelope.toJson(), 'value': value};
 
   @override
   String toString() => prettyJson(toJson());
@@ -568,19 +610,33 @@ final class AuwgentWarning {
 }
 
 final class SessionTurn {
-  SessionTurn({required this.input, required this.modelResponse});
+  SessionTurn({
+    required this.input,
+    this.inputParts,
+    required this.modelResponse,
+  });
 
   final String input;
+  final List<JsonMap>? inputParts;
   final String modelResponse;
 
   factory SessionTurn.fromJson(JsonMap json) {
+    final inputPartsRaw = json['inputParts'] as List?;
     return SessionTurn(
       input: (json['input'] as String?) ?? '',
+      inputParts: inputPartsRaw
+          ?.whereType<Map>()
+          .map((part) => Map<String, Object?>.from(part))
+          .toList(growable: false),
       modelResponse: (json['model_response'] as String?) ?? '',
     );
   }
 
-  JsonMap toJson() => {'input': input, 'model_response': modelResponse};
+  JsonMap toJson() => {
+    'input': input,
+    if (inputParts != null) 'inputParts': inputParts,
+    'model_response': modelResponse,
+  };
 
   @override
   String toString() => prettyJson(toJson());

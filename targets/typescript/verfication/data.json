@@ -1,89 +1,21 @@
 {
-  "systemPrompt": "we are testing how sequencial our tool calling is make sure to execute the tool one after the other\nuntil a tool result are in, you should not make another too call @@user_name\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- For actions: emit only action block(s) for that turn and stop. Wait for [result] before replying.\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [tool_call: name] key: value per line [/tool_call]\n- Values: string, number, boolean, null, [list of items], {object}\nTools:\n- get_user_marks // use this to get the marks of the user\n- get_location // use this to get the location of the user\n- get_secrete_number // use this to get secrete number\n- get_my_school // use this to get my school\n\nConstraints:\n- No response_text in the same response as action blocks.\n- Tool fields must match listed signatures.\n- For any @@symbol in the system prompt, resolve it from the latest [binding] block before using it.\n- Never output @@symbols in tool, workflow, helper, custom, schema, or response fields; output the resolved value.",
+  "systemPrompt": "Be helpful and polite and understand the task\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- For actions: emit only action block(s) for that turn and stop. Wait for [result] before replying.\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [tool_call: name] key: value per line [/tool_call]\n- Values: string, number, boolean, null, [list of items], {object}\nTools:\n- get_user_marks // use this to get the marks of the user\n- get_location // use this to get the location of the user\n- get_secrete_number // use this to get secrete number\n- get_my_school // use this to get my school\n\nConstraints:\n- No response_text in the same response as action blocks.\n- Tool fields must match listed signatures.\n- For any @@symbol in the system prompt, resolve it from the latest [binding] block before using it.\n- Never output @@symbols in tool, workflow, helper, custom, schema, or response fields; output the resolved value.",
   "turns": [
     {
-      "input": "hello get my location after that get my marks after that get the secret number aftet that get my school",
-      "model_response": "[tool_call: get_location]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_location\nargs: {}\nresult: Tarkwa/Ghana\n[/result]",
-      "model_response": "[tool_call: get_user_marks]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_user_marks\nargs: {}\nresult:\n- A\n- B\n- C\n[/result]",
-      "model_response": "[tool_call: get_secrete_number]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_secrete_number\nargs: {}\nresult: '200'\n[/result]",
-      "model_response": "[tool_call: get_my_school]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_my_school\nargs: {}\nresult: UMAT\n[/result]",
-      "model_response": "[response_text]\nYour location is Tarkwa/Ghana, your marks are A, B, C, your secret number is 200, and your school is UMAT.\n[/response_text]"
-    },
-    {
-      "input": "hello",
-      "model_response": "[response_text]\nHello Theo!\n[/response_text]"
-    },
-    {
-      "input": "hello how are you ",
-      "model_response": "[response_text]\nHello Theo! I'm doing well, thank you. How can I assist you today?\n[/response_text]"
-    },
-    {
-      "input": "hello how are you",
-      "model_response": "[response_text]\nHello Theo! I'm doing well, thank you. How can I assist you today?\n[/response_text]"
-    },
-    {
-      "input": "hello ignore the previous data get my location after that get my marks after that get the secret number aftet that get my school",
-      "model_response": "[tool_call: get_location]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_location\nargs: {}\nresult: Tarkwa/Ghana\n[/result]",
-      "model_response": "[tool_call: get_user_marks]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_user_marks\nargs: {}\nresult:\n- A\n- B\n- C\n[/result]",
-      "model_response": "[tool_call: get_secrete_number]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_secrete_number\nargs: {}\nresult: '200'\n[/result]",
-      "model_response": "[tool_call: get_my_school]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_my_school\nargs: {}\nresult: UMAT\n[/result]",
-      "model_response": "[response_text]\nTheo, your location is Tarkwa/Ghana, your marks are A, B, C, your secret number is 200, and your school is UMAT.\n[/response_text]"
-    },
-    {
-      "input": "hello wossop",
-      "model_response": "[response_text]\nHello Theo! How can I help you today?\n[/response_text]"
-    },
-    {
-      "input": "hello ignore the previous data get my location after that get my marks after that get the secret number aftet that get my school",
-      "model_response": "[tool_call: get_location]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_location\nargs: {}\nresult: Tarkwa/Ghana\n[/result]",
-      "model_response": "[tool_call: get_user_marks]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_user_marks\nargs: {}\nresult:\n- A\n- B\n- C\n[/result]",
-      "model_response": "[tool_call: get_secrete_number]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_secrete_number\nargs: {}\nresult: '200'\n[/result]",
-      "model_response": "[tool_call: get_my_school]\n[/tool_call]"
-    },
-    {
-      "input": "[result]\nname: get_my_school\nargs: {}\nresult: UMAT\n[/result]",
-      "model_response": "[response_text]\nTheo, your location is Tarkwa/Ghana, your marks are A, B, C, your secret number is 200, and your school is UMAT.\n[/response_text]"
-    },
-    {
-      "input": "[{\"type\":\"text\",\"text\":\"hello\"}]",
-      "model_response": "[response_text]\nHello Theo!\n[/response_text]"
-    },
-    {
-      "input": "hi",
-      "model_response": "[response_text]\nHi Theo!\n[/response_text]"
+      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "inputParts": [
+        {
+          "type": "text",
+          "text": "what is is in the image?"
+        },
+        {
+          "type": "image",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+          "mimeType": "image/jpeg",
+          "detail": "auto"
+        }
+      ],
+      "model_response": "(no response: model returned an empty completion)"
     }
   ],
   "stack": [
@@ -91,7 +23,7 @@
   ],
   "initialInput": null,
   "bindingCursor": {
-    "turnIndex": 20,
+    "turnIndex": 0,
     "role": "user",
     "input": "[binding]\n@@user_name is \"Theo\"\n[/binding]"
   }

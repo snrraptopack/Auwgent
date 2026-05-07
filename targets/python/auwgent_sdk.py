@@ -31,9 +31,12 @@ AgentTools = TypeVar("AgentTools")
 
 # ── Session State ─────────────────────────────────────────────────────────
 
-class SessionTurn(TypedDict):
+class _RequiredSessionTurn(TypedDict):
     input: str
     model_response: str
+
+class SessionTurn(_RequiredSessionTurn, total=False):
+    inputParts: List["AuwgentInputPart"]
 
 class _RequiredSessionState(TypedDict):
     turns: List[SessionTurn]

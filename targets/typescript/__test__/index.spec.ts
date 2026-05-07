@@ -380,6 +380,34 @@ describe('TypedAuwgent', () => {
         expect(result).toEqual({ message: 'Hello, Nana!' });
     });
 
+    it('normalizes binary input data to base64 before native run', () => {
+        const agent = createAuwgent(TEST_IR, {
+            tools: {
+                greet: async () => ({ message: 'hi' }),
+                search: async () => ({ results: [] }),
+            },
+        });
+
+        const normalized = (agent as any).normalizeInputForRuntime([
+            { type: 'text', text: 'Read this file' },
+            {
+                type: 'file',
+                data: new Uint8Array([0x68, 0x65, 0x6c, 0x6c, 0x6f]),
+                mimeType: 'text/plain',
+            },
+        ]);
+
+        expect(normalized).toEqual([
+            { type: 'text', text: 'Read this file' },
+            {
+                type: 'file',
+                data: 'aGVsbG8=',
+                encoding: 'base64',
+                mimeType: 'text/plain',
+            },
+        ]);
+    });
+
     it('adds response_text delta in onIntentPartial for realtime streaming', () => {
         const agent = createAuwgent(TEST_IR, {
             tools: {

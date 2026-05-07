@@ -1,12 +1,11 @@
 model Groq{
-    provider: groq("openai/gpt-oss-120b")
+    provider: gemini("gemini-2.5-flash-image")
 }
 
 prompt Simple(user_name:string){
 
     """
-        we are testing how sequencial our tool calling is make sure to execute the tool one after the other
-        until a tool result are in, you should not make another too call {{user_name}}
+       Be helpful and polite and understand the task
     """
 }
 

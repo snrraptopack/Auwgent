@@ -105,7 +105,7 @@ export interface AgentIRShape {
 
 export type AuwgentTextPart = { type: 'text'; text: string };
 export type AuwgentBinarySource =
-    | { data: ArrayBuffer | Uint8Array | string; encoding?: 'base64' | 'utf8' }
+    | { data: ArrayBuffer | Uint8Array | string; encoding: 'base64' | 'utf8' }
     | { path: string }
     | { url: string }
     | { ref: string };
@@ -591,6 +591,7 @@ export interface Message {
 
 export interface Turn {
     input: string;
+    inputParts?: AuwgentInputPart[];
     model_response: string;
 }
 

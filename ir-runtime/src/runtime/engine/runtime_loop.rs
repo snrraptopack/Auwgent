@@ -140,7 +140,10 @@ impl AuwgentEngine {
         {
             if let Some(modified) = middleware_result.get("prompt").and_then(Value::as_str) {
                 next_prompt = modified.to_string();
-                self.session.lock().unwrap().set_input(next_prompt.clone());
+                self.session
+                    .lock()
+                    .unwrap()
+                    .set_display_input(next_prompt.clone());
             }
 
             if let Some(new_stack) = middleware_result.get("stack").and_then(Value::as_array) {
@@ -435,7 +438,10 @@ impl AuwgentEngine {
                         if let Some(modified) =
                             middleware_result.get("prompt").and_then(Value::as_str)
                         {
-                            self.session.lock().unwrap().set_input(modified.to_string());
+                            self.session
+                                .lock()
+                                .unwrap()
+                                .set_display_input(modified.to_string());
                         }
 
                         if let Some(new_stack) =

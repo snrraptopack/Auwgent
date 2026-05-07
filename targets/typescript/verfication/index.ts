@@ -1,4 +1,4 @@
-import { GROQ_API_KEY } from "../secrets.ts"
+import { GEMINI_API_KEY, GROQ_API_KEY } from "../secrets.ts"
 import { auwgent, input, type AuwgentConfig, type AuwgentMiddleware, type AuwgentTools } from "./main.agent.types.ts"
 import { db } from "./db.ts"
 import { type SessionState } from "../types.ts"
@@ -12,6 +12,10 @@ let Persist: AuwgentMiddleware = {
 
   onRunComplete: async (session, ctx) => {
     await db.save("data.json",session)
+  },
+  onError: async (error, session) => {
+    await db.save("data.json", session)
+    console.log(error)
   }
 }
 
@@ -24,7 +28,7 @@ const tools: AuwgentTools = {
 
 const config: AuwgentConfig = {
   apiKeys: {
-    'groqApiKey': GROQ_API_KEY
+    'geminiApiKey': GEMINI_API_KEY
   },
   context: {
     'user_name': "Theo"
@@ -49,7 +53,18 @@ agent.onIntent((intent, value, agentName) => {
 
 })
 
-const session = await agent.run("hi")
+// const imgResp = await fetch("https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg");
+// const buffer = await imgResp.arrayBuffer();
 
+const session = await agent.run([
+  input.text("what is is in the image?"),
+  input.image({
+    url:"https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+    mimeType: "image/jpeg",
+    detail:"auto"
+  })
+])
+
+const lastTurn = session.turns.at(-1)
 
 console.log(JSON.stringify(agent.getMetadata(),null,2))
