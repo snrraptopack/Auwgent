@@ -67,8 +67,10 @@ impl EngineBridge {
     fn with_runtime(ir: AgentIR, mut builder: tokio::runtime::Builder) -> Result<Self, String> {
         let engine = AuwgentEngine::new(ir.clone());
 
+        #[cfg(not(target_arch = "wasm32"))]
+        builder.enable_all();
+
         let rt = builder
-            .enable_all()
             .build()
             .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
 
@@ -312,8 +314,16 @@ fn shared_runtime() -> Result<&'static Arc<tokio::runtime::Runtime>, String> {
 
     SHARED_RUNTIME
         .get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
+            #[cfg(target_arch = "wasm32")]
+            let mut builder = tokio::runtime::Builder::new_current_thread();
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let mut builder = tokio::runtime::Builder::new_multi_thread();
+
+            #[cfg(not(target_arch = "wasm32"))]
+            builder.enable_all();
+
+            builder
                 .build()
                 .map(Arc::new)
                 .map_err(|e| format!("Failed to create tokio runtime: {}", e))
