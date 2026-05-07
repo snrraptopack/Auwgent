@@ -120,6 +120,7 @@ impl ModelDriver for GeminiDriver {
                 Ok(bytes) => {
                     let chunk = String::from_utf8_lossy(&bytes);
                     buffer.push_str(&chunk);
+                    eprintln!("[gemini][raw_sse] {:?}", chunk);
 
                     let mut result_events = Vec::new();
                     while let Some(index) = buffer.find('\n') {
@@ -129,8 +130,10 @@ impl ModelDriver for GeminiDriver {
                         if let Some(data) = trimmed.strip_prefix("data: ")
                             && let Ok(json_val) = serde_json::from_str::<Value>(data)
                         {
+                            eprintln!("[gemini][parsed_event] {}", serde_json::to_string_pretty(&json_val).unwrap_or_default());
                             if let Some(candidate) = json_val["candidates"].get(0) {
                                 for text in candidate_text_parts(candidate) {
+                                    eprintln!("[gemini][extracted_text] {:?}", text);
                                     result_events.push(
                                         crate::runtime::drivers::ModelEvent::ContentChunk(text),
                                     );

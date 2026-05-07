@@ -4,8 +4,8 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "groq",
-          "modelName": "meta-llama/llama-4-scout-17b-16e-instruct",
+          "type": "gemini",
+          "modelName": "gemini-3-flash-preview",
           "config": null
         },
         "embedding": null,

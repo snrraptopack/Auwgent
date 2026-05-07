@@ -1,0 +1,64 @@
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication> bun run index
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\",\"thoughtSignature\": \"EjUKMwEMOdbHilS4Akm+ruScgTgfDmcrPDCczEz3VaDyU9QOCpREeWY/te+cO9Byd/DzjQYRUg==\"}],\"role\": \"model\"},\"finishReason\": \"MALFORMED_RESPONSE\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 5984,\"totalTokenCount\": 5985,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 559},{\"modality\": \"IMAGE\",\"tokenCount\": 5425}],\"thoughtsTokenCount\": 1,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"Wur7adzLIKW2kdUP64LoyA8\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "",
+            "thoughtSignature": "EjUKMwEMOdbHilS4Akm+ruScgTgfDmcrPDCczEz3VaDyU9QOCpREeWY/te+cO9Byd/DzjQYRUg=="
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "MALFORMED_RESPONSE",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 5984,
+    "totalTokenCount": 5985,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 559
+      },
+      {
+        "modality": "IMAGE",
+        "tokenCount": 5425
+      }
+    ],
+    "thoughtsTokenCount": 1,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "Wur7adzLIKW2kdUP64LoyA8"
+}
+[gemini][extracted_text] ""
+{
+  "aggregate": {
+    "prompt_tokens": 5984,
+    "completion_tokens": 0,
+    "total_tokens": 5985,
+    "reasoning_tokens": 1,
+    "cached_tokens": 0
+  },
+  "turns": [
+    {
+      "turn_index": 0,
+      "usage": {
+        "prompt_tokens": 5984,
+        "completion_tokens": 0,
+        "total_tokens": 5985,
+        "reasoning_tokens": 1,
+        "cached_tokens": 0
+      },
+      "finish_reason": {
+        "other": "MALFORMED_RESPONSE"
+      },
+      "model": "gemini-3-flash-preview"
+    }
+  ]
+}
+PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication>

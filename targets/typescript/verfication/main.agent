@@ -1,5 +1,5 @@
 model Groq{
-    provider: groq("meta-llama/llama-4-scout-17b-16e-instruct")
+    provider: gemini("gemini-3-flash-preview")
 }
 
 prompt Simple(user_name:string){

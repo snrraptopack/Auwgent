@@ -16,7 +16,6 @@ let Persist: AuwgentMiddleware = {
   onError: async (error, session) => {
     await db.save("data.json", session)
     console.log(error)
-    return true
   }
 }
 
@@ -29,7 +28,7 @@ const tools: AuwgentTools = {
 
 const config: AuwgentConfig = {
   apiKeys: {
-    'groqApiKey': GROQ_API_KEY
+    'geminiApiKey': GEMINI_API_KEY
   },
   context: {
     'user_name': "Theo"
