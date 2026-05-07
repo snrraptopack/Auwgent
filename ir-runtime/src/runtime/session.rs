@@ -265,14 +265,16 @@ impl SessionState {
     }
 
     /// Return the turn index before which the latest binding block should be
-    /// rendered. Internal result turns do not advance the cursor; only external
-    /// user inputs do.
+    /// rendered.
+    ///
+    /// Bindings are live runtime context, so they must sit immediately before
+    /// the input that will drive the next model call. When the current input is
+    /// an internal `[result]` turn, the binding belongs before that result so
+    /// updated tool/context values override any older binding block for the
+    /// continuation. For a normal user turn, this is naturally before that user
+    /// input.
     pub fn binding_cursor_turn_index(&self) -> Option<usize> {
-        self.turns
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(index, turn)| (!is_runtime_result_turn(&turn.input)).then_some(index))
+        self.turns.len().checked_sub(1)
     }
 
     /// Export session to JSON string for the host to persist
@@ -290,10 +292,6 @@ impl SessionState {
         self.turns.clear();
         self.stack.clear();
     }
-}
-
-fn is_runtime_result_turn(input: &str) -> bool {
-    input.trim_start().starts_with("[result]")
 }
 
 pub fn display_input_value(input: &Value) -> String {
