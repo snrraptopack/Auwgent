@@ -1470,6 +1470,28 @@ mod tests {
     }
 
     #[test]
+    fn orphan_text_before_response_text_block_is_not_emitted() {
+        let mut orch = setup_orchestrator();
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("I will rather use the [response_text]It says your balance is 40.00 GHS[/response_text]");
+        orch.end();
+
+        let final_emitted = emitted.lock().unwrap().clone();
+        assert_eq!(final_emitted.len(), 1);
+        assert_eq!(final_emitted[0].0, "response_text");
+        assert_eq!(
+            final_emitted[0].1["text"].as_str().unwrap(),
+            "It says your balance is 40.00 GHS"
+        );
+    }
+
+    #[test]
     fn incomplete_tool_header_is_not_emitted_as_response_text() {
         let mut orch = setup_orchestrator();
 

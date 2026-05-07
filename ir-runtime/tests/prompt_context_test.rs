@@ -20,6 +20,12 @@ fn build_ir(prompt: serde_json::Value) -> AgentIR {
     .expect("valid test ir")
 }
 
+fn build_named_ir(name: &str, prompt: serde_json::Value) -> AgentIR {
+    let mut ir = build_ir(prompt);
+    ir.name = name.to_string();
+    ir
+}
+
 #[test]
 fn referenced_context_is_rendered_as_symbol_without_static_duplication() {
     let ir = build_ir(json!({
@@ -265,4 +271,42 @@ fn binding_cursor_splits_symbol_bindings_from_injected_context() {
     assert!(input.contains("marks = [\"A\",\"B\",\"C\"]"));
     assert!(!input.contains("@@location"));
     assert!(!input.contains("@@marks"));
+}
+
+#[test]
+fn export_session_refreshes_stale_imported_system_prompt() {
+    let old_session = json!({
+        "systemPrompt": "Old prompt",
+        "turns": [
+            {
+                "input": "hello",
+                "model_response": "[response_text]hello[/response_text]"
+            }
+        ],
+        "stack": ["TestAgent"],
+        "initialInput": null
+    })
+    .to_string();
+
+    let new_ir = build_named_ir(
+        "TestAgent",
+        json!({
+            "type": "literal",
+            "value": "New prompt"
+        }),
+    );
+    let new_engine = AuwgentEngine::new(new_ir);
+    new_engine
+        .import_session(&old_session)
+        .expect("old session should import");
+
+    let exported: serde_json::Value =
+        serde_json::from_str(&new_engine.export_session().expect("session should export"))
+            .expect("export should be json");
+
+    let system_prompt = exported["systemPrompt"]
+        .as_str()
+        .expect("system prompt should be string");
+    assert!(system_prompt.starts_with("New prompt"));
+    assert!(!system_prompt.contains("Old prompt"));
 }

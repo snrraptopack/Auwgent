@@ -362,6 +362,7 @@ impl AuwgentEngine {
 
     pub fn export_session(&self) -> AuwgentResult<String> {
         let mut session = self.session.lock().unwrap().clone();
+        session.system_prompt = Some(self.generate_prompt(None)?);
         session.binding_cursor = self.render_binding_cursor();
         session.export().map_err(AuwgentError::Serialization)
     }

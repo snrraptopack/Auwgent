@@ -393,7 +393,10 @@ impl AuwgentEngine {
                     if hard_stop {
                         let raw_resp = self.current_raw_response.lock().unwrap().clone();
                         if !raw_resp.is_empty() {
-                            self.session.lock().unwrap().set_model_response(&raw_resp);
+                            self.session
+                                .lock()
+                                .unwrap()
+                                .set_model_response(sanitize_model_response(&raw_resp));
                         }
                         break;
                     }
@@ -531,7 +534,10 @@ impl AuwgentEngine {
                                     let raw_resp =
                                         self.current_raw_response.lock().unwrap().clone();
                                     if !raw_resp.is_empty() {
-                                        self.session.lock().unwrap().set_model_response(&raw_resp);
+                                        self.session
+                                            .lock()
+                                            .unwrap()
+                                            .set_model_response(sanitize_model_response(&raw_resp));
                                     }
                                     return Err(error);
                                 }
@@ -542,7 +548,10 @@ impl AuwgentEngine {
                             if hard_stop {
                                 let raw_resp = self.current_raw_response.lock().unwrap().clone();
                                 if !raw_resp.is_empty() {
-                                    self.session.lock().unwrap().set_model_response(&raw_resp);
+                                    self.session
+                                        .lock()
+                                        .unwrap()
+                                        .set_model_response(sanitize_model_response(&raw_resp));
                                 }
                                 break;
                             }
@@ -583,7 +592,10 @@ impl AuwgentEngine {
                     Err(error) => {
                         let raw_resp = self.current_raw_response.lock().unwrap().clone();
                         if !raw_resp.is_empty() {
-                            self.session.lock().unwrap().set_model_response(&raw_resp);
+                            self.session
+                                .lock()
+                                .unwrap()
+                                .set_model_response(sanitize_model_response(&raw_resp));
                         }
                         return Err(error);
                     }
@@ -612,7 +624,10 @@ impl AuwgentEngine {
 
                 let raw_resp = self.current_raw_response.lock().unwrap().clone();
                 if !raw_resp.is_empty() {
-                    self.session.lock().unwrap().set_model_response(&raw_resp);
+                    self.session
+                        .lock()
+                        .unwrap()
+                        .set_model_response(sanitize_model_response(&raw_resp));
                 }
 
                 let emitted_terminal = *self.terminal_response_emitted.lock().unwrap();
@@ -736,6 +751,22 @@ impl AuwgentEngine {
     }
 }
 
+fn sanitize_model_response(raw: &str) -> String {
+    let mut scanner = function_parser::BlockScanner::new(raw);
+    let blocks = scanner.scan();
+
+    if blocks.iter().any(|block| block.raw.starts_with('[')) {
+        blocks
+            .into_iter()
+            .filter(|block| block.raw.starts_with('['))
+            .map(|block| block.raw)
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        raw.trim().to_string()
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn current_time_ms() -> u128 {
     std::time::SystemTime::now()
@@ -793,5 +824,20 @@ fn runtime_timing_enabled() -> bool {
     std::env::var("AUWGENT_DEBUG_TIMING")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_model_response;
+
+    #[test]
+    fn sanitized_model_response_drops_orphan_text_before_protocol_block() {
+        assert_eq!(
+            sanitize_model_response(
+                "  I will rather use the [response_text]It says your balance is 40.00 GHS[/response_text]"
+            ),
+            "[response_text]It says your balance is 40.00 GHS[/response_text]"
+        );
     }
 }

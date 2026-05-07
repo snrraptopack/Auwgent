@@ -489,6 +489,10 @@ impl BlockScanner {
             });
         }
 
+        if blocks.iter().any(|block| block.raw.starts_with('[')) {
+            blocks.retain(|block| block.raw.starts_with('['));
+        }
+
         blocks
     }
 }
@@ -613,12 +617,24 @@ mod tests {
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
-        assert_eq!(blocks.len(), 3);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].target_name, Some("fetch".to_string()));
+    }
+
+    #[test]
+    fn test_orphan_text_before_response_text_block_is_dropped() {
+        let input = "I will rather use the [response_text]It says 40.00 GHS[/response_text]";
+        let mut scanner = BlockScanner::new(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].block_type, BlockType::Chat);
-        assert_eq!(blocks[0].content, "Hello");
-        assert_eq!(blocks[1].block_type, BlockType::Tool);
-        assert_eq!(blocks[2].block_type, BlockType::Chat);
-        assert_eq!(blocks[2].content, "Goodbye");
+        assert_eq!(blocks[0].content, "It says 40.00 GHS");
+        assert_eq!(
+            blocks[0].raw,
+            "[response_text]It says 40.00 GHS[/response_text]"
+        );
     }
 
     #[test]
