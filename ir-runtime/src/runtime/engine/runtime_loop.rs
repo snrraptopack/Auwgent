@@ -4,7 +4,6 @@
 // the execution modules instead of here.
 use super::*;
 use crate::runtime::session::{display_input_value, input_parts_value};
-use std::time::Instant;
 
 impl AuwgentEngine {
     pub(super) fn build_event_context(
@@ -627,7 +626,7 @@ impl AuwgentEngine {
                 );
                 if should_retry_empty && empty_completion_retries < MAX_EMPTY_COMPLETION_RETRIES {
                     empty_completion_retries += 1;
-                    sleep(Duration::from_millis(EMPTY_COMPLETION_RETRY_DELAY_MS)).await;
+                    runtime_sleep(Duration::from_millis(EMPTY_COMPLETION_RETRY_DELAY_MS)).await;
                     continue;
                 }
                 if !should_retry_empty {
@@ -784,7 +783,15 @@ impl RuntimeTimingProbe {
 }
 
 fn runtime_timing_enabled() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     std::env::var("AUWGENT_DEBUG_TIMING")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+    }
 }

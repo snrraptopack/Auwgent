@@ -22,7 +22,9 @@ use futures_util::StreamExt;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use tokio::time::{Duration, sleep};
+use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::sleep;
 
 mod execution;
 mod prompt;
@@ -65,6 +67,17 @@ fn should_retry_empty_completion(
 const MAX_EMPTY_COMPLETION_RETRIES: usize = 2;
 const EMPTY_COMPLETION_RETRY_DELAY_MS: u64 = 250;
 const DYNAMIC_CONTEXT_KEY: &str = "dynamic_context";
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn runtime_sleep(duration: Duration) {
+    sleep(duration).await;
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn runtime_sleep(_duration: Duration) {
+    // `tokio::time` relies on `std::time::Instant`, which panics on
+    // wasm32-unknown-unknown in runtimes such as Cloudflare Workers.
+}
 
 pub struct AuwgentEngine {
     ir: AgentIR,

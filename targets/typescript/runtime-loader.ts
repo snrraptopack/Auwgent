@@ -71,7 +71,7 @@ export async function createNativeRuntime(irJson: string): Promise<AuwgentRuntim
         // Explicitly import the WASM module so Wrangler can bundle it
         // and we can pass it directly to the init function.
         const wasmBytes: any = await import('./wasm-runtime/auwgent_wasm_runtime_bg.wasm');
-        await mod.default(wasmBytes.default || wasmBytes);
+        await mod.default({ module_or_path: wasmBytes.default || wasmBytes });
     }
     return new mod.AuwgentWasm(irJson);
 }

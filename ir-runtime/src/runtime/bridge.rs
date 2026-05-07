@@ -9,7 +9,6 @@ use crate::runtime::engine::{
 use crate::types::AgentIR;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
-use std::time::Instant;
 
 /// EngineBridge provides a language-agnostic facade for the Auwgent engine.
 /// It encapsulates the Tokio runtime and engine state, reducing duplication
@@ -379,7 +378,15 @@ impl TimingProbe {
 }
 
 fn timing_enabled() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     std::env::var("AUWGENT_DEBUG_TIMING")
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
+    }
 }
