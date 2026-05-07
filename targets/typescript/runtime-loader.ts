@@ -62,9 +62,11 @@ export async function createNativeRuntime(irJson: string): Promise<AuwgentRuntim
         return new mod.Auwgent(irJson);
     }
 
-    const wasmDir = 'wasm-' + 'runtime';
-    const wasmFile = 'auwgent_' + 'wasm_runtime.js';
-    const mod = await browserDynamicImport(`./${wasmDir}/${wasmFile}`);
+    // Use a direct, statically-analyzable dynamic import here.
+    // Cloudflare Workers (Wrangler/esbuild) must be able to see this import
+    // at build time so it can bundle the WASM file into the worker.
+    const mod: any = await import('./wasm-runtime/auwgent_wasm_runtime.js');
+    
     if (typeof mod.default === 'function') {
         await mod.default();
     }
