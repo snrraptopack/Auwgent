@@ -1,7 +1,6 @@
 # @snrraptopack/auwgent-cli
 
 NPM wrapper for the native Auwgent CLI tools.
-
 ## Usage
 
 ```bash

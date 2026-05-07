@@ -16,6 +16,54 @@
         }
       ],
       "model_response": "(no response: model returned an empty completion)"
+    },
+    {
+      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "inputParts": [
+        {
+          "type": "text",
+          "text": "what is is in the image?"
+        },
+        {
+          "type": "image",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+          "mimeType": "image/jpeg",
+          "detail": "auto"
+        }
+      ],
+      "model_response": "(error: No driver configured for engine)"
+    },
+    {
+      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "inputParts": [
+        {
+          "type": "text",
+          "text": "what is is in the image?"
+        },
+        {
+          "type": "image",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+          "mimeType": "image/jpeg",
+          "detail": "auto"
+        }
+      ],
+      "model_response": "(request error: OpenAI API error (400 Bad Request): {\"error\":{\"message\":\"failed to retrieve media: received status code: 403\",\"type\":\"invalid_request_error\"}}\n)"
+    },
+    {
+      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "inputParts": [
+        {
+          "type": "text",
+          "text": "what is is in the image?"
+        },
+        {
+          "type": "image",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+          "mimeType": "image/jpeg",
+          "detail": "auto"
+        }
+      ],
+      "model_response": "(request error: OpenAI API error (400 Bad Request): {\"error\":{\"message\":\"failed to retrieve media: received status code: 403\",\"type\":\"invalid_request_error\"}}\n)"
     }
   ],
   "stack": [
@@ -23,7 +71,7 @@
   ],
   "initialInput": null,
   "bindingCursor": {
-    "turnIndex": 0,
+    "turnIndex": 3,
     "role": "user",
     "input": "[binding]\n@@user_name is \"Theo\"\n[/binding]"
   }

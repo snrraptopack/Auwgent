@@ -72,7 +72,7 @@ export class AuwgentBaseIntentHandler implements AuwgentIntentHandler {
  * API keys required for Auwgent
  */
 export type AuwgentApiKeys = {
-    geminiApiKey: string;
+    groqApiKey: string;
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity
