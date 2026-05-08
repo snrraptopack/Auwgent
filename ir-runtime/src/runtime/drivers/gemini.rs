@@ -1,9 +1,11 @@
-use crate::runtime::drivers::{ModelDriver, ModelEventStream};
-use crate::runtime::session::{Message, Role};
+use crate::runtime::drivers::{FinishReason, ModelDriver, ModelEvent, ModelEventStream, ModelMetadata, TokenUsage};
+use crate::runtime::session::{Message, MessageContent, Role};
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose};
 use futures_util::StreamExt;
 use reqwest::Client;
-use serde_json::{Value, json};
+use serde_json::Value;
+use serde_json::json;
 
 pub struct GeminiDriver {
     client: Client,
@@ -17,6 +19,40 @@ impl GeminiDriver {
             api_key,
         }
     }
+
+    async fn generate_content_once(
+        &self,
+        model: &str,
+        body: Value,
+    ) -> Result<ModelEventStream, String> {
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            model, self.api_key
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to send request to Gemini: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("Gemini API error ({}): {}", status, error_text));
+        }
+
+        let json_val: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+
+        Ok(Box::pin(futures_util::stream::iter(
+            gemini_response_events(&json_val).into_iter().map(Ok),
+        )))
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), async_trait)]
@@ -28,11 +64,6 @@ impl ModelDriver for GeminiDriver {
         messages: &[Message],
         config: Option<Value>,
     ) -> Result<ModelEventStream, String> {
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            model, self.api_key
-        );
-
         // ── Build request body from messages ──────────────────────────────
         let mut body = json!({});
         let body_obj = body.as_object_mut().expect("body is always an object");
@@ -45,34 +76,8 @@ impl ModelDriver for GeminiDriver {
             );
         }
 
-        // Build contents array from non-system messages
-        // Gemini expects alternating user/model roles
-        let contents: Vec<Value> = messages
-            .iter()
-            .filter(|m| m.role != Role::System)
-            .map(|m| {
-                match m.role {
-                    Role::User => json!({
-                        "role": "user",
-                        "parts": gemini_parts(m)
-                    }),
-                    Role::Model => json!({
-                        "role": "model",
-                        "parts": [{ "text": m.content.text() }]
-                    }),
-                    Role::ToolResult => json!({
-                        "role": "user",
-                        "parts": [{
-                            "functionResponse": {
-                                "name": "tool_result",
-                                "response": { "output": m.content.text() }
-                            }
-                        }]
-                    }),
-                    Role::System => unreachable!(), // filtered above
-                }
-            })
-            .collect();
+        // Build contents array from non-system messages.
+        let contents = gemini_contents(messages);
 
         body_obj.insert("contents".to_string(), json!(contents));
 
@@ -98,6 +103,15 @@ impl ModelDriver for GeminiDriver {
         }
 
         // ── Send request ──────────────────────────────────────────────────
+        if uses_non_streaming_generate_content(model) {
+            return self.generate_content_once(model, body).await;
+        }
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+            model, self.api_key
+        );
+
         let response = self
             .client
             .post(&url)
@@ -113,86 +127,28 @@ impl ModelDriver for GeminiDriver {
         }
 
         // ── SSE stream parsing ────────────────────────────────────────────
-        let mut buffer = String::new();
+        let mut buffer = Vec::<u8>::new();
         let stream = response
             .bytes_stream()
             .map(move |item| match item {
                 Ok(bytes) => {
-                    let chunk = String::from_utf8_lossy(&bytes);
-                    buffer.push_str(&chunk);
-                    eprintln!("[gemini][raw_sse] {:?}", chunk);
+                    buffer.extend_from_slice(&bytes);
+
 
                     let mut result_events = Vec::new();
-                    while let Some(index) = buffer.find('\n') {
-                        let line = buffer.drain(..=index).collect::<String>();
-                        let trimmed = line.trim();
+                    while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
+                        let line_bytes = buffer.drain(..=index).collect::<Vec<u8>>();
+                        let line = String::from_utf8(line_bytes)
+                            .map_err(|e| format!("Gemini stream contained invalid UTF-8: {}", e))?;
+                        let trimmed = line.trim_end_matches(['\r', '\n']).trim_start();
 
                         if let Some(data) = trimmed.strip_prefix("data: ")
                             && let Ok(json_val) = serde_json::from_str::<Value>(data)
                         {
-                            eprintln!("[gemini][parsed_event] {}", serde_json::to_string_pretty(&json_val).unwrap_or_default());
-                            if let Some(candidate) = json_val["candidates"].get(0) {
-                                for text in candidate_text_parts(candidate) {
-                                    eprintln!("[gemini][extracted_text] {:?}", text);
-                                    result_events.push(
-                                        crate::runtime::drivers::ModelEvent::ContentChunk(text),
-                                    );
-                                }
-
-                                if let Some(finish_reason_str) = candidate["finishReason"].as_str()
-                                {
-                                    let finish_reason = match finish_reason_str {
-                                        "STOP" => Some(crate::runtime::drivers::FinishReason::Stop),
-                                        "MAX_TOKENS" => {
-                                            Some(crate::runtime::drivers::FinishReason::Length)
-                                        }
-                                        "SAFETY" | "BLOCKLIST" => Some(
-                                            crate::runtime::drivers::FinishReason::ContentFilter,
-                                        ),
-                                        "OTHER" => {
-                                            Some(crate::runtime::drivers::FinishReason::Other(
-                                                finish_reason_str.to_string(),
-                                            ))
-                                        }
-                                        _ => Some(crate::runtime::drivers::FinishReason::Other(
-                                            finish_reason_str.to_string(),
-                                        )),
-                                    };
-
-                                    // Normally usage data is in the same JSON object as STOP
-                                    if let Some(usage) = json_val.get("usageMetadata") {
-                                        let prompt_tokens =
-                                            usage["promptTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let completion_tokens =
-                                            usage["candidatesTokenCount"].as_u64().unwrap_or(0)
-                                                as u32;
-                                        let total_tokens =
-                                            usage["totalTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let cached_tokens =
-                                            usage["cachedTokenCount"].as_u64().unwrap_or(0) as u32;
-                                        let reasoning_tokens =
-                                            usage["thoughtsTokenCount"].as_u64().unwrap_or(0)
-                                                as u32;
-
-                                        result_events.push(
-                                            crate::runtime::drivers::ModelEvent::Metadata(
-                                                crate::runtime::drivers::ModelMetadata {
-                                                    usage: crate::runtime::drivers::TokenUsage {
-                                                        prompt_tokens,
-                                                        completion_tokens,
-                                                        total_tokens,
-                                                        reasoning_tokens,
-                                                        cached_tokens,
-                                                    },
-                                                    finish_reason,
-                                                },
-                                            ),
-                                        );
-                                    }
-                                }
-                            } else if let Some(error) = json_val["error"].get("message") {
+                            if let Some(error) = json_val["error"].get("message") {
                                 return Err(format!("Gemini streaming error: {}", error));
                             }
+                            result_events.extend(gemini_response_events(&json_val));
                         }
                     }
                     Ok(result_events)
@@ -364,16 +320,7 @@ fn gemini_parts(message: &Message) -> Vec<Value> {
                     .or_else(|| part.get("ref"))
                     .and_then(Value::as_str)
                 {
-                    let mime = part
-                        .get("mimeType")
-                        .and_then(Value::as_str)
-                        .unwrap_or("application/octet-stream");
-                    out.push(json!({
-                        "file_data": {
-                            "mime_type": mime,
-                            "file_uri": file_uri
-                        }
-                    }));
+                    out.push(file_data_part(part, file_uri));
                 } else {
                     out.push(json!({ "text": format!("[{}: {}]", part_type, media_label(part)) }));
                 }
@@ -386,6 +333,133 @@ fn gemini_parts(message: &Message) -> Vec<Value> {
         vec![json!({ "text": message.content.text() })]
     } else {
         out
+    }
+}
+
+fn gemini_contents(messages: &[Message]) -> Vec<Value> {
+    let mut contents = Vec::new();
+    let mut last_role: Option<&'static str> = None;
+
+    for message in messages.iter().filter(|m| m.role != Role::System) {
+        let (role, parts) = match message.role {
+            Role::User => ("user", gemini_parts(message)),
+            Role::Model => (
+                "model",
+                vec![json!({ "text": model_text_or_ack(&message.content) })],
+            ),
+            Role::ToolResult => (
+                "user",
+                vec![json!({
+                    "functionResponse": {
+                        "name": "tool_result",
+                        "response": { "output": message.content.text() }
+                    }
+                })],
+            ),
+            Role::System => unreachable!(),
+        };
+
+        if role == "user" && last_role == Some("user") {
+            contents.push(json!({
+                "role": "model",
+                "parts": [{ "text": "Acknowledged." }]
+            }));
+        }
+
+        contents.push(json!({
+            "role": role,
+            "parts": parts
+        }));
+        last_role = Some(role);
+    }
+
+    contents
+}
+
+fn model_text_or_ack(content: &MessageContent) -> String {
+    let text = content.text();
+    if text.trim().is_empty() {
+        "Acknowledged.".to_string()
+    } else {
+        text
+    }
+}
+
+fn uses_non_streaming_generate_content(model: &str) -> bool {
+    let normalized = model.to_ascii_lowercase();
+    normalized.contains("-image") || normalized.contains("image-preview")
+}
+
+fn gemini_response_events(json_val: &Value) -> Vec<ModelEvent> {
+    let mut events = Vec::new();
+    let finish_reason = json_val["candidates"]
+        .get(0)
+        .and_then(|candidate| candidate["finishReason"].as_str())
+        .map(gemini_finish_reason);
+
+    if let Some(candidate) = json_val["candidates"].get(0) {
+        for text in candidate_text_parts(candidate) {
+            events.push(ModelEvent::ContentChunk(text));
+        }
+    }
+
+    for text in step_text_parts(json_val) {
+        events.push(ModelEvent::ContentChunk(text));
+    }
+
+    if let Some(usage) = json_val.get("usageMetadata") {
+        events.push(ModelEvent::Metadata(ModelMetadata {
+            usage: gemini_usage(usage),
+            finish_reason,
+        }));
+    } else if let Some(reason) = finish_reason {
+        events.push(ModelEvent::FinishReason(reason));
+    } else if let Some(error) = json_val["error"].get("message") {
+        events.push(ModelEvent::ContentChunk(format!(
+            "(error: {})",
+            error.as_str().unwrap_or("Gemini response error")
+        )));
+    }
+
+    events
+}
+
+fn step_text_parts(json_val: &Value) -> Vec<String> {
+    json_val["steps"]
+        .as_array()
+        .map(|steps| {
+            steps
+                .iter()
+                .filter_map(|step| {
+                    let step_type = step["type"].as_str();
+                    if matches!(step_type, Some("text" | "output_text" | "message")) {
+                        step["text"].as_str().map(ToString::to_string)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn gemini_finish_reason(reason: &str) -> FinishReason {
+    match reason {
+        "STOP" => FinishReason::Stop,
+        "MAX_TOKENS" => FinishReason::Length,
+        "SAFETY" | "BLOCKLIST" => FinishReason::ContentFilter,
+        "OTHER" => FinishReason::Other(reason.to_string()),
+        _ => FinishReason::Other(reason.to_string()),
+    }
+}
+
+fn gemini_usage(usage: &Value) -> TokenUsage {
+    TokenUsage {
+        prompt_tokens: usage["promptTokenCount"].as_u64().unwrap_or(0) as u32,
+        completion_tokens: usage["candidatesTokenCount"].as_u64().unwrap_or(0) as u32,
+        total_tokens: usage["totalTokenCount"].as_u64().unwrap_or(0) as u32,
+        reasoning_tokens: usage["thoughtsTokenCount"].as_u64().unwrap_or(0) as u32,
+        cached_tokens: usage["cachedTokenCount"].as_u64().unwrap_or(0) as u32,
     }
 }
 
@@ -411,7 +485,7 @@ fn inline_data_part(part: &Value) -> Option<Value> {
             part.get("encoding").and_then(Value::as_str),
             Some("utf8" | "utf-8")
         ) {
-            encode_base64(data.as_bytes())
+            general_purpose::STANDARD.encode(data.as_bytes())
         } else {
             data.to_string()
         };
@@ -429,11 +503,24 @@ fn inline_data_part(part: &Value) -> Option<Value> {
         return Some(json!({
             "inline_data": {
                 "mime_type": mime,
-                "data": encode_base64(&bytes)
+                "data": general_purpose::STANDARD.encode(&bytes)
             }
         }));
     }
     None
+}
+
+fn file_data_part(part: &Value, file_uri: &str) -> Value {
+    let mime = part
+        .get("mimeType")
+        .and_then(Value::as_str)
+        .unwrap_or("application/octet-stream");
+    json!({
+        "file_data": {
+            "mime_type": mime,
+            "file_uri": file_uri
+        }
+    })
 }
 
 fn media_label(part: &Value) -> String {
@@ -449,29 +536,6 @@ fn media_label(part: &Value) -> String {
     } else {
         "attached".to_string()
     }
-}
-
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = *chunk.get(1).unwrap_or(&0);
-        let b2 = *chunk.get(2).unwrap_or(&0);
-        out.push(TABLE[(b0 >> 2) as usize] as char);
-        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -540,6 +604,138 @@ mod tests {
                     "file_uri": "files/report_pdf"
                 }
             })]
+        );
+    }
+
+    #[test]
+    fn image_output_models_use_generate_content_response_path() {
+        assert!(uses_non_streaming_generate_content("gemini-2.5-flash-image"));
+        assert!(uses_non_streaming_generate_content("gemini-3-pro-image-preview"));
+        assert!(!uses_non_streaming_generate_content("gemini-3-flash-preview"));
+        assert!(!uses_non_streaming_generate_content("gemini-2.5-flash"));
+    }
+
+    #[test]
+    fn wraps_generate_content_response_as_model_events() {
+        let response = json!({
+            "candidates": [{
+                "content": {
+                    "parts": [
+                        { "text": "[response_text]ok[/response_text]" }
+                    ],
+                    "role": "model"
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 4,
+                "totalTokenCount": 14,
+                "thoughtsTokenCount": 2,
+                "cachedTokenCount": 1
+            }
+        });
+
+        let events = gemini_response_events(&response);
+        assert!(matches!(
+            &events[0],
+            ModelEvent::ContentChunk(text) if text == "[response_text]ok[/response_text]"
+        ));
+        assert!(matches!(
+            &events[1],
+            ModelEvent::Metadata(meta)
+                if meta.finish_reason == Some(FinishReason::Stop)
+                    && meta.usage.prompt_tokens == 10
+                    && meta.usage.completion_tokens == 4
+                    && meta.usage.reasoning_tokens == 2
+                    && meta.usage.cached_tokens == 1
+        ));
+    }
+
+    #[test]
+    fn emits_metadata_without_candidate_chunk() {
+        let response = json!({
+            "usageMetadata": {
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 0,
+                "totalTokenCount": 12,
+                "thoughtsTokenCount": 2
+            }
+        });
+
+        let events = gemini_response_events(&response);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            ModelEvent::Metadata(meta)
+                if meta.finish_reason.is_none()
+                    && meta.usage.prompt_tokens == 10
+                    && meta.usage.reasoning_tokens == 2
+        ));
+    }
+
+    #[test]
+    fn extracts_text_from_steps_response_shape() {
+        let response = json!({
+            "steps": [
+                { "type": "thinking", "thought": "internal reasoning" },
+                { "type": "text", "text": "[response_text]ok[/response_text]" }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 1,
+                "candidatesTokenCount": 1,
+                "totalTokenCount": 2
+            }
+        });
+
+        let events = gemini_response_events(&response);
+        assert!(matches!(
+            &events[0],
+            ModelEvent::ContentChunk(text) if text == "[response_text]ok[/response_text]"
+        ));
+        assert!(matches!(&events[1], ModelEvent::Metadata(_)));
+    }
+
+    #[test]
+    fn inserts_ack_between_consecutive_gemini_user_messages() {
+        let messages = vec![
+            Message::system("system"),
+            Message::user("[binding]\n@@name is \"Ada\"\n[/binding]"),
+            Message::user_parts(vec![
+                json!({ "type": "text", "text": "What is this?" }),
+                json!({
+                    "type": "image",
+                    "data": "aW1hZ2U=",
+                    "encoding": "base64",
+                    "mimeType": "image/png"
+                }),
+            ]),
+        ];
+
+        assert_eq!(
+            gemini_contents(&messages),
+            vec![
+                json!({
+                    "role": "user",
+                    "parts": [{ "text": "[binding]\n@@name is \"Ada\"\n[/binding]" }]
+                }),
+                json!({
+                    "role": "model",
+                    "parts": [{ "text": "Acknowledged." }]
+                }),
+                json!({
+                    "role": "user",
+                    "parts": [
+                        { "text": "What is this?" },
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": "aW1hZ2U="
+                            }
+                        }
+                    ]
+                })
+            ]
         );
     }
 

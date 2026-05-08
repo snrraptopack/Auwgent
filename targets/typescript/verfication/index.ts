@@ -56,7 +56,13 @@ agent.onIntent((intent, value, agentName) => {
 // const imgResp = await fetch("https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg");
 // const buffer = await imgResp.arrayBuffer();
 
-const session = await agent.run("hello")
+const session = await agent.run([
+  input.text("what is in the image?"),
+  input.image({
+    url: "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+    mimeType: "image/jpeg"
+  })
+])
 
 const lastTurn = session.turns.at(-1)
 

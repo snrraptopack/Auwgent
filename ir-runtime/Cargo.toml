@@ -13,6 +13,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "2.0"
 async-trait = "0.1"
+base64 = "0.22"
 futures-util = "0.3"
 function-parser = { path = "../function-parser" }
 auwgent-ir-schema = { path = "../auwgent-compiler/crates/auwgent-ir-schema" }

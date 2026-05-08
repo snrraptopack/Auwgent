@@ -5,7 +5,7 @@
       "defaultConfig": {
         "model": {
           "type": "gemini",
-          "modelName": "gemini-3-flash-preview",
+          "modelName": "gemini-2.5-flash-image",
           "config": null
         },
         "embedding": null,

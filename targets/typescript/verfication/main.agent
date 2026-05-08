@@ -1,5 +1,5 @@
 model Groq{
-    provider: gemini("gemini-3-flash-preview")
+    provider: gemini("gemini-2.5-flash-image")
 }
 
 prompt Simple(user_name:string){

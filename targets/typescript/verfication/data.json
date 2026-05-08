@@ -2,84 +2,19 @@
   "systemPrompt": "Be helpful and polite and understand the task\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- For actions: emit only action block(s) for that turn and stop. Wait for [result] before replying.\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [tool_call: name] key: value per line [/tool_call]\n- Values: string, number, boolean, null, [list of items], {object}\nTools:\n- get_user_marks // use this to get the marks of the user\n- get_location // use this to get the location of the user\n- get_secrete_number // use this to get secrete number\n- get_my_school // use this to get my school\n\nConstraints:\n- No response_text in the same response as action blocks.\n- Tool fields must match listed signatures.\n- For any @@symbol in the system prompt, resolve it from the latest [binding] block before using it.\n- Never output @@symbols in tool, workflow, helper, custom, schema, or response fields; output the resolved value.",
   "turns": [
     {
-      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "input": "what is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
       "inputParts": [
         {
           "type": "text",
-          "text": "what is is in the image?"
+          "text": "what is in the image?"
         },
         {
           "type": "image",
           "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
-          "mimeType": "image/jpeg",
-          "detail": "auto"
+          "mimeType": "image/jpeg"
         }
       ],
       "model_response": "(no response: model returned an empty completion)"
-    },
-    {
-      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
-      "inputParts": [
-        {
-          "type": "text",
-          "text": "what is is in the image?"
-        },
-        {
-          "type": "image",
-          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
-          "mimeType": "image/jpeg",
-          "detail": "auto"
-        }
-      ],
-      "model_response": "(no response: model returned an empty completion)"
-    },
-    {
-      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
-      "inputParts": [
-        {
-          "type": "text",
-          "text": "what is is in the image?"
-        },
-        {
-          "type": "image",
-          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
-          "mimeType": "image/jpeg",
-          "detail": "auto"
-        }
-      ],
-      "model_response": "(request error: Gemini API error (404 Not Found): {\n  \"error\": {\n    \"code\": 404,\n    \"message\": \"models/gemini-3.0-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.\",\n    \"status\": \"NOT_FOUND\"\n  }\n}\n)"
-    },
-    {
-      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
-      "inputParts": [
-        {
-          "type": "text",
-          "text": "what is is in the image?"
-        },
-        {
-          "type": "image",
-          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
-          "mimeType": "image/jpeg",
-          "detail": "auto"
-        }
-      ],
-      "model_response": "(request error: Gemini API error (404 Not Found): {\n  \"error\": {\n    \"code\": 404,\n    \"message\": \"models/gemini-3-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.\",\n    \"status\": \"NOT_FOUND\"\n  }\n}\n)"
-    },
-    {
-      "input": "what is is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
-      "inputParts": [
-        {
-          "type": "text",
-          "text": "what is is in the image?"
-        },
-        {
-          "type": "image",
-          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
-          "mimeType": "image/jpeg",
-          "detail": "auto"
-        }
-      ],
-      "model_response": "(no response: finish reason = MALFORMED_RESPONSE)"
     }
   ],
   "stack": [
@@ -87,7 +22,7 @@
   ],
   "initialInput": null,
   "bindingCursor": {
-    "turnIndex": 4,
+    "turnIndex": 0,
     "role": "user",
     "input": "[binding]\n@@user_name is \"Theo\"\n[/binding]"
   }

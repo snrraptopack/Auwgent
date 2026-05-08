@@ -1,5 +1,197 @@
 PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication> bun run index
-[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\",\"thoughtSignature\": \"EjUKMwEMOdbHilS4Akm+ruScgTgfDmcrPDCczEz3VaDyU9QOCpREeWY/te+cO9Byd/DzjQYRUg==\"}],\"role\": \"model\"},\"finishReason\": \"MALFORMED_RESPONSE\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 5984,\"totalTokenCount\": 5985,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 559},{\"modality\": \"IMAGE\",\"tokenCount\": 5425}],\"thoughtsTokenCount\": 1,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"Wur7adzLIKW2kdUP64LoyA8\"}\r\n\r\n"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\\n\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 1,\"totalTokenCount\": 315,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "\n"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 1,
+    "totalTokenCount": 315,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] "\n"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"[response_text]\\n\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 7,\"totalTokenCount\": 456,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "[response_text]\n"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 7,
+    "totalTokenCount": 456,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "thoughtsTokenCount": 135,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] "[response_text]\n"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"The image shows a detailed top-down view of a **microchip die** (integrated circuit). \\n\\nIt features highly\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 32,\"totalTokenCount\": 481,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "The image shows a detailed top-down view of a **microchip die** (integrated circuit). \n\nIt features highly"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 32,
+    "totalTokenCount": 481,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "thoughtsTokenCount": 135,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] "The image shows a detailed top-down view of a **microchip die** (integrated circuit). \n\nIt features highly"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \" complex and repetitive patterns characteristic of modern high-performance processors, likely a GPU or a many-core CPU. The grid\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 56,\"totalTokenCount\": 505,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": " complex and repetitive patterns characteristic of modern high-performance processors, likely a GPU or a many-core CPU. The grid"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 56,
+    "totalTokenCount": 505,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "thoughtsTokenCount": 135,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] " complex and repetitive patterns characteristic of modern high-performance processors, likely a GPU or a many-core CPU. The grid"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"-like structures represent different functional units such as cores, cache, and memory controllers etched onto a silicon wafer. This specific layout is often\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 83,\"totalTokenCount\": 532,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "-like structures represent different functional units such as cores, cache, and memory controllers etched onto a silicon wafer. This specific layout is often"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 83,
+    "totalTokenCount": 532,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "thoughtsTokenCount": 135,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] "-like structures represent different functional units such as cores, cache, and memory controllers etched onto a silicon wafer. This specific layout is often"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \" associated with advanced architectures like Intel's \\\"Ponte Vecchio\\\" compute tiles.\\n[/response_text]\"}],\"role\": \"model\"},\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 314,\"candidatesTokenCount\": 106,\"totalTokenCount\": 555,\"promptTokensDetails\": [{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVersion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
+[gemini][parsed_event] {
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": " associated with advanced architectures like Intel's \"Ponte Vecchio\" compute tiles.\n[/response_text]"
+          }
+        ],
+        "role": "model"
+      },
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 314,
+    "candidatesTokenCount": 106,
+    "totalTokenCount": 555,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 314
+      }
+    ],
+    "thoughtsTokenCount": 135,
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3-flash-preview",
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
+}
+[gemini][extracted_text] " associated with advanced architectures like Intel's \"Ponte Vecchio\" compute tiles.\n[/response_text]"
+[gemini][raw_sse] "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"\",\"thoughtSignature\": \"EtgFCtUFAQw51sfHfg6KEOC2GcMxexUi0Lh7GIIuMykG0zxOVKtFziMQ0PC6jedqHr2ZoakEqLamRrQuSofNHlY/L5BaNj8ke7cuUNasRD2TFbGnd7lS1SpBtEEBnMitkOppIQNoVhMZn1Nt3mWYXAwCSxFIDYzIpcSL/q5kokVlt36OdgJIeGmEkulRTivgOF0slLGb0tzAfsL0ZvXHm9NKrHUlZ9HI8Wb/4Eh+PM9RIyc0iAaj0vcuZ+zjTZZVCqn83KU3oAAlpb9sTE1zG1Z5VY75eQ/cJxyRSlkpaFQBzyAlBicEDxMRwjIqYR3LJB5J8T/W1Ug9xTsfyC3jUF/T5VPis3+yRMWD8nwlhBXNOjAUsJCyWk5Mu0QcaAqMOuoTZEplsZ8bAuFCZCGXsyWWgZH1gzgD9G/kD8e1BPFhnQXkN5kCHdFd861yoJsd3LEVLGIeUD+8xq3GO/F03Wz28B2+ibjWd5l6YgaNP4Mgq/lrwkeqG7dvnz5pj9/DzXDw07rAXLQlmeezRUoHpM0ZtPM+rrfxw6YXsUKmtR36CTESewyLgJDcGYoqCx3bfo1OZ4vR1RoFEd2zcgpX6wVl9/wd7xlomO6MiMCFMEss2mTLhRvLvNeh3BBx3jwZQbbA4tZMgbemVUn4P5/EhitKRZ7nvZb27oRqMxVBCI0BOV8Dsam/fFwHqPgYm5I6d8JOCupB0Ib4jwK3nweOLnKXVK9R7k7+WhsGPTh9jf4VW8v3brsHkLLBy6fxTRWGDfcw7PFKeBV/W0uzWehopZp4lhzvDt59FIyaduP42PNcP3ul3GiiK+E4RVy0qlNPv/DMar/w9eQk68ZVp6d5MZeehZ3IB9l1rnTy2/xSU07oALVn90huZ21XYAr2ZEI1QuMCpQoaSIjHjWxbT+E7t8AFwAky581lUFo3587fXcwG83zL+oAhEGNpkie1SCJmkj25F9VUb4Grqv4=\"}],\"role\": \"model\"},\"finishReason\": \"STOP\",\"index\": 0}],\"usageMetadata\": {\"promptTokenCount\": 1399,\"candidatesTokenCount\": 106,\"totalTokenCount\": 1640,\"promptTokensDetails\": [{\"modality\": \"IMAGE\",\"tokenCount\": 1085},{\"modality\": \"TEXT\",\"tokenCount\": 314}],\"thoughtsTokenCount\": 135,\"serviceTier\": \"standard\"},\"modelVer"
+[gemini][raw_sse] "sion\": \"gemini-3-flash-preview\",\"responseId\": \"c0H9afCoHfCtvdIPzfLqyQM\"}\r\n\r\n"
 [gemini][parsed_event] {
   "candidates": [
     {
@@ -7,58 +199,92 @@ PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication> bun
         "parts": [
           {
             "text": "",
-            "thoughtSignature": "EjUKMwEMOdbHilS4Akm+ruScgTgfDmcrPDCczEz3VaDyU9QOCpREeWY/te+cO9Byd/DzjQYRUg=="
+            "thoughtSignature": "EtgFCtUFAQw51sfHfg6KEOC2GcMxexUi0Lh7GIIuMykG0zxOVKtFziMQ0PC6jedqHr2ZoakEqLamRrQuSofNHlY/L5BaNj8ke7cuUNasRD2TFbGnd7lS1SpBtEEBnMitkOppIQNoVhMZn1Nt3mWYXAwCSxFIDYzIpcSL/q5kokVlt36OdgJIeGmEkulRTivgOF0slLGb0tzAfsL0ZvXHm9NKrHUlZ9HI8Wb/4Eh+PM9RIyc0iAaj0vcuZ+zjTZZVCqn83KU3oAAlpb9sTE1zG1Z5VY75eQ/cJxyRSlkpaFQBzyAlBicEDxMRwjIqYR3LJB5J8T/W1Ug9xTsfyC3jUF/T5VPis3+yRMWD8nwlhBXNOjAUsJCyWk5Mu0QcaAqMOuoTZEplsZ8bAuFCZCGXsyWWgZH1gzgD9G/kD8e1BPFhnQXkN5kCHdFd861yoJsd3LEVLGIeUD+8xq3GO/F03Wz28B2+ibjWd5l6YgaNP4Mgq/lrwkeqG7dvnz5pj9/DzXDw07rAXLQlmeezRUoHpM0ZtPM+rrfxw6YXsUKmtR36CTESewyLgJDcGYoqCx3bfo1OZ4vR1RoFEd2zcgpX6wVl9/wd7xlomO6MiMCFMEss2mTLhRvLvNeh3BBx3jwZQbbA4tZMgbemVUn4P5/EhitKRZ7nvZb27oRqMxVBCI0BOV8Dsam/fFwHqPgYm5I6d8JOCupB0Ib4jwK3nweOLnKXVK9R7k7+WhsGPTh9jf4VW8v3brsHkLLBy6fxTRWGDfcw7PFKeBV/W0uzWehopZp4lhzvDt59FIyaduP42PNcP3ul3GiiK+E4RVy0qlNPv/DMar/w9eQk68ZVp6d5MZeehZ3IB9l1rnTy2/xSU07oALVn90huZ21XYAr2ZEI1QuMCpQoaSIjHjWxbT+E7t8AFwAky581lUFo3587fXcwG83zL+oAhEGNpkie1SCJmkj25F9VUb4Grqv4="
           }
         ],
         "role": "model"
       },
-      "finishReason": "MALFORMED_RESPONSE",
+      "finishReason": "STOP",
       "index": 0
     }
   ],
   "usageMetadata": {
-    "promptTokenCount": 5984,
-    "totalTokenCount": 5985,
+    "promptTokenCount": 1399,
+    "candidatesTokenCount": 106,
+    "totalTokenCount": 1640,
     "promptTokensDetails": [
       {
-        "modality": "TEXT",
-        "tokenCount": 559
+        "modality": "IMAGE",
+        "tokenCount": 1085
       },
       {
-        "modality": "IMAGE",
-        "tokenCount": 5425
+        "modality": "TEXT",
+        "tokenCount": 314
       }
     ],
-    "thoughtsTokenCount": 1,
+    "thoughtsTokenCount": 135,
     "serviceTier": "standard"
   },
   "modelVersion": "gemini-3-flash-preview",
-  "responseId": "Wur7adzLIKW2kdUP64LoyA8"
+  "responseId": "c0H9afCoHfCtvdIPzfLqyQM"
 }
 [gemini][extracted_text] ""
+The image shows a detailed top-down view of a **microchip die** (integrated circuit).
+
+It features highly complex and repetitive patterns characteristic of modern high-performance processors, likely a GPU or a many-core CPU. The grid-like structures represent different functional units such as cores, cache, and memory controllers etched onto a silicon wafer. This specific layout is often associated with advanced architectures like Intel's "Ponte Vecchio" compute tiles.
 {
   "aggregate": {
-    "prompt_tokens": 5984,
-    "completion_tokens": 0,
-    "total_tokens": 5985,
-    "reasoning_tokens": 1,
+    "prompt_tokens": 1399,
+    "completion_tokens": 106,
+    "total_tokens": 1640,
+    "reasoning_tokens": 135,
     "cached_tokens": 0
   },
   "turns": [
     {
       "turn_index": 0,
       "usage": {
-        "prompt_tokens": 5984,
-        "completion_tokens": 0,
-        "total_tokens": 5985,
-        "reasoning_tokens": 1,
+        "prompt_tokens": 1399,
+        "completion_tokens": 106,
+        "total_tokens": 1640,
+        "reasoning_tokens": 135,
         "cached_tokens": 0
       },
-      "finish_reason": {
-        "other": "MALFORMED_RESPONSE"
-      },
+      "finish_reason": "stop",
       "model": "gemini-3-flash-preview"
     }
   ]
 }
 PS C:\Users\babyface\Desktop\auwgent\Auwgent\targets\typescript\verfication>
+
+and here is the first data.json for the gemini 3.1
+
+{
+  "systemPrompt": "Be helpful and polite and understand the task\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- For actions: emit only action block(s) for that turn and stop. Wait for [result] before replying.\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [tool_call: name] key: value per line [/tool_call]\n- Values: string, number, boolean, null, [list of items], {object}\nTools:\n- get_user_marks // use this to get the marks of the user\n- get_location // use this to get the location of the user\n- get_secrete_number // use this to get secrete number\n- get_my_school // use this to get my school\n\nConstraints:\n- No response_text in the same response as action blocks.\n- Tool fields must match listed signatures.\n- For any @@symbol in the system prompt, resolve it from the latest [binding] block before using it.\n- Never output @@symbols in tool, workflow, helper, custom, schema, or response fields; output the resolved value.",
+  "turns": [
+    {
+      "input": "what is in the image?\n[image: https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg]",
+      "inputParts": [
+        {
+          "type": "text",
+          "text": "what is in the image?"
+        },
+        {
+          "type": "image",
+          "url": "https://upload.wikimedia.org/wikipedia/commons/f/f2/LPU-v1-die.jpg",
+          "mimeType": "image/jpeg"
+        }
+      ],
+      "model_response": "[response_text]\nThe image shows a detailed top-down view of a **microchip die** (integrated circuit). \n\nIt features highly complex and repetitive patterns characteristic of modern high-performance processors, likely a GPU or a many-core CPU. The grid-like structures represent different functional units such as cores, cache, and memory controllers etched onto a silicon wafer. This specific layout is often associated with advanced architectures like Intel's \"Ponte Vecchio\" compute tiles.\n[/response_text]"
+    }
+  ],
+  "stack": [
+    "Asisstant"
+  ],
+  "initialInput": null,
+  "bindingCursor": {
+    "turnIndex": 0,
+    "role": "user",
+    "input": "[binding]\n@@user_name is \"Theo\"\n[/binding]"
+  }
+}

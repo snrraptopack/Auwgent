@@ -1,6 +1,7 @@
 use crate::runtime::drivers::{ModelDriver, ModelEventStream};
 use crate::runtime::session::{Message, Role};
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{Value, json};
@@ -111,18 +112,19 @@ impl ModelDriver for OpenAIDriver {
         }
 
         // ── SSE stream parsing ────────────────────────────────────────────
-        let mut buffer = String::new();
+        let mut buffer = Vec::<u8>::new();
         let stream = response
             .bytes_stream()
             .map(move |item| match item {
                 Ok(bytes) => {
-                    let chunk = String::from_utf8_lossy(&bytes);
-                    buffer.push_str(&chunk);
+                    buffer.extend_from_slice(&bytes);
 
                     let mut result_events = Vec::new();
-                    while let Some(index) = buffer.find('\n') {
-                        let line = buffer.drain(..=index).collect::<String>();
-                        let trimmed = line.trim();
+                    while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
+                        let line_bytes = buffer.drain(..=index).collect::<Vec<u8>>();
+                        let line = String::from_utf8(line_bytes)
+                            .map_err(|e| format!("OpenAI stream contained invalid UTF-8: {}", e))?;
+                        let trimmed = line.trim_end_matches(['\r', '\n']).trim_start();
 
                         if trimmed == "data: [DONE]" {
                             continue;
@@ -430,7 +432,10 @@ fn media_url(part: &Value) -> Option<String> {
             part.get("encoding").and_then(Value::as_str),
             Some("utf8" | "utf-8")
         ) {
-            return Some(format!("data:{mime};base64,{}", encode_base64(data.as_bytes())));
+            return Some(format!(
+                "data:{mime};base64,{}",
+                general_purpose::STANDARD.encode(data.as_bytes())
+            ));
         }
         return Some(format!("data:{mime};base64,{data}"));
     }
@@ -442,7 +447,10 @@ fn media_url(part: &Value) -> Option<String> {
             .get("mimeType")
             .and_then(Value::as_str)
             .unwrap_or("application/octet-stream");
-        return Some(format!("data:{mime};base64,{}", encode_base64(&bytes)));
+        return Some(format!(
+            "data:{mime};base64,{}",
+            general_purpose::STANDARD.encode(&bytes)
+        ));
     }
     None
 }
@@ -460,29 +468,6 @@ fn media_label(part: &Value) -> String {
     } else {
         "attached".to_string()
     }
-}
-
-fn encode_base64(bytes: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = *chunk.get(1).unwrap_or(&0);
-        let b2 = *chunk.get(2).unwrap_or(&0);
-        out.push(TABLE[(b0 >> 2) as usize] as char);
-        out.push(TABLE[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(TABLE[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(TABLE[(b2 & 0b0011_1111) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
 }
 
 #[cfg(test)]
