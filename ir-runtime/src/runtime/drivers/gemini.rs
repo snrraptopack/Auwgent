@@ -1,4 +1,6 @@
-use crate::runtime::drivers::{FinishReason, ModelDriver, ModelEvent, ModelEventStream, ModelMetadata, TokenUsage};
+use crate::runtime::drivers::{
+    FinishReason, ModelDriver, ModelEvent, ModelEventStream, ModelMetadata, TokenUsage,
+};
 use crate::runtime::session::{Message, MessageContent, Role};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose};
@@ -49,6 +51,11 @@ impl GeminiDriver {
             .await
             .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
 
+        println!(
+            "RAW GEMINI UNARY RESPONSE: {}",
+            serde_json::to_string_pretty(&json_val).unwrap()
+        );
+
         Ok(Box::pin(futures_util::stream::iter(
             gemini_response_events(&json_val).into_iter().map(Ok),
         )))
@@ -69,6 +76,9 @@ impl ModelDriver for GeminiDriver {
         let body_obj = body.as_object_mut().expect("body is always an object");
 
         // Extract system instruction (first System message, if any)
+        // turn this on later
+        // once removed the sys_msg to test of the gemini-2.5-flash-image model still had
+        // no response...
         if let Some(sys_msg) = messages.iter().find(|m| m.role == Role::System) {
             body_obj.insert(
                 "system_instruction".to_string(),
@@ -83,25 +93,24 @@ impl ModelDriver for GeminiDriver {
 
         // ── Generation config ─────────────────────────────────────────────
         if let Some(cfg) = config {
-            let mut gen_config = serde_json::Map::new();
-            for key in &[
-                "temperature",
-                "topP",
-                "topK",
-                "stopSequences",
-                "thinkingConfig",
-                "maxOutputTokens",
-                "responseMimeType",
-            ] {
-                if let Some(val) = cfg.get(*key) {
-                    gen_config.insert(key.to_string(), val.clone());
+            if let Some(cfg_object) = cfg.as_object() {
+                let mut gen_config = serde_json::Map::new();
+
+                for (key, value) in cfg_object {
+                    if matches!(
+                        key.as_str(),
+                        "model" | "contents" | "systemInstruction" | "tools" | "toolConfig"
+                    ) {
+                        continue;
+                    }
+                    gen_config.insert(key.clone(), value.clone());
+                }
+
+                if (!gen_config.is_empty()) {
+                    body_obj.insert("generationConfig".to_string(), Value::Object(gen_config));
                 }
             }
-            if !gen_config.is_empty() {
-                body_obj.insert("generationConfig".to_string(), Value::Object(gen_config));
-            }
         }
-
         // ── Send request ──────────────────────────────────────────────────
         if uses_non_streaming_generate_content(model) {
             return self.generate_content_once(model, body).await;
@@ -133,7 +142,6 @@ impl ModelDriver for GeminiDriver {
             .map(move |item| match item {
                 Ok(bytes) => {
                     buffer.extend_from_slice(&bytes);
-
 
                     let mut result_events = Vec::new();
                     while let Some(index) = buffer.iter().position(|byte| *byte == b'\n') {
@@ -609,9 +617,15 @@ mod tests {
 
     #[test]
     fn image_output_models_use_generate_content_response_path() {
-        assert!(uses_non_streaming_generate_content("gemini-2.5-flash-image"));
-        assert!(uses_non_streaming_generate_content("gemini-3-pro-image-preview"));
-        assert!(!uses_non_streaming_generate_content("gemini-3-flash-preview"));
+        assert!(uses_non_streaming_generate_content(
+            "gemini-2.5-flash-image"
+        ));
+        assert!(uses_non_streaming_generate_content(
+            "gemini-3-pro-image-preview"
+        ));
+        assert!(!uses_non_streaming_generate_content(
+            "gemini-3-flash-preview"
+        ));
         assert!(!uses_non_streaming_generate_content("gemini-2.5-flash"));
     }
 
