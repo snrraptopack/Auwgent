@@ -1,30 +1,19 @@
-model Groq{
-    provider: gemini("gemini-2.5-flash-image")
+
+type Project{
+     project_name: string
+     tasks: {
+         title: string
+         priority: "low" | "medium" | "high"
+         completed?: boolean
+     }[]
 }
 
-prompt Simple(user_name:string){
-
-    """
-       Be helpful and polite and understand the task
-    """
-}
-
-agent Asisstant{
+agent TestProject{
     default config{
-        model:Groq
-        prompt: Simple(ctx.user_name)
+        model: groq("llama-3.3-70b-versatile",{
+             temperature: 0
+        })
+        prompt: "Be polite and concise"
     }
-
-    context {
-        user_name:string,
-    }
-
-    input: Image | File
-
-    tools {
-        get_user_marks(id:number):string[] @desc "use this to get the marks of the user"
-        get_location(id:number @desc "for description"):string @desc "use this to get the location of the user"
-        get_secrete_number():string @desc "use this to get secrete number"
-        get_my_school():string @desc "use this to get my school"
-    }
+    output: Project
 }

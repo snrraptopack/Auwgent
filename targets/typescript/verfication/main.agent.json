@@ -1,104 +1,116 @@
 {
-  "name": "Asisstant",
+  "name": "TestProject",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash-image",
-          "config": null
+          "type": "groq",
+          "modelName": "llama-3.3-70b-versatile",
+          "config": {
+            "type": "object",
+            "value": {
+              "temperature": {
+                "type": "literal",
+                "value": 0.0
+              }
+            }
+          }
         },
         "embedding": null,
         "prompt": {
-          "type": "promptRef",
-          "name": "Simple",
-          "params": [
-            "user_name"
-          ],
-          "args": [
-            {
-              "type": "contextRef",
-              "property": "user_name"
-            }
-          ],
-          "value": [
-            {
-              "type": "template",
-              "value": [
-                {
-                  "type": "literal",
-                  "value": "\r\n       Be helpful and polite and understand the task\r\n    "
-                }
-              ]
-            }
-          ]
+          "value": "Be polite and concise",
+          "type": "literal"
         }
       },
       "namedConfig": []
     }
   ],
-  "input": {
-    "type": "union",
-    "options": [
-      "image",
-      "file"
-    ]
-  },
-  "output": null,
-  "context": {
-    "user_name": {
+  "input": null,
+  "output": {
+    "project_name": {
       "type": "string",
+      "optional": false
+    },
+    "tasks": {
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": {
+              "type": "string",
+              "optional": false
+            },
+            "priority": {
+              "type": {
+                "type": "union",
+                "options": [
+                  "low",
+                  "medium",
+                  "high"
+                ]
+              },
+              "optional": false
+            },
+            "completed": {
+              "type": "boolean",
+              "optional": true
+            }
+          }
+        }
+      },
       "optional": false
     }
   },
-  "tools": [
-    {
-      "name": "get_user_marks",
-      "description": "use this to get the marks of the user",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false
-        }
-      },
-      "returns": {
-        "type": "array",
-        "items": "string"
-      },
-      "examples": []
-    },
-    {
-      "name": "get_location",
-      "description": "use this to get the location of the user",
-      "params": {
-        "id": {
-          "type": "number",
-          "optional": false,
-          "description": "for description"
-        }
-      },
-      "returns": "string",
-      "examples": []
-    },
-    {
-      "name": "get_secrete_number",
-      "description": "use this to get secrete number",
-      "params": {},
-      "returns": "string",
-      "examples": []
-    },
-    {
-      "name": "get_my_school",
-      "description": "use this to get my school",
-      "params": {},
-      "returns": "string",
-      "examples": []
-    }
-  ],
+  "context": null,
+  "tools": [],
   "workflows": [],
   "helpers": [],
   "components": [],
-  "types": null,
+  "types": {
+    "Project": {
+      "isOutput": false,
+      "properties": {
+        "tasks": {
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "optional": false
+                },
+                "priority": {
+                  "type": {
+                    "type": "union",
+                    "options": [
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  },
+                  "optional": false
+                },
+                "completed": {
+                  "type": "boolean",
+                  "optional": true
+                }
+              }
+            }
+          },
+          "optional": false,
+          "description": null
+        },
+        "project_name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        }
+      },
+      "@examples": []
+    }
+  },
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],
