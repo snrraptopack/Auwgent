@@ -22,8 +22,8 @@ export type FileInput = MediaSource & { mimeType?: string; name?: string };
 export type AudioInput = MediaSource & { mimeType?: string; transcript?: string };
 export type VideoInput = MediaSource & { mimeType?: string; transcript?: string; sampledFrames?: ImagePart[] };
 export type Project = {
-    tasks: { title: string; priority: "low" | "medium" | "high"; completed: boolean }[];
     project_name: string;
+    tasks: { title: string; priority: "low" | "medium" | "high"; completed: boolean }[];
 }
 export type Input = string
 

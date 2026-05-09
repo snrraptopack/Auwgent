@@ -122,6 +122,39 @@ fn test_out_to_response_schema_with_dash_prefixed_inline_object_array() {
 }
 
 #[test]
+fn test_out_to_response_schema_with_dash_prefixed_multiline_nested_object_array() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("response_schema");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[schema: Output]\ncompany_departments:\n  - {\n      dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n        - { name: Bob, role: Backend Engineer, salary: null }\n    }\n  - {\n      dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }\ncompany_name: SnrRaptoPack\n[/schema]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "response_schema");
+    assert_eq!(results[0].1["response"]["company_name"], "SnrRaptoPack");
+    assert_eq!(results[0].1["response"]["company_departments"][0]["dept_name"], "Engineering");
+    assert_eq!(
+        results[0].1["response"]["company_departments"][0]["employees"][0]["role"],
+        "Lead Developer"
+    );
+    assert_eq!(
+        results[0].1["response"]["company_departments"][0]["employees"][1]["salary"],
+        serde_json::Value::Null
+    );
+    assert_eq!(results[0].1["response"]["company_departments"][1]["dept_name"], "Design");
+}
+
+#[test]
 fn test_workflow_to_workflow_call() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("workflow_call");

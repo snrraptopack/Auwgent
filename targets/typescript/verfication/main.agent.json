@@ -71,6 +71,11 @@
     "Project": {
       "isOutput": false,
       "properties": {
+        "project_name": {
+          "type": "string",
+          "optional": false,
+          "description": null
+        },
         "tasks": {
           "type": {
             "type": "array",
@@ -99,11 +104,6 @@
               }
             }
           },
-          "optional": false,
-          "description": null
-        },
-        "project_name": {
-          "type": "string",
           "optional": false,
           "description": null
         }

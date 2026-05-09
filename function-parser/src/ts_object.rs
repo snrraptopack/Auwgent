@@ -257,7 +257,7 @@ fn parse_indented_array(
         let value = if remainder.is_empty() {
             parse_nested_value(lines, index, current_indent)?
         } else if remainder.starts_with('{') || remainder.starts_with('[') {
-            parse_ts_object(remainder)?
+            parse_dash_prefixed_structured_value(lines, index, current_indent, remainder)?
         } else if let Some((key, value_text)) = split_key_value(remainder) {
             let mut object = HashMap::new();
             let first_value = if value_text.is_empty() {
@@ -284,6 +284,65 @@ fn parse_indented_array(
     }
 
     Ok(items)
+}
+
+fn parse_dash_prefixed_structured_value(
+    lines: &[IndentedLine],
+    index: &mut usize,
+    parent_indent: usize,
+    remainder: &str,
+) -> Result<ASTValue, String> {
+    if *index >= lines.len() || lines[*index].indent <= parent_indent {
+        return parse_ts_object(remainder);
+    }
+
+    let trimmed = remainder.trim();
+    if trimmed.starts_with('{') {
+        let mut object = parse_inline_object_prefix(trimmed)?;
+        let object_indent = lines[*index].indent;
+        let nested_object = parse_indented_object(lines, index, object_indent)?;
+        object.extend(nested_object);
+        consume_structured_closer(lines, index, parent_indent, "}");
+        return Ok(ASTValue::Object(object));
+    }
+
+    if trimmed == "[" {
+        let array_indent = lines[*index].indent;
+        let array = parse_indented_array(lines, index, array_indent)?;
+        consume_structured_closer(lines, index, parent_indent, "]");
+        return Ok(ASTValue::Array(array));
+    }
+
+    parse_ts_object(remainder)
+}
+
+fn parse_inline_object_prefix(prefix: &str) -> Result<HashMap<String, ASTValue>, String> {
+    let inner = prefix
+        .trim()
+        .trim_start_matches('{')
+        .trim()
+        .trim_end_matches('}')
+        .trim();
+
+    if inner.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    match parse_ts_object(&format!("{{{}}}", inner))? {
+        ASTValue::Object(object) => Ok(object),
+        _ => Err("Expected inline object prefix".to_string()),
+    }
+}
+
+fn consume_structured_closer(
+    lines: &[IndentedLine],
+    index: &mut usize,
+    parent_indent: usize,
+    closer: &str,
+) {
+    if *index < lines.len() && lines[*index].indent > parent_indent && lines[*index].text == closer {
+        *index += 1;
+    }
 }
 
 fn split_key_value(text: &str) -> Option<(String, String)> {
@@ -732,6 +791,77 @@ mod tests {
         } else {
             panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
         }
+    }
+
+    #[test]
+    fn test_assignment_object_dash_prefixed_multiline_object_array() {
+        let input = "company_departments:\n  - {\n      dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n        - { name: Bob, role: Backend Engineer, salary: null }\n    }\n  - {\n      dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }\ncompany_name: SnrRaptoPack";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
+        let obj = result.unwrap();
+
+        assert_eq!(
+            obj.get("company_name"),
+            Some(&ASTValue::String("SnrRaptoPack".to_string()))
+        );
+
+        let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
+            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+        };
+        assert_eq!(depts.len(), 2);
+
+        let ASTValue::Object(engineering) = &depts[0] else {
+            panic!("first department should be an object, got {:?}", depts[0]);
+        };
+        assert_eq!(
+            engineering.get("dept_name"),
+            Some(&ASTValue::String("Engineering".to_string()))
+        );
+
+        let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
+            panic!("employees should be an array, got {:?}", engineering.get("employees"));
+        };
+        assert_eq!(employees.len(), 2);
+
+        let ASTValue::Object(alice) = &employees[0] else {
+            panic!("first employee should be an object, got {:?}", employees[0]);
+        };
+        assert_eq!(alice.get("name"), Some(&ASTValue::String("Alice".to_string())));
+        assert_eq!(
+            alice.get("role"),
+            Some(&ASTValue::String("Lead Developer".to_string()))
+        );
+        assert_eq!(alice.get("salary"), Some(&ASTValue::Number(95000.0)));
+
+        let ASTValue::Object(bob) = &employees[1] else {
+            panic!("second employee should be an object, got {:?}", employees[1]);
+        };
+        assert_eq!(bob.get("salary"), Some(&ASTValue::Null));
+    }
+
+    #[test]
+    fn test_assignment_object_dash_prefixed_object_with_inline_prefix_and_nested_fields() {
+        let input = "company_departments:\n  - { dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n    }\n  - { dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
+        let obj = result.unwrap();
+
+        let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
+            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+        };
+
+        let ASTValue::Object(engineering) = &depts[0] else {
+            panic!("first department should be an object, got {:?}", depts[0]);
+        };
+        assert_eq!(
+            engineering.get("dept_name"),
+            Some(&ASTValue::String("Engineering".to_string()))
+        );
+
+        let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
+            panic!("employees should be an array, got {:?}", engineering.get("employees"));
+        };
+        assert_eq!(employees.len(), 1);
     }
 
     #[test]
