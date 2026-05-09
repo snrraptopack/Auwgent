@@ -55,7 +55,12 @@
     {
       "name": "get_user_marks",
       "description": "use this to get the marks of the user",
-      "params": {},
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false
+        }
+      },
       "returns": {
         "type": "array",
         "items": "string"
@@ -65,7 +70,13 @@
     {
       "name": "get_location",
       "description": "use this to get the location of the user",
-      "params": {},
+      "params": {
+        "id": {
+          "type": "number",
+          "optional": false,
+          "description": "for description"
+        }
+      },
       "returns": "string",
       "examples": []
     },

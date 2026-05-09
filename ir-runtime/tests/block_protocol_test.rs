@@ -93,6 +93,35 @@ fn test_out_to_response_schema() {
 }
 
 #[test]
+fn test_out_to_response_schema_with_dash_prefixed_inline_object_array() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("response_schema");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[schema: Output]\nproject_name: Auwgent SDK Launch\ntasks:\n  - { title: Write documentation, priority: high, completed: false }\n  - { title: Fix buffer bugs, priority: medium, completed: true }\n  - { title: Publish to npm, priority: low, completed: false }\n[/schema]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "response_schema");
+    assert_eq!(results[0].1["type"], "Output");
+    assert_eq!(results[0].1["response"]["project_name"], "Auwgent SDK Launch");
+    assert_eq!(results[0].1["response"]["tasks"][0]["title"], "Write documentation");
+    assert_eq!(results[0].1["response"]["tasks"][0]["priority"], "high");
+    assert_eq!(results[0].1["response"]["tasks"][0]["completed"], false);
+    assert_eq!(results[0].1["response"]["tasks"][1]["title"], "Fix buffer bugs");
+    assert_eq!(results[0].1["response"]["tasks"][1]["completed"], true);
+}
+
+#[test]
 fn test_workflow_to_workflow_call() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("workflow_call");

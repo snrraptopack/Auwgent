@@ -38,8 +38,8 @@ export type AuwgentContext = {
 }
 
 export type AuwgentTools = {
-    get_user_marks: (args: {  }) => Promise<string[]>;
-    get_location: (args: {  }) => Promise<string>;
+    get_user_marks: (args: { id: number }) => Promise<string[]>;
+    get_location: (args: { id: number }) => Promise<string>;
     get_secrete_number: (args: {  }) => Promise<string>;
     get_my_school: (args: {  }) => Promise<string>;
 }

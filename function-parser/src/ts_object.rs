@@ -256,6 +256,8 @@ fn parse_indented_array(
 
         let value = if remainder.is_empty() {
             parse_nested_value(lines, index, current_indent)?
+        } else if remainder.starts_with('{') || remainder.starts_with('[') {
+            parse_ts_object(remainder)?
         } else if let Some((key, value_text)) = split_key_value(remainder) {
             let mut object = HashMap::new();
             let first_value = if value_text.is_empty() {
@@ -678,6 +680,40 @@ mod tests {
         } else {
             panic!("tasks should be an array, got {:?}", obj.get("tasks"));
         }
+    }
+
+    #[test]
+    fn test_assignment_object_dash_prefixed_inline_object_array() {
+        let input = "project_name: Auwgent SDK Launch\ntasks:\n  - { title: Write documentation, priority: high, completed: false }\n  - { title: Fix buffer bugs, priority: medium, completed: true }\n  - { title: Publish to npm, priority: low, completed: false }";
+        let result = parse_assignment_object(input);
+        assert!(result.is_ok(), "Failed to parse task array: {:?}", result.err());
+        let obj = result.unwrap();
+
+        assert_eq!(
+            obj.get("project_name"),
+            Some(&ASTValue::String("Auwgent SDK Launch".to_string()))
+        );
+
+        let Some(ASTValue::Array(tasks)) = obj.get("tasks") else {
+            panic!("tasks should be an array, got {:?}", obj.get("tasks"));
+        };
+        assert_eq!(tasks.len(), 3);
+
+        let ASTValue::Object(first_task) = &tasks[0] else {
+            panic!("first task should be an object, got {:?}", tasks[0]);
+        };
+        assert_eq!(
+            first_task.get("title"),
+            Some(&ASTValue::String("Write documentation".to_string()))
+        );
+        assert_eq!(
+            first_task.get("priority"),
+            Some(&ASTValue::String("high".to_string()))
+        );
+        assert_eq!(
+            first_task.get("completed"),
+            Some(&ASTValue::Boolean(false))
+        );
     }
 
     #[test]

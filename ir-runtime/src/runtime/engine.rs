@@ -29,6 +29,7 @@ use tokio::time::sleep;
 mod execution;
 mod prompt;
 mod runtime_loop;
+pub mod native_schema;
 
 fn empty_response_marker(finish_reason: Option<&FinishReason>) -> String {
     match finish_reason {

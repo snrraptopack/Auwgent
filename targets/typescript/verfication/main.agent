@@ -22,8 +22,8 @@ agent Asisstant{
     input: Image | File
 
     tools {
-        get_user_marks():string[] @desc "use this to get the marks of the user"
-        get_location():string @desc "use this to get the location of the user"
+        get_user_marks(id:number):string[] @desc "use this to get the marks of the user"
+        get_location(id:number @desc "for description"):string @desc "use this to get the location of the user"
         get_secrete_number():string @desc "use this to get secrete number"
         get_my_school():string @desc "use this to get my school"
     }
