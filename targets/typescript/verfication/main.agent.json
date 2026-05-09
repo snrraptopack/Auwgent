@@ -1,11 +1,11 @@
 {
-  "name": "TestProject",
+  "name": "TestAccount",
   "modelConfig": [
     {
       "defaultConfig": {
         "model": {
           "type": "groq",
-          "modelName": "llama-3.3-70b-versatile",
+          "modelName": "qwen/qwen3-32b",
           "config": {
             "type": "object",
             "value": {
@@ -18,7 +18,7 @@
         },
         "embedding": null,
         "prompt": {
-          "value": "Be polite and concise",
+          "value": "Be polite and concise when you call a tool,it will return a result, wait and recieve it",
           "type": "literal"
         }
       },
@@ -26,91 +26,54 @@
     }
   ],
   "input": null,
-  "output": {
-    "project_name": {
-      "type": "string",
-      "optional": false
-    },
-    "tasks": {
-      "type": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "title": {
-              "type": "string",
-              "optional": false
-            },
-            "priority": {
-              "type": {
-                "type": "union",
-                "options": [
-                  "low",
-                  "medium",
-                  "high"
-                ]
-              },
-              "optional": false
-            },
-            "completed": {
-              "type": "boolean",
-              "optional": true
-            }
-          }
+  "output": null,
+  "context": null,
+  "tools": [
+    {
+      "name": "read_todo",
+      "description": "read the content of a todo by its id",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
         }
       },
-      "optional": false
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "create_todo",
+      "description": "create a new todo and return its id",
+      "params": {
+        "title": {
+          "type": "string",
+          "optional": false
+        },
+        "due_date": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 8601 date string"
+        },
+        "priority": {
+          "type": {
+            "type": "union",
+            "options": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
     }
-  },
-  "context": null,
-  "tools": [],
+  ],
   "workflows": [],
   "helpers": [],
   "components": [],
-  "types": {
-    "Project": {
-      "isOutput": false,
-      "properties": {
-        "project_name": {
-          "type": "string",
-          "optional": false,
-          "description": null
-        },
-        "tasks": {
-          "type": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "title": {
-                  "type": "string",
-                  "optional": false
-                },
-                "priority": {
-                  "type": {
-                    "type": "union",
-                    "options": [
-                      "low",
-                      "medium",
-                      "high"
-                    ]
-                  },
-                  "optional": false
-                },
-                "completed": {
-                  "type": "boolean",
-                  "optional": true
-                }
-              }
-            }
-          },
-          "optional": false,
-          "description": null
-        }
-      },
-      "@examples": []
-    }
-  },
+  "types": null,
   "helperToolGrants": null,
   "helperHandoff": null,
   "tests": [],

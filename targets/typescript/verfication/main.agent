@@ -1,19 +1,11 @@
 
-type Project{
-     project_name: string
-     tasks: {
-         title: string
-         priority: "low" | "medium" | "high"
-         completed?: boolean
-     }[]
-}
-
-agent TestProject{
+agent TestAccount{
     default config{
-        model: groq("llama-3.3-70b-versatile",{
-             temperature: 0
+        model: groq("qwen/qwen3-32b",{
+            temperature:0
         })
-        prompt: "Be polite and concise"
+        prompt: "Be polite and concise when you call a tool,it will return a result, wait and recieve it"
     }
-    output: Project
+    tool read_todo(id:string):string @desc "read the content of a todo by its id"
+    tool create_todo(title:string, due_date:string @desc "ISO 8601 date string", priority:"low"|"medium"|"high"):string @desc "create a new todo and return its id"
 }

@@ -369,6 +369,7 @@ impl AuwgentEngine {
                 *self.last_turn_response_value.lock().unwrap() = Value::Null;
                 *self.terminal_response_emitted.lock().unwrap() = false;
                 *self.final_response_emitted.lock().unwrap() = false;
+                self.orchestrator.lock().unwrap().reset();
 
                 let teleport_target = {
                     let ffs_lock = self.fast_forward_stack.lock().unwrap();

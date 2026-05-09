@@ -504,11 +504,7 @@ impl BlockOrchestrator {
     }
 
     fn emit_intent(&mut self, name: &str, value: Value, is_final: bool, _is_terminal: bool) {
-        let content_hash = format!(
-            "{}:{}",
-            name,
-            serde_json::to_string(&value).unwrap_or_default()
-        );
+        let content_hash = format!("{}:{}", name, stable_intent_identity(&value));
 
         // IMPORTANT: All intents should only be emitted when is_final = true
         // This prevents duplicate emissions during streaming as the LLM generates arguments token by token
@@ -682,6 +678,32 @@ impl BlockOrchestrator {
         }
 
         instances
+    }
+}
+
+fn stable_intent_identity(value: &Value) -> String {
+    serde_json::to_string(&canonical_intent_value(value)).unwrap_or_default()
+}
+
+fn canonical_intent_value(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut keys = map
+                .keys()
+                .filter(|key| key.as_str() != "_raw")
+                .collect::<Vec<_>>();
+            keys.sort();
+
+            let mut canonical = Map::new();
+            for key in keys {
+                if let Some(value) = map.get(key) {
+                    canonical.insert(key.clone(), canonical_intent_value(value));
+                }
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_intent_value).collect()),
+        other => other.clone(),
     }
 }
 

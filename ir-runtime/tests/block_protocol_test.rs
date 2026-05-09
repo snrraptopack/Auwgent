@@ -52,6 +52,30 @@ fn test_tool_to_tool_call() {
 }
 
 #[test]
+fn test_semantic_duplicate_tool_calls_are_deduped_across_field_order() {
+    let mut orch = BlockOrchestrator::new();
+    orch.register_intent("tool_call");
+
+    let emitted = Arc::new(Mutex::new(Vec::new()));
+    let emitted_clone = Arc::clone(&emitted);
+
+    orch.on_intent_ready(Arc::new(move |name, value| {
+        emitted_clone.lock().unwrap().push((name, value));
+    }));
+
+    orch.write(
+        "[tool_call: create_todo]\ntitle: Fix the benchmark script\npriority: high\ndue_date: 2024-05-30\n[/tool_call]\n[tool_call: create_todo]\ndue_date: 2024-05-30\npriority: high\ntitle: Fix the benchmark script\n[/tool_call]",
+    );
+    orch.end();
+
+    let results = emitted.lock().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].0, "tool_call");
+    assert_eq!(results[0].1["type"], "create_todo");
+    assert_eq!(results[0].1["args"]["title"], "Fix the benchmark script");
+}
+
+#[test]
 fn test_out_to_response_schema() {
     let mut orch = BlockOrchestrator::new();
     orch.register_intent("response_schema");
