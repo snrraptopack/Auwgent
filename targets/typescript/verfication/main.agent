@@ -1,11 +1,309 @@
 
 agent TestAccount{
     default config{
-        model: groq("qwen/qwen3-32b",{
+        model: groq("llama-3.3-70b-versatile",{
             temperature:0
         })
-        prompt: "Be polite and concise when you call a tool,it will return a result, wait and recieve it"
+        prompt: "Be polite and concise,when you call a tool,the result will be sent to you when they are in dont come up with your own values"
     }
-    tool read_todo(id:string):string @desc "read the content of a todo by its id"
-    tool create_todo(title:string, due_date:string @desc "ISO 8601 date string", priority:"low"|"medium"|"high"):string @desc "create a new todo and return its id"
+
+     tool read_todo(id:string):string
+    @desc "read the content of a todo by its id"
+
+    tool create_todo(title:string, due_date:string
+    @desc "ISO 8601 date string", priority:"low"|"medium"|"high"):string @desc "create a new todo and return its id"
+
+    tool delete_todo(id:string):boolean
+    @desc "permanently delete a todo by id"
+
+    tool mark_todo_done(id:string):boolean
+    @desc "mark a todo as completed"
+
+    tool update_todo_title(id:string, new_title:string):boolean
+    @desc "rename a todo item"
+
+    tool set_todo_priority(id:string, priority:"low"|"medium"|"high"):boolean
+    @desc "change the priority of a todo"
+
+    tool count_todos(filter:"all"|"done"|"pending"):number
+    @desc "count todos matching a status filter"
+
+    tool get_user_name(user_id:string):string
+    @desc "get the display name of a user"
+
+    tool get_user_email(user_id:string):string
+    @desc "get the email address of a user"
+
+    tool update_user_email(user_id:string, new_email:string):boolean
+    @desc "update the email address for a user"
+
+    tool check_user_exists(user_id:string):boolean
+    @desc "check whether a user account exists"
+
+    tool deactivate_user(user_id:string):boolean
+    @desc "deactivate a user account"
+
+    tool get_user_role(user_id:string):string
+    @desc "return the role assigned to a user"
+
+    tool assign_user_role(user_id:string, role:"admin"|"editor"|"viewer"):boolean
+    @desc "assign a role to a user"
+
+    tool send_email(to:string, subject:string, body:string):boolean
+    @desc "send an email and confirm delivery"
+
+    tool get_email_subject(message_id:string):string
+    @desc "return the subject line of an email"
+
+    tool mark_email_read(message_id:string):boolean
+    @desc "mark an email message as read"
+
+    tool delete_email(message_id:string):boolean
+    @desc "delete an email by its message id"
+
+    tool schedule_meeting(title:string, start_iso:string @desc "ISO 8601 datetime", duration_minutes:number):string
+    @desc "schedule a meeting and return its event id"
+
+    tool cancel_meeting(event_id:string, reason:string):boolean
+    @desc "cancel a calendar event"
+
+    tool get_meeting_title(event_id:string):string
+    @desc "get the title of a scheduled meeting"
+
+    tool check_meeting_exists(event_id:string):boolean
+    @desc "check whether a calendar event still exists"
+
+    tool get_weather_summary(city:string, unit:"celsius"|"fahrenheit"):string
+    @desc "get a short weather summary for a city"
+
+    tool get_temperature(city:string, unit:"celsius"|"fahrenheit"):number
+    @desc "get the current temperature for a city"
+
+    tool is_raining(city:string):boolean
+    @desc "return true if it is currently raining in a city"
+
+    tool get_uv_index(city:string):number
+    @desc "get the current UV index for a city"
+
+    tool search_web(query:string, num_results:number @desc "between 1 and 20"):string
+    @desc "run a web search and return a formatted result"
+
+    tool fetch_page_text(url:string):string
+    @desc "fetch the plain text content of a URL"
+
+    tool check_url_reachable(url:string):boolean
+    @desc "return true if the URL responds with a 2xx status"
+
+    tool get_page_title(url:string):string
+    @desc "extract the title tag from a webpage"
+
+    tool run_read_query(sql:string @desc "read-only SELECT statement", db_name:string):string
+    @desc "execute a SQL query and return results as JSON string"
+
+    tool count_rows(table:string, db_name:string):number
+    @desc "return the row count of a table"
+
+    tool check_table_exists(table:string, db_name:string):boolean
+    @desc "check whether a table exists in a database"
+
+    tool write_file(path:string, content:string):boolean
+    @desc "write text content to a file"
+
+    tool read_file(path:string):string
+    @desc "read the full text content of a file"
+
+    tool delete_file(path:string, force:boolean):boolean
+    @desc "delete a file from the filesystem"
+
+    tool file_exists(path:string):boolean
+    @desc "check whether a file exists at a path"
+
+    tool get_file_size_bytes(path:string):number
+    @desc "return the size of a file in bytes"
+
+    tool run_shell_command(command:string @desc "bash command to run", working_dir:string):string
+    @desc "execute a shell command and return combined stdout and stderr"
+
+    tool get_exit_code(command:string):number
+    @desc "run a command and return only its exit code"
+
+    tool translate_text(text:string, target_lang:string @desc "ISO 639-1 language code"):string
+    @desc "translate text into the target language"
+
+    tool detect_language(text:string):string
+    @desc "detect and return the language code of a text"
+
+    tool summarize_text(content:string, max_words:number):string
+    @desc "return a summary within the word limit"
+
+    tool count_words(text:string):number
+    @desc "count the number of words in a text"
+
+    tool is_spam(text:string):boolean
+    @desc "return true if the text is classified as spam"
+
+    tool get_sentiment(text:string):"positive"|"neutral"|"negative"
+    @desc "classify the sentiment of a text"
+
+    tool render_markdown(markdown:string):string
+    @desc "convert markdown text to an HTML string"
+
+    tool extract_emails(text:string):string
+    @desc "extract all email addresses found in text as a JSON array string"
+
+    tool extract_urls(text:string):string
+    @desc "extract all URLs found in text as a JSON array string"
+
+    tool hash_string(input:string, algorithm:"sha256"|"sha512"|"md5"):string
+    @desc "hash a string and return the hex digest"
+
+    tool encode_base64(value:string):string
+    @desc "base64-encode a string"
+
+    tool decode_base64(encoded:string):string
+    @desc "decode a base64-encoded string"
+
+    tool generate_uuid(version:"v4"|"v7"):string
+    @desc "generate a new UUID of the given version"
+
+    tool slugify(text:string):string
+    @desc "convert a string to a URL-friendly slug"
+
+    tool truncate_text(text:string, max_chars:number):string
+    @desc "truncate text to a maximum character length"
+
+    tool is_valid_email(email:string):boolean
+    @desc "return true if the email address is syntactically valid"
+
+    tool is_valid_url(url:string):boolean
+    @desc "return true if the URL is syntactically valid"
+
+    tool is_valid_json(raw:string):boolean
+    @desc "return true if the string is valid JSON"
+
+    tool get_json_field(json:string, key_path:string @desc "dot-separated key path e.g. user.name"):string
+    @desc "extract a field from a JSON string by key path"
+
+    tool parse_csv_row_count(csv_content:string):number
+    @desc "return the number of data rows in a CSV string"
+
+    tool get_current_timestamp(timezone:string @desc "IANA timezone e.g. Africa/Accra"):string
+    @desc "return the current ISO 8601 timestamp in a timezone"
+
+    tool format_date(iso_date:string, format:"short"|"long"|"iso"|"relative"):string
+    @desc "format an ISO date string into a human-readable form"
+
+    tool days_between(date_a:string @desc "ISO 8601 date", date_b:string @desc "ISO 8601 date"):number
+    @desc "return the number of days between two dates"
+
+    tool is_past_date(iso_date:string):boolean
+    @desc "return true if the date is in the past"
+
+    tool get_stock_price(ticker:string):number
+    @desc "get the latest stock price for a ticker symbol"
+
+    tool get_exchange_rate(from_currency:string @desc "ISO 4217 code", to_currency:string @desc "ISO 4217 code"):number
+    @desc "return the current exchange rate between two currencies"
+
+    tool calculate_compound_interest(principal:number, annual_rate:number @desc "as a decimal e.g. 0.05", years:number, compounds_per_year:number):number
+    @desc "calculate the final amount with compound interest"
+
+    tool get_github_default_branch(owner:string, repo:string):string
+    @desc "return the default branch name of a GitHub repository"
+
+    tool get_github_star_count(owner:string, repo:string):number
+    @desc "return the star count of a GitHub repository"
+
+    tool is_github_repo_public(owner:string, repo:string):boolean
+    @desc "return true if a GitHub repository is public"
+
+    tool get_github_issue_title(owner:string, repo:string, issue_number:number):string
+    @desc "get the title of a GitHub issue by number"
+
+    tool run_lint(source:string, language:"ts"|"js"|"py"|"rs"):string
+    @desc "lint source code and return diagnostics as a JSON string"
+
+    tool format_code(source:string, language:"ts"|"js"|"py"|"rs"):string
+    @desc "return formatted source code"
+
+    tool count_lint_errors(source:string, language:"ts"|"js"|"py"|"rs"):number
+    @desc "return the number of lint errors in a source file"
+
+    tool is_code_valid_syntax(source:string, language:"ts"|"js"|"py"|"rs"):boolean
+    @desc "return true if the source has no syntax errors"
+
+    tool geocode_address(address:string):string
+    @desc "convert a street address to a lat,lng string"
+
+    tool reverse_geocode(lat:number, lng:number):string
+    @desc "convert lat/lng coordinates to a readable address"
+
+    tool get_distance_km(lat_a:number, lng_a:number, lat_b:number, lng_b:number):number
+    @desc "return the straight-line distance in km between two coordinates"
+
+    tool get_ip_country(ip_address:string):string
+    @desc "return the country name for an IP address"
+
+    tool is_private_ip(ip_address:string):boolean
+    @desc "return true if the IP address is in a private range"
+
+    tool dns_resolve_a_record(hostname:string):string
+    @desc "resolve the first A record for a hostname"
+
+    tool is_port_open(host:string, port:number):boolean
+    @desc "return true if a TCP port is open on a remote host"
+
+    tool get_ssl_expiry_days(domain:string):number
+    @desc "return the number of days until the SSL certificate expires"
+
+    tool send_sms(to_phone:string @desc "E.164 format e.g. +233241234567", message:string):boolean
+    @desc "send an SMS message and confirm delivery"
+
+    tool cache_set(key:string, value:string, ttl_seconds:number):boolean
+    @desc "store a value in cache with a TTL"
+
+    tool cache_get(key:string):string
+    @desc "retrieve a cached value by key or return empty string"
+
+    tool cache_delete(key:string):boolean
+    @desc "delete a key from the cache"
+
+    tool get_feature_flag(flag_key:string, user_id:string):boolean
+    @desc "evaluate a boolean feature flag for a user"
+
+    tool get_feature_flag_value(flag_key:string, user_id:string):string
+    @desc "evaluate a string-valued feature flag for a user"
+
+    tool check_permission(user_id:string, action:string, resource:string):boolean
+    @desc "return true if user is permitted to perform the action on the resource"
+
+    tool get_secret(secret_name:string, vault:"aws"|"vault"|"doppler"):string
+    @desc "retrieve a secret value from a secrets manager"
+
+    tool set_secret(secret_name:string, value:string, vault:"aws"|"vault"|"doppler"):boolean
+    @desc "store a secret in a secrets manager"
+
+    tool get_job_status(job_id:string):"pending"|"running"|"done"|"failed"
+    @desc "return the current status of a background job"
+
+    tool get_job_result(job_id:string):string
+    @desc "return the string output of a completed job"
+
+    tool get_queue_depth(queue_name:string):number
+    @desc "return the number of pending jobs in a queue"
+
+    tool record_metric(metric_name:string, value:number):boolean
+    @desc "record a numeric metric data point"
+
+    tool get_metric_average(metric_name:string, last_n_minutes:number):number
+    @desc "return the average metric value over a time window"
+
+    tool get_metric_max(metric_name:string, last_n_minutes:number):number
+    @desc "return the max metric value over a time window"
+
+    tool is_metric_above_threshold(metric_name:string, threshold:number):boolean
+    @desc "return true if the latest metric value exceeds the threshold"
+
+    tool render_template(template:string @desc "Handlebars template string", context_json:string @desc "JSON string of variables"):string
+    @desc "render a template string with context variables"
 }

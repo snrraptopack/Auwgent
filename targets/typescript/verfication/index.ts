@@ -24,7 +24,9 @@ agent.onIntent((intent, value, name) => {
   }
 })
 
-const session = await agent.run(`Create a new high-priority to-do called 'Fix the benchmark script' due on '2024-05-30'. Once it is created, use the ID you received to read the to-do back to me to confirm it was saved properly.`)
+const session = await agent.run(`Create a new high-priority to-do called 'Fix the benchmark script' due on '2024-05-30'.
+  Once it is created, use the ID you received to read the to-do back to me to
+  confirm it was saved properly.`)
 console.log(JSON.stringify(agent.getMetadata(), null, 2))
 console.log("**************** \n \n")
 console.log(JSON.stringify(session.turns,null,2))

@@ -5,7 +5,7 @@
       "defaultConfig": {
         "model": {
           "type": "groq",
-          "modelName": "qwen/qwen3-32b",
+          "modelName": "llama-3.3-70b-versatile",
           "config": {
             "type": "object",
             "value": {
@@ -18,7 +18,7 @@
         },
         "embedding": null,
         "prompt": {
-          "value": "Be polite and concise when you call a tool,it will return a result, wait and recieve it",
+          "value": "Be polite and concise,when you call a tool,the result will be sent to you when they are in dont come up with your own values",
           "type": "literal"
         }
       },
@@ -64,6 +64,1544 @@
             ]
           },
           "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "delete_todo",
+      "description": "permanently delete a todo by id",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "mark_todo_done",
+      "description": "mark a todo as completed",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "update_todo_title",
+      "description": "rename a todo item",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        },
+        "new_title": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "set_todo_priority",
+      "description": "change the priority of a todo",
+      "params": {
+        "id": {
+          "type": "string",
+          "optional": false
+        },
+        "priority": {
+          "type": {
+            "type": "union",
+            "options": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "count_todos",
+      "description": "count todos matching a status filter",
+      "params": {
+        "filter": {
+          "type": {
+            "type": "union",
+            "options": [
+              "all",
+              "done",
+              "pending"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_user_name",
+      "description": "get the display name of a user",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_user_email",
+      "description": "get the email address of a user",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "update_user_email",
+      "description": "update the email address for a user",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        },
+        "new_email": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "check_user_exists",
+      "description": "check whether a user account exists",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "deactivate_user",
+      "description": "deactivate a user account",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_user_role",
+      "description": "return the role assigned to a user",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "assign_user_role",
+      "description": "assign a role to a user",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        },
+        "role": {
+          "type": {
+            "type": "union",
+            "options": [
+              "admin",
+              "editor",
+              "viewer"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "send_email",
+      "description": "send an email and confirm delivery",
+      "params": {
+        "to": {
+          "type": "string",
+          "optional": false
+        },
+        "subject": {
+          "type": "string",
+          "optional": false
+        },
+        "body": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_email_subject",
+      "description": "return the subject line of an email",
+      "params": {
+        "message_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "mark_email_read",
+      "description": "mark an email message as read",
+      "params": {
+        "message_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "delete_email",
+      "description": "delete an email by its message id",
+      "params": {
+        "message_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "schedule_meeting",
+      "description": "schedule a meeting and return its event id",
+      "params": {
+        "title": {
+          "type": "string",
+          "optional": false
+        },
+        "start_iso": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 8601 datetime"
+        },
+        "duration_minutes": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "cancel_meeting",
+      "description": "cancel a calendar event",
+      "params": {
+        "event_id": {
+          "type": "string",
+          "optional": false
+        },
+        "reason": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_meeting_title",
+      "description": "get the title of a scheduled meeting",
+      "params": {
+        "event_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "check_meeting_exists",
+      "description": "check whether a calendar event still exists",
+      "params": {
+        "event_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_weather_summary",
+      "description": "get a short weather summary for a city",
+      "params": {
+        "city": {
+          "type": "string",
+          "optional": false
+        },
+        "unit": {
+          "type": {
+            "type": "union",
+            "options": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_temperature",
+      "description": "get the current temperature for a city",
+      "params": {
+        "city": {
+          "type": "string",
+          "optional": false
+        },
+        "unit": {
+          "type": {
+            "type": "union",
+            "options": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_raining",
+      "description": "return true if it is currently raining in a city",
+      "params": {
+        "city": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_uv_index",
+      "description": "get the current UV index for a city",
+      "params": {
+        "city": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "search_web",
+      "description": "run a web search and return a formatted result",
+      "params": {
+        "query": {
+          "type": "string",
+          "optional": false
+        },
+        "num_results": {
+          "type": "number",
+          "optional": false,
+          "description": "between 1 and 20"
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "fetch_page_text",
+      "description": "fetch the plain text content of a URL",
+      "params": {
+        "url": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "check_url_reachable",
+      "description": "return true if the URL responds with a 2xx status",
+      "params": {
+        "url": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_page_title",
+      "description": "extract the title tag from a webpage",
+      "params": {
+        "url": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "run_read_query",
+      "description": "execute a SQL query and return results as JSON string",
+      "params": {
+        "sql": {
+          "type": "string",
+          "optional": false,
+          "description": "read-only SELECT statement"
+        },
+        "db_name": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "count_rows",
+      "description": "return the row count of a table",
+      "params": {
+        "table": {
+          "type": "string",
+          "optional": false
+        },
+        "db_name": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "check_table_exists",
+      "description": "check whether a table exists in a database",
+      "params": {
+        "table": {
+          "type": "string",
+          "optional": false
+        },
+        "db_name": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "write_file",
+      "description": "write text content to a file",
+      "params": {
+        "path": {
+          "type": "string",
+          "optional": false
+        },
+        "content": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "read_file",
+      "description": "read the full text content of a file",
+      "params": {
+        "path": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "delete_file",
+      "description": "delete a file from the filesystem",
+      "params": {
+        "path": {
+          "type": "string",
+          "optional": false
+        },
+        "force": {
+          "type": "boolean",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "file_exists",
+      "description": "check whether a file exists at a path",
+      "params": {
+        "path": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_file_size_bytes",
+      "description": "return the size of a file in bytes",
+      "params": {
+        "path": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "run_shell_command",
+      "description": "execute a shell command and return combined stdout and stderr",
+      "params": {
+        "command": {
+          "type": "string",
+          "optional": false,
+          "description": "bash command to run"
+        },
+        "working_dir": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_exit_code",
+      "description": "run a command and return only its exit code",
+      "params": {
+        "command": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "translate_text",
+      "description": "translate text into the target language",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        },
+        "target_lang": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 639-1 language code"
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "detect_language",
+      "description": "detect and return the language code of a text",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "summarize_text",
+      "description": "return a summary within the word limit",
+      "params": {
+        "content": {
+          "type": "string",
+          "optional": false
+        },
+        "max_words": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "count_words",
+      "description": "count the number of words in a text",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_spam",
+      "description": "return true if the text is classified as spam",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_sentiment",
+      "description": "classify the sentiment of a text",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": {
+        "type": "union",
+        "options": [
+          "positive",
+          "neutral",
+          "negative"
+        ]
+      },
+      "examples": []
+    },
+    {
+      "name": "render_markdown",
+      "description": "convert markdown text to an HTML string",
+      "params": {
+        "markdown": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "extract_emails",
+      "description": "extract all email addresses found in text as a JSON array string",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "extract_urls",
+      "description": "extract all URLs found in text as a JSON array string",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "hash_string",
+      "description": "hash a string and return the hex digest",
+      "params": {
+        "input": {
+          "type": "string",
+          "optional": false
+        },
+        "algorithm": {
+          "type": {
+            "type": "union",
+            "options": [
+              "sha256",
+              "sha512",
+              "md5"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "encode_base64",
+      "description": "base64-encode a string",
+      "params": {
+        "value": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "decode_base64",
+      "description": "decode a base64-encoded string",
+      "params": {
+        "encoded": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "generate_uuid",
+      "description": "generate a new UUID of the given version",
+      "params": {
+        "version": {
+          "type": {
+            "type": "union",
+            "options": [
+              "v4",
+              "v7"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "slugify",
+      "description": "convert a string to a URL-friendly slug",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "truncate_text",
+      "description": "truncate text to a maximum character length",
+      "params": {
+        "text": {
+          "type": "string",
+          "optional": false
+        },
+        "max_chars": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "is_valid_email",
+      "description": "return true if the email address is syntactically valid",
+      "params": {
+        "email": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "is_valid_url",
+      "description": "return true if the URL is syntactically valid",
+      "params": {
+        "url": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "is_valid_json",
+      "description": "return true if the string is valid JSON",
+      "params": {
+        "raw": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_json_field",
+      "description": "extract a field from a JSON string by key path",
+      "params": {
+        "json": {
+          "type": "string",
+          "optional": false
+        },
+        "key_path": {
+          "type": "string",
+          "optional": false,
+          "description": "dot-separated key path e.g. user.name"
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "parse_csv_row_count",
+      "description": "return the number of data rows in a CSV string",
+      "params": {
+        "csv_content": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_current_timestamp",
+      "description": "return the current ISO 8601 timestamp in a timezone",
+      "params": {
+        "timezone": {
+          "type": "string",
+          "optional": false,
+          "description": "IANA timezone e.g. Africa/Accra"
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "format_date",
+      "description": "format an ISO date string into a human-readable form",
+      "params": {
+        "iso_date": {
+          "type": "string",
+          "optional": false
+        },
+        "format": {
+          "type": {
+            "type": "union",
+            "options": [
+              "short",
+              "long",
+              "iso",
+              "relative"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "days_between",
+      "description": "return the number of days between two dates",
+      "params": {
+        "date_a": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 8601 date"
+        },
+        "date_b": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 8601 date"
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_past_date",
+      "description": "return true if the date is in the past",
+      "params": {
+        "iso_date": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_stock_price",
+      "description": "get the latest stock price for a ticker symbol",
+      "params": {
+        "ticker": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_exchange_rate",
+      "description": "return the current exchange rate between two currencies",
+      "params": {
+        "from_currency": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 4217 code"
+        },
+        "to_currency": {
+          "type": "string",
+          "optional": false,
+          "description": "ISO 4217 code"
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "calculate_compound_interest",
+      "description": "calculate the final amount with compound interest",
+      "params": {
+        "principal": {
+          "type": "number",
+          "optional": false
+        },
+        "annual_rate": {
+          "type": "number",
+          "optional": false,
+          "description": "as a decimal e.g. 0.05"
+        },
+        "years": {
+          "type": "number",
+          "optional": false
+        },
+        "compounds_per_year": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_github_default_branch",
+      "description": "return the default branch name of a GitHub repository",
+      "params": {
+        "owner": {
+          "type": "string",
+          "optional": false
+        },
+        "repo": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_github_star_count",
+      "description": "return the star count of a GitHub repository",
+      "params": {
+        "owner": {
+          "type": "string",
+          "optional": false
+        },
+        "repo": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_github_repo_public",
+      "description": "return true if a GitHub repository is public",
+      "params": {
+        "owner": {
+          "type": "string",
+          "optional": false
+        },
+        "repo": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_github_issue_title",
+      "description": "get the title of a GitHub issue by number",
+      "params": {
+        "owner": {
+          "type": "string",
+          "optional": false
+        },
+        "repo": {
+          "type": "string",
+          "optional": false
+        },
+        "issue_number": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "run_lint",
+      "description": "lint source code and return diagnostics as a JSON string",
+      "params": {
+        "source": {
+          "type": "string",
+          "optional": false
+        },
+        "language": {
+          "type": {
+            "type": "union",
+            "options": [
+              "ts",
+              "js",
+              "py",
+              "rs"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "format_code",
+      "description": "return formatted source code",
+      "params": {
+        "source": {
+          "type": "string",
+          "optional": false
+        },
+        "language": {
+          "type": {
+            "type": "union",
+            "options": [
+              "ts",
+              "js",
+              "py",
+              "rs"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "count_lint_errors",
+      "description": "return the number of lint errors in a source file",
+      "params": {
+        "source": {
+          "type": "string",
+          "optional": false
+        },
+        "language": {
+          "type": {
+            "type": "union",
+            "options": [
+              "ts",
+              "js",
+              "py",
+              "rs"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_code_valid_syntax",
+      "description": "return true if the source has no syntax errors",
+      "params": {
+        "source": {
+          "type": "string",
+          "optional": false
+        },
+        "language": {
+          "type": {
+            "type": "union",
+            "options": [
+              "ts",
+              "js",
+              "py",
+              "rs"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "geocode_address",
+      "description": "convert a street address to a lat,lng string",
+      "params": {
+        "address": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "reverse_geocode",
+      "description": "convert lat/lng coordinates to a readable address",
+      "params": {
+        "lat": {
+          "type": "number",
+          "optional": false
+        },
+        "lng": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_distance_km",
+      "description": "return the straight-line distance in km between two coordinates",
+      "params": {
+        "lat_a": {
+          "type": "number",
+          "optional": false
+        },
+        "lng_a": {
+          "type": "number",
+          "optional": false
+        },
+        "lat_b": {
+          "type": "number",
+          "optional": false
+        },
+        "lng_b": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_ip_country",
+      "description": "return the country name for an IP address",
+      "params": {
+        "ip_address": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "is_private_ip",
+      "description": "return true if the IP address is in a private range",
+      "params": {
+        "ip_address": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "dns_resolve_a_record",
+      "description": "resolve the first A record for a hostname",
+      "params": {
+        "hostname": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "is_port_open",
+      "description": "return true if a TCP port is open on a remote host",
+      "params": {
+        "host": {
+          "type": "string",
+          "optional": false
+        },
+        "port": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_ssl_expiry_days",
+      "description": "return the number of days until the SSL certificate expires",
+      "params": {
+        "domain": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "send_sms",
+      "description": "send an SMS message and confirm delivery",
+      "params": {
+        "to_phone": {
+          "type": "string",
+          "optional": false,
+          "description": "E.164 format e.g. +233241234567"
+        },
+        "message": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "cache_set",
+      "description": "store a value in cache with a TTL",
+      "params": {
+        "key": {
+          "type": "string",
+          "optional": false
+        },
+        "value": {
+          "type": "string",
+          "optional": false
+        },
+        "ttl_seconds": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "cache_get",
+      "description": "retrieve a cached value by key or return empty string",
+      "params": {
+        "key": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "cache_delete",
+      "description": "delete a key from the cache",
+      "params": {
+        "key": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_feature_flag",
+      "description": "evaluate a boolean feature flag for a user",
+      "params": {
+        "flag_key": {
+          "type": "string",
+          "optional": false
+        },
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_feature_flag_value",
+      "description": "evaluate a string-valued feature flag for a user",
+      "params": {
+        "flag_key": {
+          "type": "string",
+          "optional": false
+        },
+        "user_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "check_permission",
+      "description": "return true if user is permitted to perform the action on the resource",
+      "params": {
+        "user_id": {
+          "type": "string",
+          "optional": false
+        },
+        "action": {
+          "type": "string",
+          "optional": false
+        },
+        "resource": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_secret",
+      "description": "retrieve a secret value from a secrets manager",
+      "params": {
+        "secret_name": {
+          "type": "string",
+          "optional": false
+        },
+        "vault": {
+          "type": {
+            "type": "union",
+            "options": [
+              "aws",
+              "vault",
+              "doppler"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "set_secret",
+      "description": "store a secret in a secrets manager",
+      "params": {
+        "secret_name": {
+          "type": "string",
+          "optional": false
+        },
+        "value": {
+          "type": "string",
+          "optional": false
+        },
+        "vault": {
+          "type": {
+            "type": "union",
+            "options": [
+              "aws",
+              "vault",
+              "doppler"
+            ]
+          },
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_job_status",
+      "description": "return the current status of a background job",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": {
+        "type": "union",
+        "options": [
+          "pending",
+          "running",
+          "done",
+          "failed"
+        ]
+      },
+      "examples": []
+    },
+    {
+      "name": "get_job_result",
+      "description": "return the string output of a completed job",
+      "params": {
+        "job_id": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_queue_depth",
+      "description": "return the number of pending jobs in a queue",
+      "params": {
+        "queue_name": {
+          "type": "string",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "record_metric",
+      "description": "record a numeric metric data point",
+      "params": {
+        "metric_name": {
+          "type": "string",
+          "optional": false
+        },
+        "value": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "get_metric_average",
+      "description": "return the average metric value over a time window",
+      "params": {
+        "metric_name": {
+          "type": "string",
+          "optional": false
+        },
+        "last_n_minutes": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "get_metric_max",
+      "description": "return the max metric value over a time window",
+      "params": {
+        "metric_name": {
+          "type": "string",
+          "optional": false
+        },
+        "last_n_minutes": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "number",
+      "examples": []
+    },
+    {
+      "name": "is_metric_above_threshold",
+      "description": "return true if the latest metric value exceeds the threshold",
+      "params": {
+        "metric_name": {
+          "type": "string",
+          "optional": false
+        },
+        "threshold": {
+          "type": "number",
+          "optional": false
+        }
+      },
+      "returns": "boolean",
+      "examples": []
+    },
+    {
+      "name": "render_template",
+      "description": "render a template string with context variables",
+      "params": {
+        "template": {
+          "type": "string",
+          "optional": false,
+          "description": "Handlebars template string"
+        },
+        "context_json": {
+          "type": "string",
+          "optional": false,
+          "description": "JSON string of variables"
         }
       },
       "returns": "string",
