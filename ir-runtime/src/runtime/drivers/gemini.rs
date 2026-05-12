@@ -26,11 +26,12 @@ impl GeminiDriver {
         &self,
         model: &str,
         body: Value,
+        url_override: Option<&str>,
     ) -> Result<ModelEventStream, String> {
-        let url = format!(
+        let url = url_override.map(String::from).unwrap_or_else(|| format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             model, self.api_key
-        );
+        ));
 
         let response = self
             .client
@@ -70,6 +71,7 @@ impl ModelDriver for GeminiDriver {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<ModelEventStream, String> {
         // ── Build request body from messages ──────────────────────────────
         let mut body = json!({});
@@ -105,7 +107,7 @@ impl ModelDriver for GeminiDriver {
         }
 
         // ── Generation config ─────────────────────────────────────────────
-        if let Some(cfg) = config {
+        if let Some(ref cfg) = config {
             if let Some(cfg_object) = cfg.as_object() {
                 let mut gen_config = serde_json::Map::new();
 
@@ -135,19 +137,29 @@ impl ModelDriver for GeminiDriver {
             }
         }
         // ── Send request ──────────────────────────────────────────────────
+        let url_override = config.as_ref()
+            .and_then(|c| c.get("url"))
+            .and_then(Value::as_str);
+
         if uses_non_streaming_generate_content(model) {
-            return self.generate_content_once(model, body).await;
+            return self.generate_content_once(model, body, url_override).await;
         }
 
-        let url = format!(
+        let url = url_override.map(String::from).unwrap_or_else(|| format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
             model, self.api_key
-        );
+        ));
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send request to Gemini: {}", e))?;
@@ -199,6 +211,7 @@ impl ModelDriver for GeminiDriver {
         model: &str,
         text: &str,
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<f32>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent?key={}",
@@ -219,10 +232,16 @@ impl ModelDriver for GeminiDriver {
             }
         }
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send embedding request: {}", e))?;
@@ -257,6 +276,7 @@ impl ModelDriver for GeminiDriver {
         model: &str,
         texts: &[String],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<Vec<f32>>, String> {
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:batchEmbedContents?key={}",
@@ -285,10 +305,16 @@ impl ModelDriver for GeminiDriver {
 
         let body = json!({ "requests": requests });
 
-        let response = self
-            .client
-            .post(&url)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send embedding request: {}", e))?;

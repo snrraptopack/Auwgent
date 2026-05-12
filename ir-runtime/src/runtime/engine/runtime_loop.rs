@@ -5,6 +5,24 @@
 use super::*;
 use crate::runtime::session::{display_input_value, input_parts_value};
 
+/// Maximum number of consecutive `forceStart` retries allowed before giving up.
+const MAX_FORCE_START_RETRIES: u32 = 5;
+
+/// Deep-merge two JSON objects. `b` wins on conflicts.
+/// Non-object values are replaced outright.
+pub fn deep_merge_json(a: Value, b: Value) -> Value {
+    match (a, b) {
+        (Value::Object(mut a_obj), Value::Object(b_obj)) => {
+            for (k, v) in b_obj {
+                let entry = a_obj.entry(k).or_insert_with(|| Value::Null);
+                *entry = deep_merge_json(entry.clone(), v);
+            }
+            Value::Object(a_obj)
+        }
+        (_, b) => b,
+    }
+}
+
 impl AuwgentEngine {
     pub(super) fn build_event_context(
         &self,
@@ -23,6 +41,11 @@ impl AuwgentEngine {
                 .cloned()
                 .unwrap_or_else(|| self.ir.name.clone()),
             system_prompt,
+            model: None,
+            provider: None,
+            config: None,
+            url: None,
+            headers: None,
         }
     }
 
@@ -171,19 +194,17 @@ impl AuwgentEngine {
         if let Some(middleware_result) =
             middleware::apply_llm_start_middleware(handler, payload).await
         {
-            if let Some(modified) = middleware_result.get("prompt").and_then(Value::as_str) {
-                next_prompt = modified.to_string();
+            let parsed = middleware::parse_llm_start_response(&middleware_result);
+
+            if let Some(modified) = parsed.prompt {
+                next_prompt = modified;
                 self.session
                     .lock()
                     .unwrap()
                     .set_display_input(next_prompt.clone());
             }
 
-            if let Some(new_stack) = middleware_result.get("stack").and_then(Value::as_array) {
-                let stack_vec: Vec<String> = new_stack
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
+            if let Some(stack_vec) = parsed.stack {
                 if !stack_vec.is_empty() {
                     self.session.lock().unwrap().stack = stack_vec;
                     self.sync_fast_forward_from_session();
@@ -323,15 +344,16 @@ impl AuwgentEngine {
             .as_str()
             .or_else(|| model_info["provider"].as_str())
             .unwrap_or("gemini");
-        let provider_id = if provider_type == "custom" {
-            model_info["id"].as_str().unwrap_or("custom")
+        let mut provider_id = if provider_type == "custom" {
+            model_info["id"].as_str().unwrap_or("custom").to_string()
         } else {
-            provider_type
+            provider_type.to_string()
         };
-        let model_name = model_info["modelName"]
+        let mut model_name = model_info["modelName"]
             .as_str()
-            .unwrap_or("gemini-2.0-flash");
-        let config_params = model_info.get("config").cloned();
+            .unwrap_or("gemini-2.0-flash")
+            .to_string();
+        let mut config_params = model_info.get("config").cloned();
         timing.mark("evaluated model config");
 
         let mut system_prompt = self.generate_prompt(None)?;
@@ -445,6 +467,8 @@ impl AuwgentEngine {
                     continue;
                 }
 
+                let mut provider_headers: Option<Value> = None;
+
                 if loop_count == 1 {
                     let sys_prompt = self
                         .session
@@ -463,34 +487,38 @@ impl AuwgentEngine {
                         .unwrap_or_default();
 
                     let handler = self.middleware_event_handler.lock().unwrap().clone();
+                    let mut context = self.build_event_context(
+                        &self.ir.name,
+                        None,
+                        Some(sys_prompt.clone()),
+                    );
+                    // Populate request metadata for middleware inspection
+                    context.model = Some(model_name.clone());
+                    context.provider = Some(provider_id.clone());
+                    context.config = config_params.clone();
+                    context.headers = provider_headers.clone();
+                    if provider_type == "custom" {
+                        context.url = model_info.get("url").and_then(Value::as_str).map(ToString::to_string);
+                    }
+
                     let payload = LlmStartPayload {
                         prompt: input_text.clone(),
-                        context: self.build_event_context(
-                            &self.ir.name,
-                            None,
-                            Some(sys_prompt.clone()),
-                        ),
+                        context,
                     };
 
                     if let Some(middleware_result) =
                         middleware::apply_llm_start_middleware(handler, payload).await
                     {
-                        if let Some(modified) =
-                            middleware_result.get("prompt").and_then(Value::as_str)
-                        {
+                        let parsed = middleware::parse_llm_start_response(&middleware_result);
+
+                        if let Some(modified) = parsed.prompt {
                             self.session
                                 .lock()
                                 .unwrap()
-                                .set_display_input(modified.to_string());
+                                .set_display_input(modified);
                         }
 
-                        if let Some(new_stack) =
-                            middleware_result.get("stack").and_then(Value::as_array)
-                        {
-                            let stack_vec: Vec<String> = new_stack
-                                .iter()
-                                .filter_map(|value| value.as_str().map(ToString::to_string))
-                                .collect();
+                        if let Some(stack_vec) = parsed.stack {
                             if !stack_vec.is_empty() {
                                 let mut session = self.session.lock().unwrap();
                                 session.stack = stack_vec;
@@ -502,6 +530,40 @@ impl AuwgentEngine {
                                     continue;
                                 }
                             }
+                        }
+
+                        // Apply config override (deep merge)
+                        if let Some(ref override_config) = parsed.config {
+                            config_params = Some(deep_merge_json(
+                                config_params.unwrap_or_else(|| serde_json::json!({})),
+                                override_config.clone(),
+                            ));
+                        }
+
+                        // Apply provider override
+                        if let Some(new_provider) = parsed.provider {
+                            provider_id = new_provider;
+                        }
+
+                        // Apply model override (from config or direct field)
+                        if let Some(new_model) = parsed.config.as_ref()
+                            .and_then(|c| c.get("model"))
+                            .and_then(Value::as_str)
+                        {
+                            model_name = new_model.to_string();
+                        }
+
+                        // Apply URL override into config so drivers can read it
+                        if let Some(url_override) = parsed.url {
+                            config_params = Some(deep_merge_json(
+                                config_params.unwrap_or_else(|| serde_json::json!({})),
+                                serde_json::json!({ "url": url_override }),
+                            ));
+                        }
+
+                        // Apply headers
+                        if parsed.headers.is_some() {
+                            provider_headers = parsed.headers;
                         }
                     }
                     timing.mark("llm_start middleware complete");
@@ -536,7 +598,7 @@ impl AuwgentEngine {
                 let config_params = if is_native {
                     let mut config = config_params.clone().unwrap_or_else(|| serde_json::json!({}));
                     let registry = self.native_registry();
-                    match provider_id {
+                    match provider_id.as_str() {
                         "openai" | "groq" | "custom" => {
                             let tools = registry.openai_tools();
                             if !tools.is_empty() {
@@ -570,28 +632,82 @@ impl AuwgentEngine {
                         .drivers
                         .lock()
                         .unwrap()
-                        .get(provider_id)
+                        .get(&provider_id)
                         .ok_or(AuwgentError::NoDriver)?
                         .clone();
                     driver
-                        .stream_generate(model_name, &messages, config_params)
+                        .stream_generate(&model_name, &messages, config_params, provider_headers.clone())
                         .await
                 };
                 timing.mark("provider stream_generate returned stream");
 
                 let mut stream = match stream_res {
-                    Ok(stream) => stream,
+                    Ok(stream) => {
+                        self.reset_force_start_retry_count();
+                        stream
+                    }
                     Err(error) => {
                         self.fire_intent(
                             "error".to_string(),
-                            serde_json::json!({ "message": error }),
+                            serde_json::json!({ "message": &error }),
                         )
                         .await;
-                        self.session
-                            .lock()
-                            .unwrap()
-                            .set_model_response(format!("(request error: {})", error));
-                        return Err(AuwgentError::Driver(error));
+
+                        // Fire error middleware with forceStart support
+                        let handler = self.middleware_event_handler.lock().unwrap().clone();
+                        let payload = ErrorPayload {
+                            context: self.build_event_context(&self.ir.name, None, None),
+                            session: self
+                                .export_session()
+                                .ok()
+                                .and_then(|session| serde_json::from_str::<Value>(&session).ok()),
+                            error: serde_json::json!({ "message": &error }),
+                        };
+                        let middleware_response =
+                            middleware::apply_error_middleware(handler, payload).await;
+                        let decision = middleware_response
+                            .as_ref()
+                            .map(|r| middleware::parse_error_response(r))
+                            .unwrap_or_default();
+
+                        if decision.swallow {
+                            return Ok(());
+                        }
+
+                        match decision.force_start.as_deref() {
+                            Some("llm_start") => {
+                                let retry_count = self.increment_force_start_retry();
+                                if retry_count > MAX_FORCE_START_RETRIES {
+                                    return Err(AuwgentError::Driver(format!(
+                                        "forceStart 'llm_start' exceeded max retries ({})",
+                                        MAX_FORCE_START_RETRIES
+                                    )));
+                                }
+                                // Reset turn artifacts and retry
+                                self.reset_turn_state();
+                                self.session.lock().unwrap().pop_last_turn_if_empty();
+                                continue;
+                            }
+                            Some("run_start") => {
+                                let retry_count = self.increment_force_start_retry();
+                                if retry_count > MAX_FORCE_START_RETRIES {
+                                    return Err(AuwgentError::Driver(format!(
+                                        "forceStart 'run_start' exceeded max retries ({})",
+                                        MAX_FORCE_START_RETRIES
+                                    )));
+                                }
+                                // Reset run state and retry from beginning
+                                self.reset_run_state();
+                                continue;
+                            }
+                            _ => {
+                                self.session
+                                    .lock()
+                                    .unwrap()
+                                    .set_model_response(format!("(request error: {})", error));
+                                return Err(AuwgentError::Driver(error));
+                            }
+                        }
                     }
                 };
 

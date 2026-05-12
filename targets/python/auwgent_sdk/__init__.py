@@ -199,9 +199,29 @@ class MiddlewareContext(Dict[str, Any]):
     rootAgent: str
     rawBlock: Optional[str]
     systemPrompt: Optional[str]
+    model: Optional[str]
+    provider: Optional[str]
+    config: Optional[Dict[str, Any]]
+    url: Optional[str]
+    headers: Optional[Dict[str, Any]]
     embed: Callable[[str], Awaitable[List[float]]]
     embedBatch: Callable[[List[str]], Awaitable[List[List[float]]]]
     set_context: Callable[[Any], None]
+
+
+class MiddlewareLLMStartResult(TypedDict, total=False):
+    prompt: str
+    stack: List[str]
+    config: Dict[str, Any]
+    provider: str
+    url: str
+    headers: Dict[str, str]
+
+
+class MiddlewareErrorResult(TypedDict, total=False):
+    swallow: bool
+    forceStart: str
+
 
 @runtime_checkable
 class Middleware(Protocol):
@@ -209,12 +229,12 @@ class Middleware(Protocol):
     target: ClassVar[Optional[Union[str, List[str]]]]
 
     async def onRunStart(self, session: SessionState, ctx: MiddlewareContext) -> SessionState: ...
-    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]: ...
+    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[Union[str, MiddlewareLLMStartResult]]: ...
     async def onIntent(self, name: str, value: IntentValue, ctx: MiddlewareContext) -> Optional[SessionState]: ...
     async def onIntentPartial(self, name: str, value: PartialIntentValue, ctx: MiddlewareContext) -> None: ...
     async def onLLMEnd(self, response: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
     async def onRunComplete(self, finalSession: SessionState, ctx: MiddlewareContext) -> None: ...
-    async def onError(self, error: Exception, session: Optional[SessionState], ctx: MiddlewareContext) -> bool: ...
+    async def onError(self, error: Exception, session: Optional[SessionState], ctx: MiddlewareContext) -> Union[bool, MiddlewareErrorResult]: ...
 
 # Accept both instances and class types in middleware lists
 MiddlewareEntry = Union[Middleware, Type[Any]]
@@ -225,6 +245,11 @@ _RESERVED_MIDDLEWARE_CONTEXT_KEYS: set[str] = {
     "rootAgent",
     "rawBlock",
     "systemPrompt",
+    "model",
+    "provider",
+    "config",
+    "url",
+    "headers",
     "embed",
     "embedBatch",
     "set_context",
@@ -589,6 +614,26 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             if isinstance(system_prompt, str):
                 ctx["systemPrompt"] = system_prompt
 
+            model = runtime_ctx.get("model")
+            if isinstance(model, str):
+                ctx["model"] = model
+
+            provider = runtime_ctx.get("provider")
+            if isinstance(provider, str):
+                ctx["provider"] = provider
+
+            config = runtime_ctx.get("config")
+            if isinstance(config, dict):
+                ctx["config"] = config
+
+            url = runtime_ctx.get("url")
+            if isinstance(url, str):
+                ctx["url"] = url
+
+            headers = runtime_ctx.get("headers")
+            if isinstance(headers, dict):
+                ctx["headers"] = headers
+
         return ctx
 
     async def _handle_middleware_event(self, event_json: str) -> Optional[str]:
@@ -620,6 +665,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 if not isinstance(current_prompt, str):
                     current_prompt = ""
 
+                llm_start_result: Dict[str, Any] = {}
+
                 for middleware in self._get_middleware(ctx):
                     if hasattr(middleware, "onLLMStart"):
                         try:
@@ -627,6 +674,19 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                             self._persist_middleware_context(ctx)
                             if isinstance(result, str):
                                 current_prompt = result
+                            elif isinstance(result, dict):
+                                if isinstance(result.get("prompt"), str):
+                                    current_prompt = result["prompt"]
+                                if isinstance(result.get("stack"), list):
+                                    ctx["stack"] = list(result["stack"])
+                                if result.get("config") is not None:
+                                    llm_start_result["config"] = result["config"]
+                                if isinstance(result.get("provider"), str):
+                                    llm_start_result["provider"] = result["provider"]
+                                if isinstance(result.get("url"), str):
+                                    llm_start_result["url"] = result["url"]
+                                if result.get("headers") is not None:
+                                    llm_start_result["headers"] = result["headers"]
                         except Exception as error:
                             self._report_warning("middleware", "middleware onLLMStart threw", error, cast(str, ctx.get("activeAgent", "")))
 
@@ -634,7 +694,8 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
 
                 return json.dumps({
                     "prompt": current_prompt,
-                    "stack": ctx.get("stack")
+                    "stack": ctx.get("stack"),
+                    **llm_start_result,
                 })
 
             if event_type == "llm_end":
@@ -699,10 +760,17 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                 for middleware in self._get_middleware(ctx):
                     if hasattr(middleware, "onError"):
                         try:
-                            swallow = await middleware.onError(error, session, ctx)
+                            result = await middleware.onError(error, session, ctx)
                             self._persist_middleware_context(ctx)
+                            swallow = result if isinstance(result, bool) else result.get("swallow") if isinstance(result, dict) else False
+                            force_start = result.get("forceStart") if isinstance(result, dict) else None
                             if swallow:
-                                return json.dumps({"swallow": True})
+                                response: Dict[str, Any] = {"swallow": True}
+                                if isinstance(force_start, str):
+                                    response["forceStart"] = force_start
+                                return json.dumps(response)
+                            if isinstance(force_start, str):
+                                return json.dumps({"forceStart": force_start})
                         except Exception as middleware_error:
                             self._report_warning("middleware", "middleware onError threw", middleware_error, cast(str, ctx.get("activeAgent", "")))
                 self._persist_middleware_context(ctx)

@@ -450,6 +450,21 @@ export class TypedAuwgent<
         if (runtimeCtx && typeof runtimeCtx.systemPrompt === 'string') {
             ctx.systemPrompt = runtimeCtx.systemPrompt;
         }
+        if (runtimeCtx && typeof runtimeCtx.model === 'string') {
+            ctx.model = runtimeCtx.model;
+        }
+        if (runtimeCtx && typeof runtimeCtx.provider === 'string') {
+            ctx.provider = runtimeCtx.provider;
+        }
+        if (runtimeCtx && typeof runtimeCtx.config === 'object' && runtimeCtx.config !== null) {
+            ctx.config = runtimeCtx.config;
+        }
+        if (runtimeCtx && typeof runtimeCtx.url === 'string') {
+            ctx.url = runtimeCtx.url;
+        }
+        if (runtimeCtx && typeof runtimeCtx.headers === 'object' && runtimeCtx.headers !== null) {
+            ctx.headers = runtimeCtx.headers;
+        }
 
         return ctx;
     }
@@ -488,6 +503,7 @@ export class TypedAuwgent<
             }
             case 'llm_start': {
                 let currentPrompt = typeof event?.prompt === 'string' ? event.prompt : '';
+                let llmStartResult: Record<string, unknown> = {};
 
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onLLMStart) {
@@ -495,6 +511,25 @@ export class TypedAuwgent<
                             const modified = await (m.onLLMStart as any)(currentPrompt, ctx);
                             if (typeof modified === 'string') {
                                 currentPrompt = modified;
+                            } else if (modified && typeof modified === 'object') {
+                                if (typeof modified.prompt === 'string') {
+                                    currentPrompt = modified.prompt;
+                                }
+                                if (Array.isArray(modified.stack)) {
+                                    ctx.stack = modified.stack;
+                                }
+                                if (modified.config !== undefined) {
+                                    llmStartResult.config = modified.config;
+                                }
+                                if (typeof modified.provider === 'string') {
+                                    llmStartResult.provider = modified.provider;
+                                }
+                                if (typeof modified.url === 'string') {
+                                    llmStartResult.url = modified.url;
+                                }
+                                if (modified.headers !== undefined) {
+                                    llmStartResult.headers = modified.headers;
+                                }
                             }
                         } catch (error) {
                             this.reportWarning('middleware', 'middleware onLLMStart threw', error, ctx.activeAgent as string);
@@ -507,6 +542,7 @@ export class TypedAuwgent<
                 return JSON.stringify({
                     prompt: currentPrompt,
                     stack: ctx.stack,
+                    ...llmStartResult,
                 });
             }
             case 'llm_end': {
@@ -573,10 +609,20 @@ export class TypedAuwgent<
                 for (const m of this.getMiddleware(ctx)) {
                     if (m.onError) {
                         try {
-                            const shouldSwallow = await (m.onError as any)(error, session, ctx);
-                            if (shouldSwallow) {
+                            const result = await (m.onError as any)(error, session, ctx);
+                            const swallow = typeof result === 'boolean' ? result : result?.swallow;
+                            const forceStart = result?.forceStart;
+                            if (swallow) {
                                 this.persistMiddlewareContext(ctx);
-                                return JSON.stringify({ swallow: true });
+                                const response: Record<string, unknown> = { swallow: true };
+                                if (typeof forceStart === 'string') {
+                                    response.forceStart = forceStart;
+                                }
+                                return JSON.stringify(response);
+                            }
+                            if (typeof forceStart === 'string') {
+                                this.persistMiddlewareContext(ctx);
+                                return JSON.stringify({ forceStart });
                             }
                         } catch (middlewareError) {
                             this.reportWarning('middleware', 'middleware onError threw', middlewareError, ctx.activeAgent as string);

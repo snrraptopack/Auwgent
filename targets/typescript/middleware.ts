@@ -2,6 +2,30 @@ import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentM
 
 // ── Middleware Types ───────────────────────────────────────────────────────
 
+/** Return value from `onLLMStart` when mutating provider request fields. */
+export interface MiddlewareLLMStartResult {
+    /** Replace the prompt text sent to the model. */
+    prompt?: string;
+    /** Override the execution stack. */
+    stack?: string[];
+    /** Deep-merge provider config (e.g. temperature, maxTokens). */
+    config?: Record<string, unknown>;
+    /** Switch to a different provider driver. */
+    provider?: string;
+    /** Override the provider URL (for custom/proxy endpoints). */
+    url?: string;
+    /** Inject HTTP headers (e.g. Authorization) into the provider request. */
+    headers?: Record<string, string>;
+}
+
+/** Return value from `onError` when controlling error handling. */
+export interface MiddlewareErrorResult {
+    /** Swallow the error and stop propagation. */
+    swallow?: boolean;
+    /** Restart the current turn or the entire run. */
+    forceStart?: 'llm_start' | 'run_start';
+}
+
 /**
  * A shared storage object that naturally lives for the duration of a single `agent.run()` call.
  * Middleware can write trace IDs and metadata here to share between hooks.
@@ -24,6 +48,16 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
     /** Generate embeddings for a batch of texts */
     embedBatch: (texts: string[]) => Promise<number[][]>;
   setContext: (data: any) => void;
+  /** The model name selected for the current LLM call (only present during onLLMStart) */
+  model?: string;
+  /** The provider ID for the current LLM call (only present during onLLMStart) */
+  provider?: string;
+  /** The provider-specific config object for the current LLM call (only present during onLLMStart) */
+  config?: Record<string, unknown>;
+  /** The custom provider URL, if applicable (only present during onLLMStart) */
+  url?: string;
+  /** HTTP headers injected into the provider request (only present during onLLMStart) */
+  headers?: Record<string, string>;
 } & Record<string, any>;
 
 /**
@@ -48,12 +82,14 @@ interface _MiddlewareHooks<
 
     /**
      * Fired when the engine is about to send a prompt to the underlying Model Provider.
-     * Return a string to replace the entire prompt JSON (RAG / prompt injection).
+     * Return a string to replace the entire prompt, or an object to mutate config/provider/headers.
      */
     onLLMStart?: (
         prompt: string,
         ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
-    ) => void | Promise<void> | string | Promise<string>;
+    ) => void | Promise<void>
+      | string | Promise<string>
+      | MiddlewareLLMStartResult | Promise<MiddlewareLLMStartResult>;
 
     /**
      * Fired when the generic execution intent stream emits an event.
@@ -104,13 +140,16 @@ interface _MiddlewareHooks<
 
     /**
      * Fired if an error triggers panic in the engine or tools.
-     * Return `true` to swallow the error and stop propagation.
+     * Return `true` or `{ swallow: true }` to swallow the error and stop propagation.
+     * Return `{ forceStart: 'llm_start' | 'run_start' }` to restart the turn or run.
      */
     onError?: (
         error: Error,
         session: SessionState | undefined,
         ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
-    ) => boolean | Promise<boolean> | void | Promise<void>;
+    ) => boolean | Promise<boolean>
+      | MiddlewareErrorResult | Promise<MiddlewareErrorResult>
+      | void | Promise<void>;
 }
 
 /**

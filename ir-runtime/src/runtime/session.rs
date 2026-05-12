@@ -326,6 +326,16 @@ impl SessionState {
         self.turns.last_mut()
     }
 
+    /// Pop the last turn if it has no input and no model response.
+    /// Used by forceStart to clean up failed turn state.
+    pub fn pop_last_turn_if_empty(&mut self) {
+        if let Some(turn) = self.turns.last() {
+            if turn.input.is_empty() && turn.model_response.is_empty() {
+                self.turns.pop();
+            }
+        }
+    }
+
     /// Set the model response on the current turn
     pub fn set_model_response(&mut self, response: impl Into<String>) {
         if let Some(turn) = self.turns.last_mut() {

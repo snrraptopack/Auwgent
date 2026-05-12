@@ -81,6 +81,7 @@ pub trait ModelDriver: ModelDriverBounds {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<ModelEventStream, String>;
 
     /// Generate an embedding for the given text.
@@ -89,6 +90,7 @@ pub trait ModelDriver: ModelDriverBounds {
         model: &str,
         text: &str,
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<f32>, String>;
 
     /// Generate embeddings for a batch of texts.
@@ -97,5 +99,6 @@ pub trait ModelDriver: ModelDriverBounds {
         model: &str,
         texts: &[String],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<Vec<f32>>, String>;
 }

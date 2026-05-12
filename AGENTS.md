@@ -123,7 +123,7 @@ This is the **primary and intentionally designed** output mode. It offers advant
 - Unified protocol for tools, workflows, helpers, components, custom intents, and structured output
 - Streaming-friendly partial parsing
 
-There is a **dual-mode proposal** (`IR_RUNTIME_NATIVE_TOOL_CALLING_PLAN.md`) to add provider-native tool calling as an opt-in alternative (`toolProtocol: "native"`), but block mode remains the default. Do not treat the block protocol as something to be replaced.
+Auwgent also supports **native mode** (`@native` annotation or auto-detected from media input) which uses provider-native function calling (OpenAI `tools`, Gemini `functionDeclarations`). See §8 for full dual-mode documentation. Block mode remains the default.
 
 ### 3.4 Tests in the DSL are not yet wired to a runner
 
@@ -168,15 +168,21 @@ Key fields:
 
 1. Initialize session stack
 2. Evaluate model config (provider, model name, params)
-3. Generate system prompt
+3. Generate system prompt (block mode appends protocol instructions; native mode does not)
 4. Fire `run_start` middleware (can modify session/stack)
 5. For each turn:
    - Fire `llm_start` middleware (can modify prompt)
-   - Build messages from session history + optional binding block
-   - Stream from driver → feed chunks to `BlockOrchestrator`
+   - Read `toolProtocol` from IR (`resolve_tool_protocol()`)
+   - **Block mode:** Build messages via `to_messages_with_bindings()`
+   - **Native mode:** Build messages via `to_messages_native_openai()`; inject native tools/output schema into driver config
+   - Stream from driver
+     - Block mode: feed text chunks to `BlockOrchestrator`
+     - Native mode: bypass orchestrator; handle `NativeToolCall` / `NativeStructuredOutput` events
    - `process_intents()` executes tools/workflows/helpers
    - Fire `llm_end` middleware
-   - If actions performed, build `[result]` YAML blocks and continue
+   - If actions performed:
+     - Block mode: build `[result]` YAML blocks and continue
+     - Native mode: store `NativeToolResult`s in session and start empty continuation turn
    - Handle empty completion retries (max 2, 250ms delay)
 6. Fire `run_complete` middleware
 
@@ -205,11 +211,20 @@ Key fields:
 
 `SessionState` stores:
 - `system_prompt: Option<String>`
-- `turns: Vec<Turn>` — each turn has `input`, optional `input_parts` (multimedia), and `model_response`
+- `turns: Vec<Turn>` — each turn has `input`, optional `input_parts` (multimedia), `model_response`, and native-mode fields
 - `stack: Vec<String>` — execution stack (agent names)
 - `binding_cursor: Option<BindingCursor>` — runtime binding position
 
-`to_messages_with_bindings()` reconstructs provider messages from turns. Bindings are rendered as user messages but are NOT stored in turns, keeping exported sessions clean.
+**Block mode:** Turns are minimal — `input`, `model_response`, optional `input_parts`.
+
+**Native mode:** Turns may include:
+- `protocol: "native"` — marks the turn's protocol
+- `nativeAssistantTurn` — assistant's text, `tool_calls`, and `structured_output` (only when tool calls or structured output exist; text-only turns omit this)
+- `nativeToolResults` — results linked to provider call IDs for round-trip message reconstruction
+
+Message builders:
+- `to_messages_with_bindings()` — block mode; renders binding blocks as user messages; bindings are NOT stored in turns
+- `to_messages_native_openai()` — native mode; reconstructs OpenAI-style history with `tool_calls` on assistant messages and `role: "tool"` / `tool_call_id` on result messages
 
 ### 5.5 Model Drivers
 
@@ -271,23 +286,154 @@ Not yet implemented:
 
 ---
 
-## 8. Native Tool Calling (Dual Mode)
+## 8. Dual Mode: Block vs Native Protocol
 
-**Status: Design complete, not yet implemented**
+Auwgent supports two execution modes for agentic tool calling, selected automatically by the compiler based on input/output types or explicitly via annotations.
 
-See `IR_RUNTIME_NATIVE_TOOL_CALLING_PLAN.md` for the full proposal.
+### 8.1 Block Mode (`toolProtocol: "block"`) — Default
 
-Summary:
-- Block mode (default) uses the bracket protocol
-- Native mode (`toolProtocol: "native"`) uses provider-native function calling
-- Native mode requires:
-  1. Schema generation via `native_schema.rs` (or replacement)
-  2. Driver event extensions (`NativeToolCall`, `NativeStructuredOutput`)
-  3. Session turn extensions for native assistant turns + tool results
-  4. Prompt generation that skips block protocol instructions
-  5. Execution adapter that normalizes native calls into the same intent shape
+The LLM outputs structured text using the bracket protocol:
 
-The recommended first code change is **NOT** driver modification. It is making `native_schema.rs` produce a full `NativeCallableRegistry` with focused tests.
+```
+[tool_call: fetch_user]
+id: "123"
+[/tool_call]
+
+[response_text]Hello![/response_text]
+```
+
+The `BlockOrchestrator` parses this into intents. Block mode:
+- Works with any text-emitting model (no native function-calling support required)
+- Uses a single unified protocol for tools, workflows, helpers, and structured output
+- Streaming-friendly with partial parsing
+
+### 8.2 Native Mode (`toolProtocol: "native"`)
+
+The LLM uses provider-native function calling (OpenAI `tools`, Gemini `functionDeclarations`). The runtime:
+- Injects tool schemas and output schemas into the provider request config
+- Receives `NativeToolCall` / `NativeStructuredOutput` events from the driver
+- Maps provider function names (`tool_search`) to intents via prefix-based routing (`tool_` → `tool_call`, `workflow_` → `workflow_call`, `helper_` → `helper_call`)
+- Reconstructs message history with OpenAI-style `tool_calls` / `role: "tool"` / `tool_call_id` for round-trip correctness
+
+Native mode is triggered automatically when the agent uses non-text input/output (`Image`, `File`, `Audio`, `Video`), or explicitly with `@native`.
+
+### 8.3 How the Compiler Decides
+
+| Source | Resulting `toolProtocol` |
+|--------|--------------------------|
+| `@native` annotation | `"native"` |
+| `@block` annotation | `"block"` |
+| Media input/output (`Image`, `File`, etc.) with no annotation | `"native"` (auto-detect) |
+| Text-only with no annotation | `"block"` (default) |
+
+```auwgent
+// Explicit native
+@native
+agent Vision {
+    input: Image
+    default config { ... }
+}
+
+// Explicit block
+@block
+agent Chatbot {
+    input: Text
+    default config { ... }
+}
+
+// Auto-detects to native (Image is media)
+agent Auto {
+    input: Image | Text
+    default config { ... }
+}
+```
+
+**Compile-time error:** `@block` + media types produces a checker error:
+```
+Agent is annotated with @block but uses non-text input/output types that require native mode
+```
+
+### 8.4 Runtime Branching
+
+The runtime reads `toolProtocol` from the IR once per turn:
+
+```rust
+let is_native = self.resolve_tool_protocol() == "native";
+```
+
+This single boolean branches **every** protocol-sensitive path in the loop:
+
+| Path | Block mode | Native mode |
+|------|-----------|-------------|
+| **Message building** | `to_messages_with_bindings()` (includes `[result]` blocks) | `to_messages_native_openai()` (OpenAI-style `tool_calls` + `role: "tool"`) |
+| **System prompt** | Appends block protocol instructions | Appends nothing (model learns from provider-native declarations) |
+| **Config injection** | No extra config | Injects `auwgent_native_tools` + `auwgent_native_output_schema` (OpenAI skips output schema when tools are present to avoid API errors) |
+| **Text streaming** | Feeds chunks to `BlockOrchestrator` | Bypasses orchestrator; raw text accumulates directly |
+| **Tool calls** | Parsed from `[tool_call: ...]` blocks | Received as `NativeToolCall` events; normalized to `tool_call` / `workflow_call` / `helper_call` intents |
+| **Structured output** | Parsed from `[schema: ...]` blocks | Received as `NativeStructuredOutput` events; emitted as `response_schema` intent |
+| **Result continuation** | Builds `[result]` YAML blocks for next turn | Stores `NativeToolResult` in session; starts empty turn |
+| **Response sanitization** | Strips orphan text via `BlockScanner` | Preserves raw text as-is |
+
+### 8.5 Session State Differences
+
+Block-mode turns are minimal:
+```json
+{
+  "input": "hello",
+  "model_response": "[response_text]Hi![/response_text]"
+}
+```
+
+Native-mode turns carry extra state only when needed:
+```json
+{
+  "input": "hello",
+  "model_response": "Hello!",
+  "protocol": "native",
+  "nativeAssistantTurn": {
+    "text_content": "I'll search for that.",
+    "tool_calls": [
+      {
+        "id": "call_abc",
+        "provider_name": "tool_search",
+        "canonical_name": "search",
+        "action_kind": "tool_call",
+        "arguments": { "query": "cats" }
+      }
+    ],
+    "structured_output": null
+  },
+  "nativeToolResults": [
+    {
+      "call_id": "call_abc",
+      "provider_name": "tool_search",
+      "canonical_name": "search",
+      "action_kind": "tool_call",
+      "arguments": { "query": "cats" },
+      "result": { "results": ["cat1", "cat2"] }
+    }
+  ]
+}
+```
+
+**Design note:** `nativeAssistantTurn` is only populated when there are tool calls or structured output. Text-only native turns store the response in `model_response` like block mode, keeping the common case clean.
+
+### 8.6 Key Files
+
+| File | Role |
+|------|------|
+| `auwgent-lexer/src/lib.rs` | `@native` / `@block` tokens (`AtNative`, `AtBlock`) |
+| `auwgent-parser/src/toplevel.rs` | Parses annotation before `agent` keyword |
+| `auwgent-checker/src/lib.rs` | Validates `@block` + media = error |
+| `auwgent-ir/src/lib.rs` | Sets `"toolProtocol"` in model config JSON |
+| `ir-runtime/src/runtime/engine.rs` | `resolve_tool_protocol()` reads from IR |
+| `ir-runtime/src/runtime/engine/prompt.rs` | Branches prompt generation on protocol |
+| `ir-runtime/src/runtime/engine/runtime_loop.rs` | Full runtime branching (messages, config, events, results) |
+| `ir-runtime/src/runtime/engine/native_schema.rs` | IR types → JSON Schema for provider-native declarations |
+| `ir-runtime/src/runtime/engine/native_registry.rs` | `NativeCallableRegistry` with prefix-based routing |
+| `ir-runtime/src/runtime/session.rs` | `NativeAssistantTurn`, `NativeToolResult`, `to_messages_native_openai()` |
+| `ir-runtime/src/runtime/drivers/openai.rs` | Handles `tool_calls` / `tool_call_id` on messages |
+| `ir-runtime/src/runtime/drivers/gemini.rs` | Handles `functionCall` / `functionResponse` in contents |
 
 ---
 
@@ -308,7 +454,7 @@ The recommended first code change is **NOT** driver modification. It is making `
 |----------|-------|--------|
 | `MULTIMODAL_INPUT_DESIGN.md` | Compiler-driven multimodal input | Partially implemented |
 | `RUST_TARGET_DESIGN.md` | Rust target SDK design | Planned / design phase |
-| `IR_RUNTIME_NATIVE_TOOL_CALLING_PLAN.md` | Dual-mode tool calling | Design complete |
+| `IR_RUNTIME_NATIVE_TOOL_CALLING_PLAN.md` | Dual-mode tool calling | **Implemented** — see §8 |
 | `middleware_findings.md` | Middleware research | Research |
 | `prompt-caching-research.md` | Prompt caching investigation | Research |
 

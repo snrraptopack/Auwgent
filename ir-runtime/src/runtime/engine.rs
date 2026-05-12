@@ -32,6 +32,7 @@ pub mod native_registry;
 pub mod native_schema;
 mod prompt;
 mod runtime_loop;
+pub use runtime_loop::deep_merge_json;
 
 fn empty_response_marker(finish_reason: Option<&FinishReason>) -> String {
     match finish_reason {
@@ -106,6 +107,7 @@ pub struct AuwgentEngine {
     binding_context_keys: Arc<Mutex<HashSet<String>>>,
     pub last_run_metadata: Arc<Mutex<RunMetadata>>,
     native_registry: Arc<Mutex<Option<NativeCallableRegistry>>>,
+    force_start_retry_count: Arc<Mutex<u32>>,
 }
 
 impl AuwgentEngine {
@@ -237,6 +239,7 @@ impl AuwgentEngine {
             binding_context_keys: Arc::new(Mutex::new(HashSet::new())),
             last_run_metadata: Arc::new(Mutex::new(RunMetadata::default())),
             native_registry: Arc::new(Mutex::new(None)),
+            force_start_retry_count: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -421,10 +424,36 @@ impl AuwgentEngine {
         self.session.lock().unwrap().clear();
     }
 
+    /// Reset turn-level state for forceStart retry.
+    pub(super) fn reset_turn_state(&self) {
+        self.pending_tool_results.lock().unwrap().clear();
+        *self.current_raw_response.lock().unwrap() = String::new();
+        *self.last_turn_response_value.lock().unwrap() = Value::Null;
+        *self.terminal_response_emitted.lock().unwrap() = false;
+        *self.final_response_emitted.lock().unwrap() = false;
+        self.orchestrator.lock().unwrap().reset();
+    }
+
+    /// Reset run-level state for forceStart retry from run_start.
+    pub(super) fn reset_run_state(&self) {
+        self.reset_turn_state();
+        self.session.lock().unwrap().clear();
+    }
+
+    pub(super) fn increment_force_start_retry(&self) -> u32 {
+        let mut count = self.force_start_retry_count.lock().unwrap();
+        *count += 1;
+        *count
+    }
+
+    pub(super) fn reset_force_start_retry_count(&self) {
+        *self.force_start_retry_count.lock().unwrap() = 0;
+    }
+
     pub async fn embed(&self, text: &str) -> AuwgentResult<Vec<f32>> {
         let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed(&model_name, text, config)
+            .embed(&model_name, text, config, None)
             .await
             .map_err(AuwgentError::Driver)
     }
@@ -432,7 +461,7 @@ impl AuwgentEngine {
     pub async fn embed_batch(&self, texts: &[String]) -> AuwgentResult<Vec<Vec<f32>>> {
         let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed_batch(&model_name, texts, config)
+            .embed_batch(&model_name, texts, config, None)
             .await
             .map_err(AuwgentError::Driver)
     }

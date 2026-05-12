@@ -596,6 +596,8 @@ class TypedAuwgent<IR extends JsonMap> {
 
         case 'llm_start':
           var prompt = event['prompt']?.toString() ?? '';
+          final result = <String, Object?>{};
+
           for (final item in _getMiddleware(ctx)) {
             final updated = _requireSync(
               item.onLLMStart(prompt, ctx),
@@ -603,11 +605,22 @@ class TypedAuwgent<IR extends JsonMap> {
             );
             if (updated is String) {
               prompt = updated;
+            } else if (updated is MiddlewareLLMStartResult) {
+              if (updated.prompt != null) prompt = updated.prompt!;
+              if (updated.stack != null) ctx.stack = updated.stack!;
+              if (updated.config != null) result['config'] = updated.config!;
+              if (updated.provider != null) result['provider'] = updated.provider!;
+              if (updated.url != null) result['url'] = updated.url!;
+              if (updated.headers != null) result['headers'] = updated.headers!;
             }
           }
           _persistMiddlewareContext(ctx);
           _timingLog('middleware event done type=llm_start', watch);
-          return jsonEncode({'prompt': prompt, 'stack': ctx.stack});
+          return jsonEncode({
+            'prompt': prompt,
+            'stack': ctx.stack,
+            ...result,
+          });
 
         case 'intent':
           final name = event['name']?.toString();
@@ -658,7 +671,7 @@ class TypedAuwgent<IR extends JsonMap> {
               ? null
               : _sessionFromEvent(event['session']);
           for (final item in _getMiddleware(ctx)) {
-            final swallow = _requireSync(
+            final raw = _requireSync(
               item.onError(
                 event['error'] ?? 'Unknown runtime error',
                 session,
@@ -666,10 +679,19 @@ class TypedAuwgent<IR extends JsonMap> {
               ),
               'middleware onError hooks',
             );
+            final swallow = raw is bool ? raw : (raw is MiddlewareErrorResult ? raw.swallow : false);
+            final forceStart = raw is MiddlewareErrorResult ? raw.forceStart : null;
             if (swallow == true) {
               _persistMiddlewareContext(ctx);
               _timingLog('middleware event done type=error swallow', watch);
-              return jsonEncode({'swallow': true});
+              final response = <String, Object?>{'swallow': true};
+              if (forceStart != null) response['forceStart'] = forceStart;
+              return jsonEncode(response);
+            }
+            if (forceStart != null) {
+              _persistMiddlewareContext(ctx);
+              _timingLog('middleware event done type=error forceStart', watch);
+              return jsonEncode({'forceStart': forceStart});
             }
           }
           _persistMiddlewareContext(ctx);
@@ -727,6 +749,31 @@ class TypedAuwgent<IR extends JsonMap> {
       final systemPrompt = context['systemPrompt'];
       if (systemPrompt is String) {
         ctx.systemPrompt = systemPrompt;
+      }
+
+      final model = context['model'];
+      if (model is String) {
+        ctx.model = model;
+      }
+
+      final provider = context['provider'];
+      if (provider is String) {
+        ctx.provider = provider;
+      }
+
+      final config = context['config'];
+      if (config is Map) {
+        ctx.config = Map<String, Object?>.from(config);
+      }
+
+      final url = context['url'];
+      if (url is String) {
+        ctx.url = url;
+      }
+
+      final headers = context['headers'];
+      if (headers is Map) {
+        ctx.headers = Map<String, Object?>.from(headers);
       }
     }
     return ctx;

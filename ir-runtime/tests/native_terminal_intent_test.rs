@@ -19,6 +19,7 @@ impl ModelDriver for EventDriver {
         _model: &str,
         _messages: &[Message],
         config: Option<Value>,
+        _headers: Option<Value>,
     ) -> Result<ModelEventStream, String> {
         if let Some(captured) = &self.captured_config {
             *captured.lock().unwrap() = config;
@@ -34,6 +35,7 @@ impl ModelDriver for EventDriver {
         _model: &str,
         _text: &str,
         _config: Option<Value>,
+        _headers: Option<Value>,
     ) -> Result<Vec<f32>, String> {
         Ok(Vec::new())
     }
@@ -43,6 +45,7 @@ impl ModelDriver for EventDriver {
         _model: &str,
         texts: &[String],
         _config: Option<Value>,
+        _headers: Option<Value>,
     ) -> Result<Vec<Vec<f32>>, String> {
         Ok(texts.iter().map(|_| Vec::new()).collect())
     }

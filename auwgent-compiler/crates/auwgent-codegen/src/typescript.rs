@@ -65,14 +65,17 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         format!("({helper_types})[]")
     };
 
+    let input_literal_type = ir_input_to_ts_literal_type(ir.get("input"));
+
     let ir_import = [
         format!("import _importedIR from './{base_name}.agent.json' with {{ type: 'json' }};"),
         format!(
-            "type {agent_name}IR = Omit<typeof _importedIR, \"name\" | \"workflows\" | \"helpers\"> & {{"
+            "type {agent_name}IR = Omit<typeof _importedIR, \"name\" | \"workflows\" | \"helpers\" | \"input\"> & {{"
         ),
         format!("  name: \"{agent_name}\";"),
         format!("  workflows: {workflow_array_type};"),
         format!("  helpers: {helper_array_type};"),
+        format!("  input: {input_literal_type};"),
         "};".to_string(),
         format!("const agentIR = _importedIR as unknown as {agent_name}IR;"),
     ]
@@ -812,6 +815,44 @@ fn sanitize_ts_identifier(name: &str) -> String {
     }
 }
 
+/// Convert an IR `input` value to a TypeScript literal type string.
+/// This is used to explicitly type the `input` field in the generated IR type,
+/// because `typeof jsonImport` loses string literal types.
+fn ir_input_to_ts_literal_type(input: Option<&Value>) -> String {
+    match input {
+        None | Some(Value::Null) => "null".to_string(),
+        Some(Value::String(s)) => format!("\"{s}\""),
+        Some(Value::Object(obj)) => {
+            let mut fields = vec![];
+            for (k, v) in obj.iter() {
+                fields.push(format!("{}: {}", k, json_value_to_ts_literal(v)));
+            }
+            format!("{{ {} }}", fields.join("; "))
+        }
+        _ => "any".to_string(),
+    }
+}
+
+fn json_value_to_ts_literal(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(b) => b.to_string(),
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => format!("\"{s}\""),
+        Value::Array(arr) => {
+            let items: Vec<String> = arr.iter().map(json_value_to_ts_literal).collect();
+            format!("[{}]", items.join(", "))
+        }
+        Value::Object(obj) => {
+            let fields: Vec<String> = obj
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k, json_value_to_ts_literal(v)))
+                .collect();
+            format!("{{ {} }}", fields.join("; "))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::generate;
@@ -925,5 +966,42 @@ mod tests {
         assert!(output.contains("export type ImageInput = MediaSource & { mimeType?: string; detail?: \"auto\" | \"low\" | \"high\" };"));
         assert!(output.contains("image(source: ImageInput): ImagePart"));
         assert!(!output.contains("audio(source:"));
+        // Verify IR type explicitly types input so ExtractInputShape resolves correctly
+        assert!(output.contains("Omit<typeof _importedIR, \"name\" | \"workflows\" | \"helpers\" | \"input\">"));
+        assert!(output.contains("input: { type: \"union\"; options: [\"image\", \"file\"] }"));
+    }
+
+    #[test]
+    fn emits_explicit_input_literal_type_for_media_agent() {
+        let ir = json!({
+            "name": "Vision",
+            "modelConfig": [],
+            "input": "image",
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "vision");
+        assert!(output.contains("input: \"image\""));
+    }
+
+    #[test]
+    fn emits_explicit_input_literal_type_for_text_agent() {
+        let ir = json!({
+            "name": "Chat",
+            "modelConfig": [],
+            "input": null,
+            "output": null,
+            "context": null,
+            "tools": [],
+            "workflows": [],
+            "helpers": []
+        });
+
+        let output = generate(&CodegenPlan::new(ir), "chat");
+        assert!(output.contains("input: null"));
     }
 }

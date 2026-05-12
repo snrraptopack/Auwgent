@@ -1,18 +1,11 @@
-
 @native
 agent TestAccount{
     default config{
-        model: groq("openai/gpt-oss-120b",{
+        model: gemini("gemini-2.5-flash-image",{
             temperature:0.7
         })
         prompt: "Be polite and concise,when you call a tool,the result will be sent to you when they are in dont come up with your own values"
     }
 
-    output: {
-        user_name:string,
-        age: number
-    }
-
-    tool get_name():string @desc "use this to get user name"
-    tool get_age():number @desc "use this to get user age"
+    input: Text | Image
 }

@@ -56,13 +56,19 @@ impl ModelDriver for OpenAIDriver {
         model: &str,
         messages: &[Message],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<ModelEventStream, String> {
         let base = self.base_url.trim_end_matches('/');
-        let url = if base.ends_with("/chat/completions") {
+        let mut url = if base.ends_with("/chat/completions") {
             base.to_string()
         } else {
             format!("{}/chat/completions", base)
         };
+
+        // Allow middleware to override URL via config
+        if let Some(url_override) = config.as_ref().and_then(|c| c.get("url")).and_then(Value::as_str) {
+            url = url_override.to_string();
+        }
 
         // ── Build messages array ──────────────────────────────────────────
         let openai_messages: Vec<Value> = messages
@@ -143,11 +149,25 @@ impl ModelDriver for OpenAIDriver {
         }
 
         // ── Send request ──────────────────────────────────────────────────
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        // Apply bearer auth ONLY if Authorization header is not already set by middleware
+        let has_auth = headers
+            .as_ref()
+            .and_then(|v| v.get("Authorization"))
+            .is_some();
+        if !has_auth {
+            req = req.bearer_auth(&self.api_key);
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send request to OpenAI: {}", e))?;
@@ -359,6 +379,7 @@ impl ModelDriver for OpenAIDriver {
         model: &str,
         text: &str,
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<f32>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
@@ -381,11 +402,25 @@ impl ModelDriver for OpenAIDriver {
             }
         }
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        // Apply bearer auth ONLY if Authorization header is not already set by middleware
+        let has_auth = headers
+            .as_ref()
+            .and_then(|v| v.get("Authorization"))
+            .is_some();
+        if !has_auth {
+            req = req.bearer_auth(&self.api_key);
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send embedding request to OpenAI: {}", e))?;
@@ -423,6 +458,7 @@ impl ModelDriver for OpenAIDriver {
         model: &str,
         texts: &[String],
         config: Option<Value>,
+        headers: Option<Value>,
     ) -> Result<Vec<Vec<f32>>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
@@ -445,11 +481,25 @@ impl ModelDriver for OpenAIDriver {
             }
         }
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&body)
+        let mut req = self.client.post(&url).json(&body);
+
+        // Apply middleware headers
+        if let Some(h) = headers.as_ref().and_then(|v| v.as_object()) {
+            for (k, v) in h {
+                req = req.header(k, v.as_str().unwrap_or(""));
+            }
+        }
+
+        // Apply bearer auth ONLY if Authorization header is not already set by middleware
+        let has_auth = headers
+            .as_ref()
+            .and_then(|v| v.get("Authorization"))
+            .is_some();
+        if !has_auth {
+            req = req.bearer_auth(&self.api_key);
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| format!("Failed to send embedding request to OpenAI: {}", e))?;

@@ -4,8 +4,8 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "groq",
-          "modelName": "openai/gpt-oss-120b",
+          "type": "gemini",
+          "modelName": "gemini-2.5-flash-image",
           "config": {
             "type": "object",
             "value": {
@@ -26,39 +26,10 @@
       "namedConfig": []
     }
   ],
-  "input": null,
-  "output": {
-    "type": {
-      "type": "object",
-      "properties": {
-        "user_name": {
-          "type": "string",
-          "optional": false
-        },
-        "age": {
-          "type": "number",
-          "optional": false
-        }
-      }
-    }
-  },
+  "input": "image",
+  "output": null,
   "context": null,
-  "tools": [
-    {
-      "name": "get_name",
-      "description": "use this to get user name",
-      "params": {},
-      "returns": "string",
-      "examples": []
-    },
-    {
-      "name": "get_age",
-      "description": "use this to get user age",
-      "params": {},
-      "returns": "number",
-      "examples": []
-    }
-  ],
+  "tools": [],
   "workflows": [],
   "helpers": [],
   "components": [],
