@@ -15,26 +15,14 @@
   <div class="grid lg:grid-cols-2 gap-8 items-start">
 
     <!-- LEFT SIDE: Auwgent DSL -->
-    <div class="bg-gray-950 rounded-2xl border border-gray-900 overflow-hidden shadow-2xl">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-900/50">
-        <div class="flex gap-2">
-          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
-          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
-          <div class="w-3 h-3 rounded-full bg-gray-700"></div>
-        </div>
-        <span class="text-xs font-mono text-gray-400">weather.agent</span>
-      </div>
-      <div class="p-5 overflow-x-auto">
-<pre is:raw class="text-[13px] leading-relaxed font-mono text-gray-300"><code><span class="text-brand-500">agent</span> <span class="text-white font-semibold">WeatherBot</span> {
-  <span class="text-brand-500">default config</span> {
-    <span class="text-gray-400">model:</span> <span class="text-blue-300">gemini</span>(<span class="text-green-400">"gemini-2.5-flash"</span>)
-    <span class="text-gray-400">prompt:</span> <span class="text-green-400">"You are a helpful meteorologist."</span>
-  }
-
-  <span class="text-brand-500">tool</span> <span class="text-blue-300">get_weather</span>(): <span class="text-blue-400">string</span> <span class="text-brand-500">@desc</span> <span class="text-green-400">"use this to get the weather"</span>
-}</code></pre>
-      </div>
-    </div>
+    <video 
+      src="/weatherbot.mp4" 
+      class="w-full rounded-2xl shadow-2xl border border-gray-900/10" 
+      autoplay 
+      loop 
+      muted 
+      playsinline
+    ></video>
 
     <!-- RIGHT SIDE: Target Code with Tabs -->
     <div class="bg-surface-alt rounded-2xl border border-gray-950/10 overflow-hidden">

@@ -106,7 +106,7 @@ impl ModelDriver for GeminiDriver {
                     gen_config.insert(key.clone(), value.clone());
                 }
 
-                if (!gen_config.is_empty()) {
+                if !gen_config.is_empty() {
                     body_obj.insert("generationConfig".to_string(), Value::Object(gen_config));
                 }
             }

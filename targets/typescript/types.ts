@@ -255,9 +255,10 @@ export type ExtractInputShape<IR extends AgentIRShape> =
 
 /** Map from provider type string → the key field name the user must supply */
 type ProviderKeyMap = {
-    gemini: 'geminiApiKey';
-    openai: 'openaiApiKey';
-    custom: 'openaiApiKey'; // custom uses OpenAI-compatible key
+  gemini: 'geminiApiKey';
+  openai: 'openaiApiKey';
+  groq:   'groqApiKey';
+  custom: 'openaiApiKey'; // custom uses OpenAI-compatible key
 };
 
 /** Extract provider `type` from a single model config */
