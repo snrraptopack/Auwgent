@@ -57,6 +57,3 @@ const session = await agent.run([
     mimeType:"image/png"
   })
 ])
-console.log(JSON.stringify(agent.getMetadata(), null, 2))
-console.log("**************** \n \n")
-console.log(JSON.stringify(session.turns,null,2))

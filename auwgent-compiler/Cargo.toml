@@ -36,3 +36,10 @@ codegen-units = 256
 debug = 0
 incremental = true
 codegen-units = 256
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
