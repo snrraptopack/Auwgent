@@ -35,6 +35,14 @@ fn agent_uses_media(configs: &[AgentConfig], type_decls: &[&TypeDeclaration]) ->
             TypeExpr::Object { properties, .. } => properties
                 .iter()
                 .any(|p| type_contains_media(&p.ty, type_map)),
+            TypeExpr::Union { options, .. } => options.iter().any(|opt| {
+                matches!(opt.value.as_str(), "Image" | "File" | "Audio" | "Video")
+                    || type_map.get(&opt.value).map_or(false, |td| {
+                        td.fields
+                            .iter()
+                            .any(|f| type_contains_media(&f.ty, type_map))
+                    })
+            }),
             _ => false,
         }
     }
@@ -2035,6 +2043,27 @@ mod tests {
                 }
 
                 input: Text
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("native")
+        );
+    }
+
+    #[test]
+    fn media_union_input_auto_detects_native_protocol() {
+        let ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text | Image
             }
             "#,
         );

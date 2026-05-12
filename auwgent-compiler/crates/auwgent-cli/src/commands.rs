@@ -102,7 +102,11 @@ pub fn run_generate(
                 p_cfg.as_ref().map(|c| c.targets.as_slice()),
             );
 
-            let p_all_files = resolution::collect_agent_files(&p_dir);
+            let p_all_files = if p_dir.is_file() {
+                vec![p_dir.clone()]
+            } else {
+                resolution::collect_agent_files(&p_dir)
+            };
             let p_files: Vec<_> = p_all_files
                 .into_iter()
                 .filter(|f| {

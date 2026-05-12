@@ -630,6 +630,12 @@ impl Checker {
             TypeExpr::Object { properties, .. } => {
                 properties.iter().any(|p| self.type_expr_contains_media(&p.ty))
             }
+            TypeExpr::Union { options, .. } => options.iter().any(|opt| {
+                matches!(opt.value.as_str(), "Image" | "File" | "Audio" | "Video")
+                    || self.type_map.get(&opt.value).map_or(false, |fields| {
+                        fields.iter().any(|f| self.type_expr_contains_media(&f.ty))
+                    })
+            }),
             _ => false,
         }
     }
@@ -870,6 +876,49 @@ mod tests {
         assert!(
             !diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
             "expected no @block error for text input, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn block_annotation_with_union_media_input_errors() {
+        let diagnostics = check_source(
+            r#"
+            @block
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Text | Image
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
+            "expected @block + union media error, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn no_annotation_with_union_media_input_ok() {
+        let diagnostics = check_source(
+            r#"
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Text | Image
+            }
+            "#,
+        );
+
+        assert!(
+            !diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
+            "expected no error for union media without annotation, got {diagnostics:?}"
         );
     }
 
