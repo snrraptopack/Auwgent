@@ -42,10 +42,12 @@ pub fn build_schema_from_params(
     let mut schema = json!({
         "type": "object",
         "properties": properties,
-        "required": required,
     });
 
     if let Some(obj) = schema.as_object_mut() {
+        if !required.is_empty() {
+            obj.insert("required".to_string(), Value::Array(required));
+        }
         obj.insert("additionalProperties".to_string(), json!(false));
     }
 
@@ -459,6 +461,15 @@ fn make_schema_nullable(schema: &mut Value) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn empty_params_keep_properties_and_omit_required() {
+        let schema = build_schema_from_params(&json!({}), None, true);
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["properties"], json!({}));
+        assert!(schema.get("required").is_none());
+        assert_eq!(schema["additionalProperties"], false);
+    }
 
     #[test]
     fn primitive_params() {

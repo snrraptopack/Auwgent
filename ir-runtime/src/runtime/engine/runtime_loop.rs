@@ -530,7 +530,9 @@ impl AuwgentEngine {
                 };
                 timing.mark("built provider messages");
 
-                // Inject native tools and output schema into config when in native mode
+                // Inject native tools and output schema into config when in native mode.
+                // OpenAI rejects requests that combine tools with response_format,
+                // so we skip the output schema when tools are present.
                 let config_params = if is_native {
                     let mut config = config_params.clone().unwrap_or_else(|| serde_json::json!({}));
                     let registry = self.native_registry();
@@ -540,8 +542,11 @@ impl AuwgentEngine {
                             if !tools.is_empty() {
                                 config["auwgent_native_tools"] = serde_json::json!(tools);
                             }
-                            if let Some(fmt) = registry.openai_output_format() {
-                                config["auwgent_native_output_schema"] = fmt;
+                            // Only inject output schema when no tools are present
+                            if tools.is_empty() {
+                                if let Some(fmt) = registry.openai_output_format() {
+                                    config["auwgent_native_output_schema"] = fmt;
+                                }
                             }
                         }
                         "gemini" => {

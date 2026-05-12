@@ -43,7 +43,22 @@
     }
   },
   "context": null,
-  "tools": [],
+  "tools": [
+    {
+      "name": "get_name",
+      "description": "use this to get user name",
+      "params": {},
+      "returns": "string",
+      "examples": []
+    },
+    {
+      "name": "get_age",
+      "description": "use this to get user age",
+      "params": {},
+      "returns": "number",
+      "examples": []
+    }
+  ],
   "workflows": [],
   "helpers": [],
   "components": [],

@@ -12,4 +12,7 @@ agent TestAccount{
         user_name:string,
         age: number
     }
+
+    tool get_name():string @desc "use this to get user name"
+    tool get_age():number @desc "use this to get user age"
 }
