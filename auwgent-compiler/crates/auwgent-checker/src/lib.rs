@@ -191,6 +191,19 @@ impl Checker {
             }
         }
 
+        // Validate protocol mode compatibility with input/output types
+        if agent.protocol_mode.as_deref() == Some("block") {
+            if let Some(span) = self.agent_uses_media(&agent.configs) {
+                diags.push(
+                    Diagnostic::error(
+                        "Agent is annotated with @block but uses non-text input/output types that require native mode",
+                        span,
+                    )
+                    .with_help("Remove @block annotation to auto-switch to native mode, or change input/output to text-only types."),
+                );
+            }
+        }
+
         if !has_model_config {
             diags.push(Diagnostic::error(
                 format!("Agent '{}' is missing a model configuration", agent.name.value),
@@ -597,6 +610,82 @@ impl Checker {
             }
         }
     }
+
+    /// Check whether a type expression contains any non-text media types
+    /// (Image, File, Audio, Video) that require native protocol mode.
+    fn type_expr_contains_media(&self, ty: &TypeExpr) -> bool {
+        match ty {
+            TypeExpr::Image(_) | TypeExpr::File(_) | TypeExpr::Audio(_) | TypeExpr::Video(_) => {
+                true
+            }
+            TypeExpr::TypeRef(name) => {
+                // Check if the referenced type declaration contains media fields
+                if let Some(fields) = self.type_map.get(&name.value) {
+                    fields.iter().any(|f| self.type_expr_contains_media(&f.ty))
+                } else {
+                    false
+                }
+            }
+            TypeExpr::Array { element, .. } => self.type_expr_contains_media(element),
+            TypeExpr::Object { properties, .. } => {
+                properties.iter().any(|p| self.type_expr_contains_media(&p.ty))
+            }
+            _ => false,
+        }
+    }
+
+    /// Check whether any input or output config contains non-text media types.
+    fn agent_uses_media(&self, configs: &[AgentConfig]) -> Option<Span> {
+        for config in configs {
+            match config {
+                AgentConfig::Input(ic) => match &ic.shape {
+                    InputShape::Direct(ty) => {
+                        if self.type_expr_contains_media(ty) {
+                            return Some(ic.span);
+                        }
+                    }
+                    InputShape::Properties(props) => {
+                        for p in props {
+                            if self.type_expr_contains_media(&p.ty) {
+                                return Some(p.name.span);
+                            }
+                        }
+                    }
+                },
+                AgentConfig::Output(oc) => match &oc.shape {
+                    OutputShape::Direct { ty, .. } => {
+                        if self.type_expr_contains_media(ty) {
+                            return Some(oc.span);
+                        }
+                    }
+                    OutputShape::Properties(props) => {
+                        for p in props {
+                            if self.type_expr_contains_media(&p.decl.ty) {
+                                return Some(p.decl.name.span);
+                            }
+                        }
+                    }
+                    OutputShape::Union(types) => {
+                        for t in types {
+                            // Union members are type names; check if any is a media type
+                            if matches!(t.value.as_str(), "Image" | "File" | "Audio" | "Video")
+                            {
+                                return Some(t.span);
+                            }
+                            // Also check type declarations
+                            if let Some(fields) = self.type_map.get(&t.value) {
+                                if fields.iter().any(|f| self.type_expr_contains_media(&f.ty)) {
+                                    return Some(t.span);
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        None
+    }
 }
 
 fn is_input_modality_name(name: &str) -> bool {
@@ -737,6 +826,72 @@ mod tests {
         assert!(
             diagnostics.is_empty(),
             "expected media input to be accepted, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn block_annotation_with_media_input_errors() {
+        let diagnostics = check_source(
+            r#"
+            @block
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Image
+            }
+            "#,
+        );
+
+        assert!(
+            diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
+            "expected @block + media error, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn block_annotation_with_text_input_ok() {
+        let diagnostics = check_source(
+            r#"
+            @block
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert!(
+            !diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
+            "expected no @block error for text input, got {diagnostics:?}"
+        );
+    }
+
+    #[test]
+    fn native_annotation_with_media_input_ok() {
+        let diagnostics = check_source(
+            r#"
+            @native
+            agent Main {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "hello"
+                }
+
+                input: Image
+            }
+            "#,
+        );
+
+        assert!(
+            !diagnostics.iter().any(|m| m.contains("@block") && m.contains("non-text")),
+            "expected no error for @native + media, got {diagnostics:?}"
         );
     }
 }

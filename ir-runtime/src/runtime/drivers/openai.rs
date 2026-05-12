@@ -34,7 +34,12 @@ impl OpenAIDriver {
         for (key, value) in cfg_obj {
             if matches!(
                 key.as_str(),
-                "model" | "messages" | "stream" | "stream_options"
+                "model"
+                    | "messages"
+                    | "stream"
+                    | "stream_options"
+                    | "auwgent_native_tools"
+                    | "auwgent_native_output_schema"
             ) {
                 continue;
             }
@@ -71,14 +76,35 @@ impl ModelDriver for OpenAIDriver {
                     "role": "user",
                     "content": openai_content(m)
                 }),
-                Role::Model => json!({
-                    "role": "assistant",
-                    "content": m.content.text()
-                }),
-                Role::ToolResult => json!({
-                    "role": "user",
-                    "content": m.content.text()
-                }),
+                Role::Model => {
+                    let mut msg = json!({
+                        "role": "assistant",
+                        "content": m.content.text()
+                    });
+                    if let Some(ref tcs) = m.tool_calls {
+                        msg["tool_calls"] = json!(tcs);
+                    }
+                    msg
+                }
+                Role::ToolResult => {
+                    // Native mode tool results have a tool_call_id set.
+                    // Block mode tool results are just user messages with [result] content.
+                    if m.tool_call_id.is_some() {
+                        let mut msg = json!({
+                            "role": "tool",
+                            "content": m.content.text()
+                        });
+                        if let Some(ref id) = m.tool_call_id {
+                            msg["tool_call_id"] = json!(id);
+                        }
+                        msg
+                    } else {
+                        json!({
+                            "role": "user",
+                            "content": m.content.text()
+                        })
+                    }
+                }
             })
             .collect();
 
@@ -90,9 +116,30 @@ impl ModelDriver for OpenAIDriver {
             "stream_options": { "include_usage": true }
         });
 
+        // Extract native tools / output schema from config before merging
+        let native_tools = config.as_ref().and_then(|cfg| {
+            cfg.get("auwgent_native_tools")
+                .and_then(|v| v.as_array().cloned())
+        });
+        let native_output_schema = config
+            .as_ref()
+            .and_then(|cfg| cfg.get("auwgent_native_output_schema").cloned());
+
         // Apply generation config params if provided
         if let Some(cfg) = config.as_ref() {
             Self::merge_request_config(&mut body, cfg);
+        }
+
+        // Inject native tools and output schema into the request body
+        if let Some(tools) = native_tools {
+            if let Some(body_obj) = body.as_object_mut() {
+                body_obj.insert("tools".to_string(), json!(tools));
+            }
+        }
+        if let Some(fmt) = native_output_schema {
+            if let Some(body_obj) = body.as_object_mut() {
+                body_obj.insert("response_format".to_string(), fmt);
+            }
         }
 
         // ── Send request ──────────────────────────────────────────────────
@@ -113,6 +160,21 @@ impl ModelDriver for OpenAIDriver {
 
         // ── SSE stream parsing ────────────────────────────────────────────
         let mut buffer = Vec::<u8>::new();
+
+        // Buffer for accumulating streaming tool call deltas
+        use std::cell::RefCell;
+        use std::collections::HashMap;
+
+        #[derive(Default, Clone)]
+        struct BufferedToolCall {
+            id: Option<String>,
+            name: Option<String>,
+            arguments: String,
+        }
+
+        let tool_call_buffer: RefCell<HashMap<u32, BufferedToolCall>> =
+            RefCell::new(HashMap::new());
+
         let stream = response
             .bytes_stream()
             .map(move |item| match item {
@@ -137,9 +199,11 @@ impl ModelDriver for OpenAIDriver {
                                 json_val.get("choices").and_then(|v| v.as_array())
                                 && !choices.is_empty()
                             {
-                                if let Some(content) = choices[0]
-                                    .get("delta")
-                                    .and_then(|d| d.get("content"))
+                                let delta = choices[0].get("delta").unwrap_or(&Value::Null);
+
+                                // ── Content chunk ─────────────────────────────
+                                if let Some(content) = delta
+                                    .get("content")
                                     .and_then(|c| c.as_str())
                                 {
                                     result_events.push(
@@ -149,6 +213,32 @@ impl ModelDriver for OpenAIDriver {
                                     );
                                 }
 
+                                // ── Tool call deltas ──────────────────────────
+                                if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                                    let mut buf = tool_call_buffer.borrow_mut();
+                                    for tc in tool_calls {
+                                        let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                        let entry = buf.entry(index).or_default();
+
+                                        if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                                            entry.id = Some(id.to_string());
+                                        }
+                                        if let Some(name) = tc.get("function")
+                                            .and_then(|f| f.get("name"))
+                                            .and_then(|n| n.as_str())
+                                        {
+                                            entry.name = Some(name.to_string());
+                                        }
+                                        if let Some(args) = tc.get("function")
+                                            .and_then(|f| f.get("arguments"))
+                                            .and_then(|a| a.as_str())
+                                        {
+                                            entry.arguments.push_str(args);
+                                        }
+                                    }
+                                }
+
+                                // ── Finish reason ─────────────────────────────
                                 if let Some(finish_reason_str) =
                                     choices[0].get("finish_reason").and_then(|f| f.as_str())
                                 {
@@ -170,6 +260,34 @@ impl ModelDriver for OpenAIDriver {
                                             finish_reason,
                                         ),
                                     );
+
+                                    // Flush buffered tool calls on tool_calls finish
+                                    if finish_reason_str == "tool_calls" {
+                                        let mut buf = tool_call_buffer.borrow_mut();
+                                        let mut indices: Vec<u32> = buf.keys().copied().collect();
+                                        indices.sort();
+                                        for idx in indices {
+                                            if let Some(tc) = buf.remove(&idx) {
+                                                if let (Some(id), Some(name)) = (tc.id, tc.name) {
+                                                    let args = serde_json::from_str::<Value>(&tc.arguments)
+                                                        .unwrap_or_else(|_| {
+                                                            if tc.arguments.is_empty() {
+                                                                json!({})
+                                                            } else {
+                                                                json!({ "_raw_arguments": tc.arguments })
+                                                            }
+                                                        });
+                                                    result_events.push(
+                                                        crate::runtime::drivers::ModelEvent::NativeToolCall {
+                                                            id: Some(id),
+                                                            provider_name: name,
+                                                            arguments: args,
+                                                        },
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                             // Extract usage if available
@@ -529,6 +647,160 @@ mod tests {
         assert_eq!(body["temperature"], json!(0.1));
         assert_eq!(body["somefield"], json!({ "another": "value" }));
         assert_eq!(body["stream"], json!(true));
+    }
+
+    #[test]
+    fn merge_request_config_strips_auwgent_native_keys() {
+        let mut body = json!({
+            "model": "demo",
+            "messages": [],
+            "stream": true,
+        });
+        let cfg = json!({
+            "auwgent_native_tools": [{ "type": "function", "function": { "name": "tool_search" } }],
+            "auwgent_native_output_schema": { "type": "json_schema", "json_schema": {} },
+            "temperature": 0.5,
+        });
+
+        OpenAIDriver::merge_request_config(&mut body, &cfg);
+
+        assert_eq!(body["temperature"], json!(0.5));
+        assert!(body.get("auwgent_native_tools").is_none());
+        assert!(body.get("auwgent_native_output_schema").is_none());
+    }
+
+    #[test]
+    fn tool_call_delta_accumulation() {
+        // Simulate the buffering logic used in streaming
+        use std::collections::HashMap;
+
+        #[derive(Default, Clone)]
+        struct BufferedToolCall {
+            id: Option<String>,
+            name: Option<String>,
+            arguments: String,
+        }
+
+        let mut buf: HashMap<u32, BufferedToolCall> = HashMap::new();
+
+        // First delta: id + name
+        let delta1 = json!({
+            "index": 0,
+            "id": "call_abc",
+            "function": { "name": "tool_search", "arguments": "" }
+        });
+        {
+            let tc = &delta1;
+            let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let entry = buf.entry(index).or_default();
+            if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                entry.id = Some(id.to_string());
+            }
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                entry.name = Some(name.to_string());
+            }
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|a| a.as_str())
+            {
+                entry.arguments.push_str(args);
+            }
+        }
+
+        // Second delta: partial arguments
+        let delta2 = json!({
+            "index": 0,
+            "function": { "arguments": "{\"query\":\"" }
+        });
+        {
+            let tc = &delta2;
+            let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let entry = buf.entry(index).or_default();
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|a| a.as_str())
+            {
+                entry.arguments.push_str(args);
+            }
+        }
+
+        // Third delta: remaining arguments
+        let delta3 = json!({
+            "index": 0,
+            "function": { "arguments": "hello\"}" }
+        });
+        {
+            let tc = &delta3;
+            let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let entry = buf.entry(index).or_default();
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|a| a.as_str())
+            {
+                entry.arguments.push_str(args);
+            }
+        }
+
+        let tc = buf.get(&0).unwrap();
+        assert_eq!(tc.id, Some("call_abc".to_string()));
+        assert_eq!(tc.name, Some("tool_search".to_string()));
+        assert_eq!(tc.arguments, "{\"query\":\"hello\"}");
+
+        let args = serde_json::from_str::<Value>(&tc.arguments).unwrap();
+        assert_eq!(args, json!({ "query": "hello" }));
+    }
+
+    #[test]
+    fn parallel_tool_call_delta_accumulation() {
+        use std::collections::HashMap;
+
+        #[derive(Default, Clone)]
+        struct BufferedToolCall {
+            id: Option<String>,
+            name: Option<String>,
+            arguments: String,
+        }
+
+        let mut buf: HashMap<u32, BufferedToolCall> = HashMap::new();
+
+        let deltas = vec![
+            json!({ "index": 0, "id": "call_a", "function": { "name": "tool_search", "arguments": "{\"q\":\"a\"}" } }),
+            json!({ "index": 1, "id": "call_b", "function": { "name": "tool_lookup", "arguments": "{\"id\":\"b\"}" } }),
+        ];
+
+        for delta in &deltas {
+            let tc = delta;
+            let index = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let entry = buf.entry(index).or_default();
+            if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                entry.id = Some(id.to_string());
+            }
+            if let Some(name) = tc
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                entry.name = Some(name.to_string());
+            }
+            if let Some(args) = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|a| a.as_str())
+            {
+                entry.arguments.push_str(args);
+            }
+        }
+
+        assert_eq!(buf.len(), 2);
+        assert_eq!(buf.get(&0).unwrap().name, Some("tool_search".to_string()));
+        assert_eq!(buf.get(&1).unwrap().name, Some("tool_lookup".to_string()));
     }
 
     #[test]

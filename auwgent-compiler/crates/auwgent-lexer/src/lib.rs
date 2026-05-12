@@ -206,6 +206,10 @@ pub enum TokenKind {
     AtDesc,
     #[token("@example")]
     AtExample,
+    #[token("@native")]
+    AtNative,
+    #[token("@block")]
+    AtBlock,
     #[token("hlp")]
     Hlp,
     #[token("ctx")]
@@ -346,6 +350,8 @@ impl fmt::Display for TokenKind {
             Self::Pipe => write!(f, "'|'"),
             Self::AtDesc => write!(f, "'@desc'"),
             Self::AtExample => write!(f, "'@example'"),
+            Self::AtNative => write!(f, "'@native'"),
+            Self::AtBlock => write!(f, "'@block'"),
             Self::Hlp => write!(f, "'hlp'"),
             Self::Ctx => write!(f, "'ctx'"),
             Self::Ident(_) => write!(f, "identifier"),
@@ -449,5 +455,14 @@ mod tests {
         let (tokens, errors) = tokenize(source);
         assert!(errors.is_empty());
         assert!(matches!(&tokens[0].kind, TokenKind::MultilineString(_)));
+    }
+
+    #[test]
+    fn test_native_block_annotations() {
+        let source = "@native\n@block";
+        let (tokens, errors) = tokenize(source);
+        assert!(errors.is_empty(), "unexpected lex errors: {:?}", errors);
+        assert_eq!(tokens[0].kind, TokenKind::AtNative);
+        assert_eq!(tokens[1].kind, TokenKind::AtBlock);
     }
 }

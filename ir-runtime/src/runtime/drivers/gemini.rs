@@ -91,6 +91,19 @@ impl ModelDriver for GeminiDriver {
 
         body_obj.insert("contents".to_string(), json!(contents));
 
+        // ── Native tools / structured output from config ──────────────────
+        let native_tools = config.as_ref().and_then(|cfg| {
+            cfg.get("auwgent_native_tools")
+                .and_then(|v| v.as_array().cloned())
+        });
+        let native_output_schema = config
+            .as_ref()
+            .and_then(|cfg| cfg.get("auwgent_native_output_schema").cloned());
+
+        if let Some(tools) = native_tools {
+            body_obj.insert("tools".to_string(), json!(tools));
+        }
+
         // ── Generation config ─────────────────────────────────────────────
         if let Some(cfg) = config {
             if let Some(cfg_object) = cfg.as_object() {
@@ -99,11 +112,21 @@ impl ModelDriver for GeminiDriver {
                 for (key, value) in cfg_object {
                     if matches!(
                         key.as_str(),
-                        "model" | "contents" | "systemInstruction" | "tools" | "toolConfig"
+                        "model"
+                            | "contents"
+                            | "systemInstruction"
+                            | "tools"
+                            | "toolConfig"
+                            | "auwgent_native_tools"
+                            | "auwgent_native_output_schema"
                     ) {
                         continue;
                     }
                     gen_config.insert(key.clone(), value.clone());
+                }
+
+                if let Some(fmt) = native_output_schema {
+                    gen_config.insert("responseFormat".to_string(), fmt);
                 }
 
                 if !gen_config.is_empty() {
@@ -351,19 +374,64 @@ fn gemini_contents(messages: &[Message]) -> Vec<Value> {
     for message in messages.iter().filter(|m| m.role != Role::System) {
         let (role, parts) = match message.role {
             Role::User => ("user", gemini_parts(message)),
-            Role::Model => (
-                "model",
-                vec![json!({ "text": model_text_or_ack(&message.content) })],
-            ),
-            Role::ToolResult => (
-                "user",
-                vec![json!({
-                    "functionResponse": {
-                        "name": "tool_result",
-                        "response": { "output": message.content.text() }
+            Role::Model => {
+                let mut parts = Vec::new();
+                // Include text if present
+                let text = model_text_or_ack(&message.content);
+                if !text.trim().is_empty() && text != "Acknowledged." {
+                    parts.push(json!({ "text": text }));
+                }
+                // Include function calls if present
+                if let Some(ref tcs) = message.tool_calls {
+                    for tc in tcs {
+                        if let Some(func) = tc.get("function") {
+                            let name = func["name"].as_str().unwrap_or("");
+                            let args = func
+                                .get("arguments")
+                                .and_then(|a| a.as_str())
+                                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                                .unwrap_or_else(|| {
+                                    func.get("arguments").cloned().unwrap_or_else(|| json!({}))
+                                });
+                            parts.push(json!({
+                                "functionCall": {
+                                    "name": name,
+                                    "args": args
+                                }
+                            }));
+                        }
                     }
-                })],
-            ),
+                }
+                if parts.is_empty() {
+                    parts.push(json!({ "text": "Acknowledged." }));
+                }
+                ("model", parts)
+            }
+            Role::ToolResult => {
+                // Native mode tool results have a tool_call_id or name set.
+                // Block mode tool results use the legacy "tool_result" hardcoded name.
+                let (name, response) = if message.tool_call_id.is_some() || message.name.is_some() {
+                    let name = message
+                        .name
+                        .as_deref()
+                        .or_else(|| message.tool_call_id.as_deref())
+                        .unwrap_or("tool_result");
+                    let response = serde_json::from_str::<Value>(&message.content.text())
+                        .unwrap_or_else(|_| json!({ "output": message.content.text() }));
+                    (name, response)
+                } else {
+                    ("tool_result", json!({ "output": message.content.text() }))
+                };
+                (
+                    "user",
+                    vec![json!({
+                        "functionResponse": {
+                            "name": name,
+                            "response": response
+                        }
+                    })],
+                )
+            }
             Role::System => unreachable!(),
         };
 
@@ -406,8 +474,18 @@ fn gemini_response_events(json_val: &Value) -> Vec<ModelEvent> {
         .map(gemini_finish_reason);
 
     if let Some(candidate) = json_val["candidates"].get(0) {
+        // Text parts
         for text in candidate_text_parts(candidate) {
             events.push(ModelEvent::ContentChunk(text));
+        }
+
+        // Function call parts
+        for fc in candidate_function_call_parts(candidate) {
+            events.push(ModelEvent::NativeToolCall {
+                id: fc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                provider_name: fc["name"].as_str().unwrap_or("").to_string(),
+                arguments: fc.get("args").cloned().unwrap_or_else(|| json!({})),
+            });
         }
     }
 
@@ -478,6 +556,18 @@ fn candidate_text_parts(candidate: &Value) -> Vec<String> {
             parts
                 .iter()
                 .filter_map(|part| part["text"].as_str().map(ToString::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn candidate_function_call_parts(candidate: &Value) -> Vec<Value> {
+    candidate["content"]["parts"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part.get("functionCall").cloned())
                 .collect()
         })
         .unwrap_or_default()
@@ -777,5 +867,80 @@ mod tests {
                 "a processor die.".to_string()
             ]
         );
+    }
+
+    #[test]
+    fn extracts_function_call_parts_from_candidate() {
+        let candidate = json!({
+            "content": {
+                "parts": [
+                    { "text": "I'll search for that." },
+                    {
+                        "functionCall": {
+                            "name": "tool_search",
+                            "args": { "query": "hello" },
+                            "id": "fc_123"
+                        }
+                    }
+                ]
+            }
+        });
+
+        let calls = candidate_function_call_parts(&candidate);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["name"], "tool_search");
+        assert_eq!(calls[0]["args"], json!({ "query": "hello" }));
+        assert_eq!(calls[0]["id"], "fc_123");
+    }
+
+    #[test]
+    fn gemini_response_events_emits_native_tool_calls() {
+        let response = json!({
+            "candidates": [{
+                "content": {
+                    "parts": [
+                        { "text": "I'll search for that." },
+                        {
+                            "functionCall": {
+                                "name": "tool_search",
+                                "args": { "query": "hello" },
+                                "id": "fc_123"
+                            }
+                        }
+                    ],
+                    "role": "model"
+                },
+                "finishReason": "STOP"
+            }],
+            "usageMetadata": {
+                "promptTokenCount": 10,
+                "candidatesTokenCount": 4,
+                "totalTokenCount": 14
+            }
+        });
+
+        let events = gemini_response_events(&response);
+
+        // First event: text chunk
+        assert!(matches!(
+            &events[0],
+            ModelEvent::ContentChunk(text) if text == "I'll search for that."
+        ));
+
+        // Second event: native tool call
+        assert!(matches!(
+            &events[1],
+            ModelEvent::NativeToolCall { id, provider_name, arguments }
+                if id.as_deref() == Some("fc_123")
+                && provider_name == "tool_search"
+                && arguments == &json!({ "query": "hello" })
+        ));
+
+        // Third event: metadata
+        assert!(matches!(
+            &events[2],
+            ModelEvent::Metadata(meta)
+                if meta.finish_reason == Some(FinishReason::Stop)
+        ));
     }
 }

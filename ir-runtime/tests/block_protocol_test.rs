@@ -137,11 +137,20 @@ fn test_out_to_response_schema_with_dash_prefixed_inline_object_array() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0, "response_schema");
     assert_eq!(results[0].1["type"], "Output");
-    assert_eq!(results[0].1["response"]["project_name"], "Auwgent SDK Launch");
-    assert_eq!(results[0].1["response"]["tasks"][0]["title"], "Write documentation");
+    assert_eq!(
+        results[0].1["response"]["project_name"],
+        "Auwgent SDK Launch"
+    );
+    assert_eq!(
+        results[0].1["response"]["tasks"][0]["title"],
+        "Write documentation"
+    );
     assert_eq!(results[0].1["response"]["tasks"][0]["priority"], "high");
     assert_eq!(results[0].1["response"]["tasks"][0]["completed"], false);
-    assert_eq!(results[0].1["response"]["tasks"][1]["title"], "Fix buffer bugs");
+    assert_eq!(
+        results[0].1["response"]["tasks"][1]["title"],
+        "Fix buffer bugs"
+    );
     assert_eq!(results[0].1["response"]["tasks"][1]["completed"], true);
 }
 
@@ -166,7 +175,10 @@ fn test_out_to_response_schema_with_dash_prefixed_multiline_nested_object_array(
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].0, "response_schema");
     assert_eq!(results[0].1["response"]["company_name"], "SnrRaptoPack");
-    assert_eq!(results[0].1["response"]["company_departments"][0]["dept_name"], "Engineering");
+    assert_eq!(
+        results[0].1["response"]["company_departments"][0]["dept_name"],
+        "Engineering"
+    );
     assert_eq!(
         results[0].1["response"]["company_departments"][0]["employees"][0]["role"],
         "Lead Developer"
@@ -175,7 +187,10 @@ fn test_out_to_response_schema_with_dash_prefixed_multiline_nested_object_array(
         results[0].1["response"]["company_departments"][0]["employees"][1]["salary"],
         serde_json::Value::Null
     );
-    assert_eq!(results[0].1["response"]["company_departments"][1]["dept_name"], "Design");
+    assert_eq!(
+        results[0].1["response"]["company_departments"][1]["dept_name"],
+        "Design"
+    );
 }
 
 #[test]

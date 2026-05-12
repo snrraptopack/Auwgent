@@ -316,6 +316,8 @@ pub struct ModelConfigIR {
     pub model: ModelProviderIR,
     pub embedding: Option<ModelProviderIR>,
     pub prompt: JsonValue,
+    #[serde(default, rename = "toolProtocol")]
+    pub tool_protocol: Option<String>,
 }
 
 /// Mirrors `ir-runtime::ModelProvider`.

@@ -76,6 +76,8 @@ impl<T> Spanned<T> {
 pub struct Agent {
     pub name: Spanned<String>,
     pub configs: Vec<AgentConfig>,
+    /// Explicit protocol mode annotation: "native" or "block".
+    pub protocol_mode: Option<String>,
     pub span: Span,
 }
 

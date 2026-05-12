@@ -369,9 +369,7 @@ impl TimingProbe {
             let elapsed = current_time_ms().saturating_sub(self.start_ms);
             eprintln!(
                 "[auwgent][timing][rust] {} +{}ms {}",
-                self.label,
-                elapsed,
-                message
+                self.label, elapsed, message
             );
         }
     }
@@ -385,8 +383,8 @@ fn timing_enabled() -> bool {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-    std::env::var("AUWGENT_DEBUG_TIMING")
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
+        std::env::var("AUWGENT_DEBUG_TIMING")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false)
     }
 }

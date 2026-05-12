@@ -1,129 +1,15 @@
 
+@native
 agent TestAccount{
     default config{
-        model: groq("llama-3.3-70b-versatile",{
+        model: groq("openai/gpt-oss-120b",{
             temperature:0.7
         })
         prompt: "Be polite and concise,when you call a tool,the result will be sent to you when they are in dont come up with your own values"
     }
 
-     tool read_todo(id:string):string
-    @desc "read the content of a todo by its id"
-
-    tool create_todo(title:string, due_date:string
-    @desc "ISO 8601 date string", priority:"low"|"medium"|"high"):string @desc "create a new todo and return its id"
-
-    tool delete_todo(id:string):boolean
-    @desc "permanently delete a todo by id"
-
-    tool mark_todo_done(id:string):boolean
-    @desc "mark a todo as completed"
-
-    tool update_todo_title(id:string, new_title:string):boolean
-    @desc "rename a todo item"
-
-    tool set_todo_priority(id:string, priority:"low"|"medium"|"high"):boolean
-    @desc "change the priority of a todo"
-
-    tool count_todos(filter:"all"|"done"|"pending"):number
-    @desc "count todos matching a status filter"
-
-    tool get_user_name(user_id:string):string
-    @desc "get the display name of a user"
-
-    tool get_user_email(user_id:string):string
-    @desc "get the email address of a user"
-
-    tool update_user_email(user_id:string, new_email:string):boolean
-    @desc "update the email address for a user"
-
-    tool check_user_exists(user_id:string):boolean
-    @desc "check whether a user account exists"
-
-    tool deactivate_user(user_id:string):boolean
-    @desc "deactivate a user account"
-
-    tool get_user_role(user_id:string):string
-    @desc "return the role assigned to a user"
-
-    tool assign_user_role(user_id:string, role:"admin"|"editor"|"viewer"):boolean
-    @desc "assign a role to a user"
-
-    tool send_email(to:string, subject:string, body:string):boolean
-    @desc "send an email and confirm delivery"
-
-    tool get_email_subject(message_id:string):string
-    @desc "return the subject line of an email"
-
-    tool mark_email_read(message_id:string):boolean
-    @desc "mark an email message as read"
-
-    tool delete_email(message_id:string):boolean
-    @desc "delete an email by its message id"
-
-    tool schedule_meeting(title:string, start_iso:string @desc "ISO 8601 datetime", duration_minutes:number):string
-    @desc "schedule a meeting and return its event id"
-
-    tool cancel_meeting(event_id:string, reason:string):boolean
-    @desc "cancel a calendar event"
-
-    tool get_meeting_title(event_id:string):string
-    @desc "get the title of a scheduled meeting"
-
-    tool check_meeting_exists(event_id:string):boolean
-    @desc "check whether a calendar event still exists"
-
-    tool get_weather_summary(city:string, unit:"celsius"|"fahrenheit"):string
-    @desc "get a short weather summary for a city"
-
-    tool get_temperature(city:string, unit:"celsius"|"fahrenheit"):number
-    @desc "get the current temperature for a city"
-
-    tool is_raining(city:string):boolean
-    @desc "return true if it is currently raining in a city"
-
-    tool get_uv_index(city:string):number
-    @desc "get the current UV index for a city"
-
-    tool search_web(query:string, num_results:number @desc "between 1 and 20"):string
-    @desc "run a web search and return a formatted result"
-
-    tool fetch_page_text(url:string):string
-    @desc "fetch the plain text content of a URL"
-
-    tool check_url_reachable(url:string):boolean
-    @desc "return true if the URL responds with a 2xx status"
-
-    tool get_page_title(url:string):string
-    @desc "extract the title tag from a webpage"
-
-    tool run_read_query(sql:string @desc "read-only SELECT statement", db_name:string):string
-    @desc "execute a SQL query and return results as JSON string"
-
-    tool count_rows(table:string, db_name:string):number
-    @desc "return the row count of a table"
-
-    tool check_table_exists(table:string, db_name:string):boolean
-    @desc "check whether a table exists in a database"
-
-    tool write_file(path:string, content:string):boolean
-    @desc "write text content to a file"
-
-    tool read_file(path:string):string
-    @desc "read the full text content of a file"
-
-    tool delete_file(path:string, force:boolean):boolean
-    @desc "delete a file from the filesystem"
-
-    tool file_exists(path:string):boolean
-    @desc "check whether a file exists at a path"
-
-    tool get_file_size_bytes(path:string):number
-    @desc "return the size of a file in bytes"
-
-    tool run_shell_command(command:string @desc "bash command to run", working_dir:string):string
-    @desc "execute a shell command and return combined stdout and stderr"
-
-    tool get_exit_code(command:string):number
-    @desc "run a command and return only its exit code"
+    output: {
+        user_name:string,
+        age: number
+    }
 }

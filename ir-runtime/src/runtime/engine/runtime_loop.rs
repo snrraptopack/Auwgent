@@ -57,6 +57,37 @@ impl AuwgentEngine {
         value
     }
 
+    async fn process_synthetic_intent(
+        &self,
+        name: impl Into<String>,
+        value: Value,
+    ) -> AuwgentResult<(bool, bool, bool)> {
+        self.pending_intents
+            .lock()
+            .unwrap()
+            .push((name.into(), value));
+        self.process_intents().await
+    }
+
+    fn native_response_schema_payload(&self, value: Value) -> Value {
+        if value.get("type").and_then(Value::as_str).is_some() && value.get("response").is_some() {
+            return value;
+        }
+
+        let mut schema_name = "Output".to_string();
+        let mut response = value;
+        if let Value::Object(ref mut map) = response
+            && let Some(Value::String(variant)) = map.remove("__variant")
+        {
+            schema_name = variant;
+        }
+
+        serde_json::json!({
+            "type": schema_name,
+            "response": response,
+        })
+    }
+
     pub async fn begin_manual_run(
         &self,
         input: Option<Value>,
@@ -108,7 +139,10 @@ impl AuwgentEngine {
             let input_parts = input_parts_value(&user_input);
             *self.user_input.lock().unwrap() = Some(user_input);
             if let Some(parts) = input_parts {
-                self.session.lock().unwrap().start_turn_parts(user_text, parts);
+                self.session
+                    .lock()
+                    .unwrap()
+                    .start_turn_parts(user_text, parts);
             } else {
                 self.session.lock().unwrap().start_turn(user_text);
             }
@@ -346,7 +380,10 @@ impl AuwgentEngine {
             *self.user_input.lock().unwrap() = input.clone();
             if !is_teleporting {
                 if let Some(parts) = initial_input_parts.clone() {
-                    self.session.lock().unwrap().start_turn_parts(&user_text, parts);
+                    self.session
+                        .lock()
+                        .unwrap()
+                        .start_turn_parts(&user_text, parts);
                 } else {
                     self.session.lock().unwrap().start_turn(&user_text);
                 }
@@ -397,7 +434,7 @@ impl AuwgentEngine {
                             self.session
                                 .lock()
                                 .unwrap()
-                                .set_model_response(sanitize_model_response(&raw_resp));
+                                .set_model_response(self.sanitize_model_response_if_block(&raw_resp));
                         }
                         break;
                     }
@@ -479,13 +516,50 @@ impl AuwgentEngine {
                     }
                 }
 
-                let binding_block = self.render_binding_block();
-                let messages = self
-                    .session
-                    .lock()
-                    .unwrap()
-                    .to_messages_with_bindings(binding_block.clone());
+                let is_native = self.resolve_tool_protocol() == "native";
+
+                // Build provider messages based on protocol mode
+                let messages = if is_native {
+                    self.session.lock().unwrap().to_messages_native_openai()
+                } else {
+                    let binding_block = self.render_binding_block();
+                    self.session
+                        .lock()
+                        .unwrap()
+                        .to_messages_with_bindings(binding_block.clone())
+                };
                 timing.mark("built provider messages");
+
+                // Inject native tools and output schema into config when in native mode
+                let config_params = if is_native {
+                    let mut config = config_params.clone().unwrap_or_else(|| serde_json::json!({}));
+                    let registry = self.native_registry();
+                    match provider_id {
+                        "openai" | "groq" | "custom" => {
+                            let tools = registry.openai_tools();
+                            if !tools.is_empty() {
+                                config["auwgent_native_tools"] = serde_json::json!(tools);
+                            }
+                            if let Some(fmt) = registry.openai_output_format() {
+                                config["auwgent_native_output_schema"] = fmt;
+                            }
+                        }
+                        "gemini" => {
+                            let tools = registry.gemini_tools();
+                            if !tools.is_empty() {
+                                config["auwgent_native_tools"] = serde_json::json!(tools);
+                            }
+                            if let Some(fmt) = registry.gemini_output_format() {
+                                config["auwgent_native_output_schema"] = fmt;
+                            }
+                        }
+                        _ => {}
+                    }
+                    Some(config)
+                } else {
+                    config_params.clone()
+                };
+
                 let stream_res = {
                     let driver = self
                         .drivers
@@ -495,7 +569,7 @@ impl AuwgentEngine {
                         .ok_or(AuwgentError::NoDriver)?
                         .clone();
                     driver
-                        .stream_generate(model_name, &messages, config_params.clone())
+                        .stream_generate(model_name, &messages, config_params)
                         .await
                 };
                 timing.mark("provider stream_generate returned stream");
@@ -519,6 +593,9 @@ impl AuwgentEngine {
                 let mut actions_performed = false;
                 let mut turn_usage = TokenUsage::default();
                 let mut turn_finish_reason = None;
+                let mut native_tool_calls: Vec<crate::runtime::session::NativeToolCallRecord> =
+                    Vec::new();
+                let mut native_structured_output: Option<Value> = None;
 
                 while let Some(chunk_res) = stream.next().await {
                     match chunk_res {
@@ -526,7 +603,9 @@ impl AuwgentEngine {
                             if !text.is_empty() {
                                 self.current_raw_response.lock().unwrap().push_str(&text);
                             }
-                            self.orchestrator.lock().unwrap().write(&text);
+                            if !is_native {
+                                self.orchestrator.lock().unwrap().write(&text);
+                            }
 
                             let (_terminal, actions, hard_stop) = match self.process_intents().await
                             {
@@ -538,7 +617,7 @@ impl AuwgentEngine {
                                         self.session
                                             .lock()
                                             .unwrap()
-                                            .set_model_response(sanitize_model_response(&raw_resp));
+                                            .set_model_response(self.sanitize_model_response_if_block(&raw_resp));
                                     }
                                     return Err(error);
                                 }
@@ -552,7 +631,7 @@ impl AuwgentEngine {
                                     self.session
                                         .lock()
                                         .unwrap()
-                                        .set_model_response(sanitize_model_response(&raw_resp));
+                                        .set_model_response(self.sanitize_model_response_if_block(&raw_resp));
                                 }
                                 break;
                             }
@@ -562,6 +641,106 @@ impl AuwgentEngine {
                         Ok(ModelEvent::Metadata(meta)) => {
                             turn_usage = meta.usage;
                             turn_finish_reason = meta.finish_reason;
+                        }
+                        Ok(ModelEvent::NativeToolCall {
+                            id,
+                            provider_name,
+                            arguments,
+                        }) => {
+                            if let Some((action_kind, canonical_name)) =
+                                crate::runtime::engine::native_registry::NativeCallableRegistry::route(
+                                    &provider_name,
+                                )
+                            {
+                                let canonical_name = canonical_name.to_string();
+                                let intent_name = match action_kind {
+                                    crate::runtime::engine::native_registry::ActionKind::Tool => {
+                                        "tool_call"
+                                    }
+                                    crate::runtime::engine::native_registry::ActionKind::Workflow => {
+                                        "workflow_call"
+                                    }
+                                    crate::runtime::engine::native_registry::ActionKind::Helper => {
+                                        "helper_call"
+                                    }
+                                };
+                                let intent_value = serde_json::json!({
+                                    "type": &canonical_name,
+                                    "args": arguments
+                                });
+                                self.pending_intents
+                                    .lock()
+                                    .unwrap()
+                                    .push((intent_name.to_string(), intent_value));
+                                let (_terminal, actions, hard_stop) =
+                                    match self.process_intents().await {
+                                        Ok(result) => result,
+                                        Err(error) => {
+                                            let raw_resp = self
+                                                .current_raw_response
+                                                .lock()
+                                                .unwrap()
+                                                .clone();
+                                            if !raw_resp.is_empty() {
+                                                self.session.lock().unwrap().set_model_response(
+                                                    self.sanitize_model_response_if_block(&raw_resp),
+                                                );
+                                            }
+                                            return Err(error);
+                                        }
+                                    };
+                                if actions {
+                                    actions_performed = true;
+                                }
+                                if hard_stop {
+                                    let raw_resp =
+                                        self.current_raw_response.lock().unwrap().clone();
+                                    if !raw_resp.is_empty() {
+                                        self.session.lock().unwrap().set_model_response(
+                                            self.sanitize_model_response_if_block(&raw_resp),
+                                        );
+                                    }
+                                    break;
+                                }
+                                native_tool_calls.push(
+                                    crate::runtime::session::NativeToolCallRecord {
+                                        id,
+                                        provider_name,
+                                        canonical_name,
+                                        action_kind: intent_name.to_string(),
+                                        arguments,
+                                    },
+                                );
+                            }
+                        }
+                        Ok(ModelEvent::NativeStructuredOutput(value)) => {
+                            let payload = self.native_response_schema_payload(value.clone());
+                            let (_terminal, _actions, hard_stop) = match self
+                                .process_synthetic_intent("response_schema", payload)
+                                .await
+                            {
+                                Ok(result) => result,
+                                Err(error) => {
+                                    let raw_resp =
+                                        self.current_raw_response.lock().unwrap().clone();
+                                    if !raw_resp.is_empty() {
+                                        self.session.lock().unwrap().set_model_response(
+                                            self.sanitize_model_response_if_block(&raw_resp),
+                                        );
+                                    }
+                                    return Err(error);
+                                }
+                            };
+                            native_structured_output = Some(value);
+                            if hard_stop {
+                                let raw_resp = self.current_raw_response.lock().unwrap().clone();
+                                if !raw_resp.is_empty() {
+                                    self.session.lock().unwrap().set_model_response(
+                                        self.sanitize_model_response_if_block(&raw_resp),
+                                    );
+                                }
+                                break;
+                            }
                         }
                         Err(error) => {
                             self.fire_intent(
@@ -596,7 +775,7 @@ impl AuwgentEngine {
                             self.session
                                 .lock()
                                 .unwrap()
-                                .set_model_response(sanitize_model_response(&raw_resp));
+                                .set_model_response(self.sanitize_model_response_if_block(&raw_resp));
                         }
                         return Err(error);
                     }
@@ -628,7 +807,70 @@ impl AuwgentEngine {
                     self.session
                         .lock()
                         .unwrap()
-                        .set_model_response(sanitize_model_response(&raw_resp));
+                        .set_model_response(self.sanitize_model_response_if_block(&raw_resp));
+                }
+
+                // Native mode: if no terminal intent was emitted and we have raw text,
+                // treat it as response_text (or response_schema if JSON and output schema configured)
+                if is_native && !raw_resp.is_empty() && !*self.terminal_response_emitted.lock().unwrap() {
+                    let has_output_schema = self.ir.output.is_some();
+                    let synthetic_terminal = if has_output_schema {
+                        // Try to parse as JSON for structured output
+                        if let Ok(value) = serde_json::from_str::<Value>(&raw_resp) {
+                            (
+                                "response_schema".to_string(),
+                                self.native_response_schema_payload(value),
+                            )
+                        } else {
+                            let payload = serde_json::json!({ "text": raw_resp.clone() });
+                            ("response_text".to_string(), payload)
+                        }
+                    } else {
+                        let payload = serde_json::json!({ "text": raw_resp.clone() });
+                        ("response_text".to_string(), payload)
+                    };
+
+                    let (_terminal, actions, hard_stop) = match self
+                        .process_synthetic_intent(synthetic_terminal.0, synthetic_terminal.1)
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(error) => {
+                            if !raw_resp.is_empty() {
+                                self.session.lock().unwrap().set_model_response(
+                                    self.sanitize_model_response_if_block(&raw_resp),
+                                );
+                            }
+                            return Err(error);
+                        }
+                    };
+                    if actions {
+                        actions_performed = true;
+                    }
+                    if hard_stop {
+                        break;
+                    }
+                }
+
+                // Store native turn data for session reconstruction.
+                // Only populate nativeAssistantTurn when there are actual native-specific
+                // artifacts (tool calls or structured output). Plain text lives in model_response.
+                if is_native {
+                    let mut session = self.session.lock().unwrap();
+                    session.set_turn_protocol("native");
+                    if !native_tool_calls.is_empty() || native_structured_output.is_some() {
+                        session.set_native_assistant_turn(
+                            crate::runtime::session::NativeAssistantTurn {
+                                text_content: if raw_resp.is_empty() {
+                                    None
+                                } else {
+                                    Some(raw_resp.clone())
+                                },
+                                tool_calls: native_tool_calls.clone(),
+                                structured_output: native_structured_output.clone(),
+                            },
+                        );
+                    }
                 }
 
                 let emitted_terminal = *self.terminal_response_emitted.lock().unwrap();
@@ -673,8 +915,56 @@ impl AuwgentEngine {
                     break;
                 }
 
-                let results_payload = self.build_results_payload();
-                self.session.lock().unwrap().start_turn(&results_payload);
+                if is_native {
+                    // Store native tool results in the current turn for message reconstruction
+                    let results = self.pending_tool_results.lock().unwrap().clone();
+                    let mut session = self.session.lock().unwrap();
+                    for (result_key, args, result) in results {
+                        // Match result to a native tool call by canonical name
+                        let canonical_name = result_key
+                            .strip_prefix("workflow:")
+                            .or_else(|| result_key.strip_prefix("helper:"))
+                            .unwrap_or(&result_key)
+                            .to_string();
+                        let action_kind = if result_key.starts_with("workflow:") {
+                            "workflow_call"
+                        } else if result_key.starts_with("helper:") {
+                            "helper_call"
+                        } else {
+                            "tool_call"
+                        };
+                        let call_id = native_tool_calls
+                            .iter()
+                            .find(|tc| {
+                                tc.canonical_name == canonical_name && tc.action_kind == action_kind
+                            })
+                            .and_then(|tc| tc.id.clone());
+                        let provider_name = native_tool_calls
+                            .iter()
+                            .find(|tc| {
+                                tc.canonical_name == canonical_name && tc.action_kind == action_kind
+                            })
+                            .map(|tc| tc.provider_name.clone())
+                            .unwrap_or_else(|| format!("{}_{}", action_kind.replace("_call", ""), canonical_name));
+                        session.append_native_tool_result(
+                            crate::runtime::session::NativeToolResult {
+                                call_id,
+                                provider_name,
+                                canonical_name,
+                                action_kind: action_kind.to_string(),
+                                arguments: args,
+                                result,
+                            },
+                        );
+                    }
+                    drop(session);
+                    // Start an empty turn to trigger the next model call
+                    // The tool results will be included in message history via to_messages_native_openai
+                    self.session.lock().unwrap().start_turn("");
+                } else {
+                    let results_payload = self.build_results_payload();
+                    self.session.lock().unwrap().start_turn(&results_payload);
+                }
             }
 
             Ok(())
@@ -752,7 +1042,7 @@ impl AuwgentEngine {
     }
 }
 
-fn sanitize_model_response(raw: &str) -> String {
+pub(super) fn sanitize_model_response(raw: &str) -> String {
     let mut scanner = function_parser::BlockScanner::new(raw);
     let blocks = scanner.scan();
 
@@ -806,9 +1096,7 @@ impl RuntimeTimingProbe {
             let elapsed = current_time_ms().saturating_sub(self.start_ms);
             eprintln!(
                 "[auwgent][timing][rust] {} +{}ms {}",
-                self.label,
-                elapsed,
-                message
+                self.label, elapsed, message
             );
         }
     }
@@ -822,9 +1110,9 @@ fn runtime_timing_enabled() -> bool {
 
     #[cfg(not(target_arch = "wasm32"))]
     {
-    std::env::var("AUWGENT_DEBUG_TIMING")
-        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-        .unwrap_or(false)
+        std::env::var("AUWGENT_DEBUG_TIMING")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+            .unwrap_or(false)
     }
 }
 

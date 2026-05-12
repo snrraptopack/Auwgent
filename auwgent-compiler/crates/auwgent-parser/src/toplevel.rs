@@ -13,16 +13,24 @@ use crate::primitives::*;
 use crate::types::{type_config_decl_block_parser, type_config_decl_parser};
 
 pub(crate) fn agent_parser() -> impl Parser<TokenKind, Agent, Error = Simple<TokenKind>> + Clone {
-    tok(TokenKind::Agent)
-        .ignore_then(ident())
+    let protocol_annotation = choice((
+        tok(TokenKind::AtNative).to("native".to_string()),
+        tok(TokenKind::AtBlock).to("block".to_string()),
+    ))
+    .or_not();
+
+    protocol_annotation
+        .then_ignore(tok(TokenKind::Agent))
+        .then(ident())
         .then(
             agent_config_parser()
                 .repeated()
                 .delimited_by(tok(TokenKind::LBrace), tok(TokenKind::RBrace)),
         )
-        .map_with_span(|(name, configs), span| Agent {
+        .map_with_span(|((protocol_mode, name), configs), span| Agent {
             name,
             configs,
+            protocol_mode,
             span: s(span),
         })
 }

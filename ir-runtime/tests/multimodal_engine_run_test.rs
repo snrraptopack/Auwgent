@@ -125,7 +125,10 @@ async fn llm_start_middleware_does_not_drop_input_parts() {
         Box::pin(async move {
             let event: Value = serde_json::from_str(&event_json).expect("event json");
             if event.get("type").and_then(Value::as_str) == Some("llm_start") {
-                let prompt = event.get("prompt").cloned().unwrap_or(Value::String(String::new()));
+                let prompt = event
+                    .get("prompt")
+                    .cloned()
+                    .unwrap_or(Value::String(String::new()));
                 return Some(json!({ "prompt": prompt }).to_string());
             }
             if event.get("type").and_then(Value::as_str) == Some("run_start") {

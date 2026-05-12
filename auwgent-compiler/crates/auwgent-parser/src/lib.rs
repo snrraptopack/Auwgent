@@ -201,4 +201,78 @@ mod tests {
         let (_model, parse_errors) = parse(&tokens);
         assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
     }
+
+    #[test]
+    fn native_annotation_parses() {
+        let source = r#"
+        @native
+        agent Main {
+            default config {
+                model: gemini("gemini-2.5-flash")
+                prompt: "hello"
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+
+        let agent = match &model.elements[0] {
+            auwgent_ast::Element::Agent(a) => a,
+            _ => panic!("expected agent"),
+        };
+        assert_eq!(agent.protocol_mode, Some("native".to_string()));
+    }
+
+    #[test]
+    fn block_annotation_parses() {
+        let source = r#"
+        @block
+        agent Main {
+            default config {
+                model: gemini("gemini-2.5-flash")
+                prompt: "hello"
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+
+        let agent = match &model.elements[0] {
+            auwgent_ast::Element::Agent(a) => a,
+            _ => panic!("expected agent"),
+        };
+        assert_eq!(agent.protocol_mode, Some("block".to_string()));
+    }
+
+    #[test]
+    fn no_annotation_defaults_to_none() {
+        let source = r#"
+        agent Main {
+            default config {
+                model: gemini("gemini-2.5-flash")
+                prompt: "hello"
+            }
+        }
+        "#;
+
+        let (tokens, lex_errors) = tokenize(source);
+        assert!(lex_errors.is_empty(), "lexer errors: {lex_errors:?}");
+
+        let (model, parse_errors) = parse(&tokens);
+        assert!(parse_errors.is_empty(), "parse errors: {parse_errors:?}");
+
+        let agent = match &model.elements[0] {
+            auwgent_ast::Element::Agent(a) => a,
+            _ => panic!("expected agent"),
+        };
+        assert_eq!(agent.protocol_mode, None);
+    }
 }

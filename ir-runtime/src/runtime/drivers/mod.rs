@@ -35,11 +35,22 @@ pub enum FinishReason {
     Other(String),
 }
 
+#[derive(Debug, Clone)]
 pub enum ModelEvent {
     ContentChunk(String),
     Usage(TokenUsage),
     FinishReason(FinishReason),
     Metadata(ModelMetadata),
+
+    /// A completed native tool/function call from the provider.
+    NativeToolCall {
+        id: Option<String>,
+        provider_name: String,
+        arguments: Value,
+    },
+
+    /// Provider-native structured output matching the agent's output schema.
+    NativeStructuredOutput(Value),
 }
 
 #[cfg(not(target_arch = "wasm32"))]

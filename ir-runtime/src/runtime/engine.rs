@@ -5,6 +5,7 @@
 use crate::errors::{AuwgentError, AuwgentResult};
 use crate::evaluator::Evaluator;
 use crate::runtime::drivers::{FinishReason, ModelDriver, ModelEvent, TokenUsage};
+use crate::runtime::engine::native_registry::NativeCallableRegistry;
 pub use crate::runtime::engine_types::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback, IntentCallback,
     IntentControl, PartialIntentCallback, RunMetadata, SessionSaveCallback, ToolImplementation,
@@ -27,9 +28,10 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 mod execution;
+pub mod native_registry;
+pub mod native_schema;
 mod prompt;
 mod runtime_loop;
-pub mod native_schema;
 
 fn empty_response_marker(finish_reason: Option<&FinishReason>) -> String {
     match finish_reason {
@@ -103,6 +105,7 @@ pub struct AuwgentEngine {
     user_input: Arc<Mutex<Option<serde_json::Value>>>,
     binding_context_keys: Arc<Mutex<HashSet<String>>>,
     pub last_run_metadata: Arc<Mutex<RunMetadata>>,
+    native_registry: Arc<Mutex<Option<NativeCallableRegistry>>>,
 }
 
 impl AuwgentEngine {
@@ -233,6 +236,7 @@ impl AuwgentEngine {
             user_input: Arc::new(Mutex::new(None)),
             binding_context_keys: Arc::new(Mutex::new(HashSet::new())),
             last_run_metadata: Arc::new(Mutex::new(RunMetadata::default())),
+            native_registry: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -378,6 +382,41 @@ impl AuwgentEngine {
         self.session.lock().unwrap()
     }
 
+    /// Resolve the tool protocol mode for this agent.
+    ///
+    /// Reads `modelConfig[0].defaultConfig.toolProtocol`. Defaults to `"block"`
+    /// for backward compatibility.
+    pub fn resolve_tool_protocol(&self) -> String {
+        self.ir
+            .model_config
+            .first()
+            .and_then(|entry| entry.default_config.as_ref())
+            .and_then(|cfg| cfg.tool_protocol.as_ref())
+            .cloned()
+            .unwrap_or_else(|| "block".to_string())
+    }
+
+    /// Sanitize model response only in block mode.
+    /// In native mode, the raw response is preserved as-is.
+    pub(super) fn sanitize_model_response_if_block(&self, raw: &str) -> String {
+        if self.resolve_tool_protocol() == "native" {
+            raw.to_string()
+        } else {
+            runtime_loop::sanitize_model_response(raw)
+        }
+    }
+
+    /// Lazily build and cache the native callable registry.
+    pub fn native_registry(&self) -> NativeCallableRegistry {
+        let mut cached = self.native_registry.lock().unwrap();
+        if let Some(ref reg) = *cached {
+            return reg.clone();
+        }
+        let reg = NativeCallableRegistry::build(&self.ir, true);
+        *cached = Some(reg.clone());
+        reg
+    }
+
     pub fn clear_session(&self) {
         self.session.lock().unwrap().clear();
     }
@@ -499,5 +538,98 @@ mod tests {
             true,
             Some(&FinishReason::Stop),
         ));
+    }
+
+    fn test_ir_with_protocol(protocol: Option<&str>) -> AgentIR {
+        let mut ir: AgentIR = serde_json::from_value(serde_json::json!({
+            "name": "ProtocolTest",
+            "modelConfig": [{
+                "defaultConfig": {
+                    "model": { "type": "modelRef", "name": "test" },
+                    "prompt": { "type": "literal", "value": "You are a test agent." }
+                }
+            }],
+            "tools": [{
+                "name": "search",
+                "description": "Search the web",
+                "params": { "query": { "type": "string", "optional": false } },
+                "returns": "string"
+            }],
+            "output": {
+                "status": { "type": "string", "optional": false }
+            }
+        }))
+        .expect("valid test ir");
+
+        if let Some(p) = protocol {
+            ir.model_config[0]
+                .default_config
+                .as_mut()
+                .unwrap()
+                .tool_protocol = Some(p.to_string());
+        }
+        ir
+    }
+
+    #[test]
+    fn default_tool_protocol_is_block() {
+        let ir = test_ir_with_protocol(None);
+        let engine = AuwgentEngine::new(ir);
+        assert_eq!(engine.resolve_tool_protocol(), "block");
+    }
+
+    #[test]
+    fn block_mode_prompt_contains_protocol_syntax() {
+        let ir = test_ir_with_protocol(Some("block"));
+        let engine = AuwgentEngine::new(ir);
+        let prompt = engine.generate_prompt(None).unwrap();
+
+        assert!(prompt.contains("Blocks:"));
+        assert!(prompt.contains("[tool_call: name]"));
+        assert!(prompt.contains("[response_text]"));
+        assert!(prompt.contains("[schema: name]"));
+        assert!(prompt.contains("Tools:"));
+        assert!(prompt.contains("search(query: string)"));
+        assert!(prompt.contains("Schemas (final structured output only):"));
+    }
+
+    #[test]
+    fn native_mode_prompt_does_not_contain_protocol_syntax() {
+        let ir = test_ir_with_protocol(Some("native"));
+        let engine = AuwgentEngine::new(ir);
+        let prompt = engine.generate_prompt(None).unwrap();
+
+        // Should contain only the user prompt
+        assert!(prompt.contains("You are a test agent."));
+
+        // Should NOT contain block protocol instructions
+        assert!(!prompt.contains("Blocks:"));
+        assert!(!prompt.contains("[tool_call:"));
+        assert!(!prompt.contains("[workflow_call:"));
+        assert!(!prompt.contains("[helper_call:"));
+        assert!(!prompt.contains("[schema:"));
+        assert!(!prompt.contains("[response_text]"));
+        assert!(!prompt.contains("Tools:"));
+        assert!(!prompt.contains("Constraints:"));
+        assert!(!prompt.contains("emit only action block"));
+    }
+
+    #[test]
+    fn native_registry_is_built_and_cached() {
+        let ir = test_ir_with_protocol(Some("native"));
+        let engine = AuwgentEngine::new(ir);
+
+        // First call builds the registry
+        let reg1 = engine.native_registry();
+        assert!(reg1.entries.contains_key("tool_search"));
+        assert!(reg1.output_schema.is_some());
+
+        // Second call returns cached copy
+        let reg2 = engine.native_registry();
+        assert_eq!(reg1.entries.len(), reg2.entries.len());
+
+        // Verify the cache was populated
+        let cached = engine.native_registry.lock().unwrap();
+        assert!(cached.is_some());
     }
 }

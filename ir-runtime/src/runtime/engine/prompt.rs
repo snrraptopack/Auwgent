@@ -55,14 +55,18 @@ impl AuwgentEngine {
         *self.binding_context_keys.lock().unwrap() = binding_context_keys.clone();
         let mut prompt = prompt_val.as_str().unwrap_or("").to_string();
 
-        let intents = crate::intents::generate_block_protocol_prompt_with_binding_rules(
-            &self.ir,
-            !binding_context_keys.is_empty(),
-        );
-        if !intents.is_empty() {
-            prompt.push_str("\n\n");
-            prompt.push_str(&intents);
+        let protocol = self.resolve_tool_protocol();
+        if protocol == "block" {
+            let intents = crate::intents::generate_block_protocol_prompt_with_binding_rules(
+                &self.ir,
+                !binding_context_keys.is_empty(),
+            );
+            if !intents.is_empty() {
+                prompt.push_str("\n\n");
+                prompt.push_str(&intents);
+            }
         }
+        // native mode: append nothing — tool schemas carry all capability descriptions
 
         Ok(prompt)
     }

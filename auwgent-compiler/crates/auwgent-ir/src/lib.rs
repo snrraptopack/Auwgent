@@ -7,6 +7,85 @@ use auwgent_ast::*;
 use auwgent_errors::{Diagnostic, Severity, Span};
 use auwgent_ir_schema::AgentIR;
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+
+/// Check whether any input or output config contains non-text media types
+/// (Image, File, Audio, Video) that require native protocol mode.
+fn agent_uses_media(configs: &[AgentConfig], type_decls: &[&TypeDeclaration]) -> bool {
+    let type_map: HashMap<String, &TypeDeclaration> = type_decls
+        .iter()
+        .map(|td| (td.name.value.clone(), *td))
+        .collect();
+
+    fn type_contains_media(ty: &TypeExpr, type_map: &HashMap<String, &TypeDeclaration>) -> bool {
+        match ty {
+            TypeExpr::Image(_) | TypeExpr::File(_) | TypeExpr::Audio(_) | TypeExpr::Video(_) => {
+                true
+            }
+            TypeExpr::TypeRef(name) => {
+                if let Some(td) = type_map.get(&name.value) {
+                    td.fields
+                        .iter()
+                        .any(|f| type_contains_media(&f.ty, type_map))
+                } else {
+                    false
+                }
+            }
+            TypeExpr::Array { element, .. } => type_contains_media(element, type_map),
+            TypeExpr::Object { properties, .. } => properties
+                .iter()
+                .any(|p| type_contains_media(&p.ty, type_map)),
+            _ => false,
+        }
+    }
+
+    for config in configs {
+        match config {
+            AgentConfig::Input(ic) => match &ic.shape {
+                InputShape::Direct(ty) => {
+                    if type_contains_media(ty, &type_map) {
+                        return true;
+                    }
+                }
+                InputShape::Properties(props) => {
+                    for p in props {
+                        if type_contains_media(&p.ty, &type_map) {
+                            return true;
+                        }
+                    }
+                }
+            },
+            AgentConfig::Output(oc) => match &oc.shape {
+                OutputShape::Direct { ty, .. } => {
+                    if type_contains_media(ty, &type_map) {
+                        return true;
+                    }
+                }
+                OutputShape::Properties(props) => {
+                    for p in props {
+                        if type_contains_media(&p.decl.ty, &type_map) {
+                            return true;
+                        }
+                    }
+                }
+                OutputShape::Union(types) => {
+                    for t in types {
+                        if matches!(t.value.as_str(), "Image" | "File" | "Audio" | "Video") {
+                            return true;
+                        }
+                        if let Some(td) = type_map.get(&t.value) {
+                            if td.fields.iter().any(|f| type_contains_media(&f.ty, &type_map)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            },
+            _ => {}
+        }
+    }
+    false
+}
 
 /// Lower a parsed AST model into strongly-typed `AgentIR`.
 /// Returns the statically-typed IR for the first agent found, or structured diagnostics if lowering fails.
@@ -54,6 +133,18 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
     let mut ir = Map::new();
     ir.insert("name".into(), json!(agent.name.value));
 
+    // Determine protocol mode:
+    // 1. Explicit annotation wins
+    // 2. Auto-detect from input/output types (non-text = native)
+    // 3. Default to block
+    let tool_protocol = if let Some(ref mode) = agent.protocol_mode {
+        mode.clone()
+    } else if agent_uses_media(&agent.configs, &type_decls) {
+        "native".to_string()
+    } else {
+        "block".to_string()
+    };
+
     // Process agent configs
     let mut model_config = Vec::new();
     let mut input_val: Value = Value::Null;
@@ -89,7 +180,7 @@ pub fn lower_with_diagnostics(model: &Model) -> Result<AgentIR, Vec<Diagnostic>>
                 }
             }
             AgentConfig::Model(mc) => {
-                model_config.push(lower_agent_model_config(mc, &prompts, &model_defs));
+                model_config.push(lower_agent_model_config(mc, &prompts, &model_defs, &tool_protocol));
             }
             AgentConfig::Workflow(wf) => {
                 workflows_val.push(lower_workflow(wf));
@@ -625,17 +716,18 @@ fn lower_agent_model_config(
     mc: &AgentModelConfig,
     prompts: &[&NamedPrompt],
     model_defs: &[&ModelDefinition],
+    tool_protocol: &str,
 ) -> Value {
     let mut obj = Map::new();
     obj.insert(
         "defaultConfig".into(),
-        lower_model_config(&mc.default_config, prompts, model_defs),
+        lower_model_config(&mc.default_config, prompts, model_defs, tool_protocol),
     );
 
     let named: Vec<Value> = mc
         .named_configs
         .iter()
-        .map(|nc| lower_named_model_config(nc, prompts, model_defs))
+        .map(|nc| lower_named_model_config(nc, prompts, model_defs, tool_protocol))
         .collect();
     obj.insert("namedConfig".into(), Value::Array(named));
 
@@ -646,8 +738,9 @@ fn lower_named_model_config(
     nc: &NamedModelConfig,
     prompts: &[&NamedPrompt],
     model_defs: &[&ModelDefinition],
+    tool_protocol: &str,
 ) -> Value {
-    let mut obj = match lower_model_config(&nc.config, prompts, model_defs) {
+    let mut obj = match lower_model_config(&nc.config, prompts, model_defs, tool_protocol) {
         Value::Object(map) => map,
         _ => Map::new(),
     };
@@ -659,6 +752,7 @@ fn lower_model_config(
     mc: &ModelConfig,
     prompts: &[&NamedPrompt],
     model_defs: &[&ModelDefinition],
+    tool_protocol: &str,
 ) -> Value {
     let mut obj = Map::new();
 
@@ -689,6 +783,9 @@ fn lower_model_config(
     } else {
         obj.insert("prompt".into(), Value::Null);
     }
+
+    // Tool protocol mode
+    obj.insert("toolProtocol".into(), json!(tool_protocol));
 
     Value::Object(obj)
 }
@@ -1382,7 +1479,8 @@ fn lower_helper(
                 }
             }
             AgentConfig::Model(mc) => {
-                model_config.push(lower_agent_model_config(mc, prompts, model_defs));
+                // Helpers always use block protocol (no annotation support)
+                model_config.push(lower_agent_model_config(mc, prompts, model_defs, "block"));
             }
             AgentConfig::Workflow(wf) => workflows_val.push(lower_workflow(wf)),
             AgentConfig::Intent(ic) => {
@@ -1834,6 +1932,116 @@ mod tests {
         assert_eq!(
             ir["modelConfig"][0]["defaultConfig"]["model"]["modelName"],
             json!("gemini-2.5-flash")
+        );
+    }
+
+    #[test]
+    fn native_annotation_sets_tool_protocol() {
+        let ir = lower_source(
+            r#"
+            @native
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("native")
+        );
+    }
+
+    #[test]
+    fn block_annotation_sets_tool_protocol() {
+        let ir = lower_source(
+            r#"
+            @block
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("block")
+        );
+    }
+
+    #[test]
+    fn media_input_auto_detects_native_protocol() {
+        let ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Image
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("native")
+        );
+    }
+
+    #[test]
+    fn text_input_defaults_to_block_protocol() {
+        let ir = lower_source(
+            r#"
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("block")
+        );
+    }
+
+    #[test]
+    fn explicit_annotation_overrides_auto_detect() {
+        // @block + Image would error in checker, but if we bypass checker
+        // the explicit annotation still wins in IR lowering
+        let ir = lower_source(
+            r#"
+            @native
+            agent Test {
+                default config {
+                    model: gemini("gemini-2.5-flash")
+                    prompt: "Hello"
+                }
+
+                input: Text
+            }
+            "#,
+        );
+
+        assert_eq!(
+            ir["modelConfig"][0]["defaultConfig"]["toolProtocol"],
+            json!("native")
         );
     }
 }
