@@ -421,6 +421,8 @@ impl AuwgentEngine {
         let run_result: AuwgentResult<()> = async {
             let mut loop_count = 0usize;
             let mut empty_completion_retries = 0usize;
+            let mut provider_headers: Option<Value> = None;
+            let mut provider_api_key: Option<String> = None;
 
             loop {
                 loop_count += 1;
@@ -467,9 +469,6 @@ impl AuwgentEngine {
                     }
                     continue;
                 }
-
-                let mut provider_headers: Option<Value> = None;
-                let mut provider_api_key: Option<String> = None;
 
                 if loop_count == 1 {
                     let sys_prompt = self
@@ -600,7 +599,7 @@ impl AuwgentEngine {
                 // Inject native tools and output schema into config when in native mode.
                 // OpenAI rejects requests that combine tools with response_format,
                 // so we skip the output schema when tools are present.
-                let config_params = if is_native {
+                let mut config_params = if is_native {
                     let mut config = config_params.clone().unwrap_or_else(|| serde_json::json!({}));
                     let registry = self.native_registry();
                     match provider_id.as_str() {
@@ -641,7 +640,7 @@ impl AuwgentEngine {
                         .ok_or(AuwgentError::NoDriver)?
                         .clone();
                     driver
-                        .stream_generate(&model_name, &messages, config_params, provider_headers.clone(), provider_api_key.clone())
+                        .stream_generate(&model_name, &messages, config_params.clone(), provider_headers.clone(), provider_api_key.clone())
                         .await
                 };
                 timing.mark("provider stream_generate returned stream");
@@ -677,6 +676,32 @@ impl AuwgentEngine {
 
                         if decision.swallow {
                             return Ok(());
+                        }
+
+                        // Apply error middleware overrides before retry
+                        if let Some(ref override_config) = decision.config {
+                            config_params = Some(deep_merge_json(
+                                config_params.unwrap_or_else(|| serde_json::json!({})),
+                                override_config.clone(),
+                            ));
+                        }
+                        if let Some(new_provider) = decision.provider {
+                            provider_id = new_provider;
+                        }
+                        if let Some(new_model) = decision.model {
+                            model_name = new_model;
+                        }
+                        if let Some(url_override) = decision.url {
+                            config_params = Some(deep_merge_json(
+                                config_params.unwrap_or_else(|| serde_json::json!({})),
+                                serde_json::json!({"url": url_override}),
+                            ));
+                        }
+                        if decision.headers.is_some() {
+                            provider_headers = decision.headers;
+                        }
+                        if decision.api_key.is_some() {
+                            provider_api_key = decision.api_key;
                         }
 
                         match decision.force_start.as_deref() {

@@ -627,6 +627,30 @@ async def main():
             await asyncio.sleep(delay)
 
     # ===========================================================================
+    # WRITE JSON RESULTS
+    # ===========================================================================
+
+    import json as _json
+    import os as _os
+    results_dir = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..", "results"))
+    _os.makedirs(results_dir, exist_ok=True)
+
+    json_results = []
+    for r in results:
+        json_results.append({
+            "name": r["name"],
+            "passed": r["passed"] and not r["error"],
+            "eventCount": len(r.get("events", [])),
+            "partialCount": len(r.get("partials", [])),
+            "error": r.get("error"),
+            "middlewareLog": r.get("middlewareLog", []),
+            "notes": r.get("notes", []),
+        })
+
+    with open(_os.path.join(results_dir, "python.json"), "w", encoding="utf-8") as f:
+        _json.dump(json_results, f, indent=2)
+
+    # ===========================================================================
     # FINAL SUMMARY
     # ===========================================================================
 

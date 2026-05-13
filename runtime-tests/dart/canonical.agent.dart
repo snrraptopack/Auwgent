@@ -109,7 +109,7 @@ final class ResponseSchema {
   factory ResponseSchema.fromJson(sdk.JsonMap json) {
     return ResponseSchema(
       type: (json['type'])?.toString() ?? '',
-      response: json['response'],
+      response: Map<String, Object?>.from((json['response'] as Map?) ?? const {}),
     );
   }
 
@@ -634,7 +634,7 @@ final class PlannerHelperCall extends HelperCalls {
 
   factory PlannerHelperCall.fromJson(sdk.JsonMap json) {
     return PlannerHelperCall(
-      args: json['args'],
+      args: Map<String, Object?>.from((json['args'] as Map?) ?? const {}),
     );
   }
 
@@ -661,7 +661,7 @@ final class PlannerHelperResult extends HelperResults {
 
   factory PlannerHelperResult.fromJson(sdk.JsonMap json) {
     return PlannerHelperResult(
-      args: json['args'],
+      args: Map<String, Object?>.from((json['args'] as Map?) ?? const {}),
       result: json['result'],
       overridden: (json['overridden'] as bool?) ?? false,
     );
@@ -686,7 +686,7 @@ final class JokerHelperCall extends HelperCalls {
 
   factory JokerHelperCall.fromJson(sdk.JsonMap json) {
     return JokerHelperCall(
-      args: json['args'],
+      args: Map<String, Object?>.from((json['args'] as Map?) ?? const {}),
     );
   }
 
@@ -713,7 +713,7 @@ final class JokerHelperResult extends HelperResults {
 
   factory JokerHelperResult.fromJson(sdk.JsonMap json) {
     return JokerHelperResult(
-      args: json['args'],
+      args: Map<String, Object?>.from((json['args'] as Map?) ?? const {}),
       result: const sdk.NoResult(),
       overridden: (json['overridden'] as bool?) ?? false,
     );
@@ -792,6 +792,7 @@ typedef AuwgentIntentHandler = FutureOr<sdk.IntentControl?> Function(String name
 typedef AuwgentPartialIntentHandler = FutureOr<void> Function(String name, Object? value, String agentName);
 
 abstract class AuwgentBaseIntentHandler {
+  FutureOr<void> any(String name, Object? value, String agentName) {}
   FutureOr<void> responseText(ResponseText intent, String agentName) {}
   FutureOr<void> responseSchema(ResponseSchema intent, String agentName) {}
   FutureOr<void> error(ErrorIntent intent, String agentName) {}
@@ -807,6 +808,7 @@ abstract class AuwgentBaseIntentHandler {
 }
 
 abstract class AuwgentBasePartialIntentHandler {
+  FutureOr<void> any(String name, Object? value, String agentName) {}
   FutureOr<void> responseText(sdk.PartialTextIntentValue intent, String agentName) {}
   FutureOr<void> responseSchema(sdk.PartialStructuredIntentValue<ResponseSchema> intent, String agentName) {}
   FutureOr<void> error(sdk.PartialStructuredIntentValue<ErrorIntent> intent, String agentName) {}
@@ -843,7 +845,7 @@ abstract class AuwgentMiddleware implements sdk.Middleware {
   FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {}
 
   @override
-  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;
+  FutureOr<Object?> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;
 
   FutureOr<void> responseText(ResponseText intent, sdk.MiddlewareContext ctx) {}
   FutureOr<void> responseSchema(ResponseSchema intent, sdk.MiddlewareContext ctx) {}
@@ -914,7 +916,7 @@ final class AuwgentConfig {
     return sdk.AuwgentConfig(
       tools: tools.toMap(),
       middleware: middleware,
-      context: context,
+      context: context?.toJson(),
       apiKeys: apiKeys?.toMap() ?? const {},
       libraryPath: libraryPath,
       autoDispose: autoDispose,
@@ -938,6 +940,7 @@ final class AuwgentAgent extends sdk.TypedAuwgent<sdk.JsonMap> {
 }
 
 FutureOr<sdk.IntentControl?> _dispatchIntent(AuwgentBaseIntentHandler handler, String name, Object? value, String agentName) {
+  handler.any(name, value, agentName);
   switch (name) {
     case 'response_text':
       handler.responseText(ResponseText.fromJson(value as sdk.JsonMap), agentName);
@@ -980,6 +983,7 @@ FutureOr<sdk.IntentControl?> _dispatchIntent(AuwgentBaseIntentHandler handler, S
 }
 
 void _dispatchPartialIntent(AuwgentBasePartialIntentHandler handler, String name, Object? value, String agentName) {
+  handler.any(name, value, agentName);
   switch (name) {
     case 'response_text':
       handler.responseText(sdk.PartialTextIntentValue.fromJson(value as sdk.JsonMap), agentName);

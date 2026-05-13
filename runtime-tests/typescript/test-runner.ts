@@ -490,9 +490,11 @@ async function scenario19_fallbackOnRateLimit(): Promise<ScenarioResult> {
       const msg = String(error.message || error);
       log.push(`error | ${msg.slice(0, 80)}`);
       if (msg.includes("429") || msg.includes("rate_limit")) {
-        log.push("error -> triggering fallback to openai/gpt-oss-120b");
+        log.push("error -> triggering fallback togemini-2.5-flas");
         ctx.fallbackTriggered = true;
-        ctx.fallbackModel = "openai/gpt-oss-120b";
+        ctx.fallbackModel = "gemini-2.5-flash";
+        ctx.provider = "gemini"
+        ctx.apiKey = "AIzaSyCGodWJEMHYyPKzume13PXo6dez45W3SCY"
         return { forceStart: "llm_start" };
       }
       return {swallow:false};
@@ -580,6 +582,30 @@ async function main() {
       await sleep(delay);
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WRITE JSON RESULTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const fs = await import("fs");
+  const path = await import("path");
+  const resultsDir = path.resolve(__dirname, "../results");
+  if (!fs.existsSync(resultsDir)) fs.mkdirSync(resultsDir, { recursive: true });
+
+  const jsonResults = results.map((r) => ({
+    name: r.name,
+    passed: r.passed && !r.error,
+    eventCount: r.events.length,
+    partialCount: r.partials.length,
+    error: r.error || null,
+    middlewareLog: r.middlewareLog,
+    notes: r.notes,
+  }));
+
+  fs.writeFileSync(
+    path.join(resultsDir, "typescript.json"),
+    JSON.stringify(jsonResults, null, 2)
+  );
 
   // ═══════════════════════════════════════════════════════════════════════════
   // FINAL SUMMARY

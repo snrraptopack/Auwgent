@@ -519,6 +519,7 @@ fn generate_core_intent_models(agent_name: &str, output: Option<&Value>) -> Stri
         &response_type,
         "json['response']",
         "json['response']",
+        "sdk.JsonMap",
     );
 
     format!(
@@ -705,7 +706,7 @@ fn generate_component_intent_models(_agent_name: &str, components: &[Value]) -> 
 
         blocks.push(format!(
             "final class {component_class} extends ComponentIntent {{\n  const {component_class}({{\n    required this.cId,\n    required this.props,\n    this.action,\n    this.children,\n  }});\n\n  @override\n  final String cId;\n  @override\n  final {props_type} props;\n  @override\n  final {action_type}? action;\n  @override\n  final List<String>? children;\n\n  @override\n  String get type => '{component_name}';\n\n  factory {component_class}.fromJson(sdk.JsonMap json) {{\n    return {component_class}(\n      cId: (json['c_id'])?.toString() ?? '',\n      props: {},\n      action: {},\n      children: (json['children'] as List?)?.map((item) => item.toString()).toList(growable: false),\n    );\n  }}\n}}\n",
-            decode_named_shape_expr(component.get("props"), &props_type, "json['props']", "const <String, Object?>{}"),
+            decode_named_shape_expr(component.get("props"), &props_type, "json['props']", "const <String, Object?>{}", "sdk.JsonMap"),
             decode_named_shape_expr_optional(component.get("action"), &action_type, "json['action']")
         ));
 
@@ -779,7 +780,7 @@ fn generate_callable_intent_models(
         let args_decode_expr = if args_type_ref == "sdk.NoArgs" {
             "const sdk.NoArgs()".to_string()
         } else {
-            decode_named_shape_expr(args_shape, &args_type_ref, "json['args']", "json['args']")
+            decode_named_shape_expr(args_shape, &args_type_ref, "json['args']", "json['args']", "sdk.JsonMap")
         };
         let result_decode_expr = if result_type_ref == "sdk.NoResult" {
             "const sdk.NoResult()".to_string()
@@ -789,6 +790,7 @@ fn generate_callable_intent_models(
                 &result_type_ref,
                 "json['result']",
                 "json['result']",
+                "Object?",
             )
         };
 
@@ -871,6 +873,7 @@ fn decode_named_shape_expr(
     type_name: &str,
     access_expr: &str,
     null_fallback_expr: &str,
+    null_type_fallback: &str,
 ) -> String {
     if shape_variants(value).is_some() {
         return format!(
@@ -884,7 +887,7 @@ fn decode_named_shape_expr(
         );
     }
 
-    match type_to_dart_string(value, false, "Object?").as_str() {
+    match type_to_dart_string(value, false, null_type_fallback).as_str() {
         "sdk.NoArgs" => "const sdk.NoArgs()".to_string(),
         "sdk.NoResult" => "const sdk.NoResult()".to_string(),
         "String" => format!("({access_expr})?.toString() ?? ''"),
@@ -1042,7 +1045,7 @@ fn generate_handler_classes(
     }
 
     format!(
-        "abstract class {agent_name}BaseIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<bool> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText(ResponseText intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema(ResponseSchema intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent(ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
+        "abstract class {agent_name}BaseIntentHandler {{\n  FutureOr<void> any(String name, Object? value, String agentName) {{}}\n{}\n}}\n\nabstract class {agent_name}BasePartialIntentHandler {{\n  FutureOr<void> any(String name, Object? value, String agentName) {{}}\n{}\n}}\n\nabstract class {agent_name}Middleware implements sdk.Middleware {{\n  const {agent_name}Middleware();\n\n  @override\n  String get name => runtimeType.toString();\n\n  @override\n  Object? get target => null;\n\n  @override\n  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;\n\n  @override\n  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;\n\n  @override\n  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {{}}\n\n  @override\n  FutureOr<Object?> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;\n\n  FutureOr<void> responseText(ResponseText intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> responseSchema(ResponseSchema intent, sdk.MiddlewareContext ctx) {{}}\n  FutureOr<void> errorIntent(ErrorIntent intent, sdk.MiddlewareContext ctx) {{}}\n{}\n{}\n  @override\n  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => _dispatchMiddlewareIntent(this, name, value, ctx);\n\n  @override\n  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {{\n    _dispatchMiddlewarePartialIntent(this, name, value, ctx);\n  }}\n}}\n",
         intent_methods.join("\n"),
         partial_methods.join("\n"),
         generate_middleware_intent_methods(
@@ -1267,7 +1270,7 @@ fn generate_config_class(
     };
 
     format!(
-        "final class {agent_name}Config {{\n  const {agent_name}Config({{\n{tools_ctor}    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n    this.autoDispose = true,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n  final bool autoDispose;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n{tools_expr}\n      middleware: middleware,\n      context: context,\n{api_keys_expr}\n      libraryPath: libraryPath,\n      autoDispose: autoDispose,\n    );\n  }}\n}}\n"
+        "final class {agent_name}Config {{\n  const {agent_name}Config({{\n{tools_ctor}    this.middleware = const [],\n    this.context,\n{api_keys_ctor}    this.libraryPath,\n    this.autoDispose = true,\n  }});\n\n  final {agent_name}Tools tools;\n  final List<{agent_name}Middleware> middleware;\n{context_field}{api_keys_field}  final String? libraryPath;\n  final bool autoDispose;\n\n  sdk.AuwgentConfig toAuwgentConfig() {{\n    return sdk.AuwgentConfig(\n{tools_expr}\n      middleware: middleware,\n      context: context?.toJson(),\n{api_keys_expr}\n      libraryPath: libraryPath,\n      autoDispose: autoDispose,\n    );\n  }}\n}}\n"
     )
 }
 
@@ -1281,7 +1284,7 @@ fn generate_agent_class(
     _custom_intents: &[String],
 ) -> String {
     format!(
-        "final class {agent_name}Agent extends sdk.TypedAuwgent<sdk.JsonMap> {{\n  {agent_name}Agent({agent_name}Config config)\n      : super(decode{}Ir(), config.toAuwgentConfig());\n\n  void onIntentHandler({agent_name}BaseIntentHandler handler) {{\n    onIntent((name, value, agentName) => _dispatchIntent(handler, name, value, agentName));\n  }}\n\n  void onIntentPartialHandler({agent_name}BasePartialIntentHandler handler) {{\n    onIntentPartial((name, value, agentName) {{\n      _dispatchPartialIntent(handler, name, value, agentName);\n    }});\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchIntent({agent_name}BaseIntentHandler handler, String name, Object? value, String agentName) {{\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchPartialIntent({agent_name}BasePartialIntentHandler handler, String name, Object? value, String agentName) {{\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchMiddlewareIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchMiddlewarePartialIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n",
+        "final class {agent_name}Agent extends sdk.TypedAuwgent<sdk.JsonMap> {{\n  {agent_name}Agent({agent_name}Config config)\n      : super(decode{}Ir(), config.toAuwgentConfig());\n\n  void onIntentHandler({agent_name}BaseIntentHandler handler) {{\n    onIntent((name, value, agentName) => _dispatchIntent(handler, name, value, agentName));\n  }}\n\n  void onIntentPartialHandler({agent_name}BasePartialIntentHandler handler) {{\n    onIntentPartial((name, value, agentName) {{\n      _dispatchPartialIntent(handler, name, value, agentName);\n    }});\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchIntent({agent_name}BaseIntentHandler handler, String name, Object? value, String agentName) {{\n  handler.any(name, value, agentName);\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchPartialIntent({agent_name}BasePartialIntentHandler handler, String name, Object? value, String agentName) {{\n  handler.any(name, value, agentName);\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n\nFutureOr<sdk.IntentControl?> _dispatchMiddlewareIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return null;\n  }}\n}}\n\nvoid _dispatchMiddlewarePartialIntent({agent_name}Middleware middleware, String name, Object? value, sdk.MiddlewareContext ctx) {{\n  switch (name) {{\n{}\n    default:\n      return;\n  }}\n}}\n",
         sanitize_identifier(ir_agent_name, false),
         generate_dispatch_cases(
             agent_name,

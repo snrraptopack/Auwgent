@@ -54,6 +54,35 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
         _ => "undefined".to_string(),
     };
 
+    let tool_types = if all_tools.is_empty() {
+        "never".to_string()
+    } else {
+        all_tools
+            .iter()
+            .map(|tool| {
+                let tool_name = string_at(tool, &["name"]).unwrap_or_default();
+                let description = tool
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let params = tool.get("params").unwrap_or(&Value::Null);
+                let returns = tool.get("returns").unwrap_or(&Value::Null);
+                format!(
+                    "{{ name: \"{}\"; description: {}; params: {}; returns: {} }}",
+                    tool_name,
+                    if description.is_empty() {
+                        "undefined".to_string()
+                    } else {
+                        format!("\"{}\"", description.replace('\"', "\\\""))
+                    },
+                    type_to_ts_string(params),
+                    type_to_ts_string(returns)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+
     let workflow_array_type = if workflow_types == "undefined" {
         "undefined".to_string()
     } else {
@@ -70,9 +99,10 @@ pub fn generate(plan: &CodegenPlan, base_name: &str) -> String {
     let ir_import = [
         format!("import _importedIR from './{base_name}.agent.json' with {{ type: 'json' }};"),
         format!(
-            "type {agent_name}IR = Omit<typeof _importedIR, \"name\" | \"workflows\" | \"helpers\" | \"input\"> & {{"
+            "type {agent_name}IR = Omit<typeof _importedIR, \"name\" | \"workflows\" | \"helpers\" | \"input\" | \"tools\"> & {{"
         ),
         format!("  name: \"{agent_name}\";"),
+        format!("  tools: ({tool_types})[];"),
         format!("  workflows: {workflow_array_type};"),
         format!("  helpers: {helper_array_type};"),
         format!("  input: {input_literal_type};"),

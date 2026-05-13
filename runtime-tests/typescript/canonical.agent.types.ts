@@ -4,8 +4,9 @@
 import { createAuwgent as createAuwgentRuntime } from "@snrraptopack/auwgent-sdk";
 import type { ToolRegistry } from "@snrraptopack/auwgent-sdk";
 import _importedIR from './canonical.agent.json' with { type: 'json' };
-type RuntimeTestIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers" | "input"> & {
+type RuntimeTestIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers" | "input" | "tools"> & {
   name: "RuntimeTest";
+  tools: ({ name: "get_location"; description: "Return the current location for the active user"; params: unknown; returns: string } | { name: "get_marks"; description: "Return the user's score"; params: unknown; returns: string })[];
   workflows: ({ flowName: "marks_and_location"; flowParams: { user_id: string }; returns: string })[];
   helpers: ({ name: "Planner"; input: null; output: { steps: string[]; motivation: string } } | { name: "Joker"; input: null; output: null })[];
   input: null;

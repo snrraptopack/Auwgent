@@ -391,36 +391,7 @@ Future<ScenarioResult> _scenario19FallbackOnRateLimit() async {
 // MIDDLEWARE CLASSES
 // =============================================================================
 
-abstract class _BaseMiddleware implements sdk.Middleware {
-  @override
-  String get name => runtimeType.toString();
-
-  @override
-  Object? get target => null;
-
-  @override
-  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) => session;
-
-  @override
-  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) => null;
-
-  @override
-  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) => null;
-
-  @override
-  FutureOr<void> onIntentPartial(String name, Object? value, sdk.MiddlewareContext ctx) {}
-
-  @override
-  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {}
-
-  @override
-  FutureOr<void> onRunComplete(sdk.SessionState finalSession, sdk.MiddlewareContext ctx) {}
-
-  @override
-  FutureOr<Object?> onError(Object error, sdk.SessionState? session, sdk.MiddlewareContext ctx) => false;
-}
-
-class _LifecycleLogger extends _BaseMiddleware {
+class _LifecycleLogger extends AuwgentMiddleware {
   final List<String> log;
   _LifecycleLogger(this.log);
 
@@ -428,25 +399,25 @@ class _LifecycleLogger extends _BaseMiddleware {
   String get name => 'LifecycleLogger';
 
   @override
-  FutureOr<sdk.SessionState> onRunStart(sdk.SessionState session, sdk.MiddlewareContext ctx) {
+  onRunStart(session, ctx) {
     log.add('run_start | activeAgent=${ctx.activeAgent} | stack=${jsonEncode(ctx.stack)}');
     return session;
   }
 
   @override
-  FutureOr<String?> onLLMStart(String prompt, sdk.MiddlewareContext ctx) {
+  onLLMStart(prompt, ctx) {
     log.add('llm_start | promptLen=${prompt.length} | activeAgent=${ctx.activeAgent}');
     return null;
   }
 
   @override
-  FutureOr<sdk.IntentControl?> onIntent(String name, Object? value, sdk.MiddlewareContext ctx) {
+  onIntent(String name, Object? value,  ctx) {
     log.add('intent | $name | activeAgent=${ctx.activeAgent}');
     return null;
   }
 
   @override
-  FutureOr<void> onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {
+  onLLMEnd(Object? response, sdk.MiddlewareContext ctx) {
     log.add('llm_end | activeAgent=${ctx.activeAgent}');
   }
 
@@ -462,7 +433,7 @@ class _LifecycleLogger extends _BaseMiddleware {
   }
 }
 
-class _ErrorSwallower extends _BaseMiddleware {
+class _ErrorSwallower extends AuwgentMiddleware {
   final List<String> log;
   _ErrorSwallower(this.log);
 
@@ -476,7 +447,7 @@ class _ErrorSwallower extends _BaseMiddleware {
   }
 }
 
-class _StateSharer extends _BaseMiddleware {
+class _StateSharer extends AuwgentMiddleware {
   final List<String> log;
   _StateSharer(this.log);
 
@@ -505,7 +476,7 @@ class _StateSharer extends _BaseMiddleware {
   }
 }
 
-class _PromptMutator extends _BaseMiddleware {
+class _PromptMutator extends AuwgentMiddleware {
   final List<String> log;
   _PromptMutator(this.log);
 
@@ -521,7 +492,7 @@ class _PromptMutator extends _BaseMiddleware {
   }
 }
 
-class _ConfigMutator extends _BaseMiddleware {
+class _ConfigMutator extends AuwgentMiddleware {
   final List<String> log;
   _ConfigMutator(this.log);
 
@@ -537,7 +508,7 @@ class _ConfigMutator extends _BaseMiddleware {
   }
 }
 
-class _StackMutator extends _BaseMiddleware {
+class _StackMutator extends AuwgentMiddleware {
   final List<String> log;
   _StackMutator(this.log);
 
@@ -558,7 +529,7 @@ class _StackMutator extends _BaseMiddleware {
   }
 }
 
-class _IntentOverrider extends _BaseMiddleware {
+class _IntentOverrider extends AuwgentMiddleware {
   final List<String> log;
   _IntentOverrider(this.log);
 
@@ -579,7 +550,7 @@ class _IntentOverrider extends _BaseMiddleware {
   }
 }
 
-class _IntentSkipper extends _BaseMiddleware {
+class _IntentSkipper extends AuwgentMiddleware {
   final List<String> log;
   _IntentSkipper(this.log);
 
@@ -600,7 +571,7 @@ class _IntentSkipper extends _BaseMiddleware {
   }
 }
 
-class _SessionMutator extends _BaseMiddleware {
+class _SessionMutator extends AuwgentMiddleware {
   final List<String> log;
   _SessionMutator(this.log);
 
@@ -625,7 +596,7 @@ class _SessionMutator extends _BaseMiddleware {
   }
 }
 
-class _FallbackMiddleware extends _BaseMiddleware {
+class _FallbackMiddleware extends AuwgentMiddleware {
   final List<String> log;
   _FallbackMiddleware(this.log);
 
@@ -723,7 +694,9 @@ Future<void> main() async {
 
   // Write JSON results
   final resultsJson = results.map((r) => r.toJson()).toList();
-  File('../test-results.json').writeAsStringSync(jsonEncode(resultsJson));
+  final resultsDir = Directory('../results');
+  if (!resultsDir.existsSync()) resultsDir.createSync(recursive: true);
+  File('../results/dart.json').writeAsStringSync(jsonEncode(resultsJson));
 
   // FINAL SUMMARY
   print('');
