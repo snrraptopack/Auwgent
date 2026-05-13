@@ -19,6 +19,7 @@ impl ModelDriver for CaptureDriver {
         messages: &[Message],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<ModelEventStream, String> {
         *self.messages.lock().unwrap() = messages.to_vec();
         Ok(Box::pin(stream::iter(vec![Ok(ModelEvent::ContentChunk(
@@ -32,6 +33,7 @@ impl ModelDriver for CaptureDriver {
         _text: &str,
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
         Ok(Vec::new())
     }
@@ -42,6 +44,7 @@ impl ModelDriver for CaptureDriver {
         texts: &[String],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
         Ok(texts.iter().map(|_| Vec::new()).collect())
     }

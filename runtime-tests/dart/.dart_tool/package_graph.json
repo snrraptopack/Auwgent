@@ -1,0 +1,28 @@
+{
+  "roots": [
+    "auwgent_runtime_tests"
+  ],
+  "packages": [
+    {
+      "name": "auwgent_runtime_tests",
+      "version": "0.0.0",
+      "dependencies": [
+        "auwgent_sdk_dart"
+      ],
+      "devDependencies": []
+    },
+    {
+      "name": "auwgent_sdk_dart",
+      "version": "0.1.0",
+      "dependencies": [
+        "ffi"
+      ]
+    },
+    {
+      "name": "ffi",
+      "version": "2.2.0",
+      "dependencies": []
+    }
+  ],
+  "configVersion": 1
+}

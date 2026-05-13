@@ -5,6 +5,7 @@
       "name": "auwgent-runtime-tests-typescript",
       "dependencies": {
         "@snrraptopack/auwgent-sdk": "file:../../targets/typescript",
+        "@types/node": "^25.7.0",
       },
     },
   },

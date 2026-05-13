@@ -2,22 +2,6 @@ import type { AgentIRShape, IntentControl, SessionState, AuwgentIntent, AuwgentM
 
 // ── Middleware Types ───────────────────────────────────────────────────────
 
-/** Return value from `onLLMStart` when mutating provider request fields. */
-export interface MiddlewareLLMStartResult {
-    /** Replace the prompt text sent to the model. */
-    prompt?: string;
-    /** Override the execution stack. */
-    stack?: string[];
-    /** Deep-merge provider config (e.g. temperature, maxTokens). */
-    config?: Record<string, unknown>;
-    /** Switch to a different provider driver. */
-    provider?: string;
-    /** Override the provider URL (for custom/proxy endpoints). */
-    url?: string;
-    /** Inject HTTP headers (e.g. Authorization) into the provider request. */
-    headers?: Record<string, string>;
-}
-
 /** Return value from `onError` when controlling error handling. */
 export interface MiddlewareErrorResult {
     /** Swallow the error and stop propagation. */
@@ -47,17 +31,19 @@ export type MiddlewareContext<IR extends AgentIRShape = any> = (
     embed: (text: string) => Promise<number[]>;
     /** Generate embeddings for a batch of texts */
     embedBatch: (texts: string[]) => Promise<number[][]>;
-  setContext: (data: any) => void;
-  /** The model name selected for the current LLM call (only present during onLLMStart) */
-  model?: string;
-  /** The provider ID for the current LLM call (only present during onLLMStart) */
-  provider?: string;
-  /** The provider-specific config object for the current LLM call (only present during onLLMStart) */
-  config?: Record<string, unknown>;
-  /** The custom provider URL, if applicable (only present during onLLMStart) */
-  url?: string;
-  /** HTTP headers injected into the provider request (only present during onLLMStart) */
-  headers?: Record<string, string>;
+    setContext: (data: any) => void;
+    /** The model name selected for the current LLM call (only present during onLLMStart) */
+    model?: string;
+    /** The provider ID for the current LLM call (only present during onLLMStart) */
+    provider?: string;
+    /** The provider-specific config object for the current LLM call (only present during onLLMStart) */
+    config?: Record<string, unknown>;
+    /** The custom provider URL, if applicable (only present during onLLMStart) */
+    url?: string;
+    /** HTTP headers injected into the provider request (only present during onLLMStart) */
+    headers?: Record<string, string>;
+    /** API key for the provider request (only present during onLLMStart) */
+    apiKey?: string;
 } & Record<string, any>;
 
 /**
@@ -82,14 +68,13 @@ interface _MiddlewareHooks<
 
     /**
      * Fired when the engine is about to send a prompt to the underlying Model Provider.
-     * Return a string to replace the entire prompt, or an object to mutate config/provider/headers.
+     * Return a string to replace the entire prompt. Mutations to ctx (config, provider, headers, apiKey) are read after all middleware run.
      */
     onLLMStart?: (
         prompt: string,
         ctx: Extract<MiddlewareContext<IR>, { activeAgent: T }>
     ) => void | Promise<void>
-      | string | Promise<string>
-      | MiddlewareLLMStartResult | Promise<MiddlewareLLMStartResult>;
+      | string | Promise<string>;
 
     /**
      * Fired when the generic execution intent stream emits an event.
@@ -156,7 +141,7 @@ interface _MiddlewareHooks<
  * Interface for Auwgent Middleware Plugins.
  * Middleware intercept the execution lifecycle of the agent, allowing for context
  * compaction, tracing, metrics, and error handling.
- * 
+ *
  * Narrowing: If a 'target' is specified, hooks automatically narrow their 'ctx.activeAgent'.
  */
 export type Middleware<

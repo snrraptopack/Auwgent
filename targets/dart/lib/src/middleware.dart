@@ -2,34 +2,6 @@ import 'dart:async';
 
 import 'types.dart';
 
-/// Result from `onLLMStart` when mutating provider request fields.
-final class MiddlewareLLMStartResult {
-  MiddlewareLLMStartResult({
-    this.prompt,
-    this.stack,
-    this.config,
-    this.provider,
-    this.url,
-    this.headers,
-  });
-
-  final String? prompt;
-  final List<String>? stack;
-  final JsonMap? config;
-  final String? provider;
-  final String? url;
-  final JsonMap? headers;
-
-  JsonMap toJson() => {
-        if (prompt != null) 'prompt': prompt,
-        if (stack != null) 'stack': stack,
-        if (config != null) 'config': config,
-        if (provider != null) 'provider': provider,
-        if (url != null) 'url': url,
-        if (headers != null) 'headers': headers,
-      };
-}
-
 /// Result from `onError` when controlling error handling.
 final class MiddlewareErrorResult {
   MiddlewareErrorResult({this.swallow = false, this.forceStart});
@@ -55,9 +27,9 @@ abstract interface class Middleware {
     return session;
   }
 
-  /// Return `null` to proceed, a [String] to replace the prompt,
-  /// or a [MiddlewareLLMStartResult] to mutate config/provider/headers.
-  FutureOr<Object?> onLLMStart(String prompt, MiddlewareContext ctx) {
+  /// Return `null` to proceed, or a [String] to replace the prompt.
+  /// Mutations to ctx (config, provider, headers, apiKey) are read after all middleware run.
+  FutureOr<String?> onLLMStart(String prompt, MiddlewareContext ctx) {
     return null;
   }
 
@@ -114,6 +86,7 @@ final class MiddlewareContext {
   JsonMap? config;
   String? url;
   JsonMap? headers;
+  String? apiKey;
   final void Function(JsonMap value) setContext;
   final Map<String, Object?> data;
 
@@ -136,6 +109,7 @@ final class MiddlewareContext {
         'config': config,
         'url': url,
         'headers': headers,
+        'apiKey': apiKey,
         'data': data,
       });
 }

@@ -27,10 +27,12 @@ impl GeminiDriver {
         model: &str,
         body: Value,
         url_override: Option<&str>,
+        api_key: Option<&str>,
     ) -> Result<ModelEventStream, String> {
+        let key = api_key.unwrap_or(&self.api_key);
         let url = url_override.map(String::from).unwrap_or_else(|| format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, self.api_key
+            model, key
         ));
 
         let response = self
@@ -72,6 +74,7 @@ impl ModelDriver for GeminiDriver {
         messages: &[Message],
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<ModelEventStream, String> {
         // ── Build request body from messages ──────────────────────────────
         let mut body = json!({});
@@ -141,13 +144,14 @@ impl ModelDriver for GeminiDriver {
             .and_then(|c| c.get("url"))
             .and_then(Value::as_str);
 
+        let key = api_key.as_deref().unwrap_or(&self.api_key);
         if uses_non_streaming_generate_content(model) {
-            return self.generate_content_once(model, body, url_override).await;
+            return self.generate_content_once(model, body, url_override, Some(key)).await;
         }
 
         let url = url_override.map(String::from).unwrap_or_else(|| format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-            model, self.api_key
+            model, key
         ));
 
         let mut req = self.client.post(&url).json(&body);
@@ -212,10 +216,12 @@ impl ModelDriver for GeminiDriver {
         text: &str,
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
+        let key = api_key.as_deref().unwrap_or(&self.api_key);
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:embedContent?key={}",
-            model, self.api_key
+            model, key
         );
 
         let mut body = json!({
@@ -277,10 +283,12 @@ impl ModelDriver for GeminiDriver {
         texts: &[String],
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
+        let key = api_key.as_deref().unwrap_or(&self.api_key);
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:batchEmbedContents?key={}",
-            model, self.api_key
+            model, key
         );
 
         let requests: Vec<Value> = texts

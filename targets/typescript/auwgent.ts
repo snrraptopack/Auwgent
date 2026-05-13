@@ -387,6 +387,12 @@ export class TypedAuwgent<
             'embed',
             'embedBatch',
             'setContext',
+            'headers',
+            'config',
+            'url',
+            'model',
+          'provider',
+            'apiKey'
         ]);
 
         for (const [key, value] of Object.entries(ctx as Record<string, any>)) {
@@ -511,25 +517,6 @@ export class TypedAuwgent<
                             const modified = await (m.onLLMStart as any)(currentPrompt, ctx);
                             if (typeof modified === 'string') {
                                 currentPrompt = modified;
-                            } else if (modified && typeof modified === 'object') {
-                                if (typeof modified.prompt === 'string') {
-                                    currentPrompt = modified.prompt;
-                                }
-                                if (Array.isArray(modified.stack)) {
-                                    ctx.stack = modified.stack;
-                                }
-                                if (modified.config !== undefined) {
-                                    llmStartResult.config = modified.config;
-                                }
-                                if (typeof modified.provider === 'string') {
-                                    llmStartResult.provider = modified.provider;
-                                }
-                                if (typeof modified.url === 'string') {
-                                    llmStartResult.url = modified.url;
-                                }
-                                if (modified.headers !== undefined) {
-                                    llmStartResult.headers = modified.headers;
-                                }
                             }
                         } catch (error) {
                             this.reportWarning('middleware', 'middleware onLLMStart threw', error, ctx.activeAgent as string);
@@ -538,6 +525,26 @@ export class TypedAuwgent<
                 }
 
                 this.persistMiddlewareContext(ctx);
+
+                // Read mutations from ctx (uniform pattern across all languages)
+                if (ctx.config !== undefined) {
+                    llmStartResult.config = ctx.config;
+                }
+                if (typeof ctx.provider === 'string') {
+                    llmStartResult.provider = ctx.provider;
+                }
+                if (typeof ctx.model === 'string') {
+                    llmStartResult.model = ctx.model;
+                }
+                if (typeof ctx.url === 'string') {
+                    llmStartResult.url = ctx.url;
+                }
+                if (ctx.headers !== undefined) {
+                    llmStartResult.headers = ctx.headers;
+                }
+                if (typeof ctx.apiKey === 'string') {
+                    llmStartResult.api_key = ctx.apiKey;
+                }
 
                 return JSON.stringify({
                     prompt: currentPrompt,

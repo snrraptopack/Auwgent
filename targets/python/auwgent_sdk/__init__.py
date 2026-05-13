@@ -11,6 +11,7 @@ import inspect
 import sys
 import asyncio
 import typing
+from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import (
     Any, Callable, Awaitable, Dict, List, Optional,
@@ -204,18 +205,10 @@ class MiddlewareContext(Dict[str, Any]):
     config: Optional[Dict[str, Any]]
     url: Optional[str]
     headers: Optional[Dict[str, Any]]
+    api_key: Optional[str]
     embed: Callable[[str], Awaitable[List[float]]]
     embedBatch: Callable[[List[str]], Awaitable[List[List[float]]]]
     set_context: Callable[[Any], None]
-
-
-class MiddlewareLLMStartResult(TypedDict, total=False):
-    prompt: str
-    stack: List[str]
-    config: Dict[str, Any]
-    provider: str
-    url: str
-    headers: Dict[str, str]
 
 
 class MiddlewareErrorResult(TypedDict, total=False):
@@ -223,18 +216,32 @@ class MiddlewareErrorResult(TypedDict, total=False):
     forceStart: str
 
 
-@runtime_checkable
-class Middleware(Protocol):
-    name: ClassVar[str]
-    target: ClassVar[Optional[Union[str, List[str]]]]
+class Middleware(ABC):
+    """Base class for Auwgent middleware. Subclass and override only the hooks you need."""
 
-    async def onRunStart(self, session: SessionState, ctx: MiddlewareContext) -> SessionState: ...
-    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[Union[str, MiddlewareLLMStartResult]]: ...
-    async def onIntent(self, name: str, value: IntentValue, ctx: MiddlewareContext) -> Optional[SessionState]: ...
-    async def onIntentPartial(self, name: str, value: PartialIntentValue, ctx: MiddlewareContext) -> None: ...
-    async def onLLMEnd(self, response: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
-    async def onRunComplete(self, finalSession: SessionState, ctx: MiddlewareContext) -> None: ...
-    async def onError(self, error: Exception, session: Optional[SessionState], ctx: MiddlewareContext) -> Union[bool, MiddlewareErrorResult]: ...
+    name: ClassVar[str] = ""
+    target: ClassVar[Optional[Union[str, List[str]]]] = None
+
+    async def onRunStart(self, session: SessionState, ctx: MiddlewareContext) -> SessionState:
+        return session
+
+    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]:
+        return None
+
+    async def onIntent(self, name: str, value: IntentValue, ctx: MiddlewareContext) -> Optional[Any]:
+        return None
+
+    async def onIntentPartial(self, name: str, value: PartialIntentValue, ctx: MiddlewareContext) -> None:
+        pass
+
+    async def onLLMEnd(self, response: Dict[str, Any], ctx: MiddlewareContext) -> None:
+        pass
+
+    async def onRunComplete(self, finalSession: SessionState, ctx: MiddlewareContext) -> None:
+        pass
+
+    async def onError(self, error: Any, session: Optional[SessionState], ctx: MiddlewareContext) -> Union[bool, Dict[str, Any]]:
+        return False
 
 # Accept both instances and class types in middleware lists
 MiddlewareEntry = Union[Middleware, Type[Any]]
@@ -674,23 +681,24 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
                             self._persist_middleware_context(ctx)
                             if isinstance(result, str):
                                 current_prompt = result
-                            elif isinstance(result, dict):
-                                if isinstance(result.get("prompt"), str):
-                                    current_prompt = result["prompt"]
-                                if isinstance(result.get("stack"), list):
-                                    ctx["stack"] = list(result["stack"])
-                                if result.get("config") is not None:
-                                    llm_start_result["config"] = result["config"]
-                                if isinstance(result.get("provider"), str):
-                                    llm_start_result["provider"] = result["provider"]
-                                if isinstance(result.get("url"), str):
-                                    llm_start_result["url"] = result["url"]
-                                if result.get("headers") is not None:
-                                    llm_start_result["headers"] = result["headers"]
                         except Exception as error:
                             self._report_warning("middleware", "middleware onLLMStart threw", error, cast(str, ctx.get("activeAgent", "")))
 
                 self._persist_middleware_context(ctx)
+
+                # Read mutations from ctx (uniform pattern across all languages)
+                if ctx.get("config") is not None:
+                    llm_start_result["config"] = ctx["config"]
+                if isinstance(ctx.get("provider"), str):
+                    llm_start_result["provider"] = ctx["provider"]
+                if isinstance(ctx.get("model"), str):
+                    llm_start_result["model"] = ctx["model"]
+                if isinstance(ctx.get("url"), str):
+                    llm_start_result["url"] = ctx["url"]
+                if ctx.get("headers") is not None:
+                    llm_start_result["headers"] = ctx["headers"]
+                if isinstance(ctx.get("api_key"), str):
+                    llm_start_result["api_key"] = ctx["api_key"]
 
                 return json.dumps({
                     "prompt": current_prompt,

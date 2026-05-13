@@ -163,7 +163,7 @@ class Middleware(Protocol):
     target: Optional[Union[str, List[str]]] = None
 
     async def onRunStart(self, session: SessionState, ctx: MiddlewareContext) -> SessionState: ...
-    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[str]: ...
+    async def onLLMStart(self, prompt: str, ctx: MiddlewareContext) -> Optional[Union[str, Dict[str, Any]]]: ...
     async def onIntent(self, name: str, value: IntentValue, ctx: MiddlewareContext) -> Optional[SessionState]: ...
     async def onLLMEnd(self, response: Dict[str, Any], ctx: MiddlewareContext) -> None: ...
     async def onRunComplete(self, finalSession: SessionState, ctx: MiddlewareContext) -> None: ...
@@ -451,18 +451,34 @@ class TypedAuwgent(Generic[AgentIR, AgentContext, AgentOutput, AgentTools]):
             if not isinstance(current_prompt, str):
                 current_prompt = ""
 
+            llm_start_result: Dict[str, Any] = {}
+
             for middleware in self._get_middleware(ctx):
                 if hasattr(middleware, "onLLMStart"):
                     result = await middleware.onLLMStart(current_prompt, ctx)
                     self._persist_middleware_context(ctx)
                     if isinstance(result, str):
                         current_prompt = result
+                    elif isinstance(result, dict):
+                        if isinstance(result.get("prompt"), str):
+                            current_prompt = result["prompt"]
+                        if isinstance(result.get("stack"), list):
+                            ctx["stack"] = list(result["stack"])
+                        if result.get("config") is not None:
+                            llm_start_result["config"] = result["config"]
+                        if isinstance(result.get("provider"), str):
+                            llm_start_result["provider"] = result["provider"]
+                        if isinstance(result.get("url"), str):
+                            llm_start_result["url"] = result["url"]
+                        if result.get("headers") is not None:
+                            llm_start_result["headers"] = result["headers"]
 
             self._persist_middleware_context(ctx)
 
             return json.dumps({
                 "prompt": current_prompt,
-                "stack": ctx.get("stack")
+                "stack": ctx.get("stack"),
+                **llm_start_result
             })
 
         if event_type == "llm_end":

@@ -453,7 +453,7 @@ impl AuwgentEngine {
     pub async fn embed(&self, text: &str) -> AuwgentResult<Vec<f32>> {
         let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed(&model_name, text, config, None)
+            .embed(&model_name, text, config, None, None)
             .await
             .map_err(AuwgentError::Driver)
     }
@@ -461,7 +461,7 @@ impl AuwgentEngine {
     pub async fn embed_batch(&self, texts: &[String]) -> AuwgentResult<Vec<Vec<f32>>> {
         let (driver, model_name, config) = self.get_embedding_config()?;
         driver
-            .embed_batch(&model_name, texts, config, None)
+            .embed_batch(&model_name, texts, config, None, None)
             .await
             .map_err(AuwgentError::Driver)
     }

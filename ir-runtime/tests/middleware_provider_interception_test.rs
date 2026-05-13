@@ -46,6 +46,7 @@ impl ModelDriver for MockDriver {
         _messages: &[Message],
         config: Option<Value>,
         headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<ModelEventStream, String> {
         self.calls.lock().unwrap().push(RecordedCall {
             config: config.clone(),
@@ -63,6 +64,7 @@ impl ModelDriver for MockDriver {
         _text: &str,
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
         Ok(vec![])
     }
@@ -73,6 +75,7 @@ impl ModelDriver for MockDriver {
         _texts: &[String],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
         Ok(vec![])
     }
@@ -369,6 +372,7 @@ impl ModelDriver for FailingDriver {
         _messages: &[Message],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<ModelEventStream, String> {
         Err("always fails".to_string())
     }
@@ -379,6 +383,7 @@ impl ModelDriver for FailingDriver {
         _text: &str,
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
         Ok(vec![])
     }
@@ -389,6 +394,7 @@ impl ModelDriver for FailingDriver {
         _texts: &[String],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
         Ok(vec![])
     }

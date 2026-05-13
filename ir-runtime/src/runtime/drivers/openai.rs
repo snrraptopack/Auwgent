@@ -57,6 +57,7 @@ impl ModelDriver for OpenAIDriver {
         messages: &[Message],
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<ModelEventStream, String> {
         let base = self.base_url.trim_end_matches('/');
         let mut url = if base.ends_with("/chat/completions") {
@@ -164,7 +165,7 @@ impl ModelDriver for OpenAIDriver {
             .and_then(|v| v.get("Authorization"))
             .is_some();
         if !has_auth {
-            req = req.bearer_auth(&self.api_key);
+            req = req.bearer_auth(api_key.as_ref().unwrap_or(&self.api_key));
         }
 
         let response = req
@@ -380,6 +381,7 @@ impl ModelDriver for OpenAIDriver {
         text: &str,
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
@@ -417,7 +419,7 @@ impl ModelDriver for OpenAIDriver {
             .and_then(|v| v.get("Authorization"))
             .is_some();
         if !has_auth {
-            req = req.bearer_auth(&self.api_key);
+            req = req.bearer_auth(api_key.as_ref().unwrap_or(&self.api_key));
         }
 
         let response = req
@@ -459,6 +461,7 @@ impl ModelDriver for OpenAIDriver {
         texts: &[String],
         config: Option<Value>,
         headers: Option<Value>,
+        api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
         let base = self.base_url.trim_end_matches('/');
         let url = if base.ends_with("/embeddings") {
@@ -496,7 +499,7 @@ impl ModelDriver for OpenAIDriver {
             .and_then(|v| v.get("Authorization"))
             .is_some();
         if !has_auth {
-            req = req.bearer_auth(&self.api_key);
+            req = req.bearer_auth(api_key.as_ref().unwrap_or(&self.api_key));
         }
 
         let response = req

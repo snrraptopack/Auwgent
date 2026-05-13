@@ -1,0 +1,10 @@
+name: auwgent_runtime_tests
+description: Auwgent cross-language runtime test runner for Dart
+publish_to: none
+
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+
+dependencies:
+  auwgent_sdk_dart:
+    path: ../../targets/dart

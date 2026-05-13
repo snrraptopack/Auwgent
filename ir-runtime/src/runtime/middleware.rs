@@ -40,8 +40,10 @@ pub struct LlmStartMiddlewareResult {
     pub stack: Option<Vec<String>>,
     pub config: Option<Value>,
     pub provider: Option<String>,
+    pub model: Option<String>,
     pub url: Option<String>,
     pub headers: Option<Value>,
+    pub api_key: Option<String>,
 }
 
 /// Parse the JSON response from an llm_start middleware event.
@@ -69,8 +71,10 @@ pub fn parse_llm_start_response(response: &Value) -> LlmStartMiddlewareResult {
     });
     result.config = obj.get("config").cloned();
     result.provider = obj.get("provider").and_then(Value::as_str).map(ToString::to_string);
+    result.model = obj.get("model").and_then(Value::as_str).map(ToString::to_string);
     result.url = obj.get("url").and_then(Value::as_str).map(ToString::to_string);
     result.headers = obj.get("headers").cloned();
+    result.api_key = obj.get("api_key").and_then(Value::as_str).map(ToString::to_string);
     result
 }
 

@@ -1,0 +1,26 @@
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "auwgent_sdk_dart",
+      "rootUri": "../../../targets/dart",
+      "packageUri": "lib/",
+      "languageVersion": "3.11"
+    },
+    {
+      "name": "ffi",
+      "rootUri": "file:///C:/Users/babyface/AppData/Local/Pub/Cache/hosted/pub.dev/ffi-2.2.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.7"
+    },
+    {
+      "name": "auwgent_runtime_tests",
+      "rootUri": "../",
+      "packageUri": "lib/",
+      "languageVersion": "3.11"
+    }
+  ],
+  "generator": "pub",
+  "generatorVersion": "3.11.4",
+  "pubCache": "file:///C:/Users/babyface/AppData/Local/Pub/Cache"
+}

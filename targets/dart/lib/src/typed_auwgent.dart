@@ -605,16 +605,18 @@ class TypedAuwgent<IR extends JsonMap> {
             );
             if (updated is String) {
               prompt = updated;
-            } else if (updated is MiddlewareLLMStartResult) {
-              if (updated.prompt != null) prompt = updated.prompt!;
-              if (updated.stack != null) ctx.stack = updated.stack!;
-              if (updated.config != null) result['config'] = updated.config!;
-              if (updated.provider != null) result['provider'] = updated.provider!;
-              if (updated.url != null) result['url'] = updated.url!;
-              if (updated.headers != null) result['headers'] = updated.headers!;
             }
           }
           _persistMiddlewareContext(ctx);
+
+          // Read mutations from ctx (uniform pattern across all languages)
+          if (ctx.config != null) result['config'] = ctx.config!;
+          if (ctx.provider != null) result['provider'] = ctx.provider!;
+          if (ctx.model != null) result['model'] = ctx.model!;
+          if (ctx.url != null) result['url'] = ctx.url!;
+          if (ctx.headers != null) result['headers'] = ctx.headers!;
+          if (ctx.apiKey != null) result['api_key'] = ctx.apiKey!;
+
           _timingLog('middleware event done type=llm_start', watch);
           return jsonEncode({
             'prompt': prompt,

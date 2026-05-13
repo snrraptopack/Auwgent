@@ -441,6 +441,7 @@ impl ModelDriver for DeterministicDriver {
         _messages: &[Message],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<ModelEvent, String>> + Send>>, String> {
         let output = self
             .outputs
@@ -459,6 +460,7 @@ impl ModelDriver for DeterministicDriver {
         _text: &str,
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<f32>, String> {
         Ok(vec![0.0])
     }
@@ -469,6 +471,7 @@ impl ModelDriver for DeterministicDriver {
         texts: &[String],
         _config: Option<Value>,
         _headers: Option<Value>,
+        _api_key: Option<String>,
     ) -> Result<Vec<Vec<f32>>, String> {
         Ok(texts.iter().map(|_| vec![0.0]).collect())
     }

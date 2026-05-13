@@ -448,7 +448,69 @@ Native-mode turns carry extra state only when needed:
 
 ---
 
-## 10. Key Design Documents
+## 10. Runtime Tests (Cross-Language)
+
+Real LLM integration tests live in `runtime-tests/` and exercise the full FFI + SDK stack. Each target language has a test runner that executes the same canonical scenarios against a compiled `.agent.json`.
+
+### 10.1 Test Runners
+
+| Language | Runner | Scenarios | Status |
+|----------|--------|-----------|--------|
+| TypeScript | `runtime-tests/typescript/test-runner.ts` | 19 | Implemented |
+| Python | `runtime-tests/python/test_runner.py` | 19 | Implemented |
+| Dart | `runtime-tests/dart/test_runner.dart` | 19 | Implemented |
+
+### 10.2 Scenario Coverage
+
+1. Basic chat (block mode)
+2. Tool call with no arguments
+3. Tool call with arguments
+4. Workflow execution
+5. Helper with `Return` handoff
+6. Helper with `User` handoff
+7. Custom intent emission
+8. Middleware lifecycle (all hooks fire in order)
+9. Session export/import persistence
+10. Error swallowing via middleware
+11. Streaming partial intents
+12. Middleware state sharing across hooks
+13. Middleware prompt mutation
+14. Middleware config/header mutation
+15. Middleware stack mutation
+16. Middleware intent override
+17. Middleware intent skip
+18. Middleware session mutation
+19. Fallback on rate limit (`forceStart: "llm_start"`)
+
+### 10.3 Middleware Testing Patterns
+
+All test runners use a consistent pattern:
+- **Setup function** returns `(agent, middleware_log)`
+- **Middleware classes** inherit from the language-specific `Middleware` base class
+- **Log arrays** capture hook execution order and mutations for assertions
+- **4-second delays** between scenarios to avoid rate limits
+- **ASCII-only output** in Python to avoid Windows `cp1252` encoding issues
+
+### 10.4 Unified Results
+
+All test results are collected into a single log file:
+- `runtime-tests/test-results.json` — structured JSON with per-scenario, per-language results
+- `runtime-tests/test-results.md` — human-readable markdown summary
+
+### 10.5 Provider & Rate Limits
+
+Tests use **Groq** (`llama-3.3-70b-versatile`) by default. The Groq TPD (tokens per day) limit is 100K. When the limit is hit, scenario 19 (fallback middleware) demonstrates switching to an alternative provider via `onError` → `forceStart: "llm_start"`.
+
+### 10.6 Key SDK Changes from Testing
+
+- **TypeScript SDK:** `onLLMStart` simplified to string-only return; `ctx.model`, `ctx.apiKey`, `ctx.config`, `ctx.provider`, `ctx.url`, `ctx.headers` mutations are read after all middleware run
+- **Python SDK:** `Middleware` converted from `Protocol` to `ABC` with default no-op implementations; `onError` accepts `bool | dict`; `onLLMStart` simplified to `Optional[str]` return
+- **Dart SDK:** `onLLMStart` simplified to `FutureOr<String?>`; `MiddlewareLLMStartResult` removed across all SDKs
+- **Rust Runtime:** `ModelDriver` trait accepts `api_key: Option<String>` for per-request key override; `EventContext` carries `model` and `api_key` fields
+
+---
+
+## 11. Key Design Documents
 
 | Document | Topic | Status |
 |----------|-------|--------|
@@ -460,7 +522,7 @@ Native-mode turns carry extra state only when needed:
 
 ---
 
-## 11. When You See These, Know This
+## 12. When You See These, Know This
 
 - `#[cfg(target_arch = "wasm32")]` — This code path is for the WASM runtime target (browser, Cloudflare Workers, etc.)
 - `BlockOrchestrator` — This is the parser for LLM output. It is core to how the runtime works.

@@ -371,11 +371,8 @@ async function scenario14_middlewareConfigMutation(): Promise<ScenarioResult> {
     name: "ConfigMutator",
     onLLMStart: async (prompt, ctx) => {
       log.push(`llm_start | injecting config mutation`);
-      return {
-        prompt,
-        config: { temperature: 0.01, max_tokens: 50 },
-        headers: { "X-Runtime-Test": "auwgent-ts", "X-Request-Id": "req-123" },
-      };
+      ctx.config = { temperature: 0.01, max_tokens: 50 },
+      ctx.headers = { "X-Runtime-Test": "auwgent-ts", "X-Request-Id": "req-123" }
     },
   };
 
@@ -395,10 +392,7 @@ async function scenario15_middlewareStackMutation(): Promise<ScenarioResult> {
     onLLMStart: async (prompt, ctx) => {
       log.push(`llm_start | originalStack=${JSON.stringify(ctx.stack)}`);
       // Inject a fake helper into the stack to test teleportation
-      return {
-        prompt,
-        stack: ["RuntimeTest", "Planner"],
-      };
+      ctx.stack = ["RuntimeTest", "Planner"]
     },
     onIntent: async (name, value, ctx) => {
       log.push(`intent | stackDuringIntent=${JSON.stringify(ctx.stack)}`);
@@ -472,8 +466,7 @@ async function scenario18_middlewareSessionMutation(): Promise<ScenarioResult> {
         {
           input: "[injected by middleware]",
           model_response: "This turn was injected during run_start",
-          turn_index: mutated.turns.length,
-        } as any,
+        }
       ];
       log.push(`run_start | injected turn | totalTurns=${mutated.turns.length}`);
       return mutated;
@@ -483,6 +476,39 @@ async function scenario18_middlewareSessionMutation(): Promise<ScenarioResult> {
   return runScenario("18. Middleware Session Mutation", () => {
     const config = createBaseConfig();
     config.middleware = [sessionMiddleware];
+    const agent = auwgent(config);
+    return { agent, middlewareLog: log };
+  }, "Say hello.");
+}
+
+async function scenario19_fallbackOnRateLimit(): Promise<ScenarioResult> {
+  const log: string[] = [];
+
+  const fallbackMiddleware: AuwgentMiddleware = {
+    name: "FallbackMiddleware",
+    async onError(error, session, ctx) {
+      const msg = String(error.message || error);
+      log.push(`error | ${msg.slice(0, 80)}`);
+      if (msg.includes("429") || msg.includes("rate_limit")) {
+        log.push("error -> triggering fallback to openai/gpt-oss-120b");
+        ctx.fallbackTriggered = true;
+        ctx.fallbackModel = "openai/gpt-oss-120b";
+        return { forceStart: "llm_start" };
+      }
+      return {swallow:false};
+    },
+    async onLLMStart(prompt, ctx) {
+      if (ctx.fallbackTriggered) {
+        log.push(`llm_start | fallback active | model=${ctx.fallbackModel}`);
+        ctx.model = ctx.fallbackModel;
+      }
+      return prompt;
+    },
+  };
+
+  return runScenario("19. Fallback on Rate Limit", () => {
+    const config = createBaseConfig();
+    config.middleware = [fallbackMiddleware];
     const agent = auwgent(config);
     return { agent, middlewareLog: log };
   }, "Say hello.");
@@ -522,6 +548,7 @@ async function main() {
     scenario16_middlewareIntentOverride,
     scenario17_middlewareIntentSkip,
     scenario18_middlewareSessionMutation,
+    scenario19_fallbackOnRateLimit,
   ];
 
   const results: ScenarioResult[] = [];

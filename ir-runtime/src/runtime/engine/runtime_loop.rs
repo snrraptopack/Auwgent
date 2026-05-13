@@ -46,6 +46,7 @@ impl AuwgentEngine {
             config: None,
             url: None,
             headers: None,
+            api_key: None,
         }
     }
 
@@ -468,6 +469,7 @@ impl AuwgentEngine {
                 }
 
                 let mut provider_headers: Option<Value> = None;
+                let mut provider_api_key: Option<String> = None;
 
                 if loop_count == 1 {
                     let sys_prompt = self
@@ -497,6 +499,7 @@ impl AuwgentEngine {
                     context.provider = Some(provider_id.clone());
                     context.config = config_params.clone();
                     context.headers = provider_headers.clone();
+                    context.api_key = provider_api_key.clone();
                     if provider_type == "custom" {
                         context.url = model_info.get("url").and_then(Value::as_str).map(ToString::to_string);
                     }
@@ -545,12 +548,9 @@ impl AuwgentEngine {
                             provider_id = new_provider;
                         }
 
-                        // Apply model override (from config or direct field)
-                        if let Some(new_model) = parsed.config.as_ref()
-                            .and_then(|c| c.get("model"))
-                            .and_then(Value::as_str)
-                        {
-                            model_name = new_model.to_string();
+                        // Apply model override
+                        if let Some(new_model) = parsed.model {
+                            model_name = new_model;
                         }
 
                         // Apply URL override into config so drivers can read it
@@ -564,6 +564,11 @@ impl AuwgentEngine {
                         // Apply headers
                         if parsed.headers.is_some() {
                             provider_headers = parsed.headers;
+                        }
+
+                        // Apply api_key
+                        if parsed.api_key.is_some() {
+                            provider_api_key = parsed.api_key;
                         }
                     }
                     timing.mark("llm_start middleware complete");
@@ -636,7 +641,7 @@ impl AuwgentEngine {
                         .ok_or(AuwgentError::NoDriver)?
                         .clone();
                     driver
-                        .stream_generate(&model_name, &messages, config_params, provider_headers.clone())
+                        .stream_generate(&model_name, &messages, config_params, provider_headers.clone(), provider_api_key.clone())
                         .await
                 };
                 timing.mark("provider stream_generate returned stream");

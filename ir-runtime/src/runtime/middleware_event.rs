@@ -35,6 +35,8 @@ pub struct EventContext {
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
