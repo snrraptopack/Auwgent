@@ -8,7 +8,7 @@ type TestAccountIR = Omit<typeof _importedIR, "name" | "workflows" | "helpers" |
   name: "TestAccount";
   workflows: undefined;
   helpers: undefined;
-  input: "image";
+  input: null;
 };
 const agentIR = _importedIR as unknown as TestAccountIR;
 export type TextPart = import("@snrraptopack/auwgent-sdk").AuwgentTextPart;
@@ -22,15 +22,10 @@ export type ImageInput = MediaSource & { mimeType?: string; detail?: "auto" | "l
 export type FileInput = MediaSource & { mimeType?: string; name?: string };
 export type AudioInput = MediaSource & { mimeType?: string; transcript?: string };
 export type VideoInput = MediaSource & { mimeType?: string; transcript?: string; sampledFrames?: ImagePart[] };
-export type Input = readonly (TextPart | ImagePart)[]
-
-export const input = {
-    text(text: string): TextPart { return { type: "text", text }; },
-    image(source: ImageInput): ImagePart { return { type: "image", ...source }; },
-};
+export type Input = string
 
 export type AuwgentOutput = {
-
+    type: { user_name: string; age: number; location: string };
 }
 
 export type AuwgentContext = {
@@ -57,7 +52,7 @@ export class AuwgentBaseIntentHandler implements AuwgentIntentHandler {
  * API keys required for Auwgent
  */
 export type AuwgentApiKeys = {
-    geminiApiKey: string;
+    groqApiKey: string;
 }
 
 // Defined explicitly (not via ReturnType) so RouterMiddleware can derive from it without circularity

@@ -1,0 +1,18 @@
+{
+  "systemPrompt": "Be polite and concise",
+  "turns": [
+    {
+      "input": "hello",
+      "model_response": "[response_text] Hello [/response_text]"
+    },
+    {
+      "input": "hello",
+      "model_response": "Hello, how can I help you today?",
+      "protocol": "native"
+    }
+  ],
+  "stack": [
+    "TestAccount"
+  ],
+  "initialInput": null
+}

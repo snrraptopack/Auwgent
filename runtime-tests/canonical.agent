@@ -1,0 +1,77 @@
+model DefaultModel {
+    provider: groq("llama-3.3-70b-versatile")
+}
+
+intent Loud {
+    description: "Use this to explain your thought process and actions out loud"
+    fields {
+        actions: string @desc "The action you are about to take"
+        reason: string @desc "Why you are taking this action"
+    }
+} @example(actions = "I will look up the user's location", reason = "The user asked where they are")
+
+agent RuntimeTest {
+    default config {
+        model: DefaultModel
+        prompt: """
+        You are a helpful test assistant. You have access to tools and helpers.
+        Use tools when the user asks for data. Use helpers for specialized tasks.
+        When you need to think out loud, use the [custom:Loud] intent.
+        Always respond using the correct protocol blocks.
+        """
+    }
+
+    input: Text
+
+    context {
+        user_name: string
+        age: number
+        id: string
+    }
+
+    intent: Loud
+
+    tool get_location(): string @desc "Return the current location for the active user"
+    tool get_marks(id: string @desc "the id of the user"): string @desc "Return the user's score"
+
+    workflow marks_and_location(user_id: string): string {
+        description: "Get both the location and marks of a user in one go"
+        let marks = get_marks(user_id)
+        let location = get_location()
+        return """
+            Location: {{location}}
+            Marks: {{marks}}
+        """
+    } @example(user_id = "100")
+
+    helpers {
+        Planner
+        Joker handoff user
+    }
+}
+
+helper Planner {
+    description: "A planning specialist that breaks down tasks into steps"
+
+    default config {
+        model: DefaultModel
+        prompt: "You are a task planner. Break down the user's request into clear steps."
+    }
+
+    input: Text
+    output: {
+        steps: string[] @desc "Step-by-step plan"
+        motivation: string @desc "Why this plan is the right approach"
+    }
+}
+
+helper Joker {
+    description: "A joke-telling helper that makes people laugh"
+
+    default config {
+        model: DefaultModel
+        prompt: "You are a comedian. Tell a joke based on the user's request."
+    }
+
+    input: Text
+}

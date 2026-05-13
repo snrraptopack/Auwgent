@@ -4,8 +4,8 @@
     {
       "defaultConfig": {
         "model": {
-          "type": "gemini",
-          "modelName": "gemini-2.5-flash-image",
+          "type": "groq",
+          "modelName": "llama-3.3-70b-versatile",
           "config": {
             "type": "object",
             "value": {
@@ -18,16 +18,34 @@
         },
         "embedding": null,
         "prompt": {
-          "value": "Be polite and concise,when you call a tool,the result will be sent to you when they are in dont come up with your own values",
+          "value": "Be polite and concise",
           "type": "literal"
         },
-        "toolProtocol": "native"
+        "toolProtocol": "block"
       },
       "namedConfig": []
     }
   ],
-  "input": "image",
-  "output": null,
+  "input": null,
+  "output": {
+    "type": {
+      "type": "object",
+      "properties": {
+        "user_name": {
+          "type": "string",
+          "optional": false
+        },
+        "age": {
+          "type": "number",
+          "optional": false
+        },
+        "location": {
+          "type": "string",
+          "optional": false
+        }
+      }
+    }
+  },
   "context": null,
   "tools": [],
   "workflows": [],
