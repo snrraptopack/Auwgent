@@ -7,7 +7,13 @@ edition = "2024"
 name = "auwgent_sdk_rust"
 
 [dependencies]
-ir-runtime = { path = "../../ir-runtime" }
+auwgent-bridge = { path = "../../runtime/crates/auwgent-bridge" }
+auwgent-drivers = { path = "../../runtime/crates/auwgent-drivers" }
+auwgent-engine = { path = "../../runtime/crates/auwgent-engine" }
+auwgent-ir-schema = { path = "../../auwgent-compiler/crates/auwgent-ir-schema" }
+auwgent-middleware = { path = "../../runtime/crates/auwgent-middleware" }
+auwgent-runtime-core = { path = "../../runtime/crates/auwgent-runtime-core" }
+auwgent-session = { path = "../../runtime/crates/auwgent-session" }
 async-trait = "0.1"
 futures-util = "0.3"
 serde = { version = "1.0", features = ["derive"] }

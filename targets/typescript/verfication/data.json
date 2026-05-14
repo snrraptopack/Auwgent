@@ -1,14 +1,9 @@
 {
-  "systemPrompt": "Be polite and concise",
+  "systemPrompt": "Be polite and concise\n\nYou are an execution engine. Respond only with valid protocol blocks.\n- Always use at least one protocol block.\n- If no action needed, use [response_text].\n- Close every block. Never invent names or fields not listed.\nBlocks:\n- [response_text] plain text [/response_text]\n- [schema: name] key: value per line [/schema]\n- Values: string, number, boolean, null, [list of items], {object}\nSchemas (final structured output only):\n[schema: Output]\n- Output(age: number, location: string, user_name: string)\n\nConstraints:\n- Schema output must match listed shape.",
   "turns": [
     {
-      "input": "hello",
-      "model_response": "[response_text] Hello [/response_text]"
-    },
-    {
-      "input": "hello",
-      "model_response": "Hello, how can I help you today?",
-      "protocol": "native"
+      "input": "hello my name is Theo i am 10 I'm from Ghana",
+      "model_response": "[response_text] Hello Theo, nice to meet you. [/response_text]\n[schema: Output]\nage: 10\nlocation: Ghana\nuser_name: Theo\n[/schema]"
     }
   ],
   "stack": [

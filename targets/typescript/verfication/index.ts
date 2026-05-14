@@ -27,7 +27,7 @@ const config: AuwgentConfig = {
   //   get_age: async(args) => 10,
   //   get_name: async(args) => "Amihere Theophilus"
   // },
-  middleware:[]
+  middleware:[logger]
 }
 const agent = auwgent(config)
 

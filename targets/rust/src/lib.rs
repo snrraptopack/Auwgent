@@ -1,14 +1,15 @@
 use async_trait::async_trait;
 pub use futures_util::future::BoxFuture;
 use futures_util::{Stream, stream};
-use ir_runtime::runtime::bridge::EngineBridge;
-use ir_runtime::runtime::drivers::{ModelDriver, ModelEvent};
-use ir_runtime::runtime::engine::{
+use auwgent_bridge::EngineBridge;
+use auwgent_drivers::ModelDriver;
+use auwgent_runtime_core::ModelEvent;
+use auwgent_runtime_core::{
     AsyncIntentCallback, AsyncMiddlewareEventCallback, AsyncSessionPreloadCallback,
     SessionSaveCallback, ToolImplementation,
 };
-use ir_runtime::runtime::middleware::parse_intent_control_response;
-use ir_runtime::{AgentIR, ModelConfigEntry, ModelProvider};
+use auwgent_middleware::parse_intent_control_response;
+use auwgent_ir_schema::{AgentIR, ModelConfigBlockIR as ModelConfigEntry, ModelProviderIR as ModelProvider};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -955,11 +956,15 @@ pub fn to_value<T: Serialize>(value: T) -> AuwgentResult<Value> {
     serde_json::to_value(value).map_err(|e| e.to_string())
 }
 
-pub use ir_runtime::runtime::engine::{IntentControl, RunMetadata};
-pub use ir_runtime::runtime::engine_types::AggregateUsage;
-pub use ir_runtime::runtime::session::{Message, Role, SessionState, Turn};
-pub use ir_runtime::{
-    Comparison, ComponentChildrenConstraint, ComponentDefinition, Condition, CustomIntentDef,
-    ExamplePair, Expression, HandoffMode, Helper, JsonValue, ModelConfig, NamedModelConfig, Tool,
-    TypeDefinition, TypeProperty, Workflow,
+pub use auwgent_runtime_core::{IntentControl, RunMetadata};
+pub use auwgent_runtime_core::AggregateUsage;
+pub use auwgent_runtime_core::{Message, Role};
+pub use auwgent_session::{SessionState, Turn};
+pub use auwgent_ir_schema::{
+    ComparisonIR as Comparison, ComponentChildrenIR as ComponentChildrenConstraint,
+    ComponentIR as ComponentDefinition, ConditionIR as Condition, CustomIntentIR as CustomIntentDef,
+    ExamplePairIR as ExamplePair, ExpressionIR as Expression, HandoffKindIR as HandoffMode,
+    HelperIR as Helper, JsonValue, ModelConfigIR as ModelConfig,
+    NamedModelConfigIR as NamedModelConfig, ToolIR as Tool, TypeDeclIR as TypeDefinition,
+    TypePropertyIR as TypeProperty, WorkflowIR as Workflow,
 };

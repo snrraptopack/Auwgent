@@ -1,0 +1,10 @@
+[package]
+name = "auwgent-middleware"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auwgent-runtime-core = { path = "../auwgent-runtime-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures-util = { workspace = true }

@@ -1,0 +1,23 @@
+[package]
+name = "auwgent-drivers"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auwgent-runtime-core = { path = "../auwgent-runtime-core" }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio = { version = "1", features = ["full"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Headers", "RequestInit", "RequestMode", "Response", "Window", "ReadableStream"] }
+gloo-net = { version = "0.6", features = ["websocket"] }

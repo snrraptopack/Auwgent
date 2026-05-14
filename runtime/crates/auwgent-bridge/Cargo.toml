@@ -1,0 +1,14 @@
+[package]
+name = "auwgent-bridge"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auwgent-engine = { path = "../auwgent-engine" }
+auwgent-drivers = { path = "../auwgent-drivers" }
+auwgent-runtime-core = { path = "../auwgent-runtime-core" }
+auwgent-ir-schema = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }

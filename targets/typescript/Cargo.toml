@@ -7,7 +7,8 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-ir-runtime = { path = "../../ir-runtime" }
+auwgent-bridge = { path = "../../runtime/crates/auwgent-bridge" }
+auwgent-runtime-core = { path = "../../runtime/crates/auwgent-runtime-core" }
 napi = { version = "2", features = ["async", "napi8", "serde-json"] }
 napi-derive = "2"
 tokio = { version = "1.43", features = ["full"] }

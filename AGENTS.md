@@ -11,7 +11,7 @@ Auwgent is a high-performance DSL and compiler for building agentic AI applicati
 
 - **DSL:** `.agent` files declare agents, helpers, tools, workflows, types, prompts, models, components, and intents.
 - **Compiler:** A Rust workspace (11 crates) lexes, parses, type-checks, and lowers `.agent` files into JSON IR (`.agent.json`).
-- **Runtime:** A Rust async runtime (`ir-runtime`) executes the IR against LLM providers, handling streaming, tool calling, session state, and middleware.
+- **Runtime:** A Rust async runtime workspace (`runtime/crates/`) executes the IR against LLM providers, handling streaming, tool calling, session state, and middleware.
 - **Targets:** Generated type stubs + runtime SDKs for TypeScript, Python, Dart, and Rust. A WASM runtime target exists for browser/edge environments.
 
 ---
@@ -34,32 +34,19 @@ auwgent-compiler/       # Rust workspace — lexer, parser, checker, IR, codegen
     auwgent-compile/    # Shared validation pipeline (parse → check → lower)
     auwgent-errors/     # Diagnostic types + ariadne rendering
 
-ir-runtime/             # Rust async runtime
-  src/
-    runtime/
-      engine.rs         # Core engine shell + registration
-      engine/
-        runtime_loop.rs # Main async run loop, middleware coordination
-        execution.rs    # Intent dispatch (tools, workflows, helpers)
-        execution/      # Sub-modules for tools, workflows, helpers
-        prompt.rs       # System prompt generation
-        native_schema.rs# JSON Schema generation for native tool calling
-      drivers/
-        mod.rs          # ModelDriver trait + ModelEvent types
-        gemini.rs       # Gemini driver
-        openai.rs       # OpenAI driver (also used for Groq/custom)
-      session.rs        # SessionState, Turn, Message types
-      streaming/        # JSONL event buffer, partial intents
-        parser/
-          block_orchestrator.rs  # Parses bracket protocol from LLM output
-      middleware.rs     # Middleware event firing
-      middleware_event.rs # Middleware event type definitions
-      helper_runner.rs  # Helper execution with handoff modes
-    types.rs            # Re-exports from auwgent-ir-schema
-    evaluator.rs        # IR expression evaluation
-    flat_args.rs        # Flatten/unflatten for nested IR fields
-    schema.rs           # Schema helpers
-    intents.rs          # Block protocol prompt generation
+runtime/                # Rust async runtime workspace
+  crates/
+    auwgent-runtime-core/ # Base types: Message, Role, TokenUsage, FinishReason, callback aliases
+    auwgent-session/      # SessionState, Turn, BindingCursor, native message builders
+    auwgent-middleware/   # Event enums, payload structs, async fire helpers, parsing functions
+    auwgent-native/       # NativeCallableRegistry, IR → JSON Schema for provider-native tool calling
+    auwgent-schema/       # FlatFieldSpec, recursive type resolution, output flattening
+    auwgent-evaluator/    # IR expression evaluation, prompt rendering with context symbols
+    auwgent-protocol/     # BlockOrchestrator, JsonlEventBuffer, partial intent parsing
+    auwgent-prompt/       # Block protocol prompt generation (binding rules, intent syntax)
+    auwgent-drivers/      # ModelDriver trait + OpenAI and Gemini implementations
+    auwgent-engine/       # Engine shell, runtime loop, execution (tools/workflows/helpers), prompt building
+    auwgent-bridge/       # EngineBridge FFI facade for C-ABI and target SDKs
 
 targets/
   typescript/           # TypeScript SDK (Bun-based)
@@ -67,7 +54,7 @@ targets/
   dart/                 # Dart SDK
   rust/                 # Rust target SDK (design phase)
   cli/                  # NPM wrapper for native binaries
-  wasm-runtime/         # WASM-bindgen wrapper around ir-runtime (NOT minimal)
+  wasm-runtime/         # WASM-bindgen wrapper around runtime workspace (NOT minimal)
 
 c-abi/                  # C FFI layer for embedding in other languages
 function-parser/        # Standalone bracket-protocol parser crate
@@ -82,7 +69,7 @@ tree-sitter-auwgent/    # Tree-sitter grammar
 
 ### 3.1 WASM is not "minimal" or experimental
 
-`targets/wasm-runtime/` is a **first-class production target**. It is a complete `wasm-bindgen` wrapper around `ir-runtime` that exposes:
+`targets/wasm-runtime/` is a **first-class production target**. It is a complete `wasm-bindgen` wrapper around the runtime workspace (`auwgent-engine` + `auwgent-bridge`) that exposes:
 
 - Engine construction from IR JSON
 - Driver registration (OpenAI, Groq, Gemini, Custom)
@@ -96,7 +83,7 @@ tree-sitter-auwgent/    # Tree-sitter grammar
 
 It is built with `wasm-pack --target bundler` and the output is copied into `targets/typescript/wasm-runtime/`. It runs on Cloudflare Workers and in browsers.
 
-The `ir-runtime` itself has extensive `#[cfg(target_arch = "wasm32")]` conditional compilation to support this target (e.g., `async_trait(?Send)`, `js_sys::Date`, no `tokio::time`).
+The runtime crates have extensive `#[cfg(target_arch = "wasm32")]` conditional compilation to support this target (e.g., `async_trait(?Send)`, `js_sys::Date`, no `tokio::time`).
 
 ### 3.2 "Lifecycle" TODOs are not missing features
 
@@ -426,14 +413,14 @@ Native-mode turns carry extra state only when needed:
 | `auwgent-parser/src/toplevel.rs` | Parses annotation before `agent` keyword |
 | `auwgent-checker/src/lib.rs` | Validates `@block` + media = error |
 | `auwgent-ir/src/lib.rs` | Sets `"toolProtocol"` in model config JSON |
-| `ir-runtime/src/runtime/engine.rs` | `resolve_tool_protocol()` reads from IR |
-| `ir-runtime/src/runtime/engine/prompt.rs` | Branches prompt generation on protocol |
-| `ir-runtime/src/runtime/engine/runtime_loop.rs` | Full runtime branching (messages, config, events, results) |
-| `ir-runtime/src/runtime/engine/native_schema.rs` | IR types → JSON Schema for provider-native declarations |
-| `ir-runtime/src/runtime/engine/native_registry.rs` | `NativeCallableRegistry` with prefix-based routing |
-| `ir-runtime/src/runtime/session.rs` | `NativeAssistantTurn`, `NativeToolResult`, `to_messages_native_openai()` |
-| `ir-runtime/src/runtime/drivers/openai.rs` | Handles `tool_calls` / `tool_call_id` on messages |
-| `ir-runtime/src/runtime/drivers/gemini.rs` | Handles `functionCall` / `functionResponse` in contents |
+| `runtime/crates/auwgent-engine/src/engine.rs` | `resolve_tool_protocol()` reads from IR |
+| `runtime/crates/auwgent-engine/src/engine/prompt.rs` | Branches prompt generation on protocol |
+| `runtime/crates/auwgent-engine/src/engine/runtime_loop.rs` | Full runtime branching (messages, config, events, results) |
+| `runtime/crates/auwgent-native/src/schema.rs` | IR types → JSON Schema for provider-native declarations |
+| `runtime/crates/auwgent-native/src/registry.rs` | `NativeCallableRegistry` with prefix-based routing |
+| `runtime/crates/auwgent-session/src/state.rs` | `NativeAssistantTurn`, `NativeToolResult`, `to_messages_native_openai()` |
+| `runtime/crates/auwgent-drivers/src/openai.rs` | Handles `tool_calls` / `tool_call_id` on messages |
+| `runtime/crates/auwgent-drivers/src/gemini.rs` | Handles `functionCall` / `functionResponse` in contents |
 
 ---
 
@@ -506,7 +493,7 @@ Tests use **Groq** (`llama-3.3-70b-versatile`) by default. The Groq TPD (tokens 
 - **TypeScript SDK:** `onLLMStart` simplified to string-only return; `ctx.model`, `ctx.apiKey`, `ctx.config`, `ctx.provider`, `ctx.url`, `ctx.headers` mutations are read after all middleware run
 - **Python SDK:** `Middleware` converted from `Protocol` to `ABC` with default no-op implementations; `onError` accepts `bool | dict`; `onLLMStart` simplified to `Optional[str]` return
 - **Dart SDK:** `onLLMStart` simplified to `FutureOr<String?>`; `MiddlewareLLMStartResult` removed across all SDKs
-- **Rust Runtime:** `ModelDriver` trait accepts `api_key: Option<String>` for per-request key override; `EventContext` carries `model` and `api_key` fields
+- **Rust Runtime:** `ModelDriver` trait accepts `api_key: Option<String>` for per-request key override; `EventContext` carries `model` and `api_key` fields. Runtime now lives in `runtime/crates/` as an 11-crate workspace.
 
 ---
 

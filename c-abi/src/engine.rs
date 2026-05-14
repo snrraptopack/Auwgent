@@ -12,7 +12,7 @@ use crate::tool_callback::{
     AuwgentRunCompleteCallback, AuwgentToolCallback, PendingAsyncToolCalls,
     RunCompleteCallbackRegistration, ToolCallbackRegistration, tool_callback_error,
 };
-use ir_runtime::runtime::bridge::EngineBridge;
+use auwgent_bridge::EngineBridge;
 use serde_json::Value;
 use std::os::raw::{c_char, c_void};
 use std::ptr;
@@ -546,7 +546,7 @@ pub extern "C" fn auwgent_engine_register_tool_callback(
         };
 
         let tool_name_for_callback = tool_name.clone();
-        let implementation: ir_runtime::runtime::engine::ToolImplementation =
+        let implementation: auwgent_runtime_core::ToolImplementation =
             Arc::new(move |args: Value| {
                 let registration = registration;
                 let tool_name = tool_name_for_callback.clone();
@@ -601,7 +601,7 @@ pub extern "C" fn auwgent_engine_register_tool_callback_async(
         };
 
         let tool_name_for_callback = tool_name.clone();
-        let implementation: ir_runtime::runtime::engine::ToolImplementation =
+        let implementation: auwgent_runtime_core::ToolImplementation =
             Arc::new(move |args: Value| {
                 let registration = registration;
                 let pending_async_tools = pending_async_tools.clone();
@@ -727,7 +727,7 @@ pub extern "C" fn auwgent_engine_on_middleware_event(
             user_data,
         };
 
-        let handler: ir_runtime::runtime::engine::AsyncMiddlewareEventCallback =
+        let handler: auwgent_runtime_core::AsyncMiddlewareEventCallback =
             Arc::new(move |event_json: String| {
                 let registration = registration;
                 Box::pin(async move {
@@ -774,7 +774,7 @@ pub extern "C" fn auwgent_engine_on_middleware_event_async(
         let bridge = &handle_ref.bridge;
         let pending_async_middleware_events = handle_ref.pending_async_middleware_events.clone();
 
-        let handler: ir_runtime::runtime::engine::AsyncMiddlewareEventCallback =
+        let handler: auwgent_runtime_core::AsyncMiddlewareEventCallback =
             Arc::new(move |event_json: String| {
                 let pending_async_middleware_events = pending_async_middleware_events.clone();
                 let registration = registration;
@@ -895,7 +895,7 @@ pub extern "C" fn auwgent_engine_on_intent(
             user_data,
         };
 
-        let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
+        let handler: auwgent_runtime_core::AsyncIntentCallback =
             Arc::new(move |name: String, value: Value, agent: String| {
                 let registration = registration;
                 Box::pin(async move {
@@ -972,7 +972,7 @@ pub extern "C" fn auwgent_engine_on_sub_engine_start(
             user_data,
         };
 
-        let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
+        let handler: auwgent_runtime_core::AsyncSessionPreloadCallback =
             Arc::new(move |name: String, session_json: String| {
                 let registration = registration;
                 Box::pin(async move {
@@ -1010,7 +1010,7 @@ pub extern "C" fn auwgent_engine_on_sub_engine_complete(
             user_data,
         };
 
-        let handler: ir_runtime::runtime::engine::SessionSaveCallback =
+        let handler: auwgent_runtime_core::SessionSaveCallback =
             Arc::new(move |name: String, session_json: String| {
                 let registration = registration;
                 Box::pin(async move {

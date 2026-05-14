@@ -1,0 +1,28 @@
+[package]
+name = "auwgent-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auwgent-ir-schema = { workspace = true }
+auwgent-runtime-core = { path = "../auwgent-runtime-core" }
+auwgent-session = { path = "../auwgent-session" }
+auwgent-middleware = { path = "../auwgent-middleware" }
+auwgent-native = { path = "../auwgent-native" }
+auwgent-schema = { path = "../auwgent-schema" }
+auwgent-evaluator = { path = "../auwgent-evaluator" }
+auwgent-protocol = { path = "../auwgent-protocol" }
+auwgent-prompt = { path = "../auwgent-prompt" }
+auwgent-drivers = { path = "../auwgent-drivers" }
+function-parser = { path = "../../../function-parser" }
+async-trait = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"

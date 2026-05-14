@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/auwgent-runtime-core",
+    "crates/auwgent-session",
+    "crates/auwgent-middleware",
+    "crates/auwgent-native",
+    "crates/auwgent-schema",
+    "crates/auwgent-evaluator",
+    "crates/auwgent-protocol",
+    "crates/auwgent-prompt",
+    "crates/auwgent-drivers",
+    "crates/auwgent-engine",
+    "crates/auwgent-bridge",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+thiserror = "2.0"
+async-trait = "0.1"
+futures-util = "0.3"
+auwgent-ir-schema = { path = "../auwgent-compiler/crates/auwgent-ir-schema" }

@@ -4,8 +4,8 @@ use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
-use ir_runtime::runtime::bridge::EngineBridge;
-use ir_runtime::runtime::engine::IntentControl;
+use auwgent_bridge::EngineBridge;
+use auwgent_runtime_core::IntentControl;
 
 use serde_json::Value;
 
@@ -90,7 +90,7 @@ impl Auwgent {
         let _ = tsfn.unref(&env);
 
         // Wrap the TSFN into a ToolImplementation closure
-        let tool_impl: ir_runtime::runtime::engine::ToolImplementation = std::sync::Arc::new(move |args: Value| {
+        let tool_impl: auwgent_runtime_core::ToolImplementation = std::sync::Arc::new(move |args: Value| {
             let tsfn = tsfn.clone();
             Box::pin(async move {
                 // Call the JS function from the Rust async context
@@ -142,7 +142,7 @@ impl Auwgent {
         let _ = tsfn.unref(&env);
 
         // Wrap into an AsyncIntentCallback
-        let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
+        let handler: auwgent_runtime_core::AsyncIntentCallback =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
@@ -221,7 +221,7 @@ impl Auwgent {
             })?;
         let _ = tsfn.unref(&env);
 
-        let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
+        let handler: auwgent_runtime_core::AsyncSessionPreloadCallback =
             std::sync::Arc::new(move |name: String, empty_session: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {
@@ -253,7 +253,7 @@ impl Auwgent {
             })?;
         let _ = tsfn.unref(&env);
 
-        let handler: ir_runtime::runtime::engine::SessionSaveCallback =
+        let handler: auwgent_runtime_core::SessionSaveCallback =
             std::sync::Arc::new(move |name: String, completed_session: String| {
                 let tsfn = tsfn.clone();
                 Box::pin(async move {

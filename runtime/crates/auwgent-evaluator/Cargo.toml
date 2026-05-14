@@ -1,0 +1,11 @@
+[package]
+name = "auwgent-evaluator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+auwgent-ir-schema = { workspace = true }
+auwgent-runtime-core = { path = "../auwgent-runtime-core" }
+auwgent-schema = { path = "../auwgent-schema" }
+serde = { workspace = true }
+serde_json = { workspace = true }

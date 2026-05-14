@@ -4,8 +4,8 @@
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
-use ir_runtime::runtime::bridge::EngineBridge;
-use ir_runtime::runtime::engine::IntentControl;
+use auwgent_bridge::EngineBridge;
+use auwgent_runtime_core::IntentControl;
 
 use serde_json::Value;
 use std::sync::Arc;
@@ -149,7 +149,7 @@ impl AuwgentNative {
         // Wrap in Arc so it can be cheaply cloned across async boundaries
         let callback = Arc::new(callback);
 
-        let tool_impl: ir_runtime::runtime::engine::ToolImplementation =
+        let tool_impl: auwgent_runtime_core::ToolImplementation =
             std::sync::Arc::new(move |args: Value| {
                 let callback = Arc::clone(&callback);
                 let args_json = serde_json::to_string(&args).unwrap_or_default();
@@ -176,7 +176,7 @@ impl AuwgentNative {
     pub fn on_intent(&self, callback: Py<PyAny>) -> PyResult<()> {
         let callback = Arc::new(callback);
 
-        let handler: ir_runtime::runtime::engine::AsyncIntentCallback =
+        let handler: auwgent_runtime_core::AsyncIntentCallback =
             std::sync::Arc::new(move |name: String, value: Value, agent: String| {
                 let callback = Arc::clone(&callback);
                 let value_json = serde_json::to_string(&value).unwrap_or_default();
@@ -214,7 +214,7 @@ impl AuwgentNative {
     pub fn on_sub_engine_start(&self, callback: Py<PyAny>) -> PyResult<()> {
         let callback = Arc::new(callback);
 
-        let handler: ir_runtime::runtime::engine::AsyncSessionPreloadCallback =
+        let handler: auwgent_runtime_core::AsyncSessionPreloadCallback =
             std::sync::Arc::new(move |name: String, session: String| {
                 let callback = Arc::clone(&callback);
                 Box::pin(async move {
@@ -243,7 +243,7 @@ impl AuwgentNative {
     pub fn on_sub_engine_complete(&self, callback: Py<PyAny>) -> PyResult<()> {
         let callback = Arc::new(callback);
 
-        let handler: ir_runtime::runtime::engine::SessionSaveCallback =
+        let handler: auwgent_runtime_core::SessionSaveCallback =
             std::sync::Arc::new(move |name: String, session: String| {
                 let callback = Arc::clone(&callback);
                 Box::pin(async move {

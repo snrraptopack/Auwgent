@@ -1,0 +1,15 @@
+This file contains my expiremental dx should not be taken serious unless when explicitly stated
+
+fun prompt(input:Query){
+    return "any thing {input}"
+}
+
+@prompt(prompt,"normal string") the prompt will automatically bind
+@desc("optional")
+agent SupportBot(input: Query):Response {
+    let info = search(input.text);
+    // this means when there is a result send to the model when there is an error send to the model
+    reply(info,info.error) or we can do something like
+
+    if not info.error then reply(info) else maybe a retry but something that will be specific or target to where the error occured... something like resumable errors correction
+}

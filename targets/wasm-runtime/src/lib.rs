@@ -1,11 +1,12 @@
 #![cfg(target_arch = "wasm32")]
 
 use futures_util::FutureExt;
-use ir_runtime::runtime::drivers::ModelDriver;
-use ir_runtime::runtime::drivers::gemini::GeminiDriver;
-use ir_runtime::runtime::drivers::openai::OpenAIDriver;
-use ir_runtime::runtime::engine::{AuwgentEngine, IntentControl, ToolImplementation};
-use ir_runtime::types::AgentIR;
+use auwgent_drivers::ModelDriver;
+use auwgent_drivers::gemini::GeminiDriver;
+use auwgent_drivers::openai::OpenAIDriver;
+use auwgent_engine::AuwgentEngine;
+use auwgent_runtime_core::{IntentControl, ToolImplementation};
+use auwgent_ir_schema::AgentIR;
 use js_sys::{Array, Function, Promise};
 use serde_json::Value;
 use std::cell::{Cell, RefCell};

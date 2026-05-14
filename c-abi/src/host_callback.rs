@@ -1,5 +1,5 @@
 use crate::tool_callback::AuwgentFreeCallback;
-use ir_runtime::runtime::engine::IntentControl;
+use auwgent_runtime_core::IntentControl;
 use serde_json::Value;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};

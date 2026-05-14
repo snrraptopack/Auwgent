@@ -7,7 +7,10 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ir-runtime = { path = "../../ir-runtime" }
+auwgent-engine = { path = "../../runtime/crates/auwgent-engine" }
+auwgent-drivers = { path = "../../runtime/crates/auwgent-drivers" }
+auwgent-ir-schema = { path = "../../auwgent-compiler/crates/auwgent-ir-schema" }
+auwgent-runtime-core = { path = "../../runtime/crates/auwgent-runtime-core" }
 futures-util = "0.3"
 js-sys = "0.3"
 serde = "1.0"
