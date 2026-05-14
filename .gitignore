@@ -22,13 +22,16 @@ syntaxes/
 *.a
 *.pdb
 
-# Rust build artifacts (scoped to specific crates, not the targets/ source folder)
+# Rust build artifacts (scoped to specific crates/workspaces, not the targets/ source folder)
 auwgent-compiler/target/
-ir-runtime/target/
+runtime/target/
+runtime/crates/*/target/
+c-abi/target/
+extension-zed/target/
 targets/typescript/target/
 targets/python/target/
-function-parser/target/
 targets/rust/target/
+targets/rust/rust-verfication/target/
+targets/wasm-runtime/target/
 testing/target
 targets/python/auwgent_sdk/_auwgent_sdk.pdb
-targets/wasm-runtime/target/
