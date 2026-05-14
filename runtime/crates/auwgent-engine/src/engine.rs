@@ -2,7 +2,7 @@
 // Keep shared engine state, construction, embedding helpers, and cross-module
 // utilities here. Move prompt building, runtime loop logic, and execution
 // behavior into the dedicated engine submodules.
-use auwgent_runtime_core::{AuwgentError, AuwgentResult};
+use auwgent_runtime_core::{deep_merge_json, AuwgentError, AuwgentResult};
 use auwgent_evaluator::Evaluator;
 use auwgent_runtime_core::{FinishReason, ModelEvent, TokenUsage};
 use auwgent_drivers::ModelDriver;
@@ -31,7 +31,6 @@ use tokio::time::sleep;
 mod execution;
 mod prompt;
 mod runtime_loop;
-pub use runtime_loop::deep_merge_json;
 
 fn empty_response_marker(finish_reason: Option<&FinishReason>) -> String {
     match finish_reason {
@@ -492,7 +491,22 @@ impl AuwgentEngine {
 
         let provider_info = evaluator.evaluate_provider(embedding_provider, &mut scope)?;
 
-        let provider_type = provider_info["provider"].as_str().unwrap_or("gemini");
+        let provider_type = provider_info["provider"]
+            .as_str()
+            .or_else(|| {
+                // ModelRef doesn't resolve to a concrete provider yet.
+                // Fallback to "gemini" for backward compat until model registry is implemented.
+                if provider_info.get("ref").is_some() {
+                    Some("gemini")
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                AuwgentError::MissingConfig(
+                    "embedding provider type not found in config".into(),
+                )
+            })?;
         let provider_id = if provider_type == "custom" {
             provider_info["id"].as_str().unwrap_or("custom")
         } else {

@@ -14,7 +14,7 @@ auwgent-evaluator = { path = "../auwgent-evaluator" }
 auwgent-protocol = { path = "../auwgent-protocol" }
 auwgent-prompt = { path = "../auwgent-prompt" }
 auwgent-drivers = { path = "../auwgent-drivers" }
-function-parser = { path = "../../../function-parser" }
+function-parser = { path = "../function-parser" }
 async-trait = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }

@@ -11,6 +11,7 @@ members = [
     "crates/auwgent-drivers",
     "crates/auwgent-engine",
     "crates/auwgent-bridge",
+    "crates/function-parser",
 ]
 resolver = "2"
 

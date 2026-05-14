@@ -353,7 +353,7 @@ impl<'a> Evaluator<'a> {
                     results.push((parsed, val));
                 }
 
-                let joined = self.join_and_dedent(results);
+                let joined = self.join_prompt_parts(results);
                 Ok(Value::String(joined))
             }
             Expression::Parts { value } => {
@@ -364,7 +364,7 @@ impl<'a> Evaluator<'a> {
                     results.push((part, val));
                 }
 
-                let joined = self.join_and_dedent(results);
+                let joined = self.join_prompt_parts(results);
                 Ok(Value::String(joined.trim().to_string()))
             }
 
@@ -404,7 +404,7 @@ impl<'a> Evaluator<'a> {
                     return Ok(Value::Null);
                 }
 
-                let joined = self.join_and_dedent(results);
+                let joined = self.join_prompt_parts(results);
                 Ok(Value::String(joined.trim().to_string()))
             }
 
@@ -475,8 +475,8 @@ impl<'a> Evaluator<'a> {
                     let parsed: Expression = serde_json::from_value(part.0.clone()).unwrap();
                     let evaluated = self.evaluate(&parsed, &mut local_scope)?;
 
-                    // Here we don't have a direct reference to parsed easily for join_and_dedent
-                    // because join_and_dedent takes &Expression. We can just use an empty literal as dummy
+                    // Here we don't have a direct reference to parsed easily for join_prompt_parts
+                    // because join_prompt_parts takes &Expression. We can just use an empty literal as dummy
                     results.push(evaluated);
                 }
 
@@ -704,7 +704,7 @@ impl<'a> Evaluator<'a> {
                     results.push((parsed, val));
                 }
 
-                Ok(Value::String(self.join_and_dedent(results)))
+                Ok(Value::String(self.join_prompt_parts(results)))
             }
             Expression::Parts { value } => {
                 let mut results = Vec::new();
@@ -713,7 +713,7 @@ impl<'a> Evaluator<'a> {
                     results.push((part, val));
                 }
                 Ok(Value::String(
-                    self.join_and_dedent(results).trim().to_string(),
+                    self.join_prompt_parts(results).trim().to_string(),
                 ))
             }
             Expression::InlineIf {
@@ -740,7 +740,7 @@ impl<'a> Evaluator<'a> {
                 }
 
                 Ok(Value::String(
-                    self.join_and_dedent(results).trim().to_string(),
+                    self.join_prompt_parts(results).trim().to_string(),
                 ))
             }
             Expression::If {
@@ -1137,7 +1137,10 @@ impl<'a> Evaluator<'a> {
         }
     }
 
-    fn join_and_dedent(&self, parts: Vec<(&Expression, Value)>) -> String {
+    /// Join evaluated prompt parts into a single string.
+    /// Handles conditional trimming and dedentation for literals and block expressions
+    /// to produce clean prompt output regardless of template indentation.
+    fn join_prompt_parts(&self, parts: Vec<(&Expression, Value)>) -> String {
         let mut joined = String::new();
         for (expr, val) in parts {
             let s = self.value_to_prompt_string(&val);
@@ -1257,6 +1260,9 @@ impl<'a> Evaluator<'a> {
     }
 }
 
+/// Build a binding-block symbol from a context path.
+/// Preserves alphanumeric chars, underscores, hyphens, and dots.
+/// e.g. `["user", "first-name"]` → `@@user_first-name`
 fn context_symbol(path: &[&str]) -> String {
     let name = path
         .iter()
@@ -1264,7 +1270,7 @@ fn context_symbol(path: &[&str]) -> String {
         .map(|part| {
             part.chars()
                 .map(|ch| {
-                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                    if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.' {
                         ch
                     } else {
                         '_'

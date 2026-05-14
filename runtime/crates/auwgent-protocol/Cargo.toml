@@ -8,7 +8,7 @@ auwgent-ir-schema = { workspace = true }
 auwgent-schema = { path = "../auwgent-schema" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-function-parser = { path = "../../../function-parser" }
+function-parser = { path = "../function-parser" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3"

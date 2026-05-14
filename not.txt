@@ -1,15 +1,192 @@
 This file contains my expiremental dx should not be taken serious unless when explicitly stated
 
-fun prompt(input:Query){
-    return "any thing {input}"
+
+The goal is to bring better dx move auwgent closer to language feel and something whose entire existence is resumable
+
+
+#Basic agent
+
+agent Hello(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
 }
 
-@prompt(prompt,"normal string") the prompt will automatically bind
-@desc("optional")
-agent SupportBot(input: Query):Response {
-    let info = search(input.text);
-    // this means when there is a result send to the model when there is an error send to the model
-    reply(info,info.error) or we can do something like
+#Baseic agent with tools
 
-    if not info.error then reply(info) else maybe a retry but something that will be specific or target to where the error occured... something like resumable errors correction
+define the tools
+
+tool getweather():string @desc "use this to get the weather"
+
+tools usertools {
+    getusername():string @desc "use this tool to get username"
+    getuserlocation: string @desc "use this to get the user location"
+} @desc "This contains two tools getusername and location"
+
+how the second one would work is it will use progressive disclosure
+such that the getusernamr and the getuserlocation tools arent loaded into the context
+but rather the usertools get exposed with it description and if the model want to view the tools inside or specific tool it can which will be an iternal tool that will be given to the model
+
+
+agent hello(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools]
+   }
+}
+
+
+# agent with some input checks
+
+function santizeInput(input:Text):Text{
+    let pr = input.remove("hash word")
+    return "cleaned now it is : {pr}"
+}
+
+agent hello(input:Text){
+
+    let user_input = if input.contains("hash word") then santizeInput(input) else input
+
+    this will also work
+
+    let user_input = if input.contains("hash word"){
+        return santizeInput(input)
+    }else{
+        return input
+    }
+
+    or we can make it like this
+
+    let user_input = ""
+
+    if input.contains("hash word"){
+        user_input = santizeInput(input)
+    }else{
+        user_input = input
+    }
+
+
+   reply(user_input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
+}
+now to clarify how the reply is... the reply is what will be sent to the model turn like a user saying something like hello
+
+in the json payload conceptually  will be something like
+
+{
+    systemprompt:....
+    turns:[
+        user:"hello" so if the reply() we changed user input to something static we will get that static
+        model: "..."
+    ]
+}
+
+
+# gating an llm from accessing a direct tool
+
+tool delete_user(id:string):bool @desc "this delete a user"
+
+@tool
+@desc "use this to delete a user"
+function delete_person(id:string,isAdmin:bool):string{
+
+    a naive way assuming we are to delete the user straight
+
+    let result = delete_user(id)
+    this will return the data or an error so if we do something like
+
+    return result the type here will be something {data:bool,error:string} so we will get type error
+
+}
+
+let improve it
+@tool
+@desc "use this to delete a user"
+function delete_person(id:string,isAdmin:bool):string{
+    let result = delete_user(id)
+
+    if result.error.isEmpty(){
+        return "user deleted successfully"
+    }
+
+    return result.error
+
+    still this is just a pass through sometimes we will want to do checks
+}
+
+
+let improve it
+@tool
+@desc "use this to delete a user"
+function delete_person(id: string, isAdmin: bool): string {
+    if not isAdmin {
+        return "user is not an admin"
+    }
+
+    let result = delete_user(id)
+
+    if result.error.isEmpty() {
+        return "user deleted successfully"
+    }
+
+    return result.error
+}
+
+
+@context({isAdmin:bool,user_id:string}) this binds with the agent we can do somethig like
+
+type Context = {
+    isAdmin:bool
+    user_id:string
+}
+
+@context(Context)
+agent hello(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+
+
+# context tools filering
+
+
+@context(Context)
+agent hello(input:Text){
+
+    let tools = if isAdmin then [getweather,usertools,delete_user] else [getweather,usertools]
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = tools
+   }
+}
+
+
+doing some preporocessed work involving tools
+
+@context(Context)
+agent hello(input:Text){
+
+    if input.contain("weather"){
+        let fetchedData = getweather(input)
+        reply({input,fetchedData})
+    }
+
+    the reply is just like return it will send the original input and the fetcheddata note this is dummy
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
 }

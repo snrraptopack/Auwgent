@@ -8,21 +8,6 @@ use auwgent_session::{display_input_value, input_parts_value};
 /// Maximum number of consecutive `forceStart` retries allowed before giving up.
 const MAX_FORCE_START_RETRIES: u32 = 5;
 
-/// Deep-merge two JSON objects. `b` wins on conflicts.
-/// Non-object values are replaced outright.
-pub fn deep_merge_json(a: Value, b: Value) -> Value {
-    match (a, b) {
-        (Value::Object(mut a_obj), Value::Object(b_obj)) => {
-            for (k, v) in b_obj {
-                let entry = a_obj.entry(k).or_insert_with(|| Value::Null);
-                *entry = deep_merge_json(entry.clone(), v);
-            }
-            Value::Object(a_obj)
-        }
-        (_, b) => b,
-    }
-}
-
 impl AuwgentEngine {
     pub(super) fn build_event_context(
         &self,
@@ -344,7 +329,18 @@ impl AuwgentEngine {
         let provider_type = model_info["type"]
             .as_str()
             .or_else(|| model_info["provider"].as_str())
-            .unwrap_or("gemini");
+            .or_else(|| {
+                // ModelRef doesn't resolve to a concrete provider yet.
+                // Fallback to "gemini" for backward compat until model registry is implemented.
+                if model_info.get("ref").is_some() {
+                    Some("gemini")
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| {
+                AuwgentError::MissingConfig("model provider type not found in config".into())
+            })?;
         let mut provider_id = if provider_type == "custom" {
             model_info["id"].as_str().unwrap_or("custom").to_string()
         } else {
@@ -352,8 +348,14 @@ impl AuwgentEngine {
         };
         let mut model_name = model_info["modelName"]
             .as_str()
-            .unwrap_or("gemini-2.0-flash")
-            .to_string();
+            .map(|s| s.to_string())
+            .or_else(|| {
+                // ModelRef doesn't carry modelName; use the ref name instead.
+                model_info.get("ref").and_then(|v| v.as_str().map(|s| s.to_string()))
+            })
+            .ok_or_else(|| {
+                AuwgentError::MissingConfig("modelName not found in model config".into())
+            })?;
         let mut config_params = model_info.get("config").cloned();
         timing.mark("evaluated model config");
 
