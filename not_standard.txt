@@ -1,0 +1,92 @@
+This file marks the design decision of how the new v2 standard and other libs or interopt can be... you can find the starting decision at not.txt file
+
+in a normal sense when we want to reach out to the host or make things like real api call
+
+we can do something like in typescript or any other language
+
+async function getInfo():string{
+    const response = await fetch(....)
+    const result = response.json()
+
+    return result
+}
+
+then we register it to the runtime sdk say
+
+import {auwgent,type AuwgentConfig}  from "generated.."
+
+let config:AuwgentConfig = {
+    apikey:{...},
+    tools: {
+        getInfo
+    }
+}
+
+let agent = auwgent(config)
+
+with this setup it means when we have our agent defined something
+
+@tool getInfo():string @desc "use this to get info"
+
+
+agent Hello(input:Text):Text {
+
+  reply(input) with {
+    prompt = "....",
+    model = "..."
+    tools = [getInfo]
+  }
+}
+
+this will work the sdk will intercep it and run it and pass the tool result back to the model if there is an error the model sees it too... this approach means
+rust call -> ffi -> tool exexute -> ffi -> result
+
+so what if we make a standard lib such that we can limit the ffi boundary in agentic development we will mostly be dealing with fetch request and we can use rust based fetching to do our fetch we need... so instead of defining the info tool we can make it like this
+
+
+@tool
+@desc "use this to get info"
+function getInfo():string {
+    let response = fetch<string>("...") as rule hint the compiler it expect string note we are not doing a full generic stuff here.. and the response will alwys be {data:T,error:string}
+
+    if response.error.isEmpty() {
+        return response.data
+    }
+    reponse.error
+}
+
+
+agent Hello(input:Text):Text {
+
+  reply(input) with {
+    prompt = "....",
+    model = "..."
+    tools = [getInfo]
+  }
+}
+
+
+the typescript now becomes
+
+import {auwgent,type AuwgentConfig}  from "generated.."
+
+let config:AuwgentConfig = {
+    apikey:{...},
+}
+
+let agent = auwgent(config)
+
+the request is executed in rust layer straigh
+
+| Operation                           | Stdlib (Native)                  | Host Tool (FFI)                  |
+| ----------------------------------- | -------------------------------- | -------------------------------- |
+| `fetch`                             | ✅ HTTP client in Rust/WASM       | ❌                                |
+| `JSON.parse/stringify`              | ✅ Native                         | ❌                                |
+| `map`, `filter`, `reduce`           | ✅ Native                         | ❌                                |
+| `crypto.sha256`, `hash`             | ✅ Native (WASM)                  | ❌                                |
+| `Date`, `UUID`, `regex`             | ✅ Native                         | ❌                                |
+| `log`, `print`                      | ✅ Native (routed to host stdout) | ❌                                |
+| Database queries                    | ❌                                | ✅ Host provides `db` tool        |
+| File system access                  | ❌                                | ✅ Host provides `fs` tool        |
+| Custom business logic               | ❌                                | ✅ Host provides specific tools   |
+| `sentry.capture`, `analytics.track` | ❌                                | ✅ Host provides `analytics` tool |
