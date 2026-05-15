@@ -1,0 +1,215 @@
+[
+  {
+    "name": "1. Basic Chat",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 12,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "2. Tool Call (no args)",
+    "passed": true,
+    "eventCount": 2,
+    "partialCount": 2,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "3. Tool Call (with args)",
+    "passed": true,
+    "eventCount": 3,
+    "partialCount": 43,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "4. Workflow Execution",
+    "passed": true,
+    "eventCount": 3,
+    "partialCount": 54,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "5. Helper (Return handoff)",
+    "passed": true,
+    "eventCount": 2,
+    "partialCount": 10,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "6. Helper (User handoff)",
+    "passed": true,
+    "eventCount": 4,
+    "partialCount": 76,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "7. Custom Intent (Loud)",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 39,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "8. Middleware Lifecycle",
+    "passed": true,
+    "eventCount": 5,
+    "partialCount": 38,
+    "error": null,
+    "middlewareLog": [
+      "run_start | activeAgent=RuntimeTest | stack=[\"RuntimeTest\"]",
+      "llm_start | promptLen=39 | activeAgent=RuntimeTest",
+      "llm_end | activeAgent=RuntimeTest",
+      "intent | tool_call | activeAgent=RuntimeTest",
+      "intent | tool_result | activeAgent=RuntimeTest",
+      "llm_end | activeAgent=RuntimeTest",
+      "intent | workflow_call | activeAgent=RuntimeTest",
+      "intent | workflow_result | activeAgent=RuntimeTest",
+      "llm_end | activeAgent=RuntimeTest",
+      "intent | response_text | activeAgent=RuntimeTest",
+      "llm_end | activeAgent=RuntimeTest",
+      "run_complete | turns=3 | activeAgent=RuntimeTest"
+    ],
+    "notes": []
+  },
+  {
+    "name": "9. Session Export/Import",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 10,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "10. Error Swallowing",
+    "passed": true,
+    "eventCount": 0,
+    "partialCount": 0,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "11. Streaming / Partial Intents",
+    "passed": true,
+    "eventCount": 0,
+    "partialCount": 0,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  },
+  {
+    "name": "12. Middleware State Sharing",
+    "passed": true,
+    "eventCount": 2,
+    "partialCount": 2,
+    "error": null,
+    "middlewareLog": [
+      "run_start | traceId=trace-abc-123",
+      "llm_start | traceIdPresent=True | runStartTime=1234567890",
+      "intent | name=tool_call | traceId=trace-abc-123 | intentCount=1",
+      "intent | name=tool_result | traceId=trace-abc-123 | intentCount=2",
+      "llm_end | sawIntent=True | intentCount=2",
+      "llm_end | sawIntent=True | intentCount=2",
+      "llm_end | sawIntent=True | intentCount=2",
+      "llm_end | sawIntent=True | intentCount=2",
+      "run_complete | traceId=trace-abc-123 | intentCount=2"
+    ],
+    "notes": []
+  },
+  {
+    "name": "13. Middleware Prompt Mutation",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 45,
+    "error": null,
+    "middlewareLog": [
+      "llm_start | originalPromptLength=10",
+      "llm_start | mutatedPromptLength=78"
+    ],
+    "notes": [
+      "Captured prompt length: 10"
+    ]
+  },
+  {
+    "name": "14. Middleware Config/Header Mutation",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 3,
+    "error": null,
+    "middlewareLog": [
+      "llm_start | injecting config mutation"
+    ],
+    "notes": []
+  },
+  {
+    "name": "15. Middleware Stack Mutation",
+    "passed": true,
+    "eventCount": 2,
+    "partialCount": 0,
+    "error": null,
+    "middlewareLog": [
+      "llm_start | originalStack=[\"RuntimeTest\"]",
+      "intent | stackDuringIntent=[\"RuntimeTest\", \"Planner\"]",
+      "intent | stackDuringIntent=[\"RuntimeTest\"]"
+    ],
+    "notes": []
+  },
+  {
+    "name": "16. Middleware Intent Override",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 2,
+    "error": null,
+    "middlewareLog": [
+      "intent | overriding get_location result",
+      "intent | tool_result | no override"
+    ],
+    "notes": []
+  },
+  {
+    "name": "17. Middleware Intent Skip",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 10,
+    "error": null,
+    "middlewareLog": [
+      "intent | skipping get_marks",
+      "intent | tool_skipped | no skip"
+    ],
+    "notes": []
+  },
+  {
+    "name": "18. Middleware Session Mutation",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 1,
+    "error": null,
+    "middlewareLog": [
+      "run_start | injected turn | totalTurns=1"
+    ],
+    "notes": []
+  },
+  {
+    "name": "19. Fallback on Rate Limit",
+    "passed": true,
+    "eventCount": 1,
+    "partialCount": 5,
+    "error": null,
+    "middlewareLog": [],
+    "notes": []
+  }
+]

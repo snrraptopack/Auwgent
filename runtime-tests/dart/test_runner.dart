@@ -61,7 +61,7 @@ void _capturePartial(String name, Object? value, String agentName) {
 // SETUP
 // =============================================================================
 
-final String _groqApiKey = Platform.environment['GROQ_API_KEY'] ?? '';
+final String _groqApiKey = Platform.environment['GROQ_API_KEY'] ?? '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';
 
 AuwgentConfig _createBaseConfig() {
   return AuwgentConfig(

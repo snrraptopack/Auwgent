@@ -1,0 +1,228 @@
+This file marks the conceptual of how the new graph based would be
+The IR is **stable and immutable**. You never edit it at runtime. Resumability comes from a **separate execution state object** that the runtime maintains alongside the IR.
+
+Here is the concrete mechanism.
+
+---
+
+## The Two-Layer Separation
+
+### Layer 1: Compiled IR (Static, Read-Only)
+
+This is what your compiler emits once. It never changes during execution.
+
+```json
+{
+  "agent": "RuntimeTest",
+  "version": "1",
+  "nodes": [
+    { "id": "n0", "type": "input" },
+    { "id": "n1", "type": "context", "shape": { "user_name": "string", "id": "string" } },
+    { "id": "n2", "type": "tool", "ref": "get_marks", "args": { "id": "$n1.id" } },
+    { "id": "n3", "type": "reply", "model": "groq/llama-3.3-70b", "prompt": "...", "tools": ["get_location"] },
+    { "id": "n4", "type": "output" }
+  ],
+  "edges": [
+    { "from": "n0", "to": "n3", "slot": "message" },
+    { "from": "n1", "to": "n2", "slot": "id" },
+    { "from": "n1", "to": "n3", "slot": "context" },
+    { "from": "n2", "to": "n3", "slot": "marks" },
+    { "from": "n3", "to": "n4" }
+  ]
+}
+```
+
+This JSON is written once. The runtime loads it but never mutates it.
+
+### Layer 2: Execution State (Dynamic, Serialized)
+
+This is a separate object that the runtime creates, updates, and persists to disk or cache after every state change.
+
+```json
+{
+  "run_id": "run_abc123",
+  "agent": "RuntimeTest",
+  "status": "running",
+  "node_outputs": {
+    "n0": { "data": "hello user", "error": "" },
+    "n1": { "data": { "user_name": "Kofi", "id": "42" }, "error": "" },
+    "n2": { "data": "85/100", "error": "" }
+  },
+  "node_status": {
+    "n0": "done",
+    "n1": "done",
+    "n2": "done",
+    "n3": "running",
+    "n4": "pending"
+  },
+  "active_nodes": {
+    "n3": {
+      "turn_count": 2,
+      "transcript": [
+        { "role": "system", "content": "You are a helpful assistant..." },
+        { "role": "user", "content": "hello user" },
+        { "role": "model", "content": null, "tool_calls": [{ "name": "get_location", "args": {} }] },
+        { "role": "tool", "name": "get_location", "content": "Accra, Ghana" }
+      ],
+      "pending_tool": null,
+      "partial_response": ""
+    }
+  }
+}
+```
+
+---
+
+## The Resume Algorithm
+
+When the process restarts, the executor does this:
+
+**Step 1: Load both files**
+- Read the static IR (compiled graph)
+- Read the dynamic state (checkpoint)
+
+**Step 2: Rebuild the in-memory graph**
+- For every node in the IR, check `node_status` in the state:
+  - `"done"` → skip execution, inject `node_outputs[node_id]` as the cached value
+  - `"running"` → this is the re-entry point. Restore its internal state from `active_nodes[node_id]`
+  - `"pending"` → leave it alone, will execute when dependencies resolve
+
+**Step 3: Resume from the active node**
+- `n3` is `"running"`. The executor loads its `active_nodes` blob:
+  - It has a transcript with 4 turns already
+  - It has a tool result for `get_location` already
+  - It needs to send the updated transcript back to the model for the final response
+
+**Step 4: Continue execution**
+- The model responds with final text: `"Hi Kofi! Your marks are 85/100 and you're in Accra."`
+- `n3` transitions to `"done"`
+- Its output is written to `node_outputs.n3`
+- `n4` (output) sees its dependency is done, evaluates, and the agent completes
+
+---
+
+## Why the IR Stays Stable
+
+The IR only defines **what** nodes exist and **how** they are connected. It does not track:
+- Whether a node has run
+- What values it produced
+- What the model said in turn 3
+
+All of that lives in the state object. The IR is the blueprint. The state is the construction progress.
+
+This means:
+- You can resume the same IR 100 times with 100 different state objects
+- You can run the same agent concurrently for different users—the IR is shared, the states are separate
+- You can version the IR independently: upgrade the compiler, but still resume old runs from their state snapshots
+
+---
+
+## What Triggers a State Save?
+
+The runtime serializes state after **every non-deterministic transition**:
+
+| Event | State Action |
+|---|---|
+| Tool call dispatched | `node_status[n] = "running"`, save active node metadata |
+| Tool result received | Update transcript in active node, save |
+| Model streaming begins | `node_status[n] = "running"`, initialize transcript, save |
+| Model emits tool call | Append to transcript, set `pending_tool`, save |
+| Model returns final text | `node_status[n] = "done"`, write to `node_outputs`, save |
+| Pure function completes | `node_status[n] = "done"`, write to `node_outputs`, save |
+
+Pure deterministic nodes (`let x = a + b`) do not need to save state—they replay instantly. Only nodes that touch the outside world (FFI, LLM) create checkpoints.
+
+---
+
+## Sub-Graph Resumption
+
+If you call a sub-agent as a **black box**:
+
+```au
+let result = WeatherAgent(city)
+```
+
+The parent graph only sees `n5: agent_ref`. Its state is simple:
+
+```json
+"node_status": { "n5": "running" }
+"node_outputs": {}
+"active_nodes": {
+  "n5": {
+    "subgraph_state": { ...entire child state object... }
+  }
+}
+```
+
+The child agent has its own IR and its own state object, nested inside the parent's state. The parent does not know or care what happens inside.
+
+If you call it **transparent** (`with turns`), the child's nodes are inlined into the parent graph, so they all share one state object. There is no nesting.
+
+---
+
+## Concrete Implementation for Your SDK
+
+Your executor loop should look like this:
+
+```typescript
+// Pseudocode for your SDK
+class GraphExecutor {
+  constructor(ir: CompiledIR) {
+    this.ir = ir;              // static, never changes
+    this.state = loadState();  // dynamic, loaded from disk/cache
+  }
+
+  async execute(input: any) {
+    // 1. Seed input node
+    this.state.node_outputs["n0"] = { data: input, error: "" };
+    this.state.node_status["n0"] = "done";
+
+    // 2. Walk the graph
+    while (true) {
+      const ready = this.findReadyNodes();  // dependencies are done
+
+      for (const node of ready) {
+        if (this.state.node_status[node.id] === "done") continue;
+
+        if (node.type === "reply") {
+          await this.resumeReply(node);  // uses active_nodes[node.id]
+        } else if (node.type === "tool") {
+          await this.executeTool(node);   // dispatches, sets running, saves
+        }
+      }
+
+      if (this.allOutputsResolved()) break;
+    }
+
+    return this.state.node_outputs[this.ir.return_node];
+  }
+
+  async resumeReply(node: ReplyNode) {
+    const active = this.state.active_nodes[node.id];
+
+    if (active) {
+      // We have partial state. Continue the loop.
+      return await this.continueReplyLoop(node, active);
+    } else {
+      // Fresh start.
+      return await this.startReplyLoop(node);
+    }
+  }
+}
+```
+
+---
+
+## Summary
+
+| Question | Answer |
+|---|---|
+| How does the executor know where it reached? | It reads the dynamic `state` object, not the IR |
+| Does the IR change at runtime? | **Never.** It is immutable |
+| What gets saved to disk? | Only the `state` object: node statuses, outputs, and active node metadata |
+| How often is state saved? | After every external interaction (tool call, model response) |
+| Can multiple runs share one IR? | Yes. Each run has its own state file |
+
+The IR is the **blueprint**. The state is the **bookmark**. You never write on the blueprint. You just move the bookmark.
+
+Is this the separation you need to implement in your SDK?

@@ -39,6 +39,18 @@ agent hello(input:Text){
    }
 }
 
+some models has built in tools we can use them by usin the builtin
+agent hello(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools]
+        builtin = [the tool names]
+   }
+}
+
+
 
 # agent with some input checks
 
@@ -156,6 +168,11 @@ agent hello(input:Text){
    }
 }
 
+// this needs improvement and better decision because when we use normal
+@tool and define the tool the args it expected for the model to produce it howerver
+when we use something like function as a tool we have two things the args the model should
+pass to the underlying tool and the args we should pass for deterministic behaviour note all these are optional
+
 
 # context tools filering
 
@@ -190,3 +207,960 @@ agent hello(input:Text){
         model = gemini("...")
    }
 }
+
+
+#using an agent inside another agent
+
+agent One(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
+}
+
+
+agent Two(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
+}
+
+
+agent Analyze(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+   }
+}
+
+agent Main(input:Text){
+   let inputType =  Analyze(input)
+
+   if not inputType.error.isEmpty(){
+        reply(input) with {
+            prompt = "..."
+            model = gemini("...")
+        } we are just returning a the raw input but we could have done some retry stuff here
+   }
+
+   let result = inputType.data.includes("high") then One(input) else Two(input)
+
+   reply({input,result}) with {
+        prompt = "..."
+        model = gemini("...")
+   }
+}
+
+
+or maybe sometimes we want that response from those agent be automatically sent to the user
+
+agent Main(input:Text){
+    let inputType = Analyze(input)
+    if not inputType.error.isEmpty(){
+        reply(input) with { prompt = "...", model = gemini("...") }
+    }
+    if inputType.data.includes("high") {
+        return One(input)   // exits Main entirely, output is One's output
+    }
+    return Two(input)
+} this design here will record only the orginal input the final output into the main context
+
+example
+
+one context {
+    system: ...,
+    turn[
+        {
+            user: ....,
+            model: '.... calls too'
+        },
+
+         {
+            user: tool result,
+            model: 'final response'
+        },
+
+    ]
+
+}
+
+two context {
+    system: ...,
+    turn[
+        {
+            user: ....,
+            model: '.final response'
+        },
+
+    ]
+
+}
+
+
+main context {
+    system: ...,
+
+    inside here we have 3 main cases 1. where we use the normal reply which is the main agent there and the remainin is the other two agent result base on condition
+    turn[
+        {
+            user: original user input,
+            model: 'the final output' we dont care if the model called tools or whaterver
+        },
+    ]
+
+}
+
+
+if we need somethig like the full context pipeline how the subagent or what is navigated to provide the answer
+
+
+agent Main(input:Text){
+    let inputType = Analyze(input)
+    if not inputType.error.isEmpty(){
+        reply(input) with { prompt = "...", model = gemini("...") }
+    }
+    if inputType.data.includes("high") {
+        return One(input) with turns   // exits Main entirely, output is One's output
+    }
+    return Two(input) with turns
+}
+
+
+main context {
+    system: ...,
+
+    inside here we have 3 main cases 1. where we use the normal reply which is the main agent there and the remainin is the other two agent result base on condition
+    turn[
+        {
+            user: original user input,
+            model: '....' this case the turn will be from the original to the last response the model produced note sometimes
+            the subagent could be retaining it context we will have a cursor to know where the original message started
+        },
+    ]
+
+}
+
+
+up untill now we are always doing something like
+
+@context(Context)
+agent hello(input:Text){
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} and this also means the agent returns a normal text or say string
+
+@context(Context)
+agent hello(input:Text):Text{
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+
+if we need a structured output
+
+
+@context(Context)
+agent hello(input:Text):{userName:string,age:number:location:string}{
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} or for better compositon
+
+
+type Response = {
+    userName:string
+    age:number
+    location:string
+}
+
+@context(Context)
+agent hello(input:Text):Response{
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} or for better compositon
+
+an agent can return more than one shape it can pick
+
+type Response = {
+    userName:string
+    age:number
+    location:string
+}
+
+type Response2 = {
+    dizzy:bool
+    confidence:number
+}
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...")
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+
+if an agent can return multiple shapes then we need to have precheck to see the type we are using
+
+agent Hello2(input:Text):Text{
+
+    let response = hello(input)
+
+    if not response.error.isEmpty(){
+        reply .....
+    }
+
+    if response.data is Response2{
+        we know the shape here
+    }else if response.data is Response{
+        ....
+    }else{
+        ...
+    }
+
+}we dont want to buy into anything like match and so on....
+
+
+coming back to the basic again
+we can have something like
+
+model Gemini = {
+    modelName = ....
+    provider = ....
+    config = {
+        models configuarion here we will trust the user to provider a pass through configs
+        like topK and stuff since we cant have all the properites
+    }
+}
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+
+   reply(input) with {
+        prompt = "..."
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+
+   reply(input) with {
+        prompt = "..."
+        model = gemini("...",{
+            here will be the config
+        })
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+since prompt is just a string we can have somthig like
+
+function systemPrompt(userName:string){
+    return """
+        You are .......
+        user name : {username}
+    """
+}
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+
+dynamic picking stuff.... the with block is special because it holds the configuration
+
+model Groq = {
+    modelName = ....
+    provider = ...
+}
+
+if our context here has something like isVip inside it we can use it to dymanically route models
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = if isVip then Gemini else Groq
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+to make context available in the agent as a whole and not just the with... it mandatory to not have a variable that collides with it at any any level
+
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+    let isVip ..... wrong it colides
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = if isVip then Gemini else Groq
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} this agent returns 3 shapes
+
+or maybe we can do something like ctx. which will reference the context name but for now let stick to the old rule....
+
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+    let selectedModel = if isVip then Gemini else Groq  the resulting type will be a model so it assignable to the model
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = selectedModel
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+
+aside from tools we can pass an agent to agent also
+
+
+@context(Context)
+agent hello(input:Text):Response | Response2 | Text{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        agents = {
+            One,
+            Two
+        } when we compile it the model will see it as a special tool and it turns will be hidden
+        only the actual returning response will be give to the caller the reason why it not [] but {} i am still contemplating
+        if we should add this ability for them to respond stright to users...
+   }
+}
+
+up until now we have been looking at agent taking Text and outputing Text or other format
+but there are models that takes in images,files, and even those that only Produce Images but the goal
+is the basic output is Text regardless of the model
+
+
+
+@context(Context)
+agent hello(input:Text):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+this is the same as
+@context(Context)
+agent hello(input:Text):Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} since the basics is Text
+
+we can take in other format too and same rule
+
+
+@context(Context) same as accepting only Image
+agent hello(input:Text|Image):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+} and even it can take in custom shape
+
+type A = {
+    data :string ...
+    location:string ..
+    image:Image
+}
+
+@context(Context)
+agent hello(input:A):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+
+we can also have a fallback, retry also
+
+@context(Context)
+agent hello(input:A):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        fallback = Groq this will be used when it rate limit
+        retry = 3 this will be used when we have something like connection loss and if we dont have fallback it will fire for rate limit too
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+we can have the maximum turn too but it default to 12
+@context(Context)
+agent hello(input:A):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        maxTurn = 3
+        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+   }
+}
+
+what we have discussed so far follows the old architcture
+we write the dsl code we generate two bindings which is the types and the ir
+tools get emited and functions are treated  like how workflows were treated the user doesnt define it in their host and so on..
+
+
+now planning on standard library sommething that will change instead generating two bindings into 3 the third will be helpers we will be calling implicitly
+
+something like fetch(), array functions and so will be compiled an actual language target
+
+@tool
+@desc "use this to get the user weather"
+function getWeather(userLocation:string):string{
+    let response = fetch(".../location") we will noramlize stuff in the host runtime
+    so we dont need await or anything that is langauge specific the result will always be modeled to be in {data,error} so maybe we can do typescating here to see the shape of the data
+
+    let response = fetch<string>(".../location") <string> is not full time generic
+    return respose
+}
+
+or even this we can just split something like fetch can use rust based so we wont have any ffi in the sdk it just calls
+
+@context(Context)
+agent hello(input:A):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        maxTurn = 3
+        tools = [getweather]
+   }
+}
+
+the shape of the old session was like this
+export interface SessionState {
+    systemPrompt?: string;
+    turns: Turn[];
+    stack: string[];
+    initialInput?: any;
+    bindingCursor?: BindingCursor | null;
+}
+this is typescript i think we can borrow on that same experience
+
+type Turn = {
+    user:string,
+    model:string
+}
+
+type Session = {
+    systemPrompt?: string
+    turns: Turn[];
+    initialInput?: here we cant use any for now let use string or Text;
+    bindingCursor?: BindingCursor the binding cursor is interesting stuff i cant talk in the language semstaics here it purely runtime stuff;
+}
+
+@middleware("logger")
+function Logger(event:MiddlewareEvents){
+    if event.on == "runStart" {
+        let session = event.getSession() // the sdk will mantain som session state so we are using that philosphy in the new design
+
+        let newSession:Session = []
+
+        for idx,value in session.turns {
+            if value.model == "empty reponse" {
+                newSession.add({user:....,model:...})
+            }else{
+                newSession.add(value)
+            }
+        }
+
+        event.setSession(newSession) i think using set and get makes it easier to even
+        operate all these in the rust rather than having to do code gen and host and rust talks
+    }
+
+    if event.on == "llmStart"{
+        the llm start will have the original user input yet to be sent to the model
+
+        let prompt = event.getPrompt()
+        event.setPrompt(promp + "ha ha")
+    }
+}
+
+by doing this the input we have in the hello wil have the prompt with haha howerver
+this assumes it string or single string not like a shape or non text for now we will kep it like this infuture we may revisit it
+@context(Context)
+@middlewares(Logger)
+agent hello(input:A):Text|Image{
+   reply(input) with {
+        prompt = systemPrompt(user_name) this will pick it from the context
+        model = Gemini
+        maxTurn = 3
+        tools = [getweather]
+   }
+}
+
+the old sdk for the old ir if we want to do stuff like loading data  in the typescript runtime it like this
+
+const logger: AuwgentMiddleware = {
+  name: "logger",
+  onRunStart: async (session, ctx) => {
+    let data = await db.load<SessionState>("data.json", session)
+    return data
+  },
+  onRunComplete: async (session, ctx) => {
+    await db.save("data.json", session)
+  },
+  onError: async (error,session,ctx)=>{
+    return {swallow:true}
+  }
+}
+we cant redesign it to be like this, this is too typescript style or idomatic
+we are targeting every language we compile too whilst we will still maintain the ability
+to write middlewares and stuff in your host language we wantt o bring that dx where
+we generate them for you or since we own the sdk we maintian the graph
+
+
+• Current middleware is a JSON bridge between the Rust engine and the host SDK.
+
+  In Rust, the engine stores one middleware callback:
+
+  middleware_event_handler: Arc<Mutex<Option<AsyncMiddlewareEventCallback>>>
+
+  The bridge exposes it to the host:
+
+  on_middleware_event(handler)
+
+  So TypeScript/Python/Dart/Rust SDK code registers a host callback. When the engine reaches a
+  lifecycle point, it builds a typed Rust payload, serializes it to JSON, sends that JSON string to
+  the host callback, waits for an optional JSON string response, then parses the response back in
+  Rust.
+
+  The event model is defined in runtime/crates/auwgent-middleware/src/events.rs:
+
+  #[serde(tag = "type", rename_all = "snake_case")]
+  pub enum MiddlewareEvent {
+      RunStart(RunStartPayload),
+      RunComplete(RunCompletePayload),
+      LlmStart(LlmStartPayload),
+      LlmEnd(LlmEndPayload),
+      Intent(IntentPayload),
+      Error(ErrorPayload),
+  }
+
+  Each event carries an EventContext:
+
+  pub struct EventContext {
+      pub active_agent: String,
+      pub stack: Vec<String>,
+      pub root_agent: String,
+      pub system_prompt: Option<String>,
+      pub raw_block: Option<String>,
+      pub model: Option<String>,
+      pub provider: Option<String>,
+      pub config: Option<Value>,
+      pub url: Option<String>,
+      pub headers: Option<Value>,
+      pub api_key: Option<String>,
+  }
+
+  The transport helper is in parsing.rs:
+
+  pub async fn fire_middleware_event(
+      handler: Option<MiddlewareCallback>,
+      event: Value,
+  ) -> Option<Value> {
+      let payload = serde_json::to_string(&event).ok()?;
+      let response = handler?.clone()(payload).await?;
+      serde_json::from_str(&response).ok()
+  }
+
+  So the shape is:
+
+  Rust engine
+    -> typed middleware event
+    -> serde_json::Value
+    -> JSON string
+    -> host callback
+    -> optional JSON string
+    -> serde_json::Value
+    -> parsed control/effects
+    -> Rust engine mutates runtime state
+
+  Example: llm_start.
+
+  Rust builds:
+
+  {
+    "type": "llm_start",
+    "prompt": "user input",
+    "context": {
+      "activeAgent": "RuntimeTest",
+      "stack": ["RuntimeTest"],
+      "rootAgent": "RuntimeTest",
+      "model": "llama-3.3-70b-versatile",
+      "provider": "groq",
+      "config": {}
+    }
+  }
+
+  The host can return:
+
+  {
+    "prompt": "modified input",
+    "model": "different-model",
+    "provider": "groq",
+    "config": {},
+    "headers": {},
+    "api_key": "..."
+  }
+
+  Rust parses that with parse_llm_start_response() and applies it before calling the provider.
+
+  For intents, host can return:
+
+  { "skip": true }
+
+  or:
+
+  { "result": { "value": "overridden result" } }
+
+  Rust parses that into:
+
+  IntentControl::Skip
+  IntentControl::Override { result }
+
+  That is how middleware can skip tool calls, override tool results, mutate prompt/config/session,
+  swallow errors, and force retries.
+
+  Why DSL middleware reduces roundtrips:
+
+  Today, every middleware event that needs logic must cross the Rust-host boundary.
+
+  For a TypeScript SDK running native Rust through NAPI, that means:
+
+  Rust -> JSON serialize -> NAPI -> JS callback -> maybe async JS -> JSON serialize -> NAPI -> Rust
+  parse
+
+  For Python/Dart/FFI/WASM, the boundary is different, but the pattern is the same: Rust pauses and
+  asks the host what to do.
+
+  If middleware is written in the DSL and compiled into IR/graph nodes, simple logic can run inside
+  the Rust runtime directly:
+
+  @middleware("logger")
+  function Logger(event: MiddlewareEvents) {
+      if event.on == "llmStart" {
+          event.setPrompt(event.getPrompt() + " ha ha")
+      }
+  }
+
+  That can become an internal middleware graph/function:
+
+  Rust engine
+    -> execute compiled middleware node locally
+    -> apply effects
+
+  No host callback needed for that case.
+
+  So instead of:
+
+  Rust -> host -> Rust
+
+  you get:
+
+  Rust -> compiled middleware evaluator -> Rust
+
+  This reduces roundtrips for middleware that only touches runtime-owned data:
+
+  - prompt mutation
+  - session cleanup
+  - context-derived config changes
+  - model selection
+  - tool filtering
+  - intent skip/override based on args/context
+  - retry/fallback policy
+  - redaction of model outputs
+  - simple logging into runtime event state
+
+  Host middleware is still needed for external effects:
+
+  - database reads/writes
+  - filesystem access
+  - secrets
+  - network calls outside standard library
+  - custom observability exporters
+  - user infra integrations
+
+  So the ideal v2 model is hybrid:
+
+  Compiled DSL middleware:
+    fast, portable, runs in Rust, no host roundtrip
+
+  Host middleware:
+    escape hatch for external systems
+
+  This also matters more with graph/resumability. If middleware decisions are compiled and executed
+  inside the graph runtime, they can be checkpointed as part of execution state:
+
+  {
+    "node": "agent:hello:n20",
+    "event": "llm_start",
+    "middleware": "Logger",
+    "effects": {
+      "prompt": "original prompt ha ha"
+    }
+  }
+
+  That makes resume cleaner because the runtime knows exactly which middleware ran and what it
+  changed, without depending on re-calling host code during recovery unless the middleware was
+  explicitly host-backed.
+
+but also maybe it it best we keep the middleware out of graph so it can be something like
+ast or bytecode
+hat gives you graph resumability where it matters, but avoids turning simple middleware into noisy
+  graph structure.
+
+  Why AST/Bytecode Fits Middleware
+
+  Middleware code like:
+
+  @middleware("logger")
+  function Logger(event: MiddlewareEvents) {
+      if event.on == "llmStart" {
+          let prompt = event.getPrompt()
+          event.setPrompt(prompt + " ha ha")
+      }
+
+      if event.on == "intent" {
+          if event.name == "delete_user" and not ctx.isAdmin {
+              event.skip()
+          }
+      }
+  }
+
+
+  The middleware event has some shapes:
+  for on = runstart when the engine is about to start good for loading data that what we used in the host
+  for on = llmstart whent the engine is on and  about to send the prompt the model we usually do things like prompt changing
+  for on = intent this is something we havent talked about and infact it one of the things that is very improtant will explain it with code
+  for on = llmend this runs when the model is done with what it doing
+  for on = runcomplete i see there is some missnames here but this used to run when we are done like coming to the host completely
+  for on = error when there is an error
+
+
+note as of now the only way we can actually load database and stuff is by using a tool fromm the host
+we cant access a variable state there directly
+
+example
+@tool getDatabase(id:string):Session @desc "... this wont be passed to the model so if fine for us to even leave the description
+@tool setDatabase(id:string,data:Session):Session
+
+  @middleware("loaddb")
+  @context({id:string}) a middleware can also access the context
+  function SaveToDb(event: MiddlewareEvents) {
+      if event.on == "runStart" {
+          let context = event.getContext() get context has predefined shape in the rust is seen as this   EvenContext but it expandable on the host runtime and since are are adding it as native feature we might add something like data on it
+
+          let id = context.data.id we injected through the @context
+          let session = event.getSession() this get an empty session state and i think we should even consider adding null to it
+          let dbsession = getDatabase(id)
+          if not dbsession.error.isEmpty(){
+            return error("could not load the sesion")  this will cause the flow to stop and the application to break
+          }
+
+          let newSession = if dbsession.data == null  then session else dbsession.data
+          event.setSession(newSession)
+      }
+
+      if event.on == "runComplete" {
+        let final session = event.getSession()
+        let context = event.getContext()
+        event.setDatabase(cotext.data.id,session)
+      }
+
+      if event.on == "error"{
+        let final session = event.getSession()
+        let context = event.getContext()
+        event.setDatabase(cotext.data.id,session)
+
+        let error = event.getError()
+        return error("{error.message}") we can do retry here for complex stuff but for now we are still in idea phase
+      }
+  }
+
+
+  @middleware("intent logger")
+  function IntentLogger(event:MiddlewareEvent){
+
+    if event.on == "intent" {
+     in the old way we used to have things like tool_call,tool_result,response_text,response_schema,workflow_call,workflow_result,helper_call,helper_resut,in addtion to error and custom intent the new design i see things like tool_call,tool_result,response_text,response_schema,error being used because we have callpsed these workflow and so on....
+
+     let intent = event.getIntent()
+
+     if intent.type == "tool_call" {
+            the tool call will have the name, and the args being parsed as value
+            let value = intent.getValue() the shape is {name,args}
+     }
+
+
+    if intent.type == "tool_result" {
+            the tool resutl will have the name,  the args  and result being parsed as value
+            let value = intent.getValue() the shape is {name,args,result}
+    }
+
+
+    if intent.type == "response_text"{
+        the value is just {data:string}
+        let value = intent.getValue()
+    }
+
+
+     if intent.type == "response_schema"{
+        because we support multiple shape returns the value will {type:string,value:matches the shape}
+        let value = intent.getValue()
+    }
+
+     we dont have things for audio,images or even videos yet all these will be added later
+    }
+
+  }
+
+
+  is basically policy evaluation. It needs:
+
+  - variable bindings
+  - conditionals
+  - field access
+  - simple loops
+  - string/object/array operations
+  - event methods like getPrompt, setPrompt, skip, override
+  - maybe context/session reads
+
+  It does not naturally need:
+
+  - node scheduling
+  - edges
+  - active node state
+  - child graph state
+  - graph-level resume
+  - checkpoint after every expression
+
+  So a bytecode VM or AST interpreter is cleaner.
+
+  Recommended Runtime Shape
+
+  GraphExecutor
+    -> reaches lifecycle point
+    -> builds MiddlewareEvent object
+    -> MiddlewareRunner runs compiled DSL middleware locally
+    -> applies collected event effects
+    -> optionally calls host middleware
+    -> checkpoints event effects
+    -> continues graph execution
+
+  So middleware execution becomes an embedded policy phase inside graph execution.
+
+  AST vs Bytecode
+
+  I’d start with AST interpretation unless you already know performance will matter.
+
+  AST interpreter:
+
+  {
+    "middlewares": {
+      "Logger": {
+        "params": [{ "name": "event", "type": "MiddlewareEvents" }],
+        "body": [
+          {
+            "type": "if",
+            "condition": {
+              "type": "binary",
+              "op": "==",
+              "left": { "type": "member", "object": "event", "property": "on" },
+              "right": { "type": "literal", "value": "llmStart" }
+            },
+            "then": [
+              {
+                "type": "let",
+                "name": "prompt",
+                "value": {
+                  "type": "call",
+                  "callee": { "type": "member", "object": "event", "property": "getPrompt" },
+                  "args": []
+                }
+              },
+              {
+                "type": "expr",
+                "value": {
+                  "type": "call",
+                  "callee": { "type": "member", "object": "event", "property": "setPrompt" },
+                  "args": [
+                    {
+                      "type": "binary",
+                      "op": "+",
+                      "left": { "type": "var", "name": "prompt" },
+                      "right": { "type": "literal", "value": " ha ha" }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+
+  Later you can lower that to bytecode:
+
+  LOAD_EVENT_FIELD on
+  PUSH_CONST "llmStart"
+  EQ
+  JUMP_IF_FALSE L1
+  CALL_EVENT getPrompt 0
+  STORE_LOCAL prompt
+  LOAD_LOCAL prompt
+  PUSH_CONST " ha ha"
+  ADD
+  CALL_EVENT setPrompt 1
+  L1:
+  RETURN
+
+  Bytecode is better long-term if you want:
+
+  - faster repeated middleware execution,
+  - stable portable runtime across targets,
+  - smaller compiled artifacts,
+  - validation before execution,
+  - easier sandboxing,
+  - potential WASM/browser performance.
+
+  But AST is easier to debug and iterate while the language is still moving.

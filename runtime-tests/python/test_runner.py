@@ -22,7 +22,7 @@ from canonical_types import (
 )
 from auwgent_sdk import SessionState
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "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")
 if not GROQ_API_KEY:
     print("FAIL GROQ_API_KEY is required. Set it in your environment or .env file.")
     sys.exit(1)
