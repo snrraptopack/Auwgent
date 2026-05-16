@@ -1,0 +1,4 @@
+// Unknown characters — lexer must emit Error tokens and continue
+agent Weird(input: string) {
+    let x = $ + # input
+}

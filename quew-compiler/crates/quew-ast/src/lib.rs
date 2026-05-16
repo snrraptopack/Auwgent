@@ -1,15 +1,45 @@
 //! # quew-ast
 //!
-//! AST node definitions for the quew DSL.
+//! **Single responsibility:** own the AST data types for the quew DSL.
 //!
-//! ## Design rules
+//! This crate contains zero parsing logic. It can be depended on by the
+//! checker, IR lowerer, and codegen without pulling in the parser.
 //!
-//! 1. Every node struct/enum carries a `span: Span` field — no exceptions.
-//! 2. All string-like fields (names, identifiers) use `InternedStr`, not `String`.
-//! 3. No business logic here — only data. Validation belongs in `quew-checker`.
+//! ## Rules
 //!
-//! ## Status: stub
+//! - Every public struct and enum carries a `Span`.
+//! - No semantic content — no resolved types, no symbol IDs, no inferred kinds.
+//! - All names are `InternedStr` — zero heap allocations per identifier.
+//! - Recursive nodes use `Box<T>` to keep enum sizes bounded.
 //!
-//! Node definitions will be added as the grammar is specified in `quew-parser`.
+//! ## Modules
+//!
+//! | Module | Contains |
+//! |--------|----------|
+//! | `ty`   | `TypeExpr` — type expressions |
+//! | `lit`  | `Lit`, `StringLit`, `StringKind` |
+//! | `expr` | `Expr` and all sub-nodes |
+//! | `stmt` | `Stmt` and all sub-nodes |
+//! | `item` | `Module`, `Item`, top-level declarations, `Annotation`, `Param` |
 
-// TODO: define AST node structs as grammar productions are finalized.
+pub mod expr;
+pub mod item;
+pub mod lit;
+pub mod stmt;
+pub mod ty;
+
+// Flatten the most commonly used types to the crate root for convenience.
+pub use expr::{
+    ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr,
+    IsExpr, MemberExpr, PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
+};
+pub use item::{
+    AgentDecl, Annotation, AnnotationArgs, FieldDef, FunctionDecl, Item, LetDecl,
+    ModelDecl, Module, Param, ParamBinding, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
+};
+pub use lit::{Lit, StringKind, StringLit};
+pub use stmt::{
+    ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnStmt, Stmt,
+    WithBlock, WithField,
+};
+pub use ty::TypeExpr;

@@ -1,0 +1,9 @@
+// A minimal valid agent — self-contained, no external references.
+// Uses inline model call as shown in not.txt lines 11-14.
+
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are a helpful assistant."
+        model: gemini("gemini-pro")
+    }
+}

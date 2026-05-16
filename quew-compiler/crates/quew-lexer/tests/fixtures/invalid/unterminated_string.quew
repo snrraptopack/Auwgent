@@ -1,0 +1,4 @@
+// Unterminated string literal — the lexer must not panic
+agent Broken(input: string) {
+    let msg = "this string never ends
+}

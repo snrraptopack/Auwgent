@@ -7,6 +7,7 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-quew-errors = { path = "../quew-errors" }
+quew-errors   = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
-quew-source = { path = "../quew-source" }
+quew-source   = { path = "../quew-source" }
+quew-lexer    = { path = "../quew-lexer" }

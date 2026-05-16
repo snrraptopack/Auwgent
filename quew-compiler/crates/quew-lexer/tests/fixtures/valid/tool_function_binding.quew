@@ -1,0 +1,17 @@
+// Host-backed tool declared first — the runtime will call this.
+tool delete_user(id: string): bool @desc "deletes a user by id"
+
+// DSL-native wrapper: shields delete_user behind an admin check.
+// The model sees deleteUser with (id: string) args — it never sees delete_user directly.
+@tool(id: string)
+@desc "Use this to delete a user, requires admin privileges"
+function deleteUser(isAdmin: bool,@id:string): string {
+    if not isAdmin {
+        return "user is not an admin"
+    }
+    let result = delete_user(id)
+    if result.error.isEmpty() {
+        return "user deleted successfully"
+    }
+    return result.error
+}

@@ -2,16 +2,17 @@
 name = "quew-parser"
 version = "0.1.0"
 edition = "2024"
-description = "chumsky 0.13 parser for the quew DSL. Produces an AST and parse-error diagnostics."
+description = "chumsky 0.13 recursive-descent parser for the quew DSL. Produces an AST and parse-error diagnostics."
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-chumsky = { workspace = true }
-quew-errors = { path = "../quew-errors" }
+chumsky       = { workspace = true }
+quew-errors   = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
-quew-lexer = { path = "../quew-lexer" }
-quew-ast = { path = "../quew-ast" }
+quew-lexer    = { path = "../quew-lexer" }
+quew-ast      = { path = "../quew-ast" }
 
 [dev-dependencies]
+quew-source = { path = "../quew-source" }
 insta = { workspace = true }

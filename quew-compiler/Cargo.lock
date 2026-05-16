@@ -584,6 +584,7 @@ version = "0.1.0"
 dependencies = [
  "quew-errors",
  "quew-interner",
+ "quew-lexer",
  "quew-source",
 ]
 
@@ -679,6 +680,7 @@ dependencies = [
  "quew-errors",
  "quew-interner",
  "quew-lexer",
+ "quew-source",
 ]
 
 [[package]]

@@ -1,0 +1,5 @@
+// Host-backed tool declarations
+
+tool getWeather(): string @desc "Get the current weather"
+tool getUserLocation(): string @desc "Return the current user location"
+tool searchWeb(query: string): string @desc "Search the web for a query"
