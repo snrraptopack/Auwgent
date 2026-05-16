@@ -1,0 +1,5 @@
+Yes — with one caveat. Arc<QuewGraphIR> shared across runs, no re-lowering, no serialization, NodeId(u32) is 4 bytes. All correct. The only weak point is AgentGraph::node() which is O(n) linear scan — fine now since agent graphs are typically < 50 nodes, but if that changes we swap Vec<IrNode> for IndexMap<NodeId, IrNode> later.
+
+Moving to Step 3 — the actual lowering implementation. Starting with lower_definitions (types, models, tools, functions), then lower_agent body statements. Let me get the full picture of what I need first:
+
+I have everything I need. Now implement all four sub-modules in sequence — lower_type, lower_expr, lower_definitions (full), then lower_agent body:

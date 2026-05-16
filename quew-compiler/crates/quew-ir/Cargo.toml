@@ -2,19 +2,16 @@
 name = "quew-ir"
 version = "0.1.0"
 edition = "2024"
-description = "AST → ExecutionGraph lowering for the quew compiler. In-memory; no JSON output."
+description = "AST → ExecutionGraph lowering for the quew compiler. In-memory native Rust structs; no JSON serialization."
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-indexmap = { workspace = true }
-quew-errors = { path = "../quew-errors" }
+# No serde / serde_json — the IR is in-memory Rust structs.
+# Journal/checkpoint serialization belongs in the runtime crate, not here.
+indexmap   = { workspace = true }
+quew-errors   = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
-quew-ast = { path = "../quew-ast" }
-quew-checker = { path = "../quew-checker" }
-quew-types = { path = "../quew-types" }
-
-[dev-dependencies]
-insta = { workspace = true }
+quew-ast      = { path = "../quew-ast" }
+quew-checker  = { path = "../quew-checker" }
+quew-types    = { path = "../quew-types" }

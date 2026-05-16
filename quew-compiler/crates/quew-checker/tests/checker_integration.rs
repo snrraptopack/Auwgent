@@ -30,15 +30,6 @@ fn check_source(src: &str) -> CheckResult {
     check(&parse_result.module, &interner)
 }
 
-/// Variant that tolerates parse errors (for testing recovery paths).
-fn check_source_with_parse_errors(src: &str) -> CheckResult {
-    let interner = Arc::new(Interner::new());
-    let map = SourceMap::new(Arc::clone(&interner));
-    let sid = map.add("<test>", src);
-    let lex_result = quew_lexer::lex(src, sid, &interner);
-    let parse_result = quew_parser::parse(&lex_result, src, &interner);
-    check(&parse_result.module, &interner)
-}
 
 // ── Valid programs: zero diagnostics expected ─────────────────────────────────
 
