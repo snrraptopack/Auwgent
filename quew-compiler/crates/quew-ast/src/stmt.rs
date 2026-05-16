@@ -65,12 +65,28 @@ pub enum ElseClause {
     ElseIf(Box<IfStmt>),
 }
 
-// ── Return ────────────────────────────────────────────────────────────────────
+/// Controls how a delegating `return` merges the child agent's context into the parent.
+///
+/// This is a graph-level directive, not a type-level one. The checker validates
+/// the value's type regardless of mode. The IR lowerer uses `mode` to decide
+/// whether to emit `AgentCallMode::BlackBox` or `AgentCallMode::WithTurns`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReturnMode {
+    /// Default (`return expr`). Parent journal records only the child's final output.
+    /// Child's internal tool calls and model turns are invisible to the parent context.
+    Normal,
+    /// `return expr with turns`. Child nodes are inlined into the parent graph.
+    /// The parent journal carries the child's full turn trace with a cursor marking the start.
+    WithTurns,
+}
 
-/// `return expr` or bare `return`.
+/// `return expr`, `return expr with turns`, or bare `return`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt {
     pub value: Option<Expr>,
+    /// Whether the child's turn trace is merged into the parent context.
+    /// `Normal` for plain `return`; `WithTurns` for `return … with turns`.
+    pub mode:  ReturnMode,
     pub span:  Span,
 }
 
@@ -188,14 +204,14 @@ mod tests {
 
     #[test]
     fn return_stmt_with_value() {
-        let s = Stmt::Return(ReturnStmt { value: Some(int_expr()), span: sp() });
+        let s = Stmt::Return(ReturnStmt { value: Some(int_expr()), mode: ReturnMode::Normal, span: sp() });
         assert_eq!(s.span(), sp());
     }
 
     #[test]
     fn return_stmt_no_value() {
-        let s = Stmt::Return(ReturnStmt { value: None, span: sp() });
-        assert!(matches!(s, Stmt::Return(ReturnStmt { value: None, .. })));
+        let s = Stmt::Return(ReturnStmt { value: None, mode: ReturnMode::Normal, span: sp() });
+        assert!(matches!(s, Stmt::Return(ReturnStmt { value: None, mode: ReturnMode::Normal, .. })));
     }
 
     #[test]

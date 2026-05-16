@@ -39,7 +39,7 @@ pub use item::{
 };
 pub use lit::{Lit, StringKind, StringLit};
 pub use stmt::{
-    ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnStmt, Stmt,
+    ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnMode, ReturnStmt, Stmt,
     WithBlock, WithField,
 };
 pub use ty::TypeExpr;

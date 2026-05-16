@@ -5,8 +5,8 @@ use std::sync::Arc;
 use chumsky::prelude::*;
 use quew_ast::{
     stmt::{
-        ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnStmt, WithBlock,
-        WithField,
+        ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnMode, ReturnStmt,
+        WithBlock, WithField,
     },
     Stmt,
 };
@@ -97,11 +97,19 @@ where
             .map(Stmt::If)
         };
 
-        // `return [expr]`
+        // `return [expr [with turns]]`
+        // The optional `with turns` suffix marks a transparent agent handoff —
+        // the child's turn trace is merged into the parent's journal context.
         let return_stmt = just(TokenKind::KwReturn)
             .ignore_then(e.clone().or_not())
-            .map_with(|value, extra| {
-                Stmt::Return(ReturnStmt { value, span: to_span(extra.span()) })
+            .then(
+                just(TokenKind::KwWith)
+                    .ignore_then(just(TokenKind::KwTurns))
+                    .to(ReturnMode::WithTurns)
+                    .or(empty().to(ReturnMode::Normal))
+            )
+            .map_with(|(value, mode), extra| {
+                Stmt::Return(ReturnStmt { value, mode, span: to_span(extra.span()) })
             });
 
         // `reply(expr) with { key: value, ... }`

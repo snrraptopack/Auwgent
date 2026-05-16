@@ -592,10 +592,13 @@ dependencies = [
 name = "quew-checker"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "insta",
  "quew-ast",
  "quew-errors",
  "quew-interner",
+ "quew-lexer",
+ "quew-parser",
  "quew-resolve",
  "quew-scope",
  "quew-source",
@@ -706,6 +709,7 @@ dependencies = [
  "quew-ast",
  "quew-errors",
  "quew-interner",
+ "quew-lexer",
  "quew-types",
 ]
 

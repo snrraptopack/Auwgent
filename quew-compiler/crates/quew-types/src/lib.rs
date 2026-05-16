@@ -1,28 +1,629 @@
 //! # quew-types
 //!
-//! The structural type system for the quew DSL.
-//!
-//! This is the most critical crate in the compiler. It is the single source of truth
-//! for what types exist, how they relate, and what operations are valid between them.
-//!
-//! ## Core responsibilities
-//!
-//! - **`Ty`**: the canonical in-memory representation of a quew type.
-//! - **Subtyping**: is type `A` assignable to type `B`?
-//! - **Union discrimination**: given `A | B | C`, which arm does a value belong to?
-//! - **Shape checking**: does a record literal conform to a declared schema?
-//! - **Unification** (via `ena`): type variable inference and unification table.
-//!
-//! ## Design rules
-//!
-//! 1. All string fields use `InternedStr` — no `String` or `&str` inside type data.
-//! 2. Record field order is preserved via `IndexMap` (deterministic, ordered).
-//! 3. `Ty` is `Clone` — the checker passes copies around freely.
-//! 4. No diagnostic rendering here. The checker owns diagnostics; types only describe.
-//!
-//! ## Status: stub
-//!
-//! The `Ty` enum and associated operations will be defined as the grammar and checker
-//! are developed together.
+//! The canonical in-memory representation of every quew type.
+//! No syntax, no inference, no diagnostics — just the type algebra.
 
-// TODO: define Ty enum, subtype relation, shape checking, and unification table.
+use indexmap::IndexMap;
+use quew_interner::InternedStr;
+
+// ── Primitive types ───────────────────────────────────────────────────────────
+
+/// Every primitive type in the quew DSL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PrimTy {
+    String,
+    Number,
+    Float,
+    Bool,
+    Void,
+    Null,
+}
+
+impl std::fmt::Display for PrimTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrimTy::String => write!(f, "string"),
+            PrimTy::Number => write!(f, "number"),
+            PrimTy::Float  => write!(f, "float"),
+            PrimTy::Bool   => write!(f, "bool"),
+            PrimTy::Void   => write!(f, "void"),
+            PrimTy::Null   => write!(f, "null"),
+        }
+    }
+}
+
+// ── Provider kind ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProviderKind { Gemini, OpenAi, Groq }
+
+// ── Type variable ─────────────────────────────────────────────────────────────
+
+/// Opaque type variable index — produced during inference, resolved by `quew-unify`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TyVar(pub u32);
+
+// ── Callable subtypes ─────────────────────────────────────────────────────────
+
+/// Plain DSL function: `function foo(a: string, b: number): bool`
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionTy {
+    /// Positional params: (name, type). All are caller-provided.
+    pub params: Vec<(InternedStr, Ty)>,
+    /// Return type. `Ty::Primitive(PrimTy::Void)` when omitted.
+    pub return_ty: Box<Ty>,
+}
+
+/// Agent entry point: `agent Name(input: T): R`
+/// Always exactly one input param. Not directly callable from DSL expressions.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AgentTy {
+    pub input_name: InternedStr,
+    pub input_ty:   Box<Ty>,
+    /// Return type. `Ty::Primitive(PrimTy::Void)` when omitted.
+    pub return_ty:  Box<Ty>,
+}
+
+/// Host-backed tool callable from the DSL.
+///
+/// `bound_params` — injected by the host from `@tool(name: Type)` context.  
+/// `model_params` — supplied by the model / DSL caller.
+///
+/// Rule: every `@name: Type` param (`ParamBinding::BoundRef`) in the function
+/// signature must have a matching entry in `bound_params` with the same type.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolTy {
+    /// From `@tool(name: Type, ...)` — host-injected, NOT caller-provided.
+    pub bound_params: Vec<(InternedStr, Ty)>,
+    /// Regular params the model / DSL caller must supply.
+    pub model_params: Vec<(InternedStr, Ty)>,
+    pub return_ty:    Box<Ty>,
+}
+
+// ── The main Ty enum ──────────────────────────────────────────────────────────
+
+/// The in-memory representation of every quew type.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ty {
+    // ── Primitives ────────────────────────────────────────────────────────────
+    Primitive(PrimTy),
+
+    // ── Composite ─────────────────────────────────────────────────────────────
+    /// Named record: `{ name: string, age: number }`. Fields are ordered.
+    Record(IndexMap<InternedStr, Ty>),
+
+    /// Union of two or more types: `string | number | bool`.
+    Union(Vec<Ty>),
+
+    /// Nullable: `T?` — kept as its own variant for cleaner error messages.
+    /// Structurally equivalent to `T | null` but displayed as `T?`.
+    Optional(Box<Ty>),
+
+    // ── Callables ─────────────────────────────────────────────────────────────
+    Function(FunctionTy),
+    Agent(AgentTy),
+    Tool(ToolTy),
+
+    // ── Provider ──────────────────────────────────────────────────────────────
+    Provider(ProviderKind),
+
+    // ── Inference ─────────────────────────────────────────────────────────────
+    /// A fresh type variable — resolved by `quew-unify`.
+    Var(TyVar),
+
+    /// Error sentinel. Any operation on `Ty::Error` propagates `Ty::Error`.
+    /// Prevents cascading diagnostics from a single root cause.
+    Error,
+}
+
+// ── Core operations ───────────────────────────────────────────────────────────
+
+impl Ty {
+    // ── Constructors ──────────────────────────────────────────────────────────
+
+    pub fn string()  -> Self { Ty::Primitive(PrimTy::String) }
+    pub fn number()  -> Self { Ty::Primitive(PrimTy::Number) }
+    pub fn float()   -> Self { Ty::Primitive(PrimTy::Float)  }
+    pub fn bool_ty() -> Self { Ty::Primitive(PrimTy::Bool)   }
+    pub fn void()    -> Self { Ty::Primitive(PrimTy::Void)   }
+    pub fn null()    -> Self { Ty::Primitive(PrimTy::Null)   }
+
+    /// Wrap `self` in `Optional`. Idempotent: `T??` stays `T?`.
+    pub fn optional(self) -> Self {
+        match self {
+            Ty::Optional(_) => self,
+            other           => Ty::Optional(Box::new(other)),
+        }
+    }
+
+    // ── Queries ───────────────────────────────────────────────────────────────
+
+    /// True unless this is `Ty::Error`. Use to short-circuit on errors.
+    pub fn is_ok(&self) -> bool { !matches!(self, Ty::Error) }
+
+    /// True if this type is or contains `Ty::Error`.
+    pub fn has_error(&self) -> bool {
+        match self {
+            Ty::Error               => true,
+            Ty::Optional(inner)     => inner.has_error(),
+            Ty::Union(arms)         => arms.iter().any(|a| a.has_error()),
+            Ty::Record(fields)      => fields.values().any(|t| t.has_error()),
+            Ty::Function(f)         => f.return_ty.has_error()
+                                       || f.params.iter().any(|(_, t)| t.has_error()),
+            Ty::Agent(a)            => a.input_ty.has_error() || a.return_ty.has_error(),
+            Ty::Tool(t)             => t.return_ty.has_error()
+                                       || t.bound_params.iter().any(|(_, t)| t.has_error())
+                                       || t.model_params.iter().any(|(_, t)| t.has_error()),
+            _                       => false,
+        }
+    }
+
+    /// Unwrap `Optional`: `T? → Some(T)`, anything else → `None`.
+    pub fn inner_optional(&self) -> Option<&Ty> {
+        match self {
+            Ty::Optional(inner) => Some(inner),
+            _                   => None,
+        }
+    }
+
+    /// Flatten nested unions: `(A | (B | C)) → [A, B, C]`.
+    pub fn flatten_union(self) -> Ty {
+        match self {
+            Ty::Union(arms) => {
+                let mut flat: Vec<Ty> = Vec::new();
+                for arm in arms {
+                    match arm.flatten_union() {
+                        Ty::Union(inner) => flat.extend(inner),
+                        other            => flat.push(other),
+                    }
+                }
+                if flat.len() == 1 { flat.remove(0) } else { Ty::Union(flat) }
+            }
+            other => other,
+        }
+    }
+
+    /// Expand `Optional(T)` to `Union([T, Null])` for assignability checks.
+    /// This normalises the two nullable representations into one.
+    fn expand_optional(self) -> Ty {
+        match self {
+            Ty::Optional(inner) => Ty::Union(vec![*inner, Ty::null()]).flatten_union(),
+            other               => other,
+        }
+    }
+
+    // ── Assignability ─────────────────────────────────────────────────────────
+
+    /// Returns `true` if `self` is structurally assignable to `target`.
+    ///
+    /// Rules (in priority order):
+    /// 1. `Ty::Error` → always assignable (prevents cascading errors)
+    /// 2. Identical types are assignable
+    /// 3. Any type is assignable to `void`
+    /// 4. `null` is assignable to `Optional(T)` or `Union([..., null, ...])`
+    /// 5. `T` is assignable to `T?` (T is assignable to Optional(T))
+    /// 6. A union `A | B` is assignable to `target` if every arm is assignable
+    /// 7. `T` is assignable to a union target if any arm accepts it
+    /// 8. Record subtyping: every field in `target` must be in `self` with compatible type
+    pub fn is_assignable_to(&self, target: &Ty) -> bool {
+        // Error propagation — suppress cascading diagnostics
+        if matches!(self, Ty::Error) || matches!(target, Ty::Error) {
+            return true;
+        }
+
+        // Type variables are handled by quew-unify, not here
+        if matches!(self, Ty::Var(_)) || matches!(target, Ty::Var(_)) {
+            return true;
+        }
+
+        // Void accepts everything (used as "don't care" return position)
+        if matches!(target, Ty::Primitive(PrimTy::Void)) {
+            return true;
+        }
+
+        // Identical structural match
+        if self == target {
+            return true;
+        }
+
+        match (self, target) {
+            // null → Optional(T) or union containing null
+            (Ty::Primitive(PrimTy::Null), Ty::Optional(_)) => true,
+            (Ty::Primitive(PrimTy::Null), Ty::Union(arms)) => {
+                arms.iter().any(|a| matches!(a, Ty::Primitive(PrimTy::Null)))
+            }
+
+            // T → T?  (non-null value into optional slot)
+            (src, Ty::Optional(inner)) => src.is_assignable_to(inner),
+
+            // Optional(T) → target: expand and check
+            (Ty::Optional(_), _) => {
+                self.clone().expand_optional().is_assignable_to(target)
+            }
+
+            // Union source: every arm must be assignable to target
+            (Ty::Union(arms), _) => {
+                arms.iter().all(|arm| arm.is_assignable_to(target))
+            }
+
+            // T → Union target: at least one arm accepts T
+            (src, Ty::Union(arms)) => {
+                arms.iter().any(|arm| src.is_assignable_to(arm))
+            }
+
+            // Record subtyping: target fields must all be present with compatible types
+            (Ty::Record(src_fields), Ty::Record(tgt_fields)) => {
+                tgt_fields.iter().all(|(name, tgt_ty)| {
+                    src_fields.get(name)
+                        .map(|src_ty| src_ty.is_assignable_to(tgt_ty))
+                        .unwrap_or(false)
+                })
+            }
+
+            // Primitive identity already handled above by the `self == target` arm.
+            // All other combinations are incompatible.
+            _ => false,
+        }
+    }
+}
+
+// ── Display ───────────────────────────────────────────────────────────────────
+
+impl std::fmt::Display for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ty::Primitive(p)  => write!(f, "{p}"),
+            Ty::Optional(t)   => write!(f, "{t}?"),
+            Ty::Union(arms)   => {
+                let s: Vec<String> = arms.iter().map(|a| a.to_string()).collect();
+                write!(f, "{}", s.join(" | "))
+            }
+            Ty::Record(fields) => {
+                write!(f, "{{ ")?;
+                for (i, (name, ty)) in fields.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    // InternedStr has no Display — show debug repr (opaque u32 key).
+                    // For human-readable output use a TyPrinter with an Interner.
+                    write!(f, "{name:?}: {ty}")?;
+                }
+                write!(f, " }}")
+            }
+            Ty::Function(ft)  => {
+                let params: Vec<String> = ft.params.iter()
+                    .map(|(n, t)| format!("{n:?}: {t}"))
+                    .collect();
+                write!(f, "({}) -> {}", params.join(", "), ft.return_ty)
+            }
+            Ty::Agent(a)      => write!(f, "agent({:?}: {}) -> {}", a.input_name, a.input_ty, a.return_ty),
+            Ty::Tool(t)       => {
+                let bound: Vec<String> = t.bound_params.iter().map(|(n, ty)| format!("@{n:?}: {ty}")).collect();
+                let model: Vec<String> = t.model_params.iter().map(|(n, ty)| format!("{n:?}: {ty}")).collect();
+                let all = [bound, model].concat();
+                write!(f, "tool({}) -> {}", all.join(", "), t.return_ty)
+            }
+            Ty::Provider(p)   => match p {
+                ProviderKind::Gemini => write!(f, "gemini"),
+                ProviderKind::OpenAi => write!(f, "openai"),
+                ProviderKind::Groq   => write!(f, "groq"),
+            },
+            Ty::Var(v)        => write!(f, "?{}", v.0),
+            Ty::Error         => write!(f, "<error>"),
+        }
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quew_interner::Interner;
+    use std::sync::Arc;
+
+    #[allow(dead_code)]
+    fn intern(s: &str) -> InternedStr {
+        let i = Arc::new(Interner::new());
+        i.intern(s)
+    }
+
+    // ── Constructors ──────────────────────────────────────────────────────────
+
+    #[test] fn prim_string()  { assert_eq!(Ty::string(),  Ty::Primitive(PrimTy::String)); }
+    #[test] fn prim_number()  { assert_eq!(Ty::number(),  Ty::Primitive(PrimTy::Number)); }
+    #[test] fn prim_float()   { assert_eq!(Ty::float(),   Ty::Primitive(PrimTy::Float));  }
+    #[test] fn prim_bool()    { assert_eq!(Ty::bool_ty(), Ty::Primitive(PrimTy::Bool));   }
+    #[test] fn prim_void()    { assert_eq!(Ty::void(),    Ty::Primitive(PrimTy::Void));   }
+    #[test] fn prim_null()    { assert_eq!(Ty::null(),    Ty::Primitive(PrimTy::Null));   }
+
+    #[test]
+    fn optional_wraps_once() {
+        let t = Ty::string().optional();
+        assert!(matches!(t, Ty::Optional(_)));
+    }
+
+    #[test]
+    fn optional_idempotent() {
+        // T?? should stay T?
+        let t = Ty::string().optional().optional();
+        assert!(matches!(t, Ty::Optional(inner) if matches!(*inner, Ty::Primitive(PrimTy::String))));
+    }
+
+    #[test]
+    fn inner_optional_some() {
+        let t = Ty::number().optional();
+        assert_eq!(t.inner_optional(), Some(&Ty::number()));
+    }
+
+    #[test]
+    fn inner_optional_none_on_plain() {
+        assert_eq!(Ty::string().inner_optional(), None);
+    }
+
+    // ── is_ok / has_error ─────────────────────────────────────────────────────
+
+    #[test] fn error_not_ok()      { assert!(!Ty::Error.is_ok()); }
+    #[test] fn string_is_ok()      { assert!(Ty::string().is_ok()); }
+    #[test] fn error_has_error()   { assert!(Ty::Error.has_error()); }
+    #[test] fn string_no_error()   { assert!(!Ty::string().has_error()); }
+
+    #[test]
+    fn optional_error_has_error() {
+        let t = Ty::Optional(Box::new(Ty::Error));
+        assert!(t.has_error());
+    }
+
+    #[test]
+    fn union_with_error_has_error() {
+        let t = Ty::Union(vec![Ty::string(), Ty::Error]);
+        assert!(t.has_error());
+    }
+
+    // ── flatten_union ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn flatten_union_nested() {
+        let t = Ty::Union(vec![
+            Ty::string(),
+            Ty::Union(vec![Ty::number(), Ty::bool_ty()]),
+        ]).flatten_union();
+        assert_eq!(t, Ty::Union(vec![Ty::string(), Ty::number(), Ty::bool_ty()]));
+    }
+
+    #[test]
+    fn flatten_union_single_collapses() {
+        let t = Ty::Union(vec![Ty::string()]).flatten_union();
+        assert_eq!(t, Ty::string());
+    }
+
+    #[test]
+    fn flatten_union_no_change_when_flat() {
+        let t = Ty::Union(vec![Ty::string(), Ty::number()]).flatten_union();
+        assert_eq!(t, Ty::Union(vec![Ty::string(), Ty::number()]));
+    }
+
+    // ── is_assignable_to — primitives ─────────────────────────────────────────
+
+    #[test] fn string_to_string()    { assert!(Ty::string().is_assignable_to(&Ty::string())); }
+    #[test] fn number_to_number()    { assert!(Ty::number().is_assignable_to(&Ty::number())); }
+    #[test] fn string_not_to_number(){ assert!(!Ty::string().is_assignable_to(&Ty::number())); }
+    #[test] fn anything_to_void()    { assert!(Ty::string().is_assignable_to(&Ty::void())); }
+    #[test] fn bool_to_void()        { assert!(Ty::bool_ty().is_assignable_to(&Ty::void())); }
+
+    // ── is_assignable_to — error propagation ──────────────────────────────────
+
+    #[test] fn error_to_any()  { assert!(Ty::Error.is_assignable_to(&Ty::string())); }
+    #[test] fn any_to_error()  { assert!(Ty::string().is_assignable_to(&Ty::Error)); }
+
+    // ── is_assignable_to — optional ───────────────────────────────────────────
+
+    #[test]
+    fn null_to_optional() {
+        assert!(Ty::null().is_assignable_to(&Ty::string().optional()));
+    }
+
+    #[test]
+    fn string_to_optional_string() {
+        assert!(Ty::string().is_assignable_to(&Ty::string().optional()));
+    }
+
+    #[test]
+    fn number_not_to_optional_string() {
+        assert!(!Ty::number().is_assignable_to(&Ty::string().optional()));
+    }
+
+    #[test]
+    fn optional_string_to_optional_string() {
+        let opt = Ty::string().optional();
+        assert!(opt.is_assignable_to(&Ty::string().optional()));
+    }
+
+    // ── is_assignable_to — union source ───────────────────────────────────────
+
+    #[test]
+    fn union_source_all_arms_assignable() {
+        let src = Ty::Union(vec![Ty::string(), Ty::number()]);
+        // target must accept both arms
+        let tgt = Ty::Union(vec![Ty::string(), Ty::number(), Ty::bool_ty()]);
+        assert!(src.is_assignable_to(&tgt));
+    }
+
+    #[test]
+    fn union_source_one_arm_not_assignable() {
+        let src = Ty::Union(vec![Ty::string(), Ty::bool_ty()]);
+        let tgt = Ty::string(); // bool is not assignable to string
+        assert!(!src.is_assignable_to(&tgt));
+    }
+
+    // ── is_assignable_to — union target ───────────────────────────────────────
+
+    #[test]
+    fn value_to_union_target_matches_one_arm() {
+        let tgt = Ty::Union(vec![Ty::string(), Ty::number()]);
+        assert!(Ty::string().is_assignable_to(&tgt));
+        assert!(Ty::number().is_assignable_to(&tgt));
+    }
+
+    #[test]
+    fn value_to_union_target_no_match() {
+        let tgt = Ty::Union(vec![Ty::string(), Ty::number()]);
+        assert!(!Ty::bool_ty().is_assignable_to(&tgt));
+    }
+
+    // ── is_assignable_to — null in union ──────────────────────────────────────
+
+    #[test]
+    fn null_to_union_containing_null() {
+        let tgt = Ty::Union(vec![Ty::string(), Ty::null()]);
+        assert!(Ty::null().is_assignable_to(&tgt));
+    }
+
+    #[test]
+    fn null_not_to_union_without_null() {
+        let tgt = Ty::Union(vec![Ty::string(), Ty::number()]);
+        assert!(!Ty::null().is_assignable_to(&tgt));
+    }
+
+    // ── is_assignable_to — record subtyping ───────────────────────────────────
+
+    #[test]
+    fn record_exact_match() {
+        let interner = Arc::new(Interner::new());
+        let name = interner.intern("name");
+        let age  = interner.intern("age");
+
+        let mut src = IndexMap::new();
+        src.insert(name, Ty::string());
+        src.insert(age,  Ty::number());
+
+        let mut tgt = IndexMap::new();
+        tgt.insert(name, Ty::string());
+        tgt.insert(age,  Ty::number());
+
+        assert!(Ty::Record(src).is_assignable_to(&Ty::Record(tgt)));
+    }
+
+    #[test]
+    fn record_src_has_extra_fields_ok() {
+        // src has name + age + extra — target only requires name
+        let interner = Arc::new(Interner::new());
+        let name  = interner.intern("name");
+        let age   = interner.intern("age");
+        let extra = interner.intern("extra");
+
+        let mut src = IndexMap::new();
+        src.insert(name,  Ty::string());
+        src.insert(age,   Ty::number());
+        src.insert(extra, Ty::bool_ty());
+
+        let mut tgt = IndexMap::new();
+        tgt.insert(name, Ty::string());
+
+        assert!(Ty::Record(src).is_assignable_to(&Ty::Record(tgt)));
+    }
+
+    #[test]
+    fn record_missing_required_field_fails() {
+        let interner = Arc::new(Interner::new());
+        let name = interner.intern("name");
+        let age  = interner.intern("age");
+
+        let mut src = IndexMap::new();
+        src.insert(name, Ty::string());
+
+        let mut tgt = IndexMap::new();
+        tgt.insert(name, Ty::string());
+        tgt.insert(age,  Ty::number()); // required but missing in src
+
+        assert!(!Ty::Record(src).is_assignable_to(&Ty::Record(tgt)));
+    }
+
+    #[test]
+    fn record_field_type_mismatch_fails() {
+        let interner = Arc::new(Interner::new());
+        let name = interner.intern("name");
+
+        let mut src = IndexMap::new();
+        src.insert(name, Ty::number()); // number where string expected
+
+        let mut tgt = IndexMap::new();
+        tgt.insert(name, Ty::string());
+
+        assert!(!Ty::Record(src).is_assignable_to(&Ty::Record(tgt)));
+    }
+
+    // ── Callable types ────────────────────────────────────────────────────────
+
+    #[test]
+    fn function_ty_display() {
+        let interner = Arc::new(Interner::new());
+        let a = interner.intern("a");
+        let ft = FunctionTy {
+            params: vec![(a, Ty::string())],
+            return_ty: Box::new(Ty::bool_ty()),
+        };
+        let d = format!("{}", Ty::Function(ft));
+        // Display shows InternedStr as {:?} (opaque key) + type
+        assert!(d.contains("-> bool"), "display: {d}");
+    }
+
+    #[test]
+    fn agent_ty_display() {
+        let interner = Arc::new(Interner::new());
+        let input = interner.intern("input");
+        let at = AgentTy {
+            input_name: input,
+            input_ty:   Box::new(Ty::string()),
+            return_ty:  Box::new(Ty::void()),
+        };
+        let d = format!("{}", Ty::Agent(at));
+        assert!(d.starts_with("agent("), "display: {d}");
+    }
+
+    #[test]
+    fn tool_ty_bound_and_model_params() {
+        let interner = Arc::new(Interner::new());
+        let id       = interner.intern("id");
+        let is_admin = interner.intern("isAdmin");
+
+        let tt = ToolTy {
+            bound_params: vec![(id, Ty::string())],
+            model_params: vec![(is_admin, Ty::bool_ty())],
+            return_ty:    Box::new(Ty::string()),
+        };
+        let d = format!("{}", Ty::Tool(tt));
+        // Both bound and model params appear; exact name repr is {:?}
+        assert!(d.contains("tool("),  "display: {d}");
+        assert!(d.contains("-> string"), "display: {d}");
+    }
+
+    // ── Display ───────────────────────────────────────────────────────────────
+
+    #[test] fn display_string()   { assert_eq!(Ty::string().to_string(), "string"); }
+    #[test] fn display_number()   { assert_eq!(Ty::number().to_string(), "number"); }
+    #[test] fn display_optional() { assert_eq!(Ty::string().optional().to_string(), "string?"); }
+    #[test] fn display_error()    { assert_eq!(Ty::Error.to_string(), "<error>"); }
+    #[test] fn display_var()      { assert_eq!(Ty::Var(TyVar(3)).to_string(), "?3"); }
+
+    #[test]
+    fn display_union() {
+        let t = Ty::Union(vec![Ty::string(), Ty::number()]);
+        assert_eq!(t.to_string(), "string | number");
+    }
+
+    #[test]
+    fn display_record() {
+        let interner = Arc::new(Interner::new());
+        let name = interner.intern("name");
+        let mut fields = IndexMap::new();
+        fields.insert(name, Ty::string());
+        let t = Ty::Record(fields);
+        // InternedStr displayed as {:?}; check the type part is visible
+        assert!(t.to_string().contains("string"), "display: {}", t);
+    }
+
+    // ── Provider ──────────────────────────────────────────────────────────────
+
+    #[test] fn provider_gemini() { assert_eq!(Ty::Provider(ProviderKind::Gemini).to_string(), "gemini"); }
+    #[test] fn provider_openai() { assert_eq!(Ty::Provider(ProviderKind::OpenAi).to_string(), "openai"); }
+    #[test] fn provider_groq()   { assert_eq!(Ty::Provider(ProviderKind::Groq).to_string(),   "groq");   }
+}

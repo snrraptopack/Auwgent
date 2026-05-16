@@ -10,6 +10,7 @@ publish = false
 indexmap = { workspace = true }
 quew-errors = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
+quew-lexer = { path = "../quew-lexer" }
 quew-ast = { path = "../quew-ast" }
 quew-types = { path = "../quew-types" }
 

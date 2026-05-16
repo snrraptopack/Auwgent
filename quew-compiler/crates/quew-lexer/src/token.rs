@@ -93,7 +93,11 @@ pub enum TokenKind {
     #[token("with")]     KwWith,
     #[token("for")]      KwFor,
     #[token("in")]       KwIn,
+    /// `turns` — reserved keyword. Only valid in `return expr with turns`.
+    /// No variable or binding may be named `turns`.
+    #[token("turns")]    KwTurns,
     #[token("is")]       KwIs,
+
 
     // ── Logical operators (English words, not symbols) ────────────────────────
     #[token("and")]      KwAnd,
@@ -207,6 +211,7 @@ impl std::fmt::Display for TokenKind {
             Self::KwWith     => "`with`",
             Self::KwFor      => "`for`",
             Self::KwIn       => "`in`",
+            Self::KwTurns    => "`turns`",
             Self::KwIs       => "`is`",
             Self::KwAnd      => "`and`",
             Self::KwOr       => "`or`",
