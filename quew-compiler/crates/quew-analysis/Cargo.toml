@@ -1,0 +1,17 @@
+[package]
+name = "quew-analysis"
+version = "0.1.0"
+edition = "2024"
+description = "Symbol tables and cross-file import resolution for the quew compiler."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+indexmap = { workspace = true }
+rayon = { workspace = true }
+quew-errors = { path = "../quew-errors" }
+quew-interner = { path = "../quew-interner" }
+quew-ast = { path = "../quew-ast" }
+
+[dev-dependencies]
+insta = { workspace = true }

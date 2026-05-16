@@ -1,0 +1,17 @@
+[package]
+name = "quew-scope"
+version = "0.1.0"
+edition = "2024"
+description = "Single-file scope building and symbol table for the quew compiler."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+indexmap = { workspace = true }
+quew-errors = { path = "../quew-errors" }
+quew-interner = { path = "../quew-interner" }
+quew-ast = { path = "../quew-ast" }
+quew-types = { path = "../quew-types" }
+
+[dev-dependencies]
+insta = { workspace = true }

@@ -1,0 +1,12 @@
+[package]
+name = "quew-ast"
+version = "0.1.0"
+edition = "2024"
+description = "AST node structs for the quew DSL. Pure data definitions — zero logic."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+quew-errors = { path = "../quew-errors" }
+quew-interner = { path = "../quew-interner" }
+quew-source = { path = "../quew-source" }

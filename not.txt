@@ -14,18 +14,29 @@ agent Hello(input:Text){
    }
 }
 
-#Baseic agent with tools
+the reply() takes two args 1 is the normal user input and the other is an optional error input
+
+#Basic agent with tools
 
 define the tools
 
 tool getweather():string @desc "use this to get the weather"
+
+or
+
+tools {
+  getusername():string @desc "use this tool to get username"
+  getuserlocation: string @desc "use this to get the user location"
+}
+
+or
 
 tools usertools {
     getusername():string @desc "use this tool to get username"
     getuserlocation: string @desc "use this to get the user location"
 } @desc "This contains two tools getusername and location"
 
-how the second one would work is it will use progressive disclosure
+how the third one would work is it will use progressive disclosure
 such that the getusernamr and the getuserlocation tools arent loaded into the context
 but rather the usertools get exposed with it description and if the model want to view the tools inside or specific tool it can which will be an iternal tool that will be given to the model
 
@@ -61,7 +72,7 @@ function santizeInput(input:Text):Text{
 
 agent hello(input:Text){
 
-    let user_input = if input.contains("hash word") then santizeInput(input) else input
+    let user_input = santizeInput(input) if input.contains("has word") else input
 
     this will also work
 
@@ -104,9 +115,9 @@ in the json payload conceptually  will be something like
 
 tool delete_user(id:string):bool @desc "this delete a user"
 
-@tool
+@tool(id:string) the args passed to the @tool() will be the one the model will see and ask to pass as an args
 @desc "use this to delete a user"
-function delete_person(id:string,isAdmin:bool):string{
+function delete_person(isAdmin:bool):string{
 
     a naive way assuming we are to delete the user straight
 
@@ -118,9 +129,9 @@ function delete_person(id:string,isAdmin:bool):string{
 }
 
 let improve it
-@tool
+@tool(id:string)
 @desc "use this to delete a user"
-function delete_person(id:string,isAdmin:bool):string{
+function delete_person(isAdmin:bool):string{
     let result = delete_user(id)
 
     if result.error.isEmpty(){
@@ -134,9 +145,9 @@ function delete_person(id:string,isAdmin:bool):string{
 
 
 let improve it
-@tool
+@tool(id:string)
 @desc "use this to delete a user"
-function delete_person(id: string, isAdmin: bool): string {
+function delete_person(isAdmin: bool): string {
     if not isAdmin {
         return "user is not an admin"
     }
@@ -152,7 +163,7 @@ function delete_person(id: string, isAdmin: bool): string {
 
 
 @context({isAdmin:bool,user_id:string}) this binds with the agent we can do somethig like
-
+or we can make it as type
 type Context = {
     isAdmin:bool
     user_id:string
@@ -162,16 +173,43 @@ type Context = {
 agent hello(input:Text){
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model : gemini("...")
+        tools : [getweather,usertools,delete_person(ctx.isAdmin)]
    }
 }
 
-// this needs improvement and better decision because when we use normal
-@tool and define the tool the args it expected for the model to produce it howerver
-when we use something like function as a tool we have two things the args the model should
-pass to the underlying tool and the args we should pass for deterministic behaviour note all these are optional
+you can get the context by doing ctx.
+and as you can see we are passing only isAdmin because that is the required args from before it can run as for id
+it will pick from the input the user model passes at runtime and model will never see or know that delete_person is shielding
+another tool and we are passing the isAdmin to it..
+
+supposing you wanted to make something such that the args of the tool we are calling is optional
+
+we can make it like this
+
+tool okay(id?:string):string @desc "..." this means where we pass to the model the model can decide not to pass any args
+
+and what if we want to do same for the @tool on a function
+
+tool delete(id:string):bool @desc "..."
+
+@tool(id?:string)
+funtion del(@id:string,isAdmin:string){
+    ....
+}
+
+if you look at his we have delete wanting a required args and we have the function having two args @id means bind the args of the @tool it will reference it and because @id isnt optional it means when we are calling it or using it we will have to pass both but the model will see del tool as something that has an optional args and the id in the tool always superceed the @id
+
+@context(Context)
+agent hello(input:Text){
+
+   reply(input) with {
+        prompt: "..."
+        model : gemini("...")
+        tools : [del(ctx.id,ctx.isAdmin)]
+   }
+}
 
 
 # context tools filering
@@ -180,15 +218,13 @@ pass to the underlying tool and the args we should pass for deterministic behavi
 @context(Context)
 agent hello(input:Text){
 
-    let tools = if isAdmin then [getweather,usertools,delete_user] else [getweather,usertools]
-
+    let tools = [getweather,usertools,delete_user] if ctx.isAdmin  else [getweather,usertools]
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = tools
+        prompt: "..."
+        model: gemini("...")
+        tools: tools
    }
 }
-
 
 doing some preporocessed work involving tools
 
@@ -197,14 +233,14 @@ agent hello(input:Text){
 
     if input.contain("weather"){
         let fetchedData = getweather(input)
-        reply({input,fetchedData})
+        reply({input,fetchedData}) the reply earlier said it has two args and as you can see still we are using args 1 to send the non error input
     }
 
     the reply is just like return it will send the original input and the fetcheddata note this is dummy
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
+        prompt: "..."
+        model: gemini("...")
    }
 }
 
@@ -214,8 +250,8 @@ agent hello(input:Text){
 agent One(input:Text){
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
+        prompt: "..."
+        model: gemini("...")
    }
 }
 
@@ -223,8 +259,8 @@ agent One(input:Text){
 agent Two(input:Text){
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
+        prompt: "..."
+        mode: gemini("...")
    }
 }
 
@@ -232,8 +268,8 @@ agent Two(input:Text){
 agent Analyze(input:Text){
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
+        prompt: "..."
+        model: gemini("...")
    }
 }
 
@@ -242,16 +278,16 @@ agent Main(input:Text){
 
    if not inputType.error.isEmpty(){
         reply(input) with {
-            prompt = "..."
-            model = gemini("...")
+            prompt: "..."
+            model: gemini("...")
         } we are just returning a the raw input but we could have done some retry stuff here
    }
 
    let result = inputType.data.includes("high") then One(input) else Two(input)
 
    reply({input,result}) with {
-        prompt = "..."
-        model = gemini("...")
+        prompt: "..."
+        model: gemini("...")
    }
 }
 
@@ -261,7 +297,7 @@ or maybe sometimes we want that response from those agent be automatically sent 
 agent Main(input:Text){
     let inputType = Analyze(input)
     if not inputType.error.isEmpty(){
-        reply(input) with { prompt = "...", model = gemini("...") }
+        reply(input) with { prompt : "...", model : gemini("...") }
     }
     if inputType.data.includes("high") {
         return One(input)   // exits Main entirely, output is One's output
@@ -317,11 +353,10 @@ main context {
 
 if we need somethig like the full context pipeline how the subagent or what is navigated to provide the answer
 
-
 agent Main(input:Text){
     let inputType = Analyze(input)
     if not inputType.error.isEmpty(){
-        reply(input) with { prompt = "...", model = gemini("...") }
+        reply(input) with { prompt : "...", model : gemini("...") }
     }
     if inputType.data.includes("high") {
         return One(input) with turns   // exits Main entirely, output is One's output
@@ -351,9 +386,9 @@ up untill now we are always doing something like
 agent hello(input:Text){
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: gemini("...")
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } and this also means the agent returns a normal text or say string
 
@@ -361,22 +396,20 @@ agent hello(input:Text){
 agent hello(input:Text):Text{
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: gemini("...")
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 }
 
 if we need a structured output
-
-
 @context(Context)
 agent hello(input:Text):{userName:string,age:number:location:string}{
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: gemini("...")
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } or for better compositon
 
@@ -391,9 +424,9 @@ type Response = {
 agent hello(input:Text):Response{
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: gemini("...")
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } or for better compositon
 
@@ -414,9 +447,9 @@ type Response2 = {
 agent hello(input:Text):Response | Response2 | Text{
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...")
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: gemini("...")
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } this agent returns 3 shapes
 
@@ -446,9 +479,8 @@ coming back to the basic again
 we can have something like
 
 model Gemini = {
-    modelName = ....
-    provider = ....
-    config = {
+    model: gemini("...")
+    config:{
         models configuarion here we will trust the user to provider a pass through configs
         like topK and stuff since we cant have all the properites
     }
@@ -458,9 +490,9 @@ model Gemini = {
 agent hello(input:Text):Response | Response2 | Text{
 
    reply(input) with {
-        prompt = "..."
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: "..."
+        model: Gemini
+        tools: [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } this agent returns 3 shapes
 
@@ -469,8 +501,8 @@ agent hello(input:Text):Response | Response2 | Text{
 agent hello(input:Text):Response | Response2 | Text{
 
    reply(input) with {
-        prompt = "..."
-        model = gemini("...",{
+        prompt: "..."
+        model: gemini("...",{
             here will be the config
         })
         tools = [getweather,usertools,delete_person(user_id,isAdmin)]
@@ -500,8 +532,7 @@ agent hello(input:Text):Response | Response2 | Text{
 dynamic picking stuff.... the with block is special because it holds the configuration
 
 model Groq = {
-    modelName = ....
-    provider = ...
+    model: groq("..")
 }
 
 if our context here has something like isVip inside it we can use it to dymanically route models
@@ -510,53 +541,49 @@ if our context here has something like isVip inside it we can use it to dymanica
 agent hello(input:Text):Response | Response2 | Text{
 
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = if isVip then Gemini else Groq
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt:systemPrompt(user_name) this will pick it from the context
+        model:Gemini if ctx.isVip else Groq
+        tools:[getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 } this agent returns 3 shapes
-
-to make context available in the agent as a whole and not just the with... it mandatory to not have a variable that collides with it at any any level
 
 
 @context(Context)
 agent hello(input:Text):Response | Response2 | Text{
-    let isVip ..... wrong it colides
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = if isVip then Gemini else Groq
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt:systemPrompt(user_name) this will pick it from the context
+        model : Gemini if ctx.isVip else Groq
+        tools : [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 } this agent returns 3 shapes
 
-or maybe we can do something like ctx. which will reference the context name but for now let stick to the old rule....
 
 
 @context(Context)
 agent hello(input:Text):Response | Response2 | Text{
-    let selectedModel = if isVip then Gemini else Groq  the resulting type will be a model so it assignable to the model
+    let selectedModel = Gemini if ctx.isVip then Gemini else Groq  the resulting type will be a model so it assignable to the model
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = selectedModel
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt : systemPrompt(user_name) this will pick it from the context
+        model : selectedModel
+        tools : [getweather,usertools,delete_person(user_id,isAdmin)]
    }
 }
 
 aside from tools we can pass an agent to agent also
 
-
 @context(Context)
 agent hello(input:Text):Response | Response2 | Text{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
-        agents = {
+        prompt: systemPrompt(ctx.user_name)
+        model :Gemini
+        tools : [getweather,usertools,delete_person(user_id,isAdmin)]
+        agents: {
             One,
             Two
         } when we compile it the model will see it as a special tool and it turns will be hidden
         only the actual returning response will be give to the caller the reason why it not [] but {} i am still contemplating
-        if we should add this ability for them to respond stright to users...
+        if we should add this ability for them to respond stright to users... as of now we want to make them appear as how sub agent
+        in every framework works
    }
 }
 
@@ -569,18 +596,18 @@ is the basic output is Text regardless of the model
 @context(Context)
 agent hello(input:Text):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: systemPrompt(ctx.user_name) this will pick it from the context
+        model : Gemini
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 }
 this is the same as
 @context(Context)
 agent hello(input:Text):Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt: systemPrompt(user_name) this will pick it from the context
+        model : Gemini
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 } since the basics is Text
 
@@ -590,9 +617,9 @@ we can take in other format too and same rule
 @context(Context) same as accepting only Image
 agent hello(input:Text|Image):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt : systemPrompt(user_name) this will pick it from the context
+        model : Gemini
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 } and even it can take in custom shape
 
@@ -602,12 +629,14 @@ type A = {
     image:Image
 }
 
+howerver thing like Image File Audio arent disucced much because they have different semantics and how we can even pass them to the model will have a different file talking about them
+
 @context(Context)
 agent hello(input:A):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt :systemPrompt(user_name) this will pick it from the context
+        model :Gemini
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 }
 
@@ -616,21 +645,21 @@ we can also have a fallback, retry also
 @context(Context)
 agent hello(input:A):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        fallback = Groq this will be used when it rate limit
-        retry = 3 this will be used when we have something like connection loss and if we dont have fallback it will fire for rate limit too
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt:systemPrompt(ctx.user_name) this will pick it from the context
+        model: Gemini
+        fallback: Groq this will be used when it rate limit
+        retry : 3 this will be used when we have something like connection loss and if we dont have fallback it will fire for rate limit too
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 }
 we can have the maximum turn too but it default to 12
 @context(Context)
 agent hello(input:A):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        maxTurn = 3
-        tools = [getweather,usertools,delete_person(user_id,isAdmin)]
+        prompt : systemPrompt(ctx.user_name) this will pick it from the context
+        model :Gemini
+        maxTurn : 3
+        tools : [getweather,usertools,delete_person(ctx.user_id,ctx.isAdmin)]
    }
 }
 
@@ -658,10 +687,10 @@ or even this we can just split something like fetch can use rust based so we won
 @context(Context)
 agent hello(input:A):Text|Image{
    reply(input) with {
-        prompt = systemPrompt(user_name) this will pick it from the context
-        model = Gemini
-        maxTurn = 3
-        tools = [getweather]
+        prompt : systemPrompt(ctx.user_name) this will pick it from the context
+        model : Gemini
+        maxTurn : 3
+        tools : [getweather]
    }
 }
 

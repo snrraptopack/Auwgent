@@ -1,0 +1,89 @@
+[workspace]
+members = [
+    # Layer 0 — absolute foundations (no quew-* deps)
+    "crates/quew-errors",
+    "crates/quew-interner",
+
+    # Layer 1 — source file management
+    "crates/quew-source",
+
+    # Layer 2 — surface syntax
+    "crates/quew-lexer",
+    "crates/quew-ast",
+    "crates/quew-parser",
+
+    # Layer 3 — type system
+    "crates/quew-types",
+    "crates/quew-unify",
+
+    # Layer 4 — name resolution
+    "crates/quew-scope",
+    "crates/quew-resolve",
+
+    # Layer 5 — semantic analysis
+    "crates/quew-checker",
+
+    # Layer 6 — lowering + output
+    "crates/quew-ir",
+    "crates/quew-codegen",
+
+    # Layer 7 — user-facing binary
+    "crates/quew-cli",
+]
+resolver = "2"
+
+# ── Workspace-wide dependency declarations ────────────────────────────────────
+# Every crate references these via `{ workspace = true }` in its own Cargo.toml.
+# Versions are pinned to the latest stable at workspace creation (2026-05).
+[workspace.dependencies]
+
+# Layer: lexer
+logos = { version = "0.16.1" }
+
+# Layer: parser
+# NOTE: 0.13 API is incompatible with 0.9. Parsers are generic over `Input`.
+# The `pratt` feature adds operator-precedence parsing combinators.
+chumsky = { version = "0.13.0", features = ["pratt"] }
+
+# Layer: diagnostics rendering
+ariadne = { version = "0.6.0", features = ["auto-color"] }
+
+# Layer: string interning — ThreadedRodeo (multi-threaded, &self for both ops)
+lasso = { version = "0.7.3", features = ["multi-threaded"] }
+
+# Layer: ordered collections (deterministic type field / scope ordering)
+indexmap = { version = "2.14.0", features = ["std"] }
+
+# Layer: type unification — rustc's own union-find implementation
+ena = { version = "0.14.4" }
+
+# Layer: serialization (IR export + CLI config)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+
+# Layer: CLI
+clap = { version = "4", features = ["derive"] }
+
+# Layer: parallel multi-file resolution
+rayon = { version = "1" }
+
+# Dev-only: snapshot testing for diagnostics and codegen output
+insta = { version = "1", features = ["ron"] }
+
+# ── Build profiles ────────────────────────────────────────────────────────────
+[profile.dev]
+debug = 0           # no debuginfo; speeds up incremental linking
+incremental = true
+codegen-units = 256 # max parallelism in dev builds
+
+[profile.test]
+debug = 0
+incremental = true
+codegen-units = 256
+
+[profile.release]
+opt-level = "z"     # optimize for binary size
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

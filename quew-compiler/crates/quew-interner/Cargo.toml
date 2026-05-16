@@ -1,0 +1,14 @@
+[package]
+name = "quew-interner"
+version = "0.1.0"
+edition = "2024"
+description = "Thread-safe string interner for the quew compiler. Wraps lasso::ThreadedRodeo."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+# multi-threaded feature pulls in dashmap — required for ThreadedRodeo
+lasso = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

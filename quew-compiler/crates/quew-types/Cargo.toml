@@ -1,0 +1,16 @@
+[package]
+name = "quew-types"
+version = "0.1.0"
+edition = "2024"
+description = "Defines Ty — the in-memory representation of a quew type. No inference algorithms."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+# ena is NOT here — unification lives in quew-unify.
+# quew-ast is NOT here — Ty must not depend on syntax nodes.
+indexmap = { workspace = true }
+quew-interner = { path = "../quew-interner" }
+
+[dev-dependencies]
+insta = { workspace = true }

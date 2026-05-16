@@ -1,0 +1,14 @@
+[package]
+name = "quew-source"
+version = "0.1.0"
+edition = "2024"
+description = "Source file registry for the quew compiler. Maps SourceIds to files and byte offsets to line/column."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+quew-errors = { path = "../quew-errors" }
+quew-interner = { path = "../quew-interner" }
+
+[dev-dependencies]
+insta = { workspace = true }

@@ -1,51 +1,14 @@
 # Resumable Graph IR Proposal
 
-Status: conceptual proposal  
-Source notes: `not.txt`, `not_graph.txt`, `runtime-tests/canonical.agent`, `runtime-tests/canonical.agent.json`
+Status: conceptual proposal
 
-This document proposes a future IR shape for the new Auwgent DSL direction. The main change is that compiled output should become an immutable execution graph, while runtime progress should live in a separate serialized execution state object.
+This document specifies the v2 graph IR design for Auwgent. The core change is that the compiled output becomes an immutable execution graph, while runtime progress lives in a separate serialized execution state.
 
-The goal is not only to make the DSL feel more like a small language. The larger goal is to make every meaningful unit of execution addressable, checkpointable, inspectable, and resumable.
+The goal is to make every meaningful unit of execution addressable, checkpointable, inspectable, and resumable.
 
-## 1. Current Shape
+## 1. DSL Language Concepts
 
-The current canonical agent source is section-oriented:
-
-```auwgent
-agent RuntimeTest {
-    default config { ... }
-    input: Text
-    context { ... }
-    intent: Loud
-    tool get_location(): string
-    workflow marks_and_location(user_id: string): string { ... }
-    helpers { Planner }
-}
-```
-
-The compiled `runtime-tests/canonical.agent.json` is an agent definition. It describes the agent's capabilities:
-
-```json
-{
-  "name": "RuntimeTest",
-  "modelConfig": [],
-  "input": null,
-  "output": null,
-  "context": {},
-  "tools": [],
-  "workflows": [],
-  "helpers": [],
-  "customIntents": []
-}
-```
-
-This shape is useful for describing what the agent has, but it is not a precise execution plan. The runtime still has to interpret the agent as a loop around model output, intents, tools, workflows, helpers, and session state.
-
-That makes partial resume difficult because the IR does not identify each execution step as a stable node.
-
-## 2. Future DSL Direction
-
-The proposed DSL in `not.txt` moves toward agents as typed executable units:
+The v2 DSL treats agents as typed executable units:
 
 ```auwgent
 agent Hello(input: Text): Text {
@@ -56,7 +19,7 @@ agent Hello(input: Text): Text {
 }
 ```
 
-Important language concepts from the proposal:
+Key concepts:
 
 - `agent` behaves like a typed callable.
 - `reply(value) with { ... }` is the explicit LLM boundary.
@@ -69,9 +32,8 @@ Important language concepts from the proposal:
 - `return OtherAgent(input) with turns` preserves or exposes more of the child execution trace.
 - `with { ... }` config can be dynamic: model selection, tools, fallback, retry, max turns, prompt, agents.
 
-This language direction implies that the compiler should no longer only emit a capability object. It should emit an executable graph.
+This implies the compiler emits an executable graph, not a capability descriptor.
 
-## 3. Core Principle
 
 The future architecture should have two separate layers:
 
@@ -1428,21 +1390,6 @@ This raises a major runtime question:
 - Does it use a portable interpreter?
 
 For resumability, standard library functions that touch the outside world should be effectful graph nodes with checkpoints.
-
-## 20. Migration Path
-
-Recommended migration path:
-
-1. Keep current canonical JSON support.
-2. Introduce graph IR as `irVersion: "2"` or `kind: "auwgent.graph"`.
-3. Compile old section-oriented agents into a simple graph with one main `reply` node.
-4. Compile old workflows into function graphs.
-5. Compile helpers into agent graphs.
-6. Add execution state serialization beside the existing session export/import.
-7. Make runtime execution graph-aware while preserving current block/native intent behavior inside `reply` nodes.
-8. Gradually lower new language constructs into graph nodes.
-
-This allows the runtime to become resumable before the whole new DSL surface is finished.
 
 ## 21. Summary
 

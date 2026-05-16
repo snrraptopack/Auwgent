@@ -1,0 +1,20 @@
+[package]
+name = "quew-checker"
+version = "0.1.0"
+edition = "2024"
+description = "Type checking pass for the quew compiler. Orchestrates scope, resolve, and unify."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+quew-errors = { path = "../quew-errors" }
+quew-interner = { path = "../quew-interner" }
+quew-source = { path = "../quew-source" }
+quew-ast = { path = "../quew-ast" }
+quew-types = { path = "../quew-types" }
+quew-scope = { path = "../quew-scope" }
+quew-resolve = { path = "../quew-resolve" }
+quew-unify = { path = "../quew-unify" }
+
+[dev-dependencies]
+insta = { workspace = true }

@@ -1,0 +1,13 @@
+[package]
+name = "quew-errors"
+version = "0.1.0"
+edition = "2024"
+description = "Diagnostic types, Span, and ariadne rendering for the quew compiler."
+license = "MIT OR Apache-2.0"
+publish = false # set to true when ready for crates.io
+
+[dependencies]
+ariadne = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }

@@ -32,9 +32,9 @@ with this setup it means when we have our agent defined something
 agent Hello(input:Text):Text {
 
   reply(input) with {
-    prompt = "....",
-    model = "..."
-    tools = [getInfo]
+    prompt : "....",
+    model :"..."
+    tools : [getInfo]
   }
 }
 
@@ -59,9 +59,9 @@ function getInfo():string {
 agent Hello(input:Text):Text {
 
   reply(input) with {
-    prompt = "....",
-    model = "..."
-    tools = [getInfo]
+    prompt : "....",
+    model :"..."
+    tools : [getInfo]
   }
 }
 
