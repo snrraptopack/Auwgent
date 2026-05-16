@@ -4,44 +4,44 @@
 //! to validate a parsed Module and emit Diagnostics.
 use std::sync::Arc;
 
+use indexmap::IndexMap;
 use quew_ast::{
     ElseClause, Expr, Item, Lit, Module, Stmt, TypeExpr,
+    expr::Provider as AstProvider,
     item::AnnotationArgs,
     stmt::{ReplyStmt, WithField},
-    expr::Provider as AstProvider,
 };
 use quew_errors::{Diagnostic, Severity, Span};
 use quew_interner::InternedStr;
 use quew_interner::Interner;
 use quew_lexer::AnnotationKind;
-use quew_scope::{build_symbol_table, SymbolKind, SymbolTable};
+use quew_scope::{SymbolKind, SymbolTable, build_symbol_table};
 use quew_types::{ProviderKind, Ty};
 use quew_unify::UnifyTable;
-use indexmap::IndexMap;
 
 // ── Interned key caches ─────────────────────────────────────────────────────
 
 /// Keys for validating `reply(...) with { ... }` fields.
 struct WellKnownKeys {
-    model:    InternedStr,
+    model: InternedStr,
     fallback: InternedStr,
-    prompt:   InternedStr,
-    tools:    InternedStr,
-    retry:    InternedStr,
+    prompt: InternedStr,
+    tools: InternedStr,
+    retry: InternedStr,
     max_turn: InternedStr,
-    ctx:      InternedStr,
+    ctx: InternedStr,
 }
 
 impl WellKnownKeys {
     fn new(i: &Interner) -> Self {
         Self {
-            model:    i.intern("model"),
+            model: i.intern("model"),
             fallback: i.intern("fallback"),
-            prompt:   i.intern("prompt"),
-            tools:    i.intern("tools"),
-            retry:    i.intern("retry"),
+            prompt: i.intern("prompt"),
+            tools: i.intern("tools"),
+            retry: i.intern("retry"),
             max_turn: i.intern("maxTurn"),
-            ctx:      i.intern("ctx"),
+            ctx: i.intern("ctx"),
         }
     }
 }
@@ -51,10 +51,10 @@ struct PrimKeys {
     string: InternedStr,
     number: InternedStr,
     bool_k: InternedStr,
-    float:  InternedStr,
-    null:   InternedStr,
-    void:   InternedStr,
-    text:   InternedStr,
+    float: InternedStr,
+    null: InternedStr,
+    void: InternedStr,
+    text: InternedStr,
 }
 
 impl PrimKeys {
@@ -63,10 +63,10 @@ impl PrimKeys {
             string: i.intern("string"),
             number: i.intern("number"),
             bool_k: i.intern("bool"),
-            float:  i.intern("float"),
-            null:   i.intern("null"),
-            void:   i.intern("void"),
-            text:   i.intern("Text"),
+            float: i.intern("float"),
+            null: i.intern("null"),
+            void: i.intern("void"),
+            text: i.intern("Text"),
         }
     }
 
@@ -98,34 +98,34 @@ struct LocalScope {
 }
 
 impl LocalScope {
-    fn new() -> Self { Self { frames: vec![] } }
+    fn new() -> Self {
+        Self { frames: vec![] }
+    }
 
-    fn push(&mut self) { self.frames.push(IndexMap::new()); }
+    fn push(&mut self) {
+        self.frames.push(IndexMap::new());
+    }
 
-    fn pop(&mut self) { self.frames.pop(); }
+    fn pop(&mut self) {
+        self.frames.pop();
+    }
 
     /// Define a name in the current (innermost) frame.
     /// Emits an error if the name already exists in the SAME frame (collision).
     /// Shadowing an outer frame is allowed.
-    fn define(
-        &mut self,
-        name: InternedStr,
-        ty:   Ty,
-        span: Span,
-        diags: &mut Vec<Diagnostic>,
-    ) {
+    fn define(&mut self, name: InternedStr, ty: Ty, span: Span, diags: &mut Vec<Diagnostic>) {
         if let Some(frame) = self.frames.last_mut() {
             // Use contains_key first to avoid type-inference issues on get()
             if frame.contains_key(&name) {
                 let prev_span = frame[&name].1;
                 diags.push(Diagnostic {
-                    severity:      Severity::Error,
-                    message:       format!("name `{name:?}` is already declared in this block"),
-                    primary_span:  span,
+                    severity: Severity::Error,
+                    message: format!("name `{name:?}` is already declared in this block"),
+                    primary_span: span,
                     primary_label: Some("redeclared here".into()),
-                    secondary:     vec![(prev_span, "first declared here".into())],
-                    help:          Some("use a different name or remove the duplicate".into()),
-                    code:          None,
+                    secondary: vec![(prev_span, "first declared here".into())],
+                    help: Some("use a different name or remove the duplicate".into()),
+                    code: None,
                 });
             } else {
                 frame.insert(name, (ty, span));
@@ -149,7 +149,7 @@ impl LocalScope {
 #[derive(Debug)]
 pub struct CheckResult {
     pub symbol_table: SymbolTable,
-    pub diagnostics:  Vec<Diagnostic>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
     let mut diagnostics: Vec<Diagnostic> = symbol_table.diagnostics.clone();
     let mut unify = UnifyTable::new();
     let prim = PrimKeys::new(interner);
-    let wk   = WellKnownKeys::new(interner);
+    let wk = WellKnownKeys::new(interner);
 
     for item in &module.items {
         match item {
@@ -176,14 +176,25 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                 for ann in &decl.annotations {
                     if ann.kind == AnnotationKind::Context {
                         if let AnnotationArgs::Type(ty_expr) = &ann.args {
-                            let ctx_ty = resolve_type(ty_expr, &symbol_table, &prim, &mut diagnostics);
+                            let ctx_ty =
+                                resolve_type(ty_expr, &symbol_table, &prim, &mut diagnostics);
                             local.define(wk.ctx, ctx_ty, ann.span, &mut diagnostics);
                         }
                     }
                 }
-                let ret_ty = decl.return_ty.as_ref()
+                let ret_ty = decl
+                    .return_ty
+                    .as_ref()
                     .map(|t| resolve_type(t, &symbol_table, &prim, &mut diagnostics));
-                check_body(&decl.body, &symbol_table, &mut local, ret_ty.as_ref(), &wk, &mut unify, &mut diagnostics);
+                check_body(
+                    &decl.body,
+                    &symbol_table,
+                    &mut local,
+                    ret_ty.as_ref(),
+                    &wk,
+                    &mut unify,
+                    &mut diagnostics,
+                );
                 local.pop();
             }
             Item::Function(decl) => {
@@ -194,22 +205,40 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     let ty = resolve_type(&p.ty, &symbol_table, &prim, &mut diagnostics);
                     local.define(p.name, ty, p.span, &mut diagnostics);
                 }
-                let ret_ty = decl.return_ty.as_ref()
+                let ret_ty = decl
+                    .return_ty
+                    .as_ref()
                     .map(|t| resolve_type(t, &symbol_table, &prim, &mut diagnostics));
-                check_body(&decl.body, &symbol_table, &mut local, ret_ty.as_ref(), &wk, &mut unify, &mut diagnostics);
+                check_body(
+                    &decl.body,
+                    &symbol_table,
+                    &mut local,
+                    ret_ty.as_ref(),
+                    &wk,
+                    &mut unify,
+                    &mut diagnostics,
+                );
                 local.pop();
             }
             _ => {}
         }
     }
 
-    CheckResult { symbol_table, diagnostics }
+    CheckResult {
+        symbol_table,
+        diagnostics,
+    }
 }
 
 // ── Type lowering (name-aware) ────────────────────────────────────────────────
 
 /// Lower a `TypeExpr` to `Ty`, resolving named types against the symbol table.
-fn resolve_type(expr: &TypeExpr, table: &SymbolTable, prim: &PrimKeys, diags: &mut Vec<Diagnostic>) -> Ty {
+fn resolve_type(
+    expr: &TypeExpr,
+    table: &SymbolTable,
+    prim: &PrimKeys,
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
     match expr {
         TypeExpr::Named(name, span) => {
             // Primitive first (string, number, bool, float, null, void, Text)
@@ -231,12 +260,17 @@ fn resolve_type(expr: &TypeExpr, table: &SymbolTable, prim: &PrimKeys, diags: &m
         }
         TypeExpr::Optional(inner, _) => resolve_type(inner, table, prim, diags).optional(),
         TypeExpr::Union(arms, _) => {
-            let lowered: Vec<Ty> = arms.iter()
-                .map(|a| resolve_type(a, table, prim, diags)).collect();
+            let lowered: Vec<Ty> = arms
+                .iter()
+                .map(|a| resolve_type(a, table, prim, diags))
+                .collect();
             Ty::Union(lowered).flatten_union()
         }
         TypeExpr::Generic(_, _, span) => {
-            diags.push(type_error(*span, "generic types are not yet supported".into()));
+            diags.push(type_error(
+                *span,
+                "generic types are not yet supported".into(),
+            ));
             Ty::Error
         }
     }
@@ -245,47 +279,52 @@ fn resolve_type(expr: &TypeExpr, table: &SymbolTable, prim: &PrimKeys, diags: &m
 // ── Statement body checker ────────────────────────────────────────────────────
 
 fn check_body(
-    stmts:  &[Stmt],
-    table:  &SymbolTable,
-    local:  &mut LocalScope,
+    stmts: &[Stmt],
+    table: &SymbolTable,
+    local: &mut LocalScope,
     ret_ty: Option<&Ty>,
-    wk:     &WellKnownKeys,
-    unify:  &mut UnifyTable,
-    diags:  &mut Vec<Diagnostic>,
+    wk: &WellKnownKeys,
+    unify: &mut UnifyTable,
+    diags: &mut Vec<Diagnostic>,
 ) {
     let mut unreachable = false;
     for stmt in stmts {
         if unreachable {
             diags.push(Diagnostic {
-                severity:      Severity::Error,
-                message:       "unreachable code after `return`".into(),
-                primary_span:  stmt_span(stmt),
+                severity: Severity::Error,
+                message: "unreachable code after `return`".into(),
+                primary_span: stmt_span(stmt),
                 primary_label: Some("this code is never reached".into()),
-                secondary:     vec![],
-                help:          None,
-                code:          None,
+                secondary: vec![],
+                help: None,
+                code: None,
             });
             break;
         }
         match stmt {
             Stmt::Return(r) => {
-                let actual = r.value.as_ref()
+                let actual = r
+                    .value
+                    .as_ref()
                     .map(|v| infer_expr(v, table, local, unify, diags))
                     .unwrap_or(Ty::void());
                 // Validate return type if declared and both sides are concrete
                 if let Some(declared) = ret_ty {
-                    if actual.is_ok() && declared.is_ok()
+                    if actual.is_ok()
+                        && declared.is_ok()
                         && !matches!(declared, Ty::Primitive(quew_types::PrimTy::Void))
                     {
                         if let Err(e) = unify.unify(&actual, declared) {
                             diags.push(Diagnostic {
-                                severity:      Severity::Error,
-                                message:       format!("return type mismatch: {e}"),
-                                primary_span:  r.span,
-                                primary_label: Some(format!("expected `{declared}`, found `{actual}`")),
-                                secondary:     vec![],
-                                help:          None,
-                                code:          None,
+                                severity: Severity::Error,
+                                message: format!("return type mismatch: {e}"),
+                                primary_span: r.span,
+                                primary_label: Some(format!(
+                                    "expected `{declared}`, found `{actual}`"
+                                )),
+                                secondary: vec![],
+                                help: None,
+                                code: None,
                             });
                         }
                     }
@@ -316,7 +355,9 @@ fn check_body(
                     }
                 }
             }
-            Stmt::Reply(r) => { check_with_block(r, wk, table, local, unify, diags); }
+            Stmt::Reply(r) => {
+                check_with_block(r, wk, table, local, unify, diags);
+            }
             Stmt::For(f) => {
                 infer_expr(&f.iterable, table, local, unify, diags);
                 local.push();
@@ -327,7 +368,9 @@ fn check_body(
                 check_body(&f.body, table, local, ret_ty, wk, unify, diags);
                 local.pop();
             }
-            Stmt::Expr(e) => { infer_expr(&e.expr, table, local, unify, diags); }
+            Stmt::Expr(e) => {
+                infer_expr(&e.expr, table, local, unify, diags);
+            }
         }
     }
 }
@@ -338,7 +381,7 @@ fn check_body(
 
 /// Infer the type of an expression. Returns `Ty::Error` on failure.
 fn infer_expr(
-    expr:  &Expr,
+    expr: &Expr,
     table: &SymbolTable,
     local: &mut LocalScope,
     unify: &mut UnifyTable,
@@ -356,40 +399,42 @@ fn infer_expr(
                 sym.ty.clone()
             } else {
                 diags.push(Diagnostic {
-                    severity:      Severity::Error,
-                    message:       format!("undefined name `{:?}`", id.name),
-                    primary_span:  id.span,
+                    severity: Severity::Error,
+                    message: format!("undefined name `{:?}`", id.name),
+                    primary_span: id.span,
                     primary_label: Some("not found in scope".into()),
-                    secondary:     vec![],
-                    help:          None,
-                    code:          None,
+                    secondary: vec![],
+                    help: None,
+                    code: None,
                 });
                 Ty::Error
             }
         }
 
         Expr::Binary(b) => {
-            let l = infer_expr(&b.left,  table, local, unify, diags);
+            let l = infer_expr(&b.left, table, local, unify, diags);
             let r = infer_expr(&b.right, table, local, unify, diags);
             // For assignment, result is the rhs type
             match b.op {
                 quew_ast::BinaryOp::Assign => r,
                 quew_ast::BinaryOp::And | quew_ast::BinaryOp::Or => Ty::bool_ty(),
-                quew_ast::BinaryOp::Eq  | quew_ast::BinaryOp::NotEq => Ty::bool_ty(),
+                quew_ast::BinaryOp::Eq | quew_ast::BinaryOp::NotEq => Ty::bool_ty(),
                 _ => {
                     // Arithmetic: expect same type, return it
                     if let Err(e) = unify.unify(&l, &r) {
                         diags.push(Diagnostic {
-                            severity:      Severity::Error,
-                            message:       format!("operator type mismatch: {e}"),
-                            primary_span:  b.span,
+                            severity: Severity::Error,
+                            message: format!("operator type mismatch: {e}"),
+                            primary_span: b.span,
                             primary_label: None,
-                            secondary:     vec![],
-                            help:          None,
-                            code:          None,
+                            secondary: vec![],
+                            help: None,
+                            code: None,
                         });
                         Ty::Error
-                    } else { l }
+                    } else {
+                        l
+                    }
                 }
             }
         }
@@ -401,13 +446,15 @@ fn infer_expr(
 
         Expr::Call(c) => {
             let callee = infer_expr(&c.callee, table, local, unify, diags);
-            for arg in &c.args { infer_expr(arg, table, local, unify, diags); }
+            for arg in &c.args {
+                infer_expr(arg, table, local, unify, diags);
+            }
             match callee {
                 Ty::Function(f) => *f.return_ty,
-                Ty::Tool(t)     => *t.return_ty,
-                Ty::Agent(a)    => *a.return_ty,
-                Ty::Error       => Ty::Error,
-                _               => Ty::Error,
+                Ty::Tool(t) => *t.return_ty,
+                Ty::Agent(a) => *a.return_ty,
+                Ty::Error => Ty::Error,
+                _ => Ty::Error,
             }
         }
 
@@ -415,16 +462,20 @@ fn infer_expr(
             let obj = infer_expr(&m.object, table, local, unify, diags);
             match obj {
                 Ty::Record(fields) => fields.get(&m.field).cloned().unwrap_or(Ty::Error),
-                Ty::Error          => Ty::Error,
-                _                  => Ty::Error,
+                Ty::Error => Ty::Error,
+                _ => Ty::Error,
             }
         }
 
         Expr::Array(a) => {
-            let elem_ty = a.elements.first()
+            let elem_ty = a
+                .elements
+                .first()
                 .map(|e| infer_expr(e, table, local, unify, diags))
                 .unwrap_or(Ty::Error);
-            for e in a.elements.iter().skip(1) { infer_expr(e, table, local, unify, diags); }
+            for e in a.elements.iter().skip(1) {
+                infer_expr(e, table, local, unify, diags);
+            }
             elem_ty
         }
 
@@ -432,12 +483,12 @@ fn infer_expr(
             let kind = match call.provider {
                 AstProvider::Gemini => ProviderKind::Gemini,
                 AstProvider::OpenAi => ProviderKind::OpenAi,
-                AstProvider::Groq   => ProviderKind::Groq,
+                AstProvider::Groq => ProviderKind::Groq,
             };
             Ty::Provider(kind)
         }
-        Expr::Is(_)        => Ty::bool_ty(),
-        Expr::Error(_)     => Ty::Error,
+        Expr::Is(_) => Ty::bool_ty(),
+        Expr::Error(_) => Ty::Error,
         Expr::PostfixIf(p) => {
             infer_expr(&p.condition, table, local, unify, diags);
             let v = infer_expr(&p.value, table, local, unify, diags);
@@ -449,11 +500,11 @@ fn infer_expr(
 
 fn infer_lit(lit: &Lit) -> Ty {
     match lit {
-        Lit::Int(_, _)    => Ty::number(),
-        Lit::Float(_, _)  => Ty::float(),
-        Lit::String(_)    => Ty::string(),
-        Lit::Bool(_, _)   => Ty::bool_ty(),
-        Lit::Null(_)      => Ty::null(),
+        Lit::Int(_, _) => Ty::number(),
+        Lit::Float(_, _) => Ty::float(),
+        Lit::String(_) => Ty::string(),
+        Lit::Bool(_, _) => Ty::bool_ty(),
+        Lit::Null(_) => Ty::null(),
     }
 }
 
@@ -461,36 +512,36 @@ fn infer_lit(lit: &Lit) -> Ty {
 
 fn stmt_span(stmt: &Stmt) -> Span {
     match stmt {
-        Stmt::Let(s)    => s.span,
-        Stmt::If(s)     => s.span,
+        Stmt::Let(s) => s.span,
+        Stmt::If(s) => s.span,
         Stmt::Return(s) => s.span,
-        Stmt::Reply(s)  => s.span,
-        Stmt::For(s)    => s.span,
-        Stmt::Expr(s)   => s.span,
+        Stmt::Reply(s) => s.span,
+        Stmt::For(s) => s.span,
+        Stmt::Expr(s) => s.span,
     }
 }
 
 fn type_error(span: Span, msg: String) -> Diagnostic {
     Diagnostic {
-        severity:      Severity::Error,
-        message:       msg,
-        primary_span:  span,
+        severity: Severity::Error,
+        message: msg,
+        primary_span: span,
         primary_label: None,
-        secondary:     vec![],
-        help:          None,
-        code:          None,
+        secondary: vec![],
+        help: None,
+        code: None,
     }
 }
 
 fn mk_err(span: Span, msg: String, label: &str, help: Option<String>) -> Diagnostic {
     Diagnostic {
-        severity:      Severity::Error,
-        message:       msg,
-        primary_span:  span,
+        severity: Severity::Error,
+        message: msg,
+        primary_span: span,
         primary_label: Some(label.into()),
-        secondary:     vec![],
+        secondary: vec![],
         help,
-        code:          None,
+        code: None,
     }
 }
 
@@ -499,8 +550,8 @@ fn mk_err(span: Span, msg: String, label: &str, help: Option<String>) -> Diagnos
 /// Validate a `reply(input) with { ... }` statement.
 /// Checks the input expression and each known with-block field for type correctness.
 fn check_with_block(
-    stmt:  &ReplyStmt,
-    wk:    &WellKnownKeys,
+    stmt: &ReplyStmt,
+    wk: &WellKnownKeys,
     table: &SymbolTable,
     local: &mut LocalScope,
     unify: &mut UnifyTable,
@@ -537,7 +588,10 @@ fn check_with_block(
         } else if k == wk.retry || k == wk.max_turn {
             let label = if k == wk.retry { "retry" } else { "maxTurn" };
             let ty = infer_expr(&field.value, table, local, unify, diags);
-            if !matches!(&ty, Ty::Primitive(quew_types::PrimTy::Number | quew_types::PrimTy::Float) | Ty::Error) {
+            if !matches!(
+                &ty,
+                Ty::Primitive(quew_types::PrimTy::Number | quew_types::PrimTy::Float) | Ty::Error
+            ) {
                 diags.push(mk_err(
                     field.span,
                     format!("`{label}` must be a number, found `{ty}`"),
@@ -597,7 +651,7 @@ fn check_tools_field(
 /// - Call expr → callee must be a `Ty::Tool`; arg count must equal `model_params.len()`.
 /// - Anything else → error.
 fn check_tool_element(
-    elem:  &Expr,
+    elem: &Expr,
     table: &SymbolTable,
     local: &mut LocalScope,
     unify: &mut UnifyTable,
@@ -609,10 +663,14 @@ fn check_tool_element(
                 Some(sym) if matches!(sym.kind, SymbolKind::Tool | SymbolKind::ToolGroup) => {
                     if let Ty::Tool(ref tt) = sym.ty {
                         if !tt.model_params.is_empty() {
-                            let params: Vec<String> = tt.model_params.iter()
+                            let params: Vec<String> = tt
+                                .model_params
+                                .iter()
                                 .map(|(n, t)| format!("{n:?}: {t}"))
                                 .collect();
-                            let example: Vec<String> = tt.model_params.iter()
+                            let example: Vec<String> = tt
+                                .model_params
+                                .iter()
                                 .map(|(n, _)| format!("ctx.{n:?}"))
                                 .collect();
                             diags.push(mk_err(
@@ -660,7 +718,9 @@ fn check_tool_element(
         Expr::Call(call) => {
             // Partial application: `myTool(ctx.value)` pre-binds host params
             let callee_ty = infer_expr(&call.callee, table, local, unify, diags);
-            for arg in &call.args { infer_expr(arg, table, local, unify, diags); }
+            for arg in &call.args {
+                infer_expr(arg, table, local, unify, diags);
+            }
             match &callee_ty {
                 Ty::Tool(tt) => {
                     if call.args.len() != tt.model_params.len() {
@@ -668,7 +728,8 @@ fn check_tool_element(
                             call.span,
                             format!(
                                 "tool pre-binding: expected {} host argument(s), found {}",
-                                tt.model_params.len(), call.args.len()
+                                tt.model_params.len(),
+                                call.args.len()
                             ),
                             &format!("expected {} argument(s)", tt.model_params.len()),
                             None,
@@ -679,7 +740,9 @@ fn check_tool_element(
                 _ => {
                     diags.push(mk_err(
                         call.span,
-                        format!("call in `tools` array must target a tool; `{callee_ty}` is not a tool"),
+                        format!(
+                            "call in `tools` array must target a tool; `{callee_ty}` is not a tool"
+                        ),
                         "not a tool",
                         None,
                     ));
@@ -710,29 +773,45 @@ mod tests {
     use quew_interner::Interner;
     use quew_lexer::AnnotationKind;
 
-    fn make_interner() -> Arc<Interner> { Arc::new(Interner::new()) }
-    fn sp() -> Span { Span::new(0, 10) }
+    fn make_interner() -> Arc<Interner> {
+        Arc::new(Interner::new())
+    }
+    fn sp() -> Span {
+        Span::new(0, 10)
+    }
 
-    fn intern(i: &Arc<Interner>, s: &str) -> quew_interner::InternedStr { i.intern(s) }
+    fn intern(i: &Arc<Interner>, s: &str) -> quew_interner::InternedStr {
+        i.intern(s)
+    }
 
     fn ty_str(i: &Arc<Interner>) -> TypeExpr {
         TypeExpr::Named(intern(i, "string"), sp())
     }
 
     fn normal_param(i: &Arc<Interner>, name: &str) -> Param {
-        Param { binding: ParamBinding::Normal, name: intern(i, name),
-                ty: ty_str(i), optional: false, span: sp() }
+        Param {
+            binding: ParamBinding::Normal,
+            name: intern(i, name),
+            ty: ty_str(i),
+            optional: false,
+            span: sp(),
+        }
     }
 
     fn str_lit_expr() -> Expr {
         Expr::Lit(Lit::String(StringLit {
             value: Arc::new(Interner::new()).intern("hello"),
-            kind: StringKind::Regular, span: sp(),
+            kind: StringKind::Regular,
+            span: sp(),
         }))
     }
 
     fn return_stmt(val: Option<Expr>) -> Stmt {
-        Stmt::Return(ReturnStmt { value: val, mode: ReturnMode::Normal, span: sp() })
+        Stmt::Return(ReturnStmt {
+            value: val,
+            mode: ReturnMode::Normal,
+            span: sp(),
+        })
     }
 
     // ── valid programs ────────────────────────────────────────────────────────
@@ -740,7 +819,10 @@ mod tests {
     #[test]
     fn empty_module_no_errors() {
         let i = make_interner();
-        let module = Module { items: vec![], span: sp() };
+        let module = Module {
+            items: vec![],
+            span: sp(),
+        };
         let result = check(&module, &i);
         assert!(result.diagnostics.is_empty());
     }
@@ -751,11 +833,11 @@ mod tests {
         let module = Module {
             items: vec![Item::Agent(AgentDecl {
                 annotations: vec![],
-                name:        intern(&i, "ChatAgent"),
-                param:       normal_param(&i, "input"),
-                return_ty:   None,
-                body:        vec![],
-                span:        sp(),
+                name: intern(&i, "ChatAgent"),
+                param: normal_param(&i, "input"),
+                return_ty: None,
+                body: vec![],
+                span: sp(),
             })],
             span: sp(),
         };
@@ -769,16 +851,20 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "greet"),
-                params:      vec![],
-                return_ty:   None,
-                body:        vec![return_stmt(Some(str_lit_expr()))],
-                span:        sp(),
+                name: intern(&i, "greet"),
+                params: vec![],
+                return_ty: None,
+                body: vec![return_stmt(Some(str_lit_expr()))],
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(result.diagnostics.is_empty(), "unexpected: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "unexpected: {:?}",
+            result.diagnostics
+        );
     }
 
     // ── duplicate definitions ─────────────────────────────────────────────────
@@ -786,15 +872,20 @@ mod tests {
     #[test]
     fn duplicate_function_name_produces_error() {
         let i = make_interner();
-        let mk_fn = || Item::Function(FunctionDecl {
-            annotations: vec![],
-            name:        intern(&i, "foo"),
-            params:      vec![],
-            return_ty:   None,
-            body:        vec![],
-            span:        sp(),
-        });
-        let module = Module { items: vec![mk_fn(), mk_fn()], span: sp() };
+        let mk_fn = || {
+            Item::Function(FunctionDecl {
+                annotations: vec![],
+                name: intern(&i, "foo"),
+                params: vec![],
+                return_ty: None,
+                body: vec![],
+                span: sp(),
+            })
+        };
+        let module = Module {
+            items: vec![mk_fn(), mk_fn()],
+            span: sp(),
+        };
         let result = check(&module, &i);
         assert!(!result.diagnostics.is_empty());
         assert_eq!(result.diagnostics[0].severity, Severity::Error);
@@ -809,11 +900,11 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "bad"),
-                params:      vec![],
-                return_ty:   Some(ty_str(&i)),
-                body:        vec![return_stmt(Some(Expr::Lit(Lit::Int(42, sp()))))],
-                span:        sp(),
+                name: intern(&i, "bad"),
+                params: vec![],
+                return_ty: Some(ty_str(&i)),
+                body: vec![return_stmt(Some(Expr::Lit(Lit::Int(42, sp()))))],
+                span: sp(),
             })],
             span: sp(),
         };
@@ -833,10 +924,10 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "unreachable_fn"),
-                params:      vec![],
-                return_ty:   None,
-                body:        vec![
+                name: intern(&i, "unreachable_fn"),
+                params: vec![],
+                return_ty: None,
+                body: vec![
                     return_stmt(None),
                     // Statement after unconditional return
                     Stmt::Expr(ExprStmt {
@@ -849,8 +940,16 @@ mod tests {
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(!result.diagnostics.is_empty(), "expected unreachable code error");
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("unreachable")));
+        assert!(
+            !result.diagnostics.is_empty(),
+            "expected unreachable code error"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unreachable"))
+        );
     }
 
     // ── expression inference ──────────────────────────────────────────────────
@@ -883,14 +982,19 @@ mod tests {
         let i = make_interner();
         let module = Module {
             items: vec![Item::Type(TypeDecl {
-                name:   intern(&i, "MyType"),
+                name: intern(&i, "MyType"),
                 fields: vec![],
-                span:   sp(),
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(result.symbol_table.globals.contains_key(&intern(&i, "MyType")));
+        assert!(
+            result
+                .symbol_table
+                .globals
+                .contains_key(&intern(&i, "MyType"))
+        );
     }
 
     // ── bound params via check ────────────────────────────────────────────────
@@ -900,28 +1004,37 @@ mod tests {
         let i = make_interner();
         let tool_ann = Annotation {
             kind: AnnotationKind::Tool,
-            args: AnnotationArgs::Params(vec![
-                Param { binding: ParamBinding::Normal, name: intern(&i, "id"),
-                        ty: ty_str(&i), optional: false, span: sp() },
-            ]),
+            args: AnnotationArgs::Params(vec![Param {
+                binding: ParamBinding::Normal,
+                name: intern(&i, "id"),
+                ty: ty_str(&i),
+                optional: false,
+                span: sp(),
+            }]),
             span: sp(),
         };
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
-                name:        intern(&i, "deleteUser"),
-                params:      vec![
-                    Param { binding: ParamBinding::BoundRef, name: intern(&i, "missing"),
-                            ty: ty_str(&i), optional: false, span: sp() },
-                ],
-                return_ty:   None,
-                body:        vec![],
-                span:        sp(),
+                name: intern(&i, "deleteUser"),
+                params: vec![Param {
+                    binding: ParamBinding::BoundRef,
+                    name: intern(&i, "missing"),
+                    ty: ty_str(&i),
+                    optional: false,
+                    span: sp(),
+                }],
+                return_ty: None,
+                body: vec![],
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(!result.diagnostics.is_empty(), "expected error for unmatched bound param");
+        assert!(
+            !result.diagnostics.is_empty(),
+            "expected error for unmatched bound param"
+        );
     }
 
     // ── name collision: duplicate params ─────────────────────────────────────
@@ -933,23 +1046,35 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "foo"),
-                params:      vec![
+                name: intern(&i, "foo"),
+                params: vec![
                     normal_param(&i, "x"),
                     // second param with same name
-                    Param { binding: ParamBinding::Normal, name: intern(&i, "x"),
-                            ty: TypeExpr::Named(intern(&i, "number"), sp()),
-                            optional: false, span: Span::new(20, 30) },
+                    Param {
+                        binding: ParamBinding::Normal,
+                        name: intern(&i, "x"),
+                        ty: TypeExpr::Named(intern(&i, "number"), sp()),
+                        optional: false,
+                        span: Span::new(20, 30),
+                    },
                 ],
-                return_ty:   None,
-                body:        vec![],
-                span:        sp(),
+                return_ty: None,
+                body: vec![],
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(!result.diagnostics.is_empty(), "expected duplicate param error");
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("already declared")));
+        assert!(
+            !result.diagnostics.is_empty(),
+            "expected duplicate param error"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("already declared"))
+        );
     }
 
     // ── name collision: duplicate let in same block ───────────────────────────
@@ -957,26 +1082,36 @@ mod tests {
     #[test]
     fn duplicate_let_in_same_block_errors() {
         let i = make_interner();
-        let make_let = |span_start: usize| Stmt::Let(LetStmt {
-            name:     intern(&i, "x"),
-            ty:       None,
-            init:     str_lit_expr(),
-            span:     Span::new(span_start, span_start + 10),
-        });
+        let make_let = |span_start: usize| {
+            Stmt::Let(LetStmt {
+                name: intern(&i, "x"),
+                ty: None,
+                init: str_lit_expr(),
+                span: Span::new(span_start, span_start + 10),
+            })
+        };
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "bar"),
-                params:      vec![],
-                return_ty:   None,
-                body:        vec![make_let(0), make_let(20)],
-                span:        sp(),
+                name: intern(&i, "bar"),
+                params: vec![],
+                return_ty: None,
+                body: vec![make_let(0), make_let(20)],
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(!result.diagnostics.is_empty(), "expected duplicate let error");
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("already declared")));
+        assert!(
+            !result.diagnostics.is_empty(),
+            "expected duplicate let error"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("already declared"))
+        );
     }
 
     // ── shadowing outer block is OK ───────────────────────────────────────────
@@ -987,10 +1122,15 @@ mod tests {
         // let x = ...
         // if true { let x = ... }  <- inner block, shadowing is OK
         let outer_let = Stmt::Let(LetStmt {
-            name: intern(&i, "x"), ty: None, init: str_lit_expr(), span: sp(),
+            name: intern(&i, "x"),
+            ty: None,
+            init: str_lit_expr(),
+            span: sp(),
         });
         let inner_let = Stmt::Let(LetStmt {
-            name: intern(&i, "x"), ty: None, init: str_lit_expr(),
+            name: intern(&i, "x"),
+            ty: None,
+            init: str_lit_expr(),
             span: Span::new(20, 30),
         });
         let if_stmt = Stmt::If(IfStmt {
@@ -1002,16 +1142,20 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
-                name:        intern(&i, "shadow_fn"),
-                params:      vec![],
-                return_ty:   None,
-                body:        vec![outer_let, if_stmt],
-                span:        sp(),
+                name: intern(&i, "shadow_fn"),
+                params: vec![],
+                return_ty: None,
+                body: vec![outer_let, if_stmt],
+                span: sp(),
             })],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(result.diagnostics.is_empty(), "shadowing should be ok: {:?}", result.diagnostics);
+        assert!(
+            result.diagnostics.is_empty(),
+            "shadowing should be ok: {:?}",
+            result.diagnostics
+        );
     }
 
     // ── collision: type vs function same name ─────────────────────────────────
@@ -1021,20 +1165,32 @@ mod tests {
         let i = make_interner();
         let module = Module {
             items: vec![
-                Item::Type(TypeDecl { name: intern(&i, "Foo"), fields: vec![], span: sp() }),
+                Item::Type(TypeDecl {
+                    name: intern(&i, "Foo"),
+                    fields: vec![],
+                    span: sp(),
+                }),
                 Item::Function(FunctionDecl {
                     annotations: vec![],
-                    name:        intern(&i, "Foo"),
-                    params:      vec![],
-                    return_ty:   None,
-                    body:        vec![],
-                    span:        Span::new(20, 40),
+                    name: intern(&i, "Foo"),
+                    params: vec![],
+                    return_ty: None,
+                    body: vec![],
+                    span: Span::new(20, 40),
                 }),
             ],
             span: sp(),
         };
         let result = check(&module, &i);
-        assert!(!result.diagnostics.is_empty(), "expected duplicate name error");
-        assert!(result.diagnostics.iter().any(|d| d.message.contains("duplicate")));
+        assert!(
+            !result.diagnostics.is_empty(),
+            "expected duplicate name error"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate"))
+        );
     }
 }

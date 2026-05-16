@@ -619,6 +619,7 @@ dependencies = [
  "quew-ir",
  "quew-lexer",
  "quew-parser",
+ "quew-source",
 ]
 
 [[package]]
@@ -656,6 +657,9 @@ dependencies = [
  "quew-checker",
  "quew-errors",
  "quew-interner",
+ "quew-lexer",
+ "quew-parser",
+ "quew-source",
  "quew-types",
 ]
 

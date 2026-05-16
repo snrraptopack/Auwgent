@@ -31,26 +31,30 @@ use crate::types::IrType;
 #[derive(Debug, Clone)]
 pub struct AgentGraph {
     /// Globally unique graph identifier (e.g. `"agent:Main"`, `"function:sanitize"`).
-    pub graph_id:    String,
+    pub graph_id: String,
     /// The node id where execution starts (always an `Input` boundary node).
-    pub entry_node:  NodeId,
+    pub entry_node: NodeId,
     /// The node id that produces the final output (always an `Output` boundary node).
     pub return_node: NodeId,
-    /// All nodes in this graph, in the order they were emitted by the lowerer.
-    /// Node ids are stable and deterministic across compilations of the same source.
-    pub nodes:       Vec<IrNode>,
+    /// All nodes in this graph, keyed by stable `NodeId`.
+    ///
+    /// `IndexMap` preserves the lowerer's insertion order for deterministic
+    /// traversal while allowing direct lookup by id during runtime execution.
+    pub nodes: IndexMap<NodeId, IrNode>,
     /// Data-flow edges: `from.output → to.slot`.
-    pub edges:       Vec<Edge>,
+    pub edges: Vec<Edge>,
 }
 
 impl AgentGraph {
     /// Look up a node by id. Panics if the node does not exist (indicates a
     /// lowering bug — every id in an edge must reference a real node).
     pub fn node(&self, id: NodeId) -> &IrNode {
-        self.nodes
-            .iter()
-            .find(|n| n.id == id)
-            .unwrap_or_else(|| panic!("IR integrity error: node {id:?} not found in graph {}", self.graph_id))
+        self.nodes.get(&id).unwrap_or_else(|| {
+            panic!(
+                "IR integrity error: node {id:?} not found in graph {}",
+                self.graph_id
+            )
+        })
     }
 }
 
@@ -76,8 +80,8 @@ impl std::fmt::Display for NodeId {
 /// A single execution unit in an agent graph.
 #[derive(Debug, Clone)]
 pub struct IrNode {
-    pub id:         NodeId,
-    pub kind:       NodeKind,
+    pub id: NodeId,
+    pub kind: NodeKind,
     /// Whether the journal must checkpoint before/after this node.
     pub checkpoint: CheckpointPolicy,
 }
@@ -86,7 +90,6 @@ pub struct IrNode {
 #[derive(Debug, Clone)]
 pub enum NodeKind {
     // ── Boundary (connects graph to the outside call) ─────────────────────────
-
     /// The agent's input value. Always `n0` in an agent graph.
     /// In a function graph this is the first parameter.
     Input { input_ty: IrType },
@@ -99,16 +102,12 @@ pub enum NodeKind {
     Output { value: DataRef },
 
     // ── Deterministic (replayable; no checkpoint required by default) ─────────
-
     /// `let x = expr` — pure expression evaluation.
     ///
     /// The bound name `x` becomes a data slot referenced by downstream nodes
     /// via `DataRef { node: this_id, slot: None }` (scalar) or
     /// `DataRef { node: this_id, slot: Some("field") }` (record field).
-    LetBind {
-        name:  InternedStr,
-        value: IrExpr,
-    },
+    LetBind { name: InternedStr, value: IrExpr },
 
     /// `if condition { … } [else { … }]`
     ///
@@ -129,11 +128,10 @@ pub enum NodeKind {
     FuncCall {
         /// Name of the function — key in `definitions.functions`.
         function: InternedStr,
-        args:     IndexMap<InternedStr, DataRef>,
+        args: IndexMap<InternedStr, DataRef>,
     },
 
     // ── Effectful (checkpoint required) ──────────────────────────────────────
-
     /// A call to a host-backed tool from agent code (not from the model).
     ///
     /// This is distinct from tools *exposed to the model* inside a `Reply`
@@ -154,7 +152,7 @@ pub enum NodeKind {
     Reply {
         /// The value passed to `reply(…)` — the user's message.
         message: DataRef,
-        config:  ReplyConfig,
+        config: ReplyConfig,
     },
 
     /// `return Agent(input)` or `return Agent(input) with turns`.
@@ -164,8 +162,8 @@ pub enum NodeKind {
     AgentCall {
         /// Name of the agent — key in `definitions.agents`.
         agent: InternedStr,
-        args:  IndexMap<InternedStr, DataRef>,
-        mode:  AgentCallMode,
+        args: IndexMap<InternedStr, DataRef>,
+        mode: AgentCallMode,
     },
 }
 
@@ -200,22 +198,22 @@ pub enum CheckpointPolicy {
 /// The lowered form of a `reply(…) with { … }` configuration block.
 #[derive(Debug, Clone)]
 pub struct ReplyConfig {
-    pub prompt:   IrPrompt,
+    pub prompt: IrPrompt,
     /// The model to use for this reply. Inline `gemini("…")` calls are
     /// interned in `definitions.models` and referenced here by name.
-    pub model:    ModelRef,
+    pub model: ModelRef,
     /// Fallback model if the primary fails or is rate-limited.
     pub fallback: Option<ModelRef>,
     /// How many times to retry on failure before giving up (or using fallback).
-    pub retry:    Option<u32>,
+    pub retry: Option<u32>,
     /// Maximum number of model turns before the reply node terminates.
     pub max_turn: Option<u32>,
     /// Tools exposed to the model inside this reply.
-    pub tools:    Vec<ToolRef>,
+    pub tools: Vec<ToolRef>,
     /// Built-in provider tools (e.g. `web_search`, `code_execution`).
-    pub builtin:  Vec<InternedStr>,
+    pub builtin: Vec<InternedStr>,
     /// Sub-agents the model can hand off to inside this reply.
-    pub agents:   Vec<AgentRef>,
+    pub agents: Vec<AgentRef>,
 }
 
 /// The prompt expression for a reply node.
@@ -268,7 +266,7 @@ pub struct ToolRef {
 #[derive(Debug, Clone)]
 pub struct AgentRef {
     /// Name of the agent — key in `definitions.agents`.
-    pub name:    InternedStr,
+    pub name: InternedStr,
     /// How the agent handles its output relative to the parent.
     pub handoff: AgentCallMode,
 }
@@ -286,17 +284,31 @@ pub enum IrExpr {
     /// A reference to another node's output (or a field of it).
     Ref(DataRef),
     /// A binary operation: `left op right`.
-    Binary { left: Box<IrExpr>, op: BinaryOp, right: Box<IrExpr> },
+    Binary {
+        left: Box<IrExpr>,
+        op: BinaryOp,
+        right: Box<IrExpr>,
+    },
     /// A unary operation: `op expr`.
     Unary { op: UnaryOp, expr: Box<IrExpr> },
     /// A member access: `base.field`.
-    Member { base: Box<IrExpr>, field: InternedStr },
+    Member {
+        base: Box<IrExpr>,
+        field: InternedStr,
+    },
     /// A function call that evaluates to a value (pure functions only).
-    Call { function: InternedStr, args: IndexMap<InternedStr, IrExpr> },
+    Call {
+        function: InternedStr,
+        args: IndexMap<InternedStr, IrExpr>,
+    },
     /// An array literal: `[elem, …]`.
     Array(Vec<IrExpr>),
     /// A ternary/inline conditional: `expr if cond else expr`.
-    Ternary { cond: Box<IrExpr>, then: Box<IrExpr>, else_: Box<IrExpr> },
+    Ternary {
+        cond: Box<IrExpr>,
+        then: Box<IrExpr>,
+        else_: Box<IrExpr>,
+    },
 }
 
 /// A literal value in the IR.
@@ -313,10 +325,19 @@ pub enum IrLit {
 /// Only operators that can appear in `IrExpr::Binary`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Rem,
-    Eq, NotEq,
-    Lt, Lte, Gt, Gte,
-    And, Or,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Eq,
+    NotEq,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+    And,
+    Or,
 }
 
 /// Unary operators.
@@ -349,7 +370,10 @@ impl DataRef {
 
     /// A reference to a specific field of a node's record output.
     pub fn field(node: NodeId, slot: InternedStr) -> Self {
-        Self { node, slot: Some(slot) }
+        Self {
+            node,
+            slot: Some(slot),
+        }
     }
 }
 
@@ -359,7 +383,60 @@ pub struct Edge {
     /// The node that produces the value.
     pub from: NodeId,
     /// The node that consumes the value.
-    pub to:   NodeId,
+    pub to: NodeId,
     /// Which input slot of `to` receives this value.
     pub slot: InternedStr,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: u32) -> IrNode {
+        IrNode {
+            id: NodeId(id),
+            kind: NodeKind::Input {
+                input_ty: IrType::Text,
+            },
+            checkpoint: CheckpointPolicy::Never,
+        }
+    }
+
+    fn graph_with_nodes(ids: &[u32]) -> AgentGraph {
+        let mut nodes = IndexMap::new();
+        for id in ids {
+            nodes.insert(NodeId(*id), node(*id));
+        }
+
+        AgentGraph {
+            graph_id: "agent:Test".to_string(),
+            entry_node: NodeId(ids.first().copied().unwrap_or(0)),
+            return_node: NodeId(ids.last().copied().unwrap_or(0)),
+            nodes,
+            edges: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn node_returns_the_node_for_a_valid_id() {
+        let graph = graph_with_nodes(&[0, 1, 2]);
+
+        assert_eq!(graph.node(NodeId(2)).id, NodeId(2));
+    }
+
+    #[test]
+    #[should_panic(expected = "IR integrity error: node NodeId(7) not found in graph agent:Test")]
+    fn node_panics_for_a_missing_id() {
+        let graph = graph_with_nodes(&[0, 1, 2]);
+
+        let _ = graph.node(NodeId(7));
+    }
+
+    #[test]
+    fn nodes_keep_lowerer_insertion_order() {
+        let graph = graph_with_nodes(&[2, 0, 1]);
+        let ids: Vec<_> = graph.nodes.keys().copied().collect();
+
+        assert_eq!(ids, vec![NodeId(2), NodeId(0), NodeId(1)]);
+    }
 }

@@ -14,6 +14,7 @@ path = "src/main.rs"
 clap = { workspace = true }
 quew-errors = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
+quew-source = { path = "../quew-source" }
 quew-lexer = { path = "../quew-lexer" }
 quew-parser = { path = "../quew-parser" }
 quew-checker = { path = "../quew-checker" }

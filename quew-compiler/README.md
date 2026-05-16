@@ -209,7 +209,7 @@ Never use pre-release versions (`alpha`, `beta`, `rc`) in any crate.
 | `lasso` | `0.7.3` | `quew-interner` | String interning; `ThreadedRodeo` for parallel safety |
 | `indexmap` | `2.14.0` | `quew-types`, `quew-scope`, `quew-resolve` | Deterministic insertion-ordered maps |
 | `ena` | `0.14.4` | `quew-unify` | Union-find for type variable unification (rustc's impl) |
-| `serde` + `serde_json` | `1.0` | `quew-ir`, `quew-cli` | IR serialization |
+| `serde` + `serde_json` | `1.0` | `quew-cli` | CLI config and future non-IR artifacts; compiled graph IR stays in-memory |
 | `clap` | `4` | `quew-cli` | CLI argument parsing |
 | `rayon` | `1` | `quew-resolve` | Parallel multi-file analysis |
 | `insta` | `1` | all (dev) | Snapshot testing |

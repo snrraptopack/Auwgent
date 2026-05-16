@@ -16,11 +16,11 @@ pub enum Lit {
 impl Lit {
     pub fn span(&self) -> Span {
         match self {
-            Self::Int(_, s)    => *s,
-            Self::Float(_, s)  => *s,
-            Self::String(s)    => s.span,
-            Self::Bool(_, s)   => *s,
-            Self::Null(s)      => *s,
+            Self::Int(_, s) => *s,
+            Self::Float(_, s) => *s,
+            Self::String(s) => s.span,
+            Self::Bool(_, s) => *s,
+            Self::Null(s) => *s,
         }
     }
 }
@@ -48,14 +48,16 @@ pub enum StringKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use quew_interner::Interner;
+    use std::sync::Arc;
 
     fn intern(s: &str) -> InternedStr {
         Arc::new(Interner::new()).intern(s)
     }
 
-    fn sp() -> Span { Span::new(0, 5) }
+    fn sp() -> Span {
+        Span::new(0, 5)
+    }
 
     #[test]
     fn int_lit_span() {
@@ -80,14 +82,22 @@ mod tests {
 
     #[test]
     fn string_lit_regular() {
-        let s = StringLit { value: intern("hello"), kind: StringKind::Regular, span: sp() };
+        let s = StringLit {
+            value: intern("hello"),
+            kind: StringKind::Regular,
+            span: sp(),
+        };
         assert_eq!(s.kind, StringKind::Regular);
         assert_eq!(Lit::String(s).span(), sp());
     }
 
     #[test]
     fn string_lit_triple() {
-        let s = StringLit { value: intern("multi\nline"), kind: StringKind::Triple, span: sp() };
+        let s = StringLit {
+            value: intern("multi\nline"),
+            kind: StringKind::Triple,
+            span: sp(),
+        };
         assert_eq!(s.kind, StringKind::Triple);
     }
 }

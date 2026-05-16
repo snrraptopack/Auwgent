@@ -3,10 +3,10 @@
 //! These tests verify the full pipeline: file → lex() → token stream + diagnostics.
 //! They use fixture files committed to `tests/fixtures/` as regression anchors.
 
-use std::sync::Arc;
 use quew_interner::Interner;
+use quew_lexer::{AnnotationKind, TokenKind, lex};
 use quew_source::SourceMap;
-use quew_lexer::{lex, TokenKind, AnnotationKind};
+use std::sync::Arc;
 
 fn setup() -> (Arc<Interner>, SourceMap) {
     let interner = Arc::new(Interner::new());
@@ -25,7 +25,8 @@ fn valid_basic_agent_lexes_without_errors() {
 
     assert!(
         result.errors.is_empty(),
-        "valid agent produced lex errors: {:?}", result.errors
+        "valid agent produced lex errors: {:?}",
+        result.errors
     );
     // Must contain the KwAgent token.
     let kinds: Vec<_> = result.tokens.iter().map(|(k, _)| k).collect();
@@ -43,9 +44,12 @@ fn valid_tool_declarations_lex_without_errors() {
 
     assert!(
         result.errors.is_empty(),
-        "tool declarations produced lex errors: {:?}", result.errors
+        "tool declarations produced lex errors: {:?}",
+        result.errors
     );
-    let tool_count = result.tokens.iter()
+    let tool_count = result
+        .tokens
+        .iter()
         .filter(|(k, _)| k == &TokenKind::KwTool)
         .count();
     assert_eq!(tool_count, 3, "expected 3 tool keywords");
@@ -60,7 +64,8 @@ fn valid_tool_function_lexes_annotations_correctly() {
 
     assert!(
         result.errors.is_empty(),
-        "tool function produced lex errors: {:?}", result.errors
+        "tool function produced lex errors: {:?}",
+        result.errors
     );
     let kinds: Vec<_> = result.tokens.iter().map(|(k, _)| k).collect();
     assert!(kinds.contains(&&TokenKind::Annotation(AnnotationKind::Tool)));
@@ -81,7 +86,8 @@ fn valid_tool_function_binding_lexes_without_errors() {
 
     assert!(
         result.errors.is_empty(),
-        "binding fixture produced lex errors: {:?}", result.errors
+        "binding fixture produced lex errors: {:?}",
+        result.errors
     );
     let kinds: Vec<_> = result.tokens.iter().map(|(k, _)| k).collect();
     // @tool annotation is present.
@@ -104,7 +110,10 @@ fn invalid_unknown_chars_produce_errors_but_do_not_panic() {
     let result = lex(src, sid, &interner);
 
     // Must have errors for the `$` and `#` characters.
-    assert!(!result.errors.is_empty(), "expected lex errors for unknown chars");
+    assert!(
+        !result.errors.is_empty(),
+        "expected lex errors for unknown chars"
+    );
     // Must still produce KwAgent (lexer continued after the unknown chars).
     let kinds: Vec<_> = result.tokens.iter().map(|(k, _)| k).collect();
     assert!(kinds.contains(&&TokenKind::KwAgent));
@@ -173,6 +182,10 @@ fn union_type_pipe_lexes() {
     let result = lex(src, sid, &interner);
 
     assert!(result.errors.is_empty());
-    let pipe_count = result.tokens.iter().filter(|(k, _)| k == &TokenKind::Pipe).count();
+    let pipe_count = result
+        .tokens
+        .iter()
+        .filter(|(k, _)| k == &TokenKind::Pipe)
+        .count();
     assert_eq!(pipe_count, 2);
 }

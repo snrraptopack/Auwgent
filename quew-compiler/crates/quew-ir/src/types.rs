@@ -50,14 +50,17 @@ pub enum IrType {
 /// A single field in an `IrType::Object`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IrField {
-    pub ty:       IrType,
+    pub ty: IrType,
     /// `true` for `field?: Type` (optional field).
     pub optional: bool,
 }
 
 impl IrField {
     pub fn required(ty: IrType) -> Self {
-        Self { ty, optional: false }
+        Self {
+            ty,
+            optional: false,
+        }
     }
 
     pub fn optional(ty: IrType) -> Self {

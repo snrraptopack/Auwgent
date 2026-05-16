@@ -7,10 +7,10 @@
 
 use std::sync::Arc;
 
+use logos::Logos;
 use quew_errors::{Diagnostic, Span};
 use quew_interner::{InternedStr, Interner};
 use quew_source::SourceId;
-use logos::Logos;
 
 use crate::token::TokenKind;
 
@@ -63,10 +63,7 @@ pub fn lex(source: &str, _source_id: SourceId, interner: &Arc<Interner>) -> LexR
             Ok(TokenKind::BlockComment) => {
                 // BlockComment is only emitted when unterminated (the callback
                 // returns Filter::Emit(()) for the error case).
-                errors.push(Diagnostic::error(
-                    "unterminated block comment",
-                    span,
-                ));
+                errors.push(Diagnostic::error("unterminated block comment", span));
                 tokens.push((TokenKind::Error, span));
                 ident_table.push(None);
             }
@@ -95,7 +92,11 @@ pub fn lex(source: &str, _source_id: SourceId, interner: &Arc<Interner>) -> LexR
         }
     }
 
-    LexResult { tokens, errors, ident_table }
+    LexResult {
+        tokens,
+        errors,
+        ident_table,
+    }
 }
 
 #[cfg(test)]
@@ -167,7 +168,10 @@ mod tests {
     fn ident_is_interned_in_table() {
         let r = run("myVar");
         assert_eq!(r.tokens.len(), 1);
-        assert!(r.ident_table[0].is_some(), "ident must have an interned entry");
+        assert!(
+            r.ident_table[0].is_some(),
+            "ident must have an interned entry"
+        );
     }
 
     #[test]

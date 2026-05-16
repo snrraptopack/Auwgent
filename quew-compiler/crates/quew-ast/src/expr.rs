@@ -49,17 +49,17 @@ pub enum Expr {
 impl Expr {
     pub fn span(&self) -> Span {
         match self {
-            Self::Lit(l)        => l.span(),
-            Self::Ident(e)      => e.span,
-            Self::Binary(e)     => e.span,
-            Self::Unary(e)      => e.span,
-            Self::Call(e)       => e.span,
-            Self::Provider(e)   => e.span,
-            Self::Member(e)     => e.span,
-            Self::Array(e)      => e.span,
-            Self::PostfixIf(e)  => e.span,
-            Self::Is(e)         => e.span,
-            Self::Error(s)      => *s,
+            Self::Lit(l) => l.span(),
+            Self::Ident(e) => e.span,
+            Self::Binary(e) => e.span,
+            Self::Unary(e) => e.span,
+            Self::Call(e) => e.span,
+            Self::Provider(e) => e.span,
+            Self::Member(e) => e.span,
+            Self::Array(e) => e.span,
+            Self::PostfixIf(e) => e.span,
+            Self::Is(e) => e.span,
+            Self::Error(s) => *s,
         }
     }
 }
@@ -74,30 +74,36 @@ pub struct IdentExpr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BinaryExpr {
-    pub left:  Box<Expr>,
-    pub op:    BinaryOp,
+    pub left: Box<Expr>,
+    pub op: BinaryOp,
     pub right: Box<Expr>,
-    pub span:  Span,
+    pub span: Span,
 }
 
 /// Binary operators available in the quew grammar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     // Arithmetic
-    Add, Sub, Mul, Div, Mod,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
     // Equality
-    Eq, NotEq,
+    Eq,
+    NotEq,
     // Logical (English keywords — no && or ||)
-    And, Or,
+    And,
+    Or,
     // Assignment
     Assign,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnaryExpr {
-    pub op:      UnaryOp,
+    pub op: UnaryOp,
     pub operand: Box<Expr>,
-    pub span:    Span,
+    pub span: Span,
 }
 
 /// Unary operators available in the quew grammar.
@@ -110,8 +116,8 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
-    pub args:   Vec<Expr>,
-    pub span:   Span,
+    pub args: Vec<Expr>,
+    pub span: Span,
 }
 
 /// A built-in provider call: `gemini("model")`, `openai("model")`, `groq("model")`.
@@ -119,11 +125,11 @@ pub struct CallExpr {
 /// Hardcoded for v2 first milestone. Future: `extend model` syntax.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProviderCall {
-    pub provider:   Provider,
+    pub provider: Provider,
     pub model_name: crate::lit::StringLit,
     /// Optional second argument — pass-through config `{ topK: 40, ... }`.
-    pub config:     Vec<ConfigField>,
-    pub span:       Span,
+    pub config: Vec<ConfigField>,
+    pub span: Span,
 }
 
 /// The three built-in providers.
@@ -137,9 +143,9 @@ pub enum Provider {
 /// A key-value field inside a config block `{ key: value }`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigField {
-    pub key:   InternedStr,
+    pub key: InternedStr,
     pub value: Box<Expr>,
-    pub span:  Span,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -163,46 +169,48 @@ pub struct MemberExpr {
     /// `TokenKind::Ident` OR any keyword token, and interns the raw slice.
     /// This keeps the AST clean (always `InternedStr`) while the parser
     /// handles the contextual ambiguity.
-    pub field:  InternedStr,
-    pub span:   Span,
+    pub field: InternedStr,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ArrayExpr {
     pub elements: Vec<Expr>,
-    pub span:     Span,
+    pub span: Span,
 }
 
 /// `value if condition else other_value` — postfix conditional.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PostfixIfExpr {
-    pub value:       Box<Expr>,
-    pub condition:   Box<Expr>,
-    pub else_value:  Box<Expr>,
-    pub span:        Span,
+    pub value: Box<Expr>,
+    pub condition: Box<Expr>,
+    pub else_value: Box<Expr>,
+    pub span: Span,
 }
 
 /// `expr is Type` — runtime type discrimination.
 #[derive(Debug, Clone, PartialEq)]
 pub struct IsExpr {
     pub value: Box<Expr>,
-    pub ty:    TypeExpr,
-    pub span:  Span,
+    pub ty: TypeExpr,
+    pub span: Span,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use quew_interner::Interner;
-    use crate::lit::{Lit, StringLit, StringKind};
+    use crate::lit::{Lit, StringKind, StringLit};
     use crate::ty::TypeExpr;
+    use quew_interner::Interner;
+    use std::sync::Arc;
 
     fn intern(s: &str) -> InternedStr {
         Arc::new(Interner::new()).intern(s)
     }
 
-    fn sp() -> Span { Span::new(0, 1) }
+    fn sp() -> Span {
+        Span::new(0, 1)
+    }
 
     fn int_expr() -> Expr {
         Expr::Lit(Lit::Int(1, sp()))
@@ -217,17 +225,20 @@ mod tests {
 
     #[test]
     fn ident_expr_span() {
-        let e = Expr::Ident(IdentExpr { name: intern("x"), span: Span::new(0, 1) });
+        let e = Expr::Ident(IdentExpr {
+            name: intern("x"),
+            span: Span::new(0, 1),
+        });
         assert_eq!(e.span(), Span::new(0, 1));
     }
 
     #[test]
     fn binary_expr_span() {
         let e = Expr::Binary(BinaryExpr {
-            left:  Box::new(int_expr()),
-            op:    BinaryOp::Add,
+            left: Box::new(int_expr()),
+            op: BinaryOp::Add,
             right: Box::new(int_expr()),
-            span:  Span::new(0, 5),
+            span: Span::new(0, 5),
         });
         assert_eq!(e.span(), Span::new(0, 5));
     }
@@ -235,9 +246,9 @@ mod tests {
     #[test]
     fn unary_expr_span() {
         let e = Expr::Unary(UnaryExpr {
-            op:      UnaryOp::Not,
+            op: UnaryOp::Not,
             operand: Box::new(Expr::Lit(Lit::Bool(true, sp()))),
-            span:    Span::new(0, 8),
+            span: Span::new(0, 8),
         });
         assert_eq!(e.span(), Span::new(0, 8));
     }
@@ -245,21 +256,28 @@ mod tests {
     #[test]
     fn call_expr_span() {
         let e = Expr::Call(CallExpr {
-            callee: Box::new(Expr::Ident(IdentExpr { name: intern("f"), span: sp() })),
-            args:   vec![],
-            span:   Span::new(0, 3),
+            callee: Box::new(Expr::Ident(IdentExpr {
+                name: intern("f"),
+                span: sp(),
+            })),
+            args: vec![],
+            span: Span::new(0, 3),
         });
         assert_eq!(e.span(), Span::new(0, 3));
     }
 
     #[test]
     fn provider_call_span() {
-        let lit = StringLit { value: intern("gemini-pro"), kind: StringKind::Regular, span: sp() };
+        let lit = StringLit {
+            value: intern("gemini-pro"),
+            kind: StringKind::Regular,
+            span: sp(),
+        };
         let e = Expr::Provider(ProviderCall {
-            provider:   Provider::Gemini,
+            provider: Provider::Gemini,
             model_name: lit,
-            config:     vec![],
-            span:       Span::new(0, 20),
+            config: vec![],
+            span: Span::new(0, 20),
         });
         assert_eq!(e.span(), Span::new(0, 20));
     }
@@ -268,25 +286,28 @@ mod tests {
     fn member_expr_span() {
         let e = Expr::Member(MemberExpr {
             object: Box::new(int_expr()),
-            field:  intern("error"),
-            span:   Span::new(0, 8),
+            field: intern("error"),
+            span: Span::new(0, 8),
         });
         assert_eq!(e.span(), Span::new(0, 8));
     }
 
     #[test]
     fn array_expr_span() {
-        let e = Expr::Array(ArrayExpr { elements: vec![], span: Span::new(0, 2) });
+        let e = Expr::Array(ArrayExpr {
+            elements: vec![],
+            span: Span::new(0, 2),
+        });
         assert_eq!(e.span(), Span::new(0, 2));
     }
 
     #[test]
     fn postfix_if_span() {
         let e = Expr::PostfixIf(PostfixIfExpr {
-            value:      Box::new(int_expr()),
-            condition:  Box::new(Expr::Lit(Lit::Bool(true, sp()))),
+            value: Box::new(int_expr()),
+            condition: Box::new(Expr::Lit(Lit::Bool(true, sp()))),
             else_value: Box::new(int_expr()),
-            span:       Span::new(0, 20),
+            span: Span::new(0, 20),
         });
         assert_eq!(e.span(), Span::new(0, 20));
     }
@@ -295,8 +316,8 @@ mod tests {
     fn is_expr_span() {
         let e = Expr::Is(IsExpr {
             value: Box::new(int_expr()),
-            ty:    TypeExpr::Named(intern("MyType"), Span::new(5, 11)),
-            span:  Span::new(0, 11),
+            ty: TypeExpr::Named(intern("MyType"), Span::new(5, 11)),
+            span: Span::new(0, 11),
         });
         assert_eq!(e.span(), Span::new(0, 11));
     }

@@ -70,7 +70,11 @@ impl SourceFile {
                 line_starts.push((i + 1) as u32);
             }
         }
-        Self { path, text, line_starts }
+        Self {
+            path,
+            text,
+            line_starts,
+        }
     }
 
     /// Convert a byte offset into a 1-based `(line, col)` pair.
@@ -80,8 +84,8 @@ impl SourceFile {
         let offset = offset.min(self.text.len()) as u32;
         // Binary search for the largest line_start ≤ offset.
         let line_index = match self.line_starts.binary_search(&offset) {
-            Ok(i) => i,        // offset falls exactly on a line start
-            Err(i) => i - 1,   // offset is within this line
+            Ok(i) => i,      // offset falls exactly on a line start
+            Err(i) => i - 1, // offset is within this line
         };
         let line_start = self.line_starts[line_index];
         LineCol {
@@ -92,7 +96,10 @@ impl SourceFile {
 
     /// Convert a [`Span`] into a pair of `(start_line_col, end_line_col)`.
     pub fn span_to_line_col(&self, span: Span) -> (LineCol, LineCol) {
-        (self.offset_to_line_col(span.start), self.offset_to_line_col(span.end))
+        (
+            self.offset_to_line_col(span.start),
+            self.offset_to_line_col(span.end),
+        )
     }
 
     /// The total number of lines in this file.
@@ -141,14 +148,24 @@ impl SourceMap {
         // SAFETY: We hand out a guard that keeps the read lock alive.
         // We use an index-based approach here to avoid lifetime issues.
         let index = (id.raw() - 1) as usize;
-        assert!(index < files.len(), "SourceId {:?} not registered in this SourceMap", id);
+        assert!(
+            index < files.len(),
+            "SourceId {:?} not registered in this SourceMap",
+            id
+        );
         // Return the guard + index; the caller dereferences into the file.
-        SourceMapGuard { guard: files, index }
+        SourceMapGuard {
+            guard: files,
+            index,
+        }
     }
 
     /// Total number of source files registered.
     pub fn file_count(&self) -> usize {
-        self.files.read().expect("SourceMap read lock poisoned").len()
+        self.files
+            .read()
+            .expect("SourceMap read lock poisoned")
+            .len()
     }
 }
 

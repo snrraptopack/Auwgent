@@ -35,7 +35,6 @@ use quew_interner::{InternedStr, Interner};
 
 use crate::{Definitions, ProgramMeta, QuewGraphIR};
 
-
 /// Lower a type-checked `Module` into a `QuewGraphIR`.
 ///
 /// # Preconditions
@@ -58,7 +57,7 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
     for item in &module.items {
         if let quew_ast::Item::Agent(agent) = item {
             let graph_key = format!("agent:{}", interner.resolve(agent.name));
-            let graph = graph_lower::lower_agent(agent, check, interner, &definitions);
+            let graph = graph_lower::lower_agent(agent, check, interner, &mut definitions);
             graphs.insert(graph_key, graph);
         }
     }
@@ -70,13 +69,119 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
         .items
         .iter()
         .find_map(|i| {
-            if let quew_ast::Item::Agent(a) = i { Some(a.name) } else { None }
+            if let quew_ast::Item::Agent(a) = i {
+                Some(a.name)
+            } else {
+                None
+            }
         })
         .expect("lower() called on a module with no agent declarations");
 
     QuewGraphIR {
-        program: ProgramMeta { name: entry_agent, entry_agent },
+        program: ProgramMeta {
+            name: entry_agent,
+            entry_agent,
+        },
         definitions,
         graphs,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quew_errors::Severity;
+    use quew_source::SourceMap;
+
+    fn lower_source(source: &str) -> (Arc<Interner>, QuewGraphIR) {
+        let interner = Arc::new(Interner::new());
+        let source_map = SourceMap::new(Arc::clone(&interner));
+        let source_id = source_map.add("test.quew", source.to_string());
+        let lex = quew_lexer::lex(source, source_id, &interner);
+        assert!(lex.errors.is_empty(), "lex errors: {:?}", lex.errors);
+        let parse = quew_parser::parse(&lex, source, &interner);
+        assert!(parse.errors.is_empty(), "parse errors: {:?}", parse.errors);
+        let check = quew_checker::check(&parse.module, &interner);
+        assert!(
+            !check
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.severity == Severity::Error),
+            "checker errors: {:?}",
+            check.diagnostics
+        );
+        let ir = lower(&parse.module, &check, &interner);
+        (interner, ir)
+    }
+
+    #[test]
+    fn lowers_basic_reply_graph() {
+        let (_interner, ir) = lower_source(
+            r#"
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "Say hi"
+        model: gemini("gemini-pro")
+    }
+}
+"#,
+        );
+
+        let graph = &ir.graphs["agent:Hello"];
+        assert_eq!(graph.nodes.len(), 3);
+        assert!(matches!(
+            graph.node(graph.entry_node).kind,
+            crate::graph::NodeKind::Input { .. }
+        ));
+        assert!(
+            graph
+                .nodes
+                .values()
+                .any(|node| matches!(node.kind, crate::graph::NodeKind::Reply { .. }))
+        );
+        assert!(matches!(
+            graph.node(graph.return_node).kind,
+            crate::graph::NodeKind::Output { .. }
+        ));
+    }
+
+    #[test]
+    fn lowers_with_turns_to_agent_call_mode() {
+        let (interner, ir) = lower_source(
+            r#"
+agent Child(input: string) {
+    reply(input) with { prompt: "child", model: gemini("gemini-pro") }
+}
+
+agent Main(input: string) {
+    return Child(input) with turns
+}
+"#,
+        );
+
+        let graph = &ir.graphs["agent:Main"];
+        let child = interner.intern("Child");
+        assert!(graph.nodes.values().any(|node| {
+            matches!(
+                &node.kind,
+                crate::graph::NodeKind::AgentCall { agent, mode: crate::graph::AgentCallMode::WithTurns, .. }
+                    if *agent == child
+            )
+        }));
+    }
+
+    #[test]
+    fn lowers_native_annotation_into_agent_protocol() {
+        let (interner, ir) = lower_source(
+            r#"
+@native
+agent Vision(input: string) {
+    reply(input) with { prompt: "look", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let agent = &ir.definitions.agents[&interner.intern("Vision")];
+        assert_eq!(agent.protocol, crate::defs::ProtocolMode::Native);
     }
 }

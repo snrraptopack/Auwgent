@@ -30,12 +30,12 @@ pub mod ty;
 
 // Flatten the most commonly used types to the crate root for convenience.
 pub use expr::{
-    ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr,
-    IsExpr, MemberExpr, PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
+    ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr, IsExpr, MemberExpr,
+    PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
 };
 pub use item::{
-    AgentDecl, Annotation, AnnotationArgs, FieldDef, FunctionDecl, Item, LetDecl,
-    ModelDecl, Module, Param, ParamBinding, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
+    AgentDecl, Annotation, AnnotationArgs, FieldDef, FunctionDecl, Item, LetDecl, ModelDecl,
+    Module, Param, ParamBinding, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
 };
 pub use lit::{Lit, StringKind, StringLit};
 pub use stmt::{

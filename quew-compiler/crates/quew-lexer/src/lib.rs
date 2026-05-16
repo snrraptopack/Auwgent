@@ -26,5 +26,5 @@ pub mod lex;
 pub mod token;
 
 pub use annotation::AnnotationKind;
-pub use lex::{lex, LexResult};
+pub use lex::{LexResult, lex};
 pub use token::TokenKind;

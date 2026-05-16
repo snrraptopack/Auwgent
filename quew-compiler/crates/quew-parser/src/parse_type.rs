@@ -7,7 +7,7 @@ use quew_ast::TypeExpr;
 use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
-use crate::common::{to_span, type_name, Input, ParseError};
+use crate::common::{Input, ParseError, to_span, type_name};
 
 /// Parse a type expression.
 ///
@@ -29,9 +29,7 @@ where
     // A single named or generic type. Accepts both user-defined `Ident` tokens
     // AND primitive type keywords (`string`, `number`, `bool`, `float`, `void`).
     let base = type_name(source, interner.clone())
-        .then(
-            type_expr_generic_args(source, interner.clone()).or_not()
-        )
+        .then(type_expr_generic_args(source, interner.clone()).or_not())
         .map_with(|((name, name_span), generic_args), extra| {
             let outer_span = to_span(extra.span());
             match generic_args {
@@ -41,12 +39,13 @@ where
         });
 
     // `base ( | base )*`
-    let union_or_single = base.clone()
+    let union_or_single = base
+        .clone()
         .then(
             just(TokenKind::Pipe)
                 .ignore_then(base.clone())
                 .repeated()
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>(),
         )
         .map_with(|(first, mut rest), extra| {
             if rest.is_empty() {

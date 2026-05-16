@@ -48,17 +48,35 @@ mod tests {
     fn known_annotations_classify_correctly() {
         assert_eq!(AnnotationKind::from_slice("@tool"), AnnotationKind::Tool);
         assert_eq!(AnnotationKind::from_slice("@desc"), AnnotationKind::Desc);
-        assert_eq!(AnnotationKind::from_slice("@middleware"), AnnotationKind::Middleware);
-        assert_eq!(AnnotationKind::from_slice("@middlewares"), AnnotationKind::Middlewares);
-        assert_eq!(AnnotationKind::from_slice("@context"), AnnotationKind::Context);
-        assert_eq!(AnnotationKind::from_slice("@native"), AnnotationKind::Native);
+        assert_eq!(
+            AnnotationKind::from_slice("@middleware"),
+            AnnotationKind::Middleware
+        );
+        assert_eq!(
+            AnnotationKind::from_slice("@middlewares"),
+            AnnotationKind::Middlewares
+        );
+        assert_eq!(
+            AnnotationKind::from_slice("@context"),
+            AnnotationKind::Context
+        );
+        assert_eq!(
+            AnnotationKind::from_slice("@native"),
+            AnnotationKind::Native
+        );
         assert_eq!(AnnotationKind::from_slice("@block"), AnnotationKind::Block);
     }
 
     #[test]
     fn unknown_annotation_does_not_panic() {
-        assert_eq!(AnnotationKind::from_slice("@toolbox"), AnnotationKind::Unknown);
-        assert_eq!(AnnotationKind::from_slice("@anything"), AnnotationKind::Unknown);
+        assert_eq!(
+            AnnotationKind::from_slice("@toolbox"),
+            AnnotationKind::Unknown
+        );
+        assert_eq!(
+            AnnotationKind::from_slice("@anything"),
+            AnnotationKind::Unknown
+        );
         assert_eq!(AnnotationKind::from_slice("@"), AnnotationKind::Unknown);
     }
 

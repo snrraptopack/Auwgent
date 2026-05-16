@@ -64,17 +64,11 @@ pub struct ParseResult {
 /// * `result` — the [`LexResult`] from `quew_lexer::lex()`
 /// * `source` — the original source string (span-based value extraction)
 /// * `interner` — shared string interner for zero-cost name deduplication
-pub fn parse(
-    result: &LexResult,
-    source: &str,
-    interner: &Arc<Interner>,
-) -> ParseResult {
+pub fn parse(result: &LexResult, source: &str, interner: &Arc<Interner>) -> ParseResult {
     let stream = make_stream(&result.tokens, source.len());
     let interner = Arc::clone(interner);
 
-    let (module, errs) = module(source, interner)
-        .parse(stream)
-        .into_output_errors();
+    let (module, errs) = module(source, interner).parse(stream).into_output_errors();
 
     // Convert chumsky Rich errors into Diagnostic.
     let errors: Vec<Diagnostic> = errs
@@ -93,4 +87,3 @@ pub fn parse(
 
     ParseResult { module, errors }
 }
-

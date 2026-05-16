@@ -8,10 +8,10 @@
 
 use std::sync::Arc;
 
+use quew_checker::{CheckResult, check};
 use quew_errors::Severity;
 use quew_interner::Interner;
 use quew_source::SourceMap;
-use quew_checker::{check, CheckResult};
 
 // ── Test harness ──────────────────────────────────────────────────────────────
 
@@ -29,7 +29,6 @@ fn check_source(src: &str) -> CheckResult {
     );
     check(&parse_result.module, &interner)
 }
-
 
 // ── Valid programs: zero diagnostics expected ─────────────────────────────────
 
@@ -53,88 +52,108 @@ fn valid_model_declaration() {
 
 #[test]
 fn valid_agent_no_body() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Chat(input: string) {
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_function_no_params_no_return() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function greet() {
     let msg = "hello"
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_function_with_return() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function getMessage(): string {
     return "hello world"
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_function_with_params() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function add(a: number, b: number): number {
     return a
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_let_in_body() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function compute() {
     let x = 42
     let y = "hello"
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_if_in_body() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function check(x: bool) {
     if x {
         let msg = "yes"
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_shadowing_inner_block() {
     // Shadowing `x` in an inner block is legal
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function shadow() {
     let x = 1
     if true {
         let x = "inner"
     }
 }
-"#);
-    assert!(r.diagnostics.is_empty(), "shadowing outer let should be ok: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        r.diagnostics.is_empty(),
+        "shadowing outer let should be ok: {:?}",
+        r.diagnostics
+    );
 }
 
 #[test]
 fn valid_tool_no_bound_params() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 @desc "Fetch a user by id"
 function getUser(id: string): string {
     return id
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
@@ -142,25 +161,29 @@ function getUser(id: string): string {
 fn valid_tool_with_bound_params() {
     // @tool(id: string) declares the host binding
     // @id: string in the param list imports it as a local
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 @tool(id: string)
 @desc "Delete a user"
 function deleteUser(isAdmin: bool, @id: string): string {
     return id
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_multiple_distinct_items() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type User = { name: string, age: number }
 type Post = { title: string, body: string }
 function getName(u: User): string {
     return "ok"
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
@@ -168,103 +191,140 @@ function getName(u: User): string {
 
 #[test]
 fn error_duplicate_function_names() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function foo(): string {
     return "first"
 }
 function foo(): string {
     return "second"
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate name error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("duplicate")
-    }), "expected 'duplicate' diagnostic, got: {:?}", r.diagnostics);
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("duplicate") }),
+        "expected 'duplicate' diagnostic, got: {:?}",
+        r.diagnostics
+    );
 }
 
 #[test]
 fn error_type_and_function_same_name() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type Response = { code: number }
 function Response(): string {
     return "oops"
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate name error");
     assert!(r.diagnostics.iter().any(|d| d.severity == Severity::Error));
 }
 
 #[test]
 fn error_two_type_declarations_same_name() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type Config = { host: string }
 type Config = { port: number }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate type error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("duplicate")
-    }));
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("duplicate") })
+    );
 }
 
 // ── Collision: param name collisions ─────────────────────────────────────────
 
 #[test]
 fn error_duplicate_param_names() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function bad(x: string, x: number): string {
     return x
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate param error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("already declared")
-    }), "expected 'already declared' diagnostic, got: {:?}", r.diagnostics);
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("already declared") }),
+        "expected 'already declared' diagnostic, got: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Collision: duplicate let in same block ────────────────────────────────────
 
 #[test]
 fn error_duplicate_let_same_block() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function dupe() {
     let x = 1
     let x = 2
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate let error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("already declared")
-    }), "got: {:?}", r.diagnostics);
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("already declared") }),
+        "got: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Unreachable code ──────────────────────────────────────────────────────────
 
 #[test]
 fn error_unreachable_after_return() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function earlyReturn(): string {
     return "done"
     let dead = "unreachable"
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected unreachable code error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("unreachable")
-    }), "got: {:?}", r.diagnostics);
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("unreachable") }),
+        "got: {:?}",
+        r.diagnostics
+    );
 }
 
 #[test]
 fn error_unreachable_multiple_stmts_after_return() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function twoDeadStmts() {
     return 1
     let a = 2
     let b = 3
 }
-"#);
+"#,
+    );
     // At least one unreachable diagnostic
-    assert!(r.diagnostics.iter().any(|d| d.message.contains("unreachable")),
-        "got: {:?}", r.diagnostics);
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("unreachable")),
+        "got: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Bound param: missing from @tool annotation ────────────────────────────────
@@ -272,16 +332,24 @@ function twoDeadStmts() {
 #[test]
 fn error_bound_param_not_in_tool_annotation() {
     // @ghost is a BoundRef but not declared in @tool(id: string)
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 @tool(id: string)
 @desc "Do something"
 function doThing(isAdmin: bool, @ghost: string): string {
     return "ok"
 }
-"#);
-    assert!(!r.diagnostics.is_empty(), "expected unmatched bound param error");
-    assert!(r.diagnostics.iter().any(|d| d.severity == Severity::Error),
-        "got: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        !r.diagnostics.is_empty(),
+        "expected unmatched bound param error"
+    );
+    assert!(
+        r.diagnostics.iter().any(|d| d.severity == Severity::Error),
+        "got: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Inference: literal type propagation ───────────────────────────────────────
@@ -289,24 +357,36 @@ function doThing(isAdmin: bool, @ghost: string): string {
 #[test]
 fn let_binding_is_tracked_as_local() {
     // After `let name = "alice"`, using `name` should resolve (no undefined error)
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function test() {
     let name = "alice"
     let greeting = name
 }
-"#);
-    assert!(r.diagnostics.is_empty(), "local lookup failed: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        r.diagnostics.is_empty(),
+        "local lookup failed: {:?}",
+        r.diagnostics
+    );
 }
 
 #[test]
 fn param_is_tracked_as_local() {
     // Function params must be accessible inside the body
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function greet(name: string): string {
     return name
 }
-"#);
-    assert!(r.diagnostics.is_empty(), "param not in scope: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        r.diagnostics.is_empty(),
+        "param not in scope: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Symbol table presence ─────────────────────────────────────────────────────
@@ -321,28 +401,40 @@ fn symbol_table_contains_declared_type() {
 
 #[test]
 fn symbol_table_contains_all_top_level_items() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type User = { name: string }
 function greet(): string { return "hi" }
 model M = { model: gemini("g-pro") }
-"#);
-    assert_eq!(r.symbol_table.globals.len(), 3,
-        "expected 3 globals, got {:?}", r.symbol_table.globals.len());
+"#,
+    );
+    assert_eq!(
+        r.symbol_table.globals.len(),
+        3,
+        "expected 3 globals, got {:?}",
+        r.symbol_table.globals.len()
+    );
 }
 
 // ── For loop variable scoping ─────────────────────────────────────────────────
 
 #[test]
 fn for_loop_variable_available_in_body() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function iter() {
     let items = "dummy"
     for item in items {
         let x = item
     }
 }
-"#);
-    assert!(r.diagnostics.is_empty(), "for var not in scope: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        r.diagnostics.is_empty(),
+        "for var not in scope: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Regression: panic-free on malformed but parsed input ─────────────────────
@@ -367,21 +459,24 @@ fn check_does_not_panic_on_only_model() {
 #[test]
 fn valid_agent_with_prompt_and_model() {
     // not.txt lines 9–15: basic agent
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Hello(input: string) {
     reply(input) with {
         prompt: "You are a helpful assistant."
         model: gemini("gemini-pro")
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_with_tools_list() {
     // not.txt lines 44–51: agent + tools array
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 tool getWeather(): string
 agent Hello(input: string) {
     reply(input) with {
@@ -390,14 +485,16 @@ agent Hello(input: string) {
         tools: [getWeather]
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_with_builtin_field() {
     // not.txt lines 54–62: builtin tools
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Hello(input: string) {
     reply(input) with {
         prompt: "You are helpful."
@@ -405,14 +502,16 @@ agent Hello(input: string) {
         builtin: ["code_execution"]
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_with_fallback_and_retry() {
     // not.txt lines 645–654: fallback model + retry count
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 model Gemini = { model: gemini("gemini-pro") }
 model Groq = { model: groq("llama-3") }
 agent Hello(input: string) {
@@ -423,14 +522,16 @@ agent Hello(input: string) {
         retry: 3
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_with_max_turn() {
     // not.txt lines 656–664: maxTurn field
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 model Gemini = { model: gemini("gemini-pro") }
 agent Hello(input: string) {
     reply(input) with {
@@ -439,14 +540,16 @@ agent Hello(input: string) {
         maxTurn: 3
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_input_preprocessing_before_reply() {
     // not.txt lines 73–100: preprocess input then reply
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 function sanitize(input: string): string {
     return input
 }
@@ -457,14 +560,16 @@ agent Hello(input: string) {
         model: gemini("gemini-pro")
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_conditional_tools_selection() {
     // not.txt lines 218–227: tools selected based on runtime flag
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 tool getWeather(): string
 tool deleteUser(): string
 agent Hello(input: string) {
@@ -476,14 +581,16 @@ agent Hello(input: string) {
         tools: selected
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_calling_another_agent() {
     // not.txt lines 276–292: agent composition
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Analyze(input: string) {
     reply(input) with {
         prompt: "Analyze this."
@@ -497,14 +604,16 @@ agent Main(input: string) {
         model: gemini("gemini-pro")
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_early_return_to_sub_agent() {
     // not.txt lines 297–306: `return Agent(input)` handoff pattern
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent One(input: string) {
     reply(input) with { prompt: "One.", model: gemini("gemini-pro") }
 }
@@ -518,14 +627,16 @@ agent Main(input: string) {
     }
     return Two(input)
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_named_model_alias() {
     // not.txt lines 489–497: `model: Gemini` using a model declaration
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 model Gemini = {
     model: gemini("gemini-pro")
     config: { temperature: 0.7 }
@@ -536,14 +647,16 @@ agent Hello(input: string) {
         model: Gemini
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
 #[test]
 fn valid_agent_structured_output_return_type() {
     // not.txt lines 416–431: agent with named return type
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type Response = {
     userName: string
     age: number
@@ -555,7 +668,8 @@ agent Hello(input: string): Response {
         model: gemini("gemini-pro")
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
@@ -563,7 +677,8 @@ agent Hello(input: string): Response {
 fn valid_agent_with_tool_binding_gating_pattern() {
     // not.txt lines 131-162: @tool gating — `isAdmin` pre-bound by caller, `id` seen by model
     // Pre-binding: delete_person(true) binds isAdmin=true at the tools list
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 tool delete_user(id: string): bool
 
 @tool(id: string)
@@ -582,7 +697,8 @@ agent Admin(input: string) {
         tools: [delete_person(true)]
     }
 }
-"#);
+"#,
+    );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }
 
@@ -590,7 +706,8 @@ agent Admin(input: string) {
 fn error_tool_with_required_host_params_used_as_bare_ref() {
     // delete_person has isAdmin: bool as a required host-binding param.
     // Using it as a bare reference WITHOUT pre-binding must error.
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 @tool(id: string)
 @desc "use this to delete a user"
 function delete_person(isAdmin: bool, @id: string): string {
@@ -604,69 +721,95 @@ agent Admin(input: string) {
         tools: [delete_person]
     }
 }
-"#);
-    assert!(!r.diagnostics.is_empty(), "expected error: isAdmin must be pre-bound");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("host-binding parameters")
-    }), "got: {:?}", r.diagnostics);
+"#,
+    );
+    assert!(
+        !r.diagnostics.is_empty(),
+        "expected error: isAdmin must be pre-bound"
+    );
+    assert!(
+        r.diagnostics.iter().any(|d| {
+            d.severity == Severity::Error && d.message.contains("host-binding parameters")
+        }),
+        "got: {:?}",
+        r.diagnostics
+    );
 }
 
 // ── Agent: collision errors spanning agent + function + type namespace ─────────
 
 #[test]
 fn error_agent_and_function_same_name() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Foo(input: string) {
     reply(input) with { prompt: "p", model: gemini("g") }
 }
 function Foo(): string {
     return "oops"
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate name error");
     assert!(r.diagnostics.iter().any(|d| d.severity == Severity::Error));
 }
 
 #[test]
 fn error_agent_and_type_same_name() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 type Request = { text: string }
 agent Request(input: string) {
     reply(input) with { prompt: "p", model: gemini("g") }
 }
-"#);
+"#,
+    );
     assert!(!r.diagnostics.is_empty(), "expected duplicate name error");
     assert!(r.diagnostics.iter().any(|d| d.severity == Severity::Error));
 }
 
 #[test]
 fn error_duplicate_agent_names() {
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Bot(input: string) {
     reply(input) with { prompt: "first", model: gemini("g") }
 }
 agent Bot(input: string) {
     reply(input) with { prompt: "second", model: gemini("g") }
 }
-"#);
-    assert!(!r.diagnostics.is_empty(), "expected duplicate agent name error");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("duplicate")
-    }));
+"#,
+    );
+    assert!(
+        !r.diagnostics.is_empty(),
+        "expected duplicate agent name error"
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("duplicate") })
+    );
 }
 
 #[test]
 fn valid_agent_let_collision_same_block_errors() {
     // Duplicate `let` inside an agent body is still caught
-    let r = check_source(r#"
+    let r = check_source(
+        r#"
 agent Hello(input: string) {
     let x = "first"
     let x = "second"
     reply(x) with { prompt: "p", model: gemini("g") }
 }
-"#);
-    assert!(!r.diagnostics.is_empty(), "expected duplicate let in agent body");
-    assert!(r.diagnostics.iter().any(|d| {
-        d.severity == Severity::Error && d.message.contains("already declared")
-    }));
+"#,
+    );
+    assert!(
+        !r.diagnostics.is_empty(),
+        "expected duplicate let in agent body"
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("already declared") })
+    );
 }

@@ -2,22 +2,22 @@
 
 use std::sync::Arc;
 
-use chumsky::prelude::*;
 use chumsky::pratt::{infix, left, postfix, prefix, right};
+use chumsky::prelude::*;
 use quew_ast::{
+    Expr,
     expr::{
-        ArrayExpr, BinaryExpr, BinaryOp, CallExpr, IdentExpr, IsExpr, MemberExpr,
-        PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
+        ArrayExpr, BinaryExpr, BinaryOp, CallExpr, IdentExpr, IsExpr, MemberExpr, PostfixIfExpr,
+        Provider, ProviderCall, UnaryExpr, UnaryOp,
     },
     lit::{Lit, StringKind, StringLit},
-    Expr,
 };
 use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
 use crate::common::{
-    field_name, ident, int_literal, string_literal, to_span, triple_string,
-    CSpan, Input, ParseError,
+    CSpan, Input, ParseError, field_name, ident, int_literal, string_literal, to_span,
+    triple_string,
 };
 use crate::parse_type::type_expr;
 
@@ -42,29 +42,29 @@ where
     recursive(|expr_rec| {
         // ── Literals ─────────────────────────────────────────────────────────
 
-        let int_lit = int_literal(source)
-            .map(|(val, s)| Expr::Lit(Lit::Int(val, to_span(s))));
+        let int_lit = int_literal(source).map(|(val, s)| Expr::Lit(Lit::Int(val, to_span(s))));
 
-        let float_lit = just(TokenKind::FloatLiteral)
-            .map_with(move |_, extra: &mut _| {
-                let s: CSpan = extra.span();
-                let f: f64 = source[s.start..s.end].parse().unwrap_or(0.0);
-                Expr::Lit(Lit::Float(f, to_span(s)))
-            });
+        let float_lit = just(TokenKind::FloatLiteral).map_with(move |_, extra: &mut _| {
+            let s: CSpan = extra.span();
+            let f: f64 = source[s.start..s.end].parse().unwrap_or(0.0);
+            Expr::Lit(Lit::Float(f, to_span(s)))
+        });
 
-        let triple = triple_string(source, interner.clone())
-            .map(|(val, s)| Expr::Lit(Lit::String(StringLit {
+        let triple = triple_string(source, interner.clone()).map(|(val, s)| {
+            Expr::Lit(Lit::String(StringLit {
                 value: val,
                 kind: StringKind::Triple,
                 span: to_span(s),
-            })));
+            }))
+        });
 
-        let str_lit = string_literal(source, interner.clone())
-            .map(|(val, s)| Expr::Lit(Lit::String(StringLit {
+        let str_lit = string_literal(source, interner.clone()).map(|(val, s)| {
+            Expr::Lit(Lit::String(StringLit {
                 value: val,
                 kind: StringKind::Regular,
                 span: to_span(s),
-            })));
+            }))
+        });
 
         let bool_lit = select! {
             TokenKind::True  => true,
@@ -85,7 +85,7 @@ where
         }
         .then(
             string_literal(source, int_prov)
-                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen))
+                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
         )
         .map_with(|(provider, (model_str, model_span)), extra: &mut _| {
             Expr::Provider(ProviderCall {
@@ -102,28 +102,35 @@ where
 
         // ── Array and grouping ────────────────────────────────────────────────
 
-        let array = expr_rec.clone()
+        let array = expr_rec
+            .clone()
             .separated_by(just(TokenKind::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
             .delimited_by(just(TokenKind::LBracket), just(TokenKind::RBracket))
             .map_with(|elements, extra: &mut _| {
-                Expr::Array(ArrayExpr { elements, span: to_span(extra.span()) })
+                Expr::Array(ArrayExpr {
+                    elements,
+                    span: to_span(extra.span()),
+                })
             });
 
-        let grouped = expr_rec.clone()
+        let grouped = expr_rec
+            .clone()
             .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen));
 
-        let ident_expr = ident(source, interner.clone())
-            .map_with(|name, extra: &mut _| {
-                Expr::Ident(IdentExpr { name, span: to_span(extra.span()) })
-            });
+        let ident_expr = ident(source, interner.clone()).map_with(|name, extra: &mut _| {
+            Expr::Ident(IdentExpr {
+                name,
+                span: to_span(extra.span()),
+            })
+        });
 
         // ── Atom = all leaf forms ─────────────────────────────────────────────
         // Use .or() chains to avoid choice() type-inference issues.
-        let atom = float_lit      // float before int (both match digits)
+        let atom = float_lit // float before int (both match digits)
             .or(int_lit)
-            .or(triple)           // triple before regular string
+            .or(triple) // triple before regular string
             .or(str_lit)
             .or(bool_lit)
             .or(null_lit)
@@ -133,7 +140,8 @@ where
             .or(ident_expr);
 
         // ── Args for call postfix ─────────────────────────────────────────────
-        let call_args = expr_rec.clone()
+        let call_args = expr_rec
+            .clone()
             .separated_by(just(TokenKind::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
@@ -142,43 +150,84 @@ where
         // ── Full pratt parser ─────────────────────────────────────────────────
         atom.pratt((
             // Unary `not` — prefix
-            prefix(6, just(TokenKind::KwNot), |_op: TokenKind, rhs: Expr, extra: &mut _| {
-                Expr::Unary(UnaryExpr {
-                    op: UnaryOp::Not,
-                    operand: Box::new(rhs),
-                    span: to_span(extra.span()),
-                })
-            }),
-
+            prefix(
+                6,
+                just(TokenKind::KwNot),
+                |_op: TokenKind, rhs: Expr, extra: &mut _| {
+                    Expr::Unary(UnaryExpr {
+                        op: UnaryOp::Not,
+                        operand: Box::new(rhs),
+                        span: to_span(extra.span()),
+                    })
+                },
+            ),
             // Multiplicative
-            infix(left(5), just(TokenKind::Star),    |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Mul, r, extra.span())),
-            infix(left(5), just(TokenKind::Slash),   |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Div, r, extra.span())),
-            infix(left(5), just(TokenKind::Percent), |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Mod, r, extra.span())),
-
+            infix(
+                left(5),
+                just(TokenKind::Star),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Mul, r, extra.span()),
+            ),
+            infix(
+                left(5),
+                just(TokenKind::Slash),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Div, r, extra.span()),
+            ),
+            infix(
+                left(5),
+                just(TokenKind::Percent),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Mod, r, extra.span()),
+            ),
             // Additive
-            infix(left(4), just(TokenKind::Plus),  |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Add, r, extra.span())),
-            infix(left(4), just(TokenKind::Minus), |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Sub, r, extra.span())),
-
+            infix(
+                left(4),
+                just(TokenKind::Plus),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Add, r, extra.span()),
+            ),
+            infix(
+                left(4),
+                just(TokenKind::Minus),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Sub, r, extra.span()),
+            ),
             // Equality
-            infix(left(3), just(TokenKind::EqEq),  |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Eq,    r, extra.span())),
-            infix(left(3), just(TokenKind::BangEq), |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::NotEq, r, extra.span())),
-
+            infix(
+                left(3),
+                just(TokenKind::EqEq),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Eq, r, extra.span()),
+            ),
+            infix(
+                left(3),
+                just(TokenKind::BangEq),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::NotEq, r, extra.span()),
+            ),
             // Logical
-            infix(left(2), just(TokenKind::KwAnd), |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::And, r, extra.span())),
-            infix(left(2), just(TokenKind::KwOr),  |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Or,  r, extra.span())),
-
+            infix(
+                left(2),
+                just(TokenKind::KwAnd),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::And, r, extra.span()),
+            ),
+            infix(
+                left(2),
+                just(TokenKind::KwOr),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Or, r, extra.span()),
+            ),
             // Assignment — right-associative, lowest binary precedence
-            infix(right(1), just(TokenKind::Eq), |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Assign, r, extra.span())),
-
+            infix(
+                right(1),
+                just(TokenKind::Eq),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Assign, r, extra.span()),
+            ),
             // Postfix: call `(args)` — highest postfix precedence
-            postfix(9, call_args, |callee: Expr, args: Vec<Expr>, extra: &mut _| {
-                Expr::Call(CallExpr {
-                    callee: Box::new(callee),
-                    args,
-                    span: to_span(extra.span()),
-                })
-            }),
-
+            postfix(
+                9,
+                call_args,
+                |callee: Expr, args: Vec<Expr>, extra: &mut _| {
+                    Expr::Call(CallExpr {
+                        callee: Box::new(callee),
+                        args,
+                        span: to_span(extra.span()),
+                    })
+                },
+            ),
             // Postfix: member `.field` — accepts keywords as field names
             postfix(
                 9,
@@ -191,7 +240,6 @@ where
                     })
                 },
             ),
-
             // Postfix: `is Type`
             postfix(
                 8,
@@ -204,7 +252,6 @@ where
                     })
                 },
             ),
-
             // Postfix-if: `expr if cond else other` — lowest postfix precedence
             postfix(
                 7,
@@ -214,10 +261,10 @@ where
                     .then(expr_rec.clone()),
                 |val: Expr, (cond, else_val): (Expr, Expr), extra: &mut _| {
                     Expr::PostfixIf(PostfixIfExpr {
-                        value:      Box::new(val),
-                        condition:  Box::new(cond),
+                        value: Box::new(val),
+                        condition: Box::new(cond),
                         else_value: Box::new(else_val),
-                        span:       to_span(extra.span()),
+                        span: to_span(extra.span()),
                     })
                 },
             ),
@@ -229,9 +276,9 @@ where
 
 fn bin(l: Expr, op: BinaryOp, r: Expr, s: CSpan) -> Expr {
     Expr::Binary(BinaryExpr {
-        left:  Box::new(l),
+        left: Box::new(l),
         op,
         right: Box::new(r),
-        span:  to_span(s),
+        span: to_span(s),
     })
 }

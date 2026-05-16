@@ -39,7 +39,10 @@ impl Span {
     /// A zero-length span at a given offset. Useful for synthetic nodes.
     #[inline]
     pub fn at(offset: usize) -> Self {
-        Self { start: offset, end: offset }
+        Self {
+            start: offset,
+            end: offset,
+        }
     }
 
     /// Merge two spans into the smallest span that covers both.

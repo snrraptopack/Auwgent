@@ -7,7 +7,7 @@ use quew_ast::{Param, ParamBinding};
 use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
-use crate::common::{annotation, ident, to_span, Input, ParseError};
+use crate::common::{Input, ParseError, annotation, ident, to_span};
 use crate::parse_type::type_expr;
 
 /// Parse a single parameter.

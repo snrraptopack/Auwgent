@@ -33,10 +33,10 @@ impl TypeExpr {
     /// The span covering this entire type expression.
     pub fn span(&self) -> Span {
         match self {
-            Self::Named(_, s)       => *s,
-            Self::Union(_, s)       => *s,
-            Self::Optional(_, s)    => *s,
-            Self::Generic(_, _, s)  => *s,
+            Self::Named(_, s) => *s,
+            Self::Union(_, s) => *s,
+            Self::Optional(_, s) => *s,
+            Self::Generic(_, _, s) => *s,
         }
     }
 }
@@ -44,15 +44,17 @@ impl TypeExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use quew_interner::Interner;
+    use std::sync::Arc;
 
     fn intern(s: &str) -> InternedStr {
         let i = Arc::new(Interner::new());
         i.intern(s)
     }
 
-    fn sp() -> Span { Span::new(0, 4) }
+    fn sp() -> Span {
+        Span::new(0, 4)
+    }
 
     #[test]
     fn named_type_span() {

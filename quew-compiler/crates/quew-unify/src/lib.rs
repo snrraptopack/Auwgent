@@ -35,13 +35,21 @@ struct TyVarKey(u32);
 
 impl UnifyKey for TyVarKey {
     type Value = TyValue;
-    fn index(&self) -> u32 { self.0 }
-    fn from_index(i: u32) -> Self { TyVarKey(i) }
-    fn tag() -> &'static str { "TyVar" }
+    fn index(&self) -> u32 {
+        self.0
+    }
+    fn from_index(i: u32) -> Self {
+        TyVarKey(i)
+    }
+    fn tag() -> &'static str {
+        "TyVar"
+    }
 }
 
 #[inline]
-fn to_key(v: TyVar) -> TyVarKey { TyVarKey(v.0) }
+fn to_key(v: TyVar) -> TyVarKey {
+    TyVarKey(v.0)
+}
 
 // ── Error type ────────────────────────────────────────────────────────────────
 
@@ -56,7 +64,11 @@ pub struct UnifyError {
 
 impl std::fmt::Display for UnifyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "type mismatch: expected `{}`, found `{}`", self.expected, self.found)
+        write!(
+            f,
+            "type mismatch: expected `{}`, found `{}`",
+            self.expected, self.found
+        )
     }
 }
 
@@ -77,7 +89,10 @@ pub struct UnifyTable {
 impl UnifyTable {
     /// Create an empty unification table.
     pub fn new() -> Self {
-        Self { inner: InPlaceUnificationTable::new(), next_id: 0 }
+        Self {
+            inner: InPlaceUnificationTable::new(),
+            next_id: 0,
+        }
     }
 
     /// Allocate a fresh unresolved type variable.
@@ -110,12 +125,14 @@ impl UnifyTable {
             }
             // Var ← Concrete
             (Ty::Var(var), concrete) => {
-                self.inner.union_value(to_key(*var), TyValue(Some(concrete.clone())));
+                self.inner
+                    .union_value(to_key(*var), TyValue(Some(concrete.clone())));
                 Ok(())
             }
             // Concrete → Var
             (concrete, Ty::Var(var)) => {
-                self.inner.union_value(to_key(*var), TyValue(Some(concrete.clone())));
+                self.inner
+                    .union_value(to_key(*var), TyValue(Some(concrete.clone())));
                 Ok(())
             }
             // Concrete ↔ Concrete
@@ -123,7 +140,10 @@ impl UnifyTable {
                 if a.is_assignable_to(b) || b.is_assignable_to(a) {
                     Ok(())
                 } else {
-                    Err(UnifyError { expected: b.clone(), found: a.clone() })
+                    Err(UnifyError {
+                        expected: b.clone(),
+                        found: a.clone(),
+                    })
                 }
             }
         }
@@ -132,31 +152,44 @@ impl UnifyTable {
     /// Fully substitute all resolved type variables in `ty`.
     pub fn apply(&mut self, ty: Ty) -> Ty {
         match ty {
-            Ty::Var(var) => {
-                match self.probe(var) {
-                    Some(resolved) => self.apply(resolved),
-                    None           => Ty::Var(var),
-                }
-            }
-            Ty::Optional(inner)  => Ty::Optional(Box::new(self.apply(*inner))),
-            Ty::Union(arms)      => Ty::Union(arms.into_iter().map(|a| self.apply(a)).collect()),
-            Ty::Record(fields)   => {
-                Ty::Record(fields.into_iter().map(|(k, v)| (k, self.apply(v))).collect())
-            }
+            Ty::Var(var) => match self.probe(var) {
+                Some(resolved) => self.apply(resolved),
+                None => Ty::Var(var),
+            },
+            Ty::Optional(inner) => Ty::Optional(Box::new(self.apply(*inner))),
+            Ty::Union(arms) => Ty::Union(arms.into_iter().map(|a| self.apply(a)).collect()),
+            Ty::Record(fields) => Ty::Record(
+                fields
+                    .into_iter()
+                    .map(|(k, v)| (k, self.apply(v)))
+                    .collect(),
+            ),
             Ty::Function(mut ft) => {
                 ft.return_ty = Box::new(self.apply(*ft.return_ty));
-                ft.params = ft.params.into_iter().map(|(n, t)| (n, self.apply(t))).collect();
+                ft.params = ft
+                    .params
+                    .into_iter()
+                    .map(|(n, t)| (n, self.apply(t)))
+                    .collect();
                 Ty::Function(ft)
             }
             Ty::Agent(mut at) => {
-                at.input_ty  = Box::new(self.apply(*at.input_ty));
+                at.input_ty = Box::new(self.apply(*at.input_ty));
                 at.return_ty = Box::new(self.apply(*at.return_ty));
                 Ty::Agent(at)
             }
             Ty::Tool(mut tt) => {
-                tt.return_ty    = Box::new(self.apply(*tt.return_ty));
-                tt.bound_params = tt.bound_params.into_iter().map(|(n, t)| (n, self.apply(t))).collect();
-                tt.model_params = tt.model_params.into_iter().map(|(n, t)| (n, self.apply(t))).collect();
+                tt.return_ty = Box::new(self.apply(*tt.return_ty));
+                tt.bound_params = tt
+                    .bound_params
+                    .into_iter()
+                    .map(|(n, t)| (n, self.apply(t)))
+                    .collect();
+                tt.model_params = tt
+                    .model_params
+                    .into_iter()
+                    .map(|(n, t)| (n, self.apply(t)))
+                    .collect();
                 Ty::Tool(tt)
             }
             other => other,
@@ -165,7 +198,9 @@ impl UnifyTable {
 }
 
 impl Default for UnifyTable {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -243,7 +278,7 @@ mod tests {
         let mut t = UnifyTable::new();
         let err = t.unify(&Ty::string(), &Ty::number()).unwrap_err();
         assert_eq!(err.expected, Ty::number());
-        assert_eq!(err.found,    Ty::string());
+        assert_eq!(err.found, Ty::string());
     }
 
     #[test]
@@ -315,7 +350,10 @@ mod tests {
 
     #[test]
     fn unify_error_display() {
-        let err = UnifyError { expected: Ty::string(), found: Ty::number() };
+        let err = UnifyError {
+            expected: Ty::string(),
+            found: Ty::number(),
+        };
         let s = err.to_string();
         assert!(s.contains("string"), "msg: {s}");
         assert!(s.contains("number"), "msg: {s}");

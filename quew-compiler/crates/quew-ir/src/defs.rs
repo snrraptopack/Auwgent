@@ -51,12 +51,12 @@ pub struct TypeDef {
 /// (an inline `gemini("model-name")` call).
 #[derive(Debug, Clone)]
 pub struct ModelDef {
-    pub provider:   ProviderKind,
+    pub provider: ProviderKind,
     /// The provider-specific model name (e.g. `"gemini-2.0-flash"`).
     pub model_name: InternedStr,
     /// Optional static config fields (`temperature`, `maxTokens`, …).
     /// Values are stored as strings for now; the runtime parses them.
-    pub config:     IndexMap<InternedStr, String>,
+    pub config: IndexMap<InternedStr, String>,
 }
 
 /// Which LLM provider backs this model.
@@ -72,7 +72,7 @@ pub enum ProviderKind {
 /// A tool declaration — three distinct kinds.
 #[derive(Debug, Clone)]
 pub struct ToolDef {
-    pub kind:        ToolKind,
+    pub kind: ToolKind,
     /// Human-readable description for the LLM system prompt.
     pub description: Option<InternedStr>,
 }
@@ -83,7 +83,7 @@ pub enum ToolKind {
     /// The runtime calls out via FFI when the model invokes this tool.
     Host {
         /// Parameters the *model* receives and must supply.
-        params:  IndexMap<InternedStr, ToolParam>,
+        params: IndexMap<InternedStr, ToolParam>,
         returns: IrType,
     },
 
@@ -94,10 +94,10 @@ pub enum ToolKind {
         model_params: IndexMap<InternedStr, ToolParam>,
         /// Parameters pre-bound by the agent call site (`delete_person(ctx.isAdmin)`).
         /// The model never sees these; they are injected at call time.
-        host_params:  IndexMap<InternedStr, ToolParam>,
-        returns:      IrType,
+        host_params: IndexMap<InternedStr, ToolParam>,
+        returns: IrType,
         /// Key into `QuewGraphIR::graphs` for this function's body.
-        graph_ref:    String,
+        graph_ref: String,
     },
 
     /// `tools name { … }` — a progressive-disclosure group.
@@ -105,17 +105,17 @@ pub enum ToolKind {
     /// are disclosed lazily when the model requests them.
     Group {
         /// Names of the member tools (must exist in `definitions.tools`).
-        members:     Vec<InternedStr>,
+        members: Vec<InternedStr>,
         /// How the group discloses its members to the model.
-        disclosure:  DisclosureMode,
+        disclosure: DisclosureMode,
     },
 }
 
 /// A single parameter in a tool signature.
 #[derive(Debug, Clone)]
 pub struct ToolParam {
-    pub ty:          IrType,
-    pub optional:    bool,
+    pub ty: IrType,
+    pub optional: bool,
     pub description: Option<InternedStr>,
 }
 
@@ -134,8 +134,8 @@ pub enum DisclosureMode {
 /// A non-tool function declaration.
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
-    pub params:    IndexMap<InternedStr, IrType>,
-    pub returns:   IrType,
+    pub params: IndexMap<InternedStr, IrType>,
+    pub returns: IrType,
     /// Key into `QuewGraphIR::graphs` for this function's body.
     pub graph_ref: String,
 }
@@ -146,11 +146,22 @@ pub struct FunctionDef {
 #[derive(Debug, Clone)]
 pub struct AgentDef {
     /// Type of the agent's input parameter.
-    pub input:     Option<IrType>,
+    pub input: Option<IrType>,
     /// Declared return type. `None` means the agent returns plain text (default).
-    pub output:    Option<IrType>,
+    pub output: Option<IrType>,
     /// The `@context(T)` type, if the agent carries a context object.
-    pub context:   Option<InternedStr>,
+    pub context: Option<InternedStr>,
+    /// Which provider interaction protocol this agent should use.
+    pub protocol: ProtocolMode,
     /// Key into `QuewGraphIR::graphs` for this agent's body.
     pub graph_ref: String,
+}
+
+/// Provider interaction mode for an agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProtocolMode {
+    /// Use the text block protocol.
+    Block,
+    /// Use provider-native tool/function calling.
+    Native,
 }

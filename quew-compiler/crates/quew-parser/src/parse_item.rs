@@ -3,16 +3,16 @@
 use std::sync::Arc;
 
 use chumsky::prelude::*;
-use quew_ast::{
-    AgentDecl, ConfigField, FieldDef, FunctionDecl, Item, LetDecl, ModelDecl, Module,
-    ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
-};
 use quew_ast::expr::{Provider, ProviderCall};
 use quew_ast::lit::{StringKind, StringLit};
+use quew_ast::{
+    AgentDecl, ConfigField, FieldDef, FunctionDecl, Item, LetDecl, ModelDecl, Module, ToolDecl,
+    ToolEntry, ToolsDecl, TypeDecl,
+};
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
 
-use crate::common::{field_name, ident, string_literal, to_span, Input, ParseError};
+use crate::common::{Input, ParseError, field_name, ident, string_literal, to_span};
 use crate::parse_annot::annotations;
 use crate::parse_expr::expr;
 use crate::parse_param::{param, param_list};
@@ -32,7 +32,10 @@ where
         .allow_leading()
         .allow_trailing()
         .collect::<Vec<_>>()
-        .map_with(|items, extra| Module { items, span: to_span(extra.span()) })
+        .map_with(|items, extra| Module {
+            items,
+            span: to_span(extra.span()),
+        })
         .then_ignore(end())
 }
 
@@ -47,7 +50,7 @@ where
     choice((
         agent(source, interner.clone()),
         function(source, interner.clone()),
-        tools_group(source, interner.clone()),  // `tools` before `tool`
+        tools_group(source, interner.clone()), // `tools` before `tool`
         tool_decl(source, interner.clone()),
         type_decl(source, interner.clone()),
         model_decl(source, interner.clone()),
@@ -64,7 +67,7 @@ where
                 ty: None,
                 init: quew_ast::Expr::Error(quew_errors::Span::new(0, 0)),
                 span: quew_errors::Span::new(0, 0),
-            }))
+            })),
     ))
 }
 
@@ -98,12 +101,12 @@ where
         .then(ident(source, interner.clone()))
         .then(
             param(source, interner.clone())
-                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen))
+                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
         )
         .then(
             just(TokenKind::Colon)
                 .ignore_then(type_expr(source, interner.clone()))
-                .or_not()
+                .or_not(),
         )
         .then(block(source, interner.clone()))
         .map_with(|((((annotations, name), param), return_ty), body), extra| {
@@ -134,19 +137,21 @@ where
         .then(
             just(TokenKind::Colon)
                 .ignore_then(type_expr(source, interner.clone()))
-                .or_not()
+                .or_not(),
         )
         .then(block(source, interner.clone()))
-        .map_with(|((((annotations, name), params), return_ty), body), extra| {
-            Item::Function(FunctionDecl {
-                annotations,
-                name,
-                params,
-                return_ty,
-                body,
-                span: to_span(extra.span()),
-            })
-        })
+        .map_with(
+            |((((annotations, name), params), return_ty), body), extra| {
+                Item::Function(FunctionDecl {
+                    annotations,
+                    name,
+                    params,
+                    return_ty,
+                    body,
+                    span: to_span(extra.span()),
+                })
+            },
+        )
 }
 
 // ── Tool ──────────────────────────────────────────────────────────────────────
@@ -162,7 +167,11 @@ where
     // `@desc "..."` — Annotation token carrying AnnotationKind::Desc, then a string.
     let opt_desc = select! { TokenKind::Annotation(AnnotationKind::Desc) => () }
         .ignore_then(string_literal(source, interner.clone()))
-        .map(|(val, s)| StringLit { value: val, kind: StringKind::Regular, span: to_span(s) })
+        .map(|(val, s)| StringLit {
+            value: val,
+            kind: StringKind::Regular,
+            span: to_span(s),
+        })
         .or_not();
 
     just(TokenKind::KwTool)
@@ -172,7 +181,13 @@ where
         .then(type_expr(source, interner.clone()))
         .then(opt_desc)
         .map_with(|(((name, params), return_ty), desc), extra| {
-            Item::Tool(ToolDecl { name, params, return_ty, desc, span: to_span(extra.span()) })
+            Item::Tool(ToolDecl {
+                name,
+                params,
+                return_ty,
+                desc,
+                span: to_span(extra.span()),
+            })
         })
 }
 
@@ -187,7 +202,11 @@ where
     // `@desc "..."` — same annotation pattern as tool_decl entries.
     let opt_entry_desc = select! { TokenKind::Annotation(AnnotationKind::Desc) => () }
         .ignore_then(string_literal(source, interner.clone()))
-        .map(|(val, s)| StringLit { value: val, kind: StringKind::Regular, span: to_span(s) })
+        .map(|(val, s)| StringLit {
+            value: val,
+            kind: StringKind::Regular,
+            span: to_span(s),
+        })
         .or_not();
 
     let entry = ident(source, interner.clone())
@@ -196,7 +215,11 @@ where
         .then(type_expr(source, interner.clone()))
         .then(opt_entry_desc)
         .map_with(|(((name, params), return_ty), desc), extra| ToolEntry {
-            name, params, return_ty, desc, span: to_span(extra.span()),
+            name,
+            params,
+            return_ty,
+            desc,
+            span: to_span(extra.span()),
         });
 
     let entries = entry
@@ -209,7 +232,11 @@ where
     // Named tools group also supports an `@desc` on the group name.
     let opt_group_desc = select! { TokenKind::Annotation(AnnotationKind::Desc) => () }
         .ignore_then(string_literal(source, interner.clone()))
-        .map(|(val, s)| StringLit { value: val, kind: StringKind::Regular, span: to_span(s) })
+        .map(|(val, s)| StringLit {
+            value: val,
+            kind: StringKind::Regular,
+            span: to_span(s),
+        })
         .or_not();
 
     just(TokenKind::KwTools)
@@ -217,7 +244,12 @@ where
         .then(entries)
         .then(opt_group_desc)
         .map_with(|((name, entries), desc), extra| {
-            Item::Tools(ToolsDecl { name, entries, desc, span: to_span(extra.span()) })
+            Item::Tools(ToolsDecl {
+                name,
+                entries,
+                desc,
+                span: to_span(extra.span()),
+            })
         })
 }
 
@@ -243,7 +275,7 @@ where
         });
 
     let fields = field
-        .separated_by(field_sep())  // comma OR newline
+        .separated_by(field_sep()) // comma OR newline
         .allow_leading()
         .allow_trailing()
         .collect::<Vec<_>>()
@@ -254,7 +286,11 @@ where
         .then_ignore(just(TokenKind::Eq))
         .then(fields)
         .map_with(|(name, fields), extra| {
-            Item::Type(TypeDecl { name, fields, span: to_span(extra.span()) })
+            Item::Type(TypeDecl {
+                name,
+                fields,
+                span: to_span(extra.span()),
+            })
         })
 }
 
@@ -283,18 +319,20 @@ where
     let provider_expr = provider_kw
         .then(
             string_literal(source, int_prov)
-                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen))
+                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
         )
-        .map_with(|(provider, (model_str, model_span)), extra: &mut _| ProviderCall {
-            provider,
-            model_name: StringLit {
-                value: model_str,
-                kind: StringKind::Regular,
-                span: to_span(model_span),
+        .map_with(
+            |(provider, (model_str, model_span)), extra: &mut _| ProviderCall {
+                provider,
+                model_name: StringLit {
+                    value: model_str,
+                    kind: StringKind::Regular,
+                    span: to_span(model_span),
+                },
+                config: vec![],
+                span: to_span(extra.span()),
             },
-            config: vec![],
-            span: to_span(extra.span()),
-        });
+        );
 
     // Config block: `{ key: expr, ... }` — keywords allowed as field names.
     let config_entry = field_name(source, interner.clone())
@@ -332,15 +370,10 @@ where
         .repeated()
         .ignored()
         .ignore_then(model_field)
-        .then(
-            field_sep()
-                .ignore_then(config_field_entry)
-                .or_not()
-        )
+        .then(field_sep().ignore_then(config_field_entry).or_not())
         .then_ignore(just(TokenKind::Newline).repeated().ignored());
 
-    let model_block = inner
-        .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace));
+    let model_block = inner.delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace));
 
     just(TokenKind::KwModel)
         .ignore_then(ident(source, interner.clone()))
@@ -370,11 +403,16 @@ where
         .then(
             just(TokenKind::Colon)
                 .ignore_then(type_expr(source, interner.clone()))
-                .or_not()
+                .or_not(),
         )
         .then_ignore(just(TokenKind::Eq))
         .then(expr(source, interner.clone()))
         .map_with(|((name, ty), init), extra| {
-            Item::Let(LetDecl { name, ty, init, span: to_span(extra.span()) })
+            Item::Let(LetDecl {
+                name,
+                ty,
+                init,
+                span: to_span(extra.span()),
+            })
         })
 }

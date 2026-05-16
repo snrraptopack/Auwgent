@@ -4,7 +4,7 @@ use quew_errors::Span;
 use quew_interner::InternedStr;
 use quew_lexer::AnnotationKind;
 
-use crate::expr::{Expr, ProviderCall, ConfigField};
+use crate::expr::{ConfigField, Expr, ProviderCall};
 use crate::lit::StringLit;
 use crate::stmt::Stmt;
 use crate::ty::TypeExpr;
@@ -13,7 +13,7 @@ use crate::ty::TypeExpr;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub items: Vec<Item>,
-    pub span:  Span,
+    pub span: Span,
 }
 
 /// A single top-level declaration.
@@ -32,13 +32,13 @@ pub enum Item {
 impl Item {
     pub fn span(&self) -> Span {
         match self {
-            Self::Agent(d)    => d.span,
+            Self::Agent(d) => d.span,
             Self::Function(d) => d.span,
-            Self::Tool(d)     => d.span,
-            Self::Tools(d)    => d.span,
-            Self::Type(d)     => d.span,
-            Self::Model(d)    => d.span,
-            Self::Let(d)      => d.span,
+            Self::Tool(d) => d.span,
+            Self::Tools(d) => d.span,
+            Self::Type(d) => d.span,
+            Self::Model(d) => d.span,
+            Self::Let(d) => d.span,
         }
     }
 }
@@ -71,12 +71,12 @@ pub enum AnnotationArgs {
 /// A function/tool parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
-    pub binding:  ParamBinding,
-    pub name:     InternedStr,
-    pub ty:       TypeExpr,
+    pub binding: ParamBinding,
+    pub name: InternedStr,
+    pub ty: TypeExpr,
     /// `name?: Type` — the model may omit this argument.
     pub optional: bool,
-    pub span:     Span,
+    pub span: Span,
 }
 
 /// How the parameter relates to enclosing `@tool` args.
@@ -96,12 +96,12 @@ pub enum ParamBinding {
 pub struct AgentDecl {
     pub annotations: Vec<Annotation>,
     /// An agent always has exactly one input parameter.
-    pub param:       Param,
-    pub name:        InternedStr,
+    pub param: Param,
+    pub name: InternedStr,
     /// `None` means the agent returns `Text` (the default).
-    pub return_ty:   Option<TypeExpr>,
-    pub body:        Vec<Stmt>,
-    pub span:        Span,
+    pub return_ty: Option<TypeExpr>,
+    pub body: Vec<Stmt>,
+    pub span: Span,
 }
 
 // ── Function ──────────────────────────────────────────────────────────────────
@@ -110,12 +110,12 @@ pub struct AgentDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionDecl {
     pub annotations: Vec<Annotation>,
-    pub name:        InternedStr,
-    pub params:      Vec<Param>,
+    pub name: InternedStr,
+    pub params: Vec<Param>,
     /// `None` means the function's return type is inferred (checked later).
-    pub return_ty:   Option<TypeExpr>,
-    pub body:        Vec<Stmt>,
-    pub span:        Span,
+    pub return_ty: Option<TypeExpr>,
+    pub body: Vec<Stmt>,
+    pub span: Span,
 }
 
 // ── Tool ──────────────────────────────────────────────────────────────────────
@@ -123,33 +123,33 @@ pub struct FunctionDecl {
 /// `tool name(params): ReturnType @desc "..."` — a host-backed tool.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolDecl {
-    pub name:      InternedStr,
-    pub params:    Vec<Param>,
+    pub name: InternedStr,
+    pub params: Vec<Param>,
     pub return_ty: TypeExpr,
     /// `@desc` is optional on a single tool.
-    pub desc:      Option<StringLit>,
-    pub span:      Span,
+    pub desc: Option<StringLit>,
+    pub span: Span,
 }
 
 /// `tools { ... }` or `tools Name { ... } @desc "..."`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolsDecl {
     /// `None` = shorthand group; `Some` = named progressive disclosure group.
-    pub name:    Option<InternedStr>,
+    pub name: Option<InternedStr>,
     pub entries: Vec<ToolEntry>,
     /// `@desc` is required when `name` is `Some` (progressive disclosure).
-    pub desc:    Option<StringLit>,
-    pub span:    Span,
+    pub desc: Option<StringLit>,
+    pub span: Span,
 }
 
 /// One entry inside a `tools { }` block.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolEntry {
-    pub name:      InternedStr,
-    pub params:    Vec<Param>,
+    pub name: InternedStr,
+    pub params: Vec<Param>,
     pub return_ty: TypeExpr,
-    pub desc:      Option<StringLit>,
-    pub span:      Span,
+    pub desc: Option<StringLit>,
+    pub span: Span,
 }
 
 // ── Type ──────────────────────────────────────────────────────────────────────
@@ -157,18 +157,18 @@ pub struct ToolEntry {
 /// `type Name = { field: Type, ... }`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeDecl {
-    pub name:   InternedStr,
+    pub name: InternedStr,
     pub fields: Vec<FieldDef>,
-    pub span:   Span,
+    pub span: Span,
 }
 
 /// One field in a type definition.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldDef {
-    pub name:     InternedStr,
-    pub ty:       TypeExpr,
+    pub name: InternedStr,
+    pub ty: TypeExpr,
     pub optional: bool,
-    pub span:     Span,
+    pub span: Span,
 }
 
 // ── Model ─────────────────────────────────────────────────────────────────────
@@ -176,10 +176,10 @@ pub struct FieldDef {
 /// `model Name = { model: gemini("..."), config: { ... } }`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelDecl {
-    pub name:     InternedStr,
+    pub name: InternedStr,
     pub provider: ProviderCall,
-    pub config:   Vec<ConfigField>,
-    pub span:     Span,
+    pub config: Vec<ConfigField>,
+    pub span: Span,
 }
 
 // ── Top-level let ─────────────────────────────────────────────────────────────
@@ -188,7 +188,7 @@ pub struct ModelDecl {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetDecl {
     pub name: InternedStr,
-    pub ty:   Option<TypeExpr>,
+    pub ty: Option<TypeExpr>,
     pub init: Expr,
     pub span: Span,
 }
@@ -196,38 +196,48 @@ pub struct LetDecl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use quew_interner::Interner;
-    use crate::lit::{Lit, StringLit, StringKind};
     use crate::expr::{Provider, ProviderCall};
+    use crate::lit::{Lit, StringKind, StringLit};
+    use quew_interner::Interner;
+    use std::sync::Arc;
 
     fn intern(s: &str) -> InternedStr {
         Arc::new(Interner::new()).intern(s)
     }
 
-    fn sp() -> Span { Span::new(0, 10) }
-    fn ty_string() -> TypeExpr { TypeExpr::Named(intern("string"), sp()) }
-    fn str_lit(v: &str) -> StringLit {
-        StringLit { value: intern(v), kind: StringKind::Regular, span: sp() }
+    fn sp() -> Span {
+        Span::new(0, 10)
     }
-    fn int_expr() -> Expr { Expr::Lit(Lit::Int(0, sp())) }
+    fn ty_string() -> TypeExpr {
+        TypeExpr::Named(intern("string"), sp())
+    }
+    fn str_lit(v: &str) -> StringLit {
+        StringLit {
+            value: intern(v),
+            kind: StringKind::Regular,
+            span: sp(),
+        }
+    }
+    fn int_expr() -> Expr {
+        Expr::Lit(Lit::Int(0, sp()))
+    }
 
     fn normal_param(name: &str) -> Param {
         Param {
-            binding:  ParamBinding::Normal,
-            name:     intern(name),
-            ty:       ty_string(),
+            binding: ParamBinding::Normal,
+            name: intern(name),
+            ty: ty_string(),
             optional: false,
-            span:     sp(),
+            span: sp(),
         }
     }
 
     fn provider_call() -> ProviderCall {
         ProviderCall {
-            provider:   Provider::Gemini,
+            provider: Provider::Gemini,
             model_name: str_lit("gemini-pro"),
-            config:     vec![],
-            span:       sp(),
+            config: vec![],
+            span: sp(),
         }
     }
 
@@ -237,11 +247,11 @@ mod tests {
     fn agent_decl_item_span() {
         let a = AgentDecl {
             annotations: vec![],
-            param:       normal_param("input"),
-            name:        intern("Hello"),
-            return_ty:   None,
-            body:        vec![],
-            span:        sp(),
+            param: normal_param("input"),
+            name: intern("Hello"),
+            return_ty: None,
+            body: vec![],
+            span: sp(),
         };
         assert_eq!(Item::Agent(a).span(), sp());
     }
@@ -250,11 +260,11 @@ mod tests {
     fn function_decl_item_span() {
         let f = FunctionDecl {
             annotations: vec![],
-            name:        intern("greet"),
-            params:      vec![normal_param("name")],
-            return_ty:   Some(ty_string()),
-            body:        vec![],
-            span:        sp(),
+            name: intern("greet"),
+            params: vec![normal_param("name")],
+            return_ty: Some(ty_string()),
+            body: vec![],
+            span: sp(),
         };
         assert_eq!(Item::Function(f).span(), sp());
     }
@@ -262,11 +272,11 @@ mod tests {
     #[test]
     fn tool_decl_item_span() {
         let t = ToolDecl {
-            name:      intern("getWeather"),
-            params:    vec![],
+            name: intern("getWeather"),
+            params: vec![],
             return_ty: ty_string(),
-            desc:      Some(str_lit("get the weather")),
-            span:      sp(),
+            desc: Some(str_lit("get the weather")),
+            span: sp(),
         };
         assert_eq!(Item::Tool(t).span(), sp());
     }
@@ -274,10 +284,10 @@ mod tests {
     #[test]
     fn tools_decl_shorthand() {
         let d = ToolsDecl {
-            name:    None,
+            name: None,
             entries: vec![],
-            desc:    None,
-            span:    sp(),
+            desc: None,
+            span: sp(),
         };
         assert!(d.name.is_none(), "shorthand tools group has no name");
     }
@@ -285,10 +295,10 @@ mod tests {
     #[test]
     fn tools_decl_named_progressive() {
         let d = ToolsDecl {
-            name:    Some(intern("userTools")),
+            name: Some(intern("userTools")),
             entries: vec![],
-            desc:    Some(str_lit("User management tools")),
-            span:    sp(),
+            desc: Some(str_lit("User management tools")),
+            span: sp(),
         };
         assert!(d.name.is_some());
         assert!(d.desc.is_some());
@@ -297,10 +307,20 @@ mod tests {
     #[test]
     fn type_decl_with_fields() {
         let t = TypeDecl {
-            name:   intern("Response"),
+            name: intern("Response"),
             fields: vec![
-                FieldDef { name: intern("userName"), ty: ty_string(), optional: false, span: sp() },
-                FieldDef { name: intern("age"), ty: TypeExpr::Named(intern("number"), sp()), optional: true, span: sp() },
+                FieldDef {
+                    name: intern("userName"),
+                    ty: ty_string(),
+                    optional: false,
+                    span: sp(),
+                },
+                FieldDef {
+                    name: intern("age"),
+                    ty: TypeExpr::Named(intern("number"), sp()),
+                    optional: true,
+                    span: sp(),
+                },
             ],
             span: sp(),
         };
@@ -311,17 +331,22 @@ mod tests {
     #[test]
     fn model_decl_item_span() {
         let m = ModelDecl {
-            name:     intern("Gemini"),
+            name: intern("Gemini"),
             provider: provider_call(),
-            config:   vec![],
-            span:     sp(),
+            config: vec![],
+            span: sp(),
         };
         assert_eq!(Item::Model(m).span(), sp());
     }
 
     #[test]
     fn let_decl_item_span() {
-        let d = LetDecl { name: intern("x"), ty: None, init: int_expr(), span: sp() };
+        let d = LetDecl {
+            name: intern("x"),
+            ty: None,
+            init: int_expr(),
+            span: sp(),
+        };
         assert_eq!(Item::Let(d).span(), sp());
     }
 
@@ -329,7 +354,11 @@ mod tests {
 
     #[test]
     fn annotation_none_args() {
-        let a = Annotation { kind: AnnotationKind::Native, args: AnnotationArgs::None, span: sp() };
+        let a = Annotation {
+            kind: AnnotationKind::Native,
+            args: AnnotationArgs::None,
+            span: sp(),
+        };
         assert!(matches!(a.args, AnnotationArgs::None));
     }
 
@@ -362,11 +391,11 @@ mod tests {
     #[test]
     fn bound_ref_param() {
         let p = Param {
-            binding:  ParamBinding::BoundRef,
-            name:     intern("id"),
-            ty:       ty_string(),
+            binding: ParamBinding::BoundRef,
+            name: intern("id"),
+            ty: ty_string(),
             optional: false,
-            span:     sp(),
+            span: sp(),
         };
         assert_eq!(p.binding, ParamBinding::BoundRef);
     }

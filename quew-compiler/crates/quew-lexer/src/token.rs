@@ -75,53 +75,82 @@ pub enum TokenKind {
     BlockComment, // only emitted when unterminated (Filter::Emit case)
 
     // ── Top-level declaration keywords ───────────────────────────────────────
-    #[token("agent")]    KwAgent,
-    #[token("function")] KwFunction,
+    #[token("agent")]
+    KwAgent,
+    #[token("function")]
+    KwFunction,
     /// `tool` — single host-backed tool declaration.
-    #[token("tool")]     KwTool,
+    #[token("tool")]
+    KwTool,
     /// `tools` — group of tools (shorthand or progressive disclosure).
-    #[token("tools")]    KwTools,
-    #[token("type")]     KwType,
-    #[token("model")]    KwModel,
-    #[token("let")]      KwLet,
+    #[token("tools")]
+    KwTools,
+    #[token("type")]
+    KwType,
+    #[token("model")]
+    KwModel,
+    #[token("let")]
+    KwLet,
 
     // ── Control flow / expression keywords ───────────────────────────────────
-    #[token("if")]       KwIf,
-    #[token("else")]     KwElse,
-    #[token("return")]   KwReturn,
-    #[token("reply")]    KwReply,
-    #[token("with")]     KwWith,
-    #[token("for")]      KwFor,
-    #[token("in")]       KwIn,
+    #[token("if")]
+    KwIf,
+    #[token("else")]
+    KwElse,
+    #[token("return")]
+    KwReturn,
+    #[token("reply")]
+    KwReply,
+    #[token("with")]
+    KwWith,
+    #[token("for")]
+    KwFor,
+    #[token("in")]
+    KwIn,
     /// `turns` — reserved keyword. Only valid in `return expr with turns`.
     /// No variable or binding may be named `turns`.
-    #[token("turns")]    KwTurns,
-    #[token("is")]       KwIs,
-
+    #[token("turns")]
+    KwTurns,
+    #[token("is")]
+    KwIs,
 
     // ── Logical operators (English words, not symbols) ────────────────────────
-    #[token("and")]      KwAnd,
-    #[token("or")]       KwOr,
-    #[token("not")]      KwNot,
+    #[token("and")]
+    KwAnd,
+    #[token("or")]
+    KwOr,
+    #[token("not")]
+    KwNot,
 
     // ── Primitive type keywords ───────────────────────────────────────────────
-    #[token("string")]   TyString,
-    #[token("number")]   TyNumber,
-    #[token("float")]    TyFloat,
-    #[token("bool")]     TyBool,
-    #[token("void")]     TyVoid,
+    #[token("string")]
+    TyString,
+    #[token("number")]
+    TyNumber,
+    #[token("float")]
+    TyFloat,
+    #[token("bool")]
+    TyBool,
+    #[token("void")]
+    TyVoid,
 
     // ── Built-in provider keywords ────────────────────────────────────────────
     // Hardcoded for v2 first milestone. Future: `extend model` syntax will let
     // users register additional providers without touching the compiler.
-    #[token("gemini")]   KwGemini,
-    #[token("openai")]   KwOpenAi,
-    #[token("groq")]     KwGroq,
+    #[token("gemini")]
+    KwGemini,
+    #[token("openai")]
+    KwOpenAi,
+    #[token("groq")]
+    KwGroq,
 
     // ── Bool / null literals (before Ident so they take keyword priority) ─────
-    #[token("true")]     True,
-    #[token("false")]    False,
-    #[token("null")]     NullLiteral,
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
+    #[token("null")]
+    NullLiteral,
 
     // ── Annotations ──────────────────────────────────────────────────────────
     /// `@tool`, `@desc`, `@middleware`, etc. — all `@name` patterns.
@@ -154,33 +183,54 @@ pub enum TokenKind {
     Ident,
 
     // ── Delimiters ────────────────────────────────────────────────────────────
-    #[token("{")]  LBrace,
-    #[token("}")]  RBrace,
-    #[token("(")]  LParen,
-    #[token(")")]  RParen,
-    #[token("[")]  LBracket,
-    #[token("]")]  RBracket,
-    #[token("<")]  LAngle,
-    #[token(">")]  RAngle,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token("[")]
+    LBracket,
+    #[token("]")]
+    RBracket,
+    #[token("<")]
+    LAngle,
+    #[token(">")]
+    RAngle,
 
     // ── Structure punctuation ─────────────────────────────────────────────────
-    #[token(":")]  Colon,
-    #[token(",")]  Comma,
-    #[token(".")]  Dot,
+    #[token(":")]
+    Colon,
+    #[token(",")]
+    Comma,
+    #[token(".")]
+    Dot,
     /// `?` — optional parameter marker: `id?: string`.
-    #[token("?")]  Question,
+    #[token("?")]
+    Question,
     /// `|` — union type separator: `string | number`.
-    #[token("|")]  Pipe,
+    #[token("|")]
+    Pipe,
 
     // ── Operators (multi-char before single-char) ─────────────────────────────
-    #[token("==")] EqEq,
-    #[token("!=")] BangEq,
-    #[token("=")]  Eq,
-    #[token("+")]  Plus,
-    #[token("-")]  Minus,
-    #[token("*")]  Star,
-    #[token("/")]  Slash,
-    #[token("%")]  Percent,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    BangEq,
+    #[token("=")]
+    Eq,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+    #[token("%")]
+    Percent,
 
     // ── Newlines (statement boundaries) ──────────────────────────────────────
     /// Emitted for every `\n`. The parser decides whether to treat it as a
@@ -197,66 +247,66 @@ pub enum TokenKind {
 impl std::fmt::Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::KwAgent    => "`agent`",
+            Self::KwAgent => "`agent`",
             Self::KwFunction => "`function`",
-            Self::KwTool     => "`tool`",
-            Self::KwTools    => "`tools`",
-            Self::KwType     => "`type`",
-            Self::KwModel    => "`model`",
-            Self::KwLet      => "`let`",
-            Self::KwIf       => "`if`",
-            Self::KwElse     => "`else`",
-            Self::KwReturn   => "`return`",
-            Self::KwReply    => "`reply`",
-            Self::KwWith     => "`with`",
-            Self::KwFor      => "`for`",
-            Self::KwIn       => "`in`",
-            Self::KwTurns    => "`turns`",
-            Self::KwIs       => "`is`",
-            Self::KwAnd      => "`and`",
-            Self::KwOr       => "`or`",
-            Self::KwNot      => "`not`",
-            Self::TyString   => "`string`",
-            Self::TyNumber   => "`number`",
-            Self::TyFloat    => "`float`",
-            Self::TyBool     => "`bool`",
-            Self::TyVoid     => "`void`",
-            Self::KwGemini   => "`gemini`",
-            Self::KwOpenAi   => "`openai`",
-            Self::KwGroq     => "`groq`",
-            Self::True       => "`true`",
-            Self::False      => "`false`",
+            Self::KwTool => "`tool`",
+            Self::KwTools => "`tools`",
+            Self::KwType => "`type`",
+            Self::KwModel => "`model`",
+            Self::KwLet => "`let`",
+            Self::KwIf => "`if`",
+            Self::KwElse => "`else`",
+            Self::KwReturn => "`return`",
+            Self::KwReply => "`reply`",
+            Self::KwWith => "`with`",
+            Self::KwFor => "`for`",
+            Self::KwIn => "`in`",
+            Self::KwTurns => "`turns`",
+            Self::KwIs => "`is`",
+            Self::KwAnd => "`and`",
+            Self::KwOr => "`or`",
+            Self::KwNot => "`not`",
+            Self::TyString => "`string`",
+            Self::TyNumber => "`number`",
+            Self::TyFloat => "`float`",
+            Self::TyBool => "`bool`",
+            Self::TyVoid => "`void`",
+            Self::KwGemini => "`gemini`",
+            Self::KwOpenAi => "`openai`",
+            Self::KwGroq => "`groq`",
+            Self::True => "`true`",
+            Self::False => "`false`",
             Self::NullLiteral => "`null`",
             Self::Annotation(k) => return write!(f, "`@{k:?}`"),
             Self::IntLiteral => "integer literal",
             Self::FloatLiteral => "float literal",
             Self::TripleString => "triple-quoted string",
             Self::StringLiteral => "string literal",
-            Self::Ident      => "identifier",
-            Self::LBrace     => "`{`",
-            Self::RBrace     => "`}`",
-            Self::LParen     => "`(`",
-            Self::RParen     => "`)`",
-            Self::LBracket   => "`[`",
-            Self::RBracket   => "`]`",
-            Self::LAngle     => "`<`",
-            Self::RAngle     => "`>`",
-            Self::Colon      => "`:`",
-            Self::Comma      => "`,`",
-            Self::Dot        => "`.`",
-            Self::Question   => "`?`",
-            Self::Pipe       => "`|`",
-            Self::EqEq       => "`==`",
-            Self::BangEq     => "`!=`",
-            Self::Eq         => "`=`",
-            Self::Plus       => "`+`",
-            Self::Minus      => "`-`",
-            Self::Star       => "`*`",
-            Self::Slash      => "`/`",
-            Self::Percent    => "`%`",
-            Self::Newline    => "newline",
+            Self::Ident => "identifier",
+            Self::LBrace => "`{`",
+            Self::RBrace => "`}`",
+            Self::LParen => "`(`",
+            Self::RParen => "`)`",
+            Self::LBracket => "`[`",
+            Self::RBracket => "`]`",
+            Self::LAngle => "`<`",
+            Self::RAngle => "`>`",
+            Self::Colon => "`:`",
+            Self::Comma => "`,`",
+            Self::Dot => "`.`",
+            Self::Question => "`?`",
+            Self::Pipe => "`|`",
+            Self::EqEq => "`==`",
+            Self::BangEq => "`!=`",
+            Self::Eq => "`=`",
+            Self::Plus => "`+`",
+            Self::Minus => "`-`",
+            Self::Star => "`*`",
+            Self::Slash => "`/`",
+            Self::Percent => "`%`",
+            Self::Newline => "newline",
             Self::BlockComment => "block comment",
-            Self::Error      => "unknown token",
+            Self::Error => "unknown token",
         };
         f.write_str(s)
     }
@@ -277,25 +327,38 @@ mod tests {
     // ── Declaration keywords ──────────────────────────────────────────────────
 
     #[test]
-    fn kw_agent() { assert_eq!(tokens("agent"), vec![TokenKind::KwAgent]); }
+    fn kw_agent() {
+        assert_eq!(tokens("agent"), vec![TokenKind::KwAgent]);
+    }
 
     #[test]
-    fn kw_function() { assert_eq!(tokens("function"), vec![TokenKind::KwFunction]); }
+    fn kw_function() {
+        assert_eq!(tokens("function"), vec![TokenKind::KwFunction]);
+    }
 
     #[test]
     fn kw_tool_and_tools_distinct() {
         assert_eq!(tokens("tool"), vec![TokenKind::KwTool]);
         assert_eq!(tokens("tools"), vec![TokenKind::KwTools]);
         // `tools` starts with `tool` — DFA must pick the longer match.
-        assert_eq!(tokens("tools {"), vec![TokenKind::KwTools, TokenKind::LBrace]);
+        assert_eq!(
+            tokens("tools {"),
+            vec![TokenKind::KwTools, TokenKind::LBrace]
+        );
     }
 
     #[test]
-    fn kw_type() { assert_eq!(tokens("type"), vec![TokenKind::KwType]); }
+    fn kw_type() {
+        assert_eq!(tokens("type"), vec![TokenKind::KwType]);
+    }
     #[test]
-    fn kw_model() { assert_eq!(tokens("model"), vec![TokenKind::KwModel]); }
+    fn kw_model() {
+        assert_eq!(tokens("model"), vec![TokenKind::KwModel]);
+    }
     #[test]
-    fn kw_let() { assert_eq!(tokens("let"), vec![TokenKind::KwLet]); }
+    fn kw_let() {
+        assert_eq!(tokens("let"), vec![TokenKind::KwLet]);
+    }
 
     // ── Control flow ──────────────────────────────────────────────────────────
 
@@ -304,17 +367,25 @@ mod tests {
         assert_eq!(tokens("if else"), vec![TokenKind::KwIf, TokenKind::KwElse]);
     }
     #[test]
-    fn kw_return() { assert_eq!(tokens("return"), vec![TokenKind::KwReturn]); }
+    fn kw_return() {
+        assert_eq!(tokens("return"), vec![TokenKind::KwReturn]);
+    }
     #[test]
-    fn kw_reply() { assert_eq!(tokens("reply"), vec![TokenKind::KwReply]); }
+    fn kw_reply() {
+        assert_eq!(tokens("reply"), vec![TokenKind::KwReply]);
+    }
     #[test]
-    fn kw_with() { assert_eq!(tokens("with"), vec![TokenKind::KwWith]); }
+    fn kw_with() {
+        assert_eq!(tokens("with"), vec![TokenKind::KwWith]);
+    }
     #[test]
     fn kw_for_in() {
         assert_eq!(tokens("for in"), vec![TokenKind::KwFor, TokenKind::KwIn]);
     }
     #[test]
-    fn kw_is() { assert_eq!(tokens("is"), vec![TokenKind::KwIs]); }
+    fn kw_is() {
+        assert_eq!(tokens("is"), vec![TokenKind::KwIs]);
+    }
 
     // ── Logical operators ─────────────────────────────────────────────────────
 
@@ -340,9 +411,9 @@ mod tests {
     fn primitive_types() {
         assert_eq!(tokens("string"), vec![TokenKind::TyString]);
         assert_eq!(tokens("number"), vec![TokenKind::TyNumber]);
-        assert_eq!(tokens("float"),  vec![TokenKind::TyFloat]);
-        assert_eq!(tokens("bool"),   vec![TokenKind::TyBool]);
-        assert_eq!(tokens("void"),   vec![TokenKind::TyVoid]);
+        assert_eq!(tokens("float"), vec![TokenKind::TyFloat]);
+        assert_eq!(tokens("bool"), vec![TokenKind::TyBool]);
+        assert_eq!(tokens("void"), vec![TokenKind::TyVoid]);
     }
 
     // ── Provider keywords ─────────────────────────────────────────────────────
@@ -351,7 +422,7 @@ mod tests {
     fn provider_keywords_lex_as_dedicated_tokens() {
         assert_eq!(tokens("gemini"), vec![TokenKind::KwGemini]);
         assert_eq!(tokens("openai"), vec![TokenKind::KwOpenAi]);
-        assert_eq!(tokens("groq"),   vec![TokenKind::KwGroq]);
+        assert_eq!(tokens("groq"), vec![TokenKind::KwGroq]);
     }
 
     #[test]
@@ -367,10 +438,14 @@ mod tests {
     // ── Literals ──────────────────────────────────────────────────────────────
 
     #[test]
-    fn int_literal() { assert_eq!(tokens("42"), vec![TokenKind::IntLiteral]); }
+    fn int_literal() {
+        assert_eq!(tokens("42"), vec![TokenKind::IntLiteral]);
+    }
 
     #[test]
-    fn float_literal() { assert_eq!(tokens("3.14"), vec![TokenKind::FloatLiteral]); }
+    fn float_literal() {
+        assert_eq!(tokens("3.14"), vec![TokenKind::FloatLiteral]);
+    }
 
     #[test]
     fn float_beats_int_then_dot() {
@@ -380,12 +455,14 @@ mod tests {
 
     #[test]
     fn bool_literals() {
-        assert_eq!(tokens("true"),  vec![TokenKind::True]);
+        assert_eq!(tokens("true"), vec![TokenKind::True]);
         assert_eq!(tokens("false"), vec![TokenKind::False]);
     }
 
     #[test]
-    fn null_literal() { assert_eq!(tokens("null"), vec![TokenKind::NullLiteral]); }
+    fn null_literal() {
+        assert_eq!(tokens("null"), vec![TokenKind::NullLiteral]);
+    }
 
     #[test]
     fn string_literal() {
@@ -399,7 +476,10 @@ mod tests {
 
     #[test]
     fn triple_string() {
-        assert_eq!(tokens(r#""""hello world""""#), vec![TokenKind::TripleString]);
+        assert_eq!(
+            tokens(r#""""hello world""""#),
+            vec![TokenKind::TripleString]
+        );
     }
 
     // ── Annotations ───────────────────────────────────────────────────────────
@@ -472,10 +552,14 @@ mod tests {
     // ── Identifiers ───────────────────────────────────────────────────────────
 
     #[test]
-    fn ident_basic() { assert_eq!(tokens("hello"), vec![TokenKind::Ident]); }
+    fn ident_basic() {
+        assert_eq!(tokens("hello"), vec![TokenKind::Ident]);
+    }
 
     #[test]
-    fn ident_with_underscore() { assert_eq!(tokens("my_var"), vec![TokenKind::Ident]); }
+    fn ident_with_underscore() {
+        assert_eq!(tokens("my_var"), vec![TokenKind::Ident]);
+    }
 
     #[test]
     fn ident_unicode() {
@@ -495,12 +579,19 @@ mod tests {
     #[test]
     fn all_delimiters() {
         let toks = tokens("{ } ( ) [ ] < >");
-        assert_eq!(toks, vec![
-            TokenKind::LBrace, TokenKind::RBrace,
-            TokenKind::LParen, TokenKind::RParen,
-            TokenKind::LBracket, TokenKind::RBracket,
-            TokenKind::LAngle, TokenKind::RAngle,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::LParen,
+                TokenKind::RParen,
+                TokenKind::LBracket,
+                TokenKind::RBracket,
+                TokenKind::LAngle,
+                TokenKind::RAngle,
+            ]
+        );
     }
 
     // ── Punctuation ───────────────────────────────────────────────────────────
@@ -508,10 +599,16 @@ mod tests {
     #[test]
     fn structure_punctuation() {
         let toks = tokens(": , . ? |");
-        assert_eq!(toks, vec![
-            TokenKind::Colon, TokenKind::Comma, TokenKind::Dot,
-            TokenKind::Question, TokenKind::Pipe,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                TokenKind::Colon,
+                TokenKind::Comma,
+                TokenKind::Dot,
+                TokenKind::Question,
+                TokenKind::Pipe,
+            ]
+        );
     }
 
     // ── Operators ─────────────────────────────────────────────────────────────
@@ -519,11 +616,19 @@ mod tests {
     #[test]
     fn operators() {
         let toks = tokens("== != = + - * / %");
-        assert_eq!(toks, vec![
-            TokenKind::EqEq, TokenKind::BangEq, TokenKind::Eq,
-            TokenKind::Plus, TokenKind::Minus, TokenKind::Star,
-            TokenKind::Slash, TokenKind::Percent,
-        ]);
+        assert_eq!(
+            toks,
+            vec![
+                TokenKind::EqEq,
+                TokenKind::BangEq,
+                TokenKind::Eq,
+                TokenKind::Plus,
+                TokenKind::Minus,
+                TokenKind::Star,
+                TokenKind::Slash,
+                TokenKind::Percent,
+            ]
+        );
     }
 
     #[test]
@@ -541,7 +646,10 @@ mod tests {
 
     #[test]
     fn block_comment_is_skipped() {
-        assert_eq!(tokens("let /* ignored */ x"), vec![TokenKind::KwLet, TokenKind::Ident]);
+        assert_eq!(
+            tokens("let /* ignored */ x"),
+            vec![TokenKind::KwLet, TokenKind::Ident]
+        );
     }
 
     // ── Error recovery ────────────────────────────────────────────────────────

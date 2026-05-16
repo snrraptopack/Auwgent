@@ -31,9 +31,7 @@ fn lex_and_parse(source: &str) -> quew_parser::ParseResult {
 
 #[test]
 fn basic_agent_parses_cleanly() {
-    let src = include_str!(
-        "../../quew-lexer/tests/fixtures/valid/basic_agent.quew"
-    );
+    let src = include_str!("../../quew-lexer/tests/fixtures/valid/basic_agent.quew");
     let result = lex_and_parse(src);
     assert!(
         result.errors.is_empty(),
@@ -46,9 +44,7 @@ fn basic_agent_parses_cleanly() {
 
 #[test]
 fn tool_function_parses_cleanly() {
-    let src = include_str!(
-        "../../quew-lexer/tests/fixtures/valid/tool_function.quew"
-    );
+    let src = include_str!("../../quew-lexer/tests/fixtures/valid/tool_function.quew");
     let result = lex_and_parse(src);
     assert!(
         result.errors.is_empty(),
@@ -59,9 +55,7 @@ fn tool_function_parses_cleanly() {
 
 #[test]
 fn tool_function_binding_parses_cleanly() {
-    let src = include_str!(
-        "../../quew-lexer/tests/fixtures/valid/tool_function_binding.quew"
-    );
+    let src = include_str!("../../quew-lexer/tests/fixtures/valid/tool_function_binding.quew");
     let result = lex_and_parse(src);
     assert!(
         result.errors.is_empty(),
@@ -75,7 +69,10 @@ fn tool_function_binding_parses_cleanly() {
 #[test]
 fn empty_source_yields_empty_module() {
     let result = lex_and_parse("");
-    assert!(result.errors.is_empty(), "empty source should have no errors");
+    assert!(
+        result.errors.is_empty(),
+        "empty source should have no errors"
+    );
     assert_eq!(result.module.items.len(), 0);
 }
 
@@ -156,11 +153,7 @@ fn type_with_optional_field_parses() {
 
 #[test]
 fn multiple_top_level_items_parse() {
-    let src = concat!(
-        "let x = 1\n",
-        "let y = 2\n",
-        "let z = 3\n",
-    );
+    let src = concat!("let x = 1\n", "let y = 2\n", "let z = 3\n",);
     let result = lex_and_parse(src);
     assert!(result.errors.is_empty(), "{:?}", result.errors);
     assert_eq!(result.module.items.len(), 3);
@@ -227,9 +220,7 @@ fn provider_call_groq_parses() {
 
 #[test]
 fn unknown_chars_do_not_panic() {
-    let src = include_str!(
-        "../../quew-lexer/tests/fixtures/invalid/unknown_chars.quew"
-    );
+    let src = include_str!("../../quew-lexer/tests/fixtures/invalid/unknown_chars.quew");
     let result = lex_and_parse(src);
     let _ = result; // must not panic
 }

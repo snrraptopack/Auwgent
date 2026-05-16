@@ -28,11 +28,9 @@ pub type ParseError<'tok> = extra::Err<Rich<'tok, TokenKind>>;
 /// fn my_parser<'tok, I>() -> impl Parser<'tok, I, Output, ParseError<'tok>>
 /// where I: Input<'tok>
 /// ```
-pub trait Input<'tok>:
-    ValueInput<'tok, Token = TokenKind, Span = CSpan> {}
+pub trait Input<'tok>: ValueInput<'tok, Token = TokenKind, Span = CSpan> {}
 
-impl<'tok, T> Input<'tok> for T
-where T: ValueInput<'tok, Token = TokenKind, Span = CSpan> {}
+impl<'tok, T> Input<'tok> for T where T: ValueInput<'tok, Token = TokenKind, Span = CSpan> {}
 
 // ── Span conversion ───────────────────────────────────────────────────────────
 
@@ -202,19 +200,17 @@ where
 }
 
 /// Parse an annotation token and return its `AnnotationKind` plus span.
-pub fn annotation<'tok, I>(
-) -> impl Parser<'tok, I, (AnnotationKind, CSpan), ParseError<'tok>> + Clone
+pub fn annotation<'tok, I>()
+-> impl Parser<'tok, I, (AnnotationKind, CSpan), ParseError<'tok>> + Clone
 where
     I: Input<'tok>,
 {
-    select! { TokenKind::Annotation(k) => k }
-        .map_with(|k, extra| (k, extra.span()))
+    select! { TokenKind::Annotation(k) => k }.map_with(|k, extra| (k, extra.span()))
 }
 
 /// Skip any number of `Newline` tokens — useful between items in a block.
 #[allow(dead_code)] // public helper; available for callers that need newline-awareness
-pub fn newlines<'tok, I>(
-) -> impl Parser<'tok, I, (), ParseError<'tok>> + Clone
+pub fn newlines<'tok, I>() -> impl Parser<'tok, I, (), ParseError<'tok>> + Clone
 where
     I: Input<'tok>,
 {
@@ -236,9 +232,9 @@ pub fn make_stream(
     // without conflicting with our own `Input` trait alias.
     use chumsky::input::Input as _;
 
-    let iter = tokens.iter().map(|(tok, span)| {
-        (tok.clone(), CSpan::from(span.start..span.end))
-    });
+    let iter = tokens
+        .iter()
+        .map(|(tok, span)| (tok.clone(), CSpan::from(span.start..span.end)));
     let eoi = CSpan::from(source_len..source_len);
     Stream::from_iter(iter).map(eoi, |(t, s)| (t, s))
 }

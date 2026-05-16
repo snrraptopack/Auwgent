@@ -12,12 +12,12 @@
 use std::sync::Arc;
 
 use chumsky::prelude::*;
-use quew_ast::{Annotation, AnnotationArgs};
 use quew_ast::lit::{StringKind, StringLit};
+use quew_ast::{Annotation, AnnotationArgs};
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
 
-use crate::common::{annotation, string_literal, to_span, Input, ParseError};
+use crate::common::{Input, ParseError, annotation, string_literal, to_span};
 use crate::parse_param::param;
 use crate::parse_type::type_expr;
 
@@ -45,12 +45,13 @@ where
         .map(AnnotationArgs::Type);
 
     // 3. String literal — for `@desc "..."`
-    let string_arg = string_literal(source, interner.clone())
-        .map(|(val, s)| AnnotationArgs::String(StringLit {
+    let string_arg = string_literal(source, interner.clone()).map(|(val, s)| {
+        AnnotationArgs::String(StringLit {
             value: val,
             kind: StringKind::Regular,
             span: to_span(s),
-        }));
+        })
+    });
 
     // Try each in priority order; default to None if nothing matches.
     //
@@ -66,12 +67,16 @@ where
         .map_with(|((kind, ann_span), args), _extra| {
             // For annotations that don't accept args, discard any spurious match.
             let args = match kind {
-                AnnotationKind::Tool    => args, // keeps Params
+                AnnotationKind::Tool => args,    // keeps Params
                 AnnotationKind::Context => args, // keeps Type
-                AnnotationKind::Desc    => args, // keeps String
-                _                       => AnnotationArgs::None,
+                AnnotationKind::Desc => args,    // keeps String
+                _ => AnnotationArgs::None,
             };
-            Annotation { kind, args, span: to_span(ann_span) }
+            Annotation {
+                kind,
+                args,
+                span: to_span(ann_span),
+            }
         })
 }
 

@@ -12,6 +12,11 @@ publish = false
 indexmap   = { workspace = true }
 quew-errors   = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
+quew-lexer    = { path = "../quew-lexer" }
 quew-ast      = { path = "../quew-ast" }
 quew-checker  = { path = "../quew-checker" }
 quew-types    = { path = "../quew-types" }
+
+[dev-dependencies]
+quew-parser = { path = "../quew-parser" }
+quew-source = { path = "../quew-source" }

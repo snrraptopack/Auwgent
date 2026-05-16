@@ -1,14 +1,121 @@
-//! quew — the quew language compiler CLI.
-//!
-//! ## Subcommands (planned)
-//!
-//! - `quew check <file>` — parse + type-check without emitting IR
-//! - `quew compile <file>` — full pipeline; emits IR
-//! - `quew generate <file> --target ts|py|dart|rust` — type-stub generation
-//! - `quew watch <file>` — incremental recompilation on file change
-//!
-//! ## Status: stub
+//! quew command-line compiler entry point.
 
-fn main() {
-    println!("quew compiler — not yet implemented");
+use std::{fs, path::PathBuf, process::ExitCode, sync::Arc};
+
+use clap::{Parser, Subcommand};
+use quew_errors::{Diagnostic, Severity};
+use quew_interner::Interner;
+use quew_source::SourceMap;
+
+#[derive(Parser)]
+#[command(name = "quew", version, about = "Compile and check quew source files")]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Parse and type-check a .quew file.
+    Check { file: PathBuf },
+    /// Parse, type-check, lower to in-memory graph IR, and print a summary.
+    Compile { file: PathBuf },
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(code) => code,
+    }
+}
+
+fn run() -> Result<(), ExitCode> {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Check { file } => {
+            let pipeline = compile_frontend(&file)?;
+            emit_diagnostics(&pipeline.diagnostics);
+            if has_errors(&pipeline.diagnostics) {
+                return Err(ExitCode::from(1));
+            }
+            println!("check ok: {} item(s)", pipeline.parse.module.items.len());
+            Ok(())
+        }
+        Command::Compile { file } => {
+            let pipeline = compile_frontend(&file)?;
+            emit_diagnostics(&pipeline.diagnostics);
+            if has_errors(&pipeline.diagnostics) {
+                return Err(ExitCode::from(1));
+            }
+
+            let ir =
+                quew_ir::lower::lower(&pipeline.parse.module, &pipeline.check, &pipeline.interner);
+            let node_count: usize = ir.graphs.values().map(|graph| graph.nodes.len()).sum();
+            let edge_count: usize = ir.graphs.values().map(|graph| graph.edges.len()).sum();
+
+            println!("compile ok");
+            println!(
+                "entry agent: {}",
+                pipeline.interner.resolve(ir.program.entry_agent)
+            );
+            println!(
+                "definitions: {} type(s), {} model(s), {} tool(s), {} function(s), {} agent(s)",
+                ir.definitions.types.len(),
+                ir.definitions.models.len(),
+                ir.definitions.tools.len(),
+                ir.definitions.functions.len(),
+                ir.definitions.agents.len(),
+            );
+            println!(
+                "graphs: {} graph(s), {node_count} node(s), {edge_count} edge(s)",
+                ir.graphs.len()
+            );
+            Ok(())
+        }
+    }
+}
+
+struct Pipeline {
+    interner: Arc<Interner>,
+    parse: quew_parser::ParseResult,
+    check: quew_checker::CheckResult,
+    diagnostics: Vec<Diagnostic>,
+}
+
+fn compile_frontend(file: &PathBuf) -> Result<Pipeline, ExitCode> {
+    let source = fs::read_to_string(file).map_err(|err| {
+        eprintln!("failed to read {}: {err}", file.display());
+        ExitCode::from(1)
+    })?;
+    let interner = Arc::new(Interner::new());
+    let source_map = SourceMap::new(Arc::clone(&interner));
+    let source_id = source_map.add(&file.display().to_string(), source.clone());
+
+    let lex = quew_lexer::lex(&source, source_id, &interner);
+    let parse = quew_parser::parse(&lex, &source, &interner);
+    let check = quew_checker::check(&parse.module, &interner);
+
+    let mut diagnostics = Vec::new();
+    diagnostics.extend(lex.errors);
+    diagnostics.extend(parse.errors.clone());
+    diagnostics.extend(check.diagnostics.clone());
+
+    Ok(Pipeline {
+        interner,
+        parse,
+        check,
+        diagnostics,
+    })
+}
+
+fn emit_diagnostics(diagnostics: &[Diagnostic]) {
+    for diagnostic in diagnostics {
+        eprintln!("{:?}: {}", diagnostic.severity, diagnostic.message);
+    }
+}
+
+fn has_errors(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic.severity == Severity::Error)
 }

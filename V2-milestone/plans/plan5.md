@@ -255,9 +255,14 @@ pub struct AgentGraph {
     pub graph_id:    InternedStr,   // "agent:Main", "function:sanitize"
     pub entry_node:  NodeId,
     pub return_node: NodeId,
-    pub nodes:       Vec<IrNode>,
+    pub nodes:       IndexMap<NodeId, IrNode>,
     pub edges:       Vec<Edge>,
 }
+
+// Implementation note: the first draft used `Vec<IrNode>` and
+// `AgentGraph::node()` performed a linear scan. The implemented form uses
+// `IndexMap<NodeId, IrNode>` so node lookup is direct while insertion order
+// remains deterministic for traversal, tests, and stable graph generation.
 
 /// A stable, deterministic node identifier.
 /// Format: "nN" where N is the sequential index within this graph.
