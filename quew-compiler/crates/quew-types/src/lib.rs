@@ -52,6 +52,8 @@ pub struct TyVar(pub u32);
 /// Plain DSL function: `function foo(a: string, b: number): bool`
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionTy {
+    /// Generic parameters declared by the function, such as `<T, E>`.
+    pub type_params: Vec<InternedStr>,
     /// Positional params: (name, type). All are caller-provided.
     pub params: Vec<(InternedStr, Ty)>,
     /// Return type. `Ty::Primitive(PrimTy::Void)` when omitted.
@@ -93,8 +95,20 @@ pub enum Ty {
     Primitive(PrimTy),
 
     // ── Composite ─────────────────────────────────────────────────────────────
+    /// A named type reference that has not been resolved by the checker yet.
+    Named(InternedStr),
+
+    /// A generic type application that has not been resolved by the checker yet.
+    GenericInstance {
+        name: InternedStr,
+        args: Vec<Ty>,
+    },
+
     /// Named record: `{ name: string, age: number }`. Fields are ordered.
     Record(IndexMap<InternedStr, Ty>),
+
+    /// A generic parameter declared by a generic type or method, such as `T`.
+    GenericParam(InternedStr),
 
     /// Union of two or more types: `string | number | bool`.
     Union(Vec<Ty>),
@@ -163,9 +177,12 @@ impl Ty {
     pub fn has_error(&self) -> bool {
         match self {
             Ty::Error => true,
+            Ty::Named(_) => false,
+            Ty::GenericInstance { args, .. } => args.iter().any(|t| t.has_error()),
             Ty::Optional(inner) => inner.has_error(),
             Ty::Union(arms) => arms.iter().any(|a| a.has_error()),
             Ty::Record(fields) => fields.values().any(|t| t.has_error()),
+            Ty::GenericParam(_) => false,
             Ty::Function(f) => {
                 f.return_ty.has_error() || f.params.iter().any(|(_, t)| t.has_error())
             }
@@ -176,6 +193,63 @@ impl Ty {
                     || t.model_params.iter().any(|(_, t)| t.has_error())
             }
             _ => false,
+        }
+    }
+
+    /// Substitute generic parameters according to `subst`.
+    pub fn substitute(&self, subst: &IndexMap<InternedStr, Ty>) -> Ty {
+        match self {
+            Ty::Named(_) => self.clone(),
+            Ty::GenericInstance { name, args } => Ty::GenericInstance {
+                name: *name,
+                args: args.iter().map(|ty| ty.substitute(subst)).collect(),
+            },
+            Ty::GenericParam(name) => subst.get(name).cloned().unwrap_or_else(|| self.clone()),
+            Ty::Record(fields) => {
+                let mut out = IndexMap::new();
+                for (name, ty) in fields {
+                    out.insert(*name, ty.substitute(subst));
+                }
+                Ty::Record(out)
+            }
+            Ty::Union(arms) => {
+                Ty::Union(arms.iter().map(|ty| ty.substitute(subst)).collect()).flatten_union()
+            }
+            Ty::Optional(inner) => Ty::Optional(Box::new(inner.substitute(subst))),
+            Ty::Function(f) => {
+                let mut scoped_subst = subst.clone();
+                for param in &f.type_params {
+                    scoped_subst.shift_remove(param);
+                }
+                Ty::Function(FunctionTy {
+                    type_params: f.type_params.clone(),
+                    params: f
+                        .params
+                        .iter()
+                        .map(|(name, ty)| (*name, ty.substitute(&scoped_subst)))
+                        .collect(),
+                    return_ty: Box::new(f.return_ty.substitute(&scoped_subst)),
+                })
+            }
+            Ty::Agent(a) => Ty::Agent(AgentTy {
+                input_name: a.input_name,
+                input_ty: Box::new(a.input_ty.substitute(subst)),
+                return_ty: Box::new(a.return_ty.substitute(subst)),
+            }),
+            Ty::Tool(t) => Ty::Tool(ToolTy {
+                bound_params: t
+                    .bound_params
+                    .iter()
+                    .map(|(name, ty)| (*name, ty.substitute(subst)))
+                    .collect(),
+                model_params: t
+                    .model_params
+                    .iter()
+                    .map(|(name, ty)| (*name, ty.substitute(subst)))
+                    .collect(),
+                return_ty: Box::new(t.return_ty.substitute(subst)),
+            }),
+            _ => self.clone(),
         }
     }
 
@@ -241,6 +315,16 @@ impl Ty {
             return true;
         }
 
+        if matches!(self, Ty::GenericParam(_)) || matches!(target, Ty::GenericParam(_)) {
+            return true;
+        }
+
+        if matches!(self, Ty::Named(_) | Ty::GenericInstance { .. })
+            || matches!(target, Ty::Named(_) | Ty::GenericInstance { .. })
+        {
+            return self == target;
+        }
+
         // Void accepts everything (used as "don't care" return position)
         if matches!(target, Ty::Primitive(PrimTy::Void)) {
             return true;
@@ -293,6 +377,11 @@ impl std::fmt::Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Ty::Primitive(p) => write!(f, "{p}"),
+            Ty::Named(name) => write!(f, "{name:?}"),
+            Ty::GenericInstance { name, args } => {
+                let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+                write!(f, "{name:?}<{}>", args.join(", "))
+            }
             Ty::Optional(t) => write!(f, "{t}?"),
             Ty::Union(arms) => {
                 let s: Vec<String> = arms.iter().map(|a| a.to_string()).collect();
@@ -310,13 +399,21 @@ impl std::fmt::Display for Ty {
                 }
                 write!(f, " }}")
             }
+            Ty::GenericParam(name) => write!(f, "{name:?}"),
             Ty::Function(ft) => {
+                let generics = if ft.type_params.is_empty() {
+                    String::new()
+                } else {
+                    let params: Vec<String> =
+                        ft.type_params.iter().map(|p| format!("{p:?}")).collect();
+                    format!("<{}>", params.join(", "))
+                };
                 let params: Vec<String> = ft
                     .params
                     .iter()
                     .map(|(n, t)| format!("{n:?}: {t}"))
                     .collect();
-                write!(f, "({}) -> {}", params.join(", "), ft.return_ty)
+                write!(f, "{generics}({}) -> {}", params.join(", "), ft.return_ty)
             }
             Ty::Agent(a) => write!(
                 f,
@@ -651,12 +748,55 @@ mod tests {
         let interner = Arc::new(Interner::new());
         let a = interner.intern("a");
         let ft = FunctionTy {
+            type_params: vec![],
             params: vec![(a, Ty::string())],
             return_ty: Box::new(Ty::bool_ty()),
         };
         let d = format!("{}", Ty::Function(ft));
         // Display shows InternedStr as {:?} (opaque key) + type
         assert!(d.contains("-> bool"), "display: {d}");
+    }
+
+    #[test]
+    fn generic_substitution_rewrites_record_fields() {
+        let interner = Arc::new(Interner::new());
+        let t = interner.intern("T");
+        let value = interner.intern("value");
+
+        let mut fields = IndexMap::new();
+        fields.insert(value, Ty::GenericParam(t));
+
+        let mut subst = IndexMap::new();
+        subst.insert(t, Ty::string());
+
+        match Ty::Record(fields).substitute(&subst) {
+            Ty::Record(fields) => assert_eq!(fields[&value], Ty::string()),
+            other => panic!("expected record, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn generic_substitution_respects_function_type_param_scope() {
+        let interner = Arc::new(Interner::new());
+        let t = interner.intern("T");
+        let value = interner.intern("value");
+
+        let function = Ty::Function(FunctionTy {
+            type_params: vec![t],
+            params: vec![(value, Ty::GenericParam(t))],
+            return_ty: Box::new(Ty::GenericParam(t)),
+        });
+
+        let mut subst = IndexMap::new();
+        subst.insert(t, Ty::number());
+
+        match function.substitute(&subst) {
+            Ty::Function(function) => {
+                assert_eq!(function.params[0].1, Ty::GenericParam(t));
+                assert_eq!(*function.return_ty, Ty::GenericParam(t));
+            }
+            other => panic!("expected function, got {other:?}"),
+        }
     }
 
     #[test]

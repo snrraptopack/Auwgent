@@ -6,7 +6,7 @@ use quew_ast::{
     ParamBinding, Provider, ToolDecl, ToolEntry, ToolsDecl, TypeDecl, TypeExpr,
 };
 use quew_checker::CheckResult;
-use quew_interner::Interner;
+use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 
 use crate::defs::{
@@ -76,10 +76,21 @@ fn lower_type(decl: &TypeDecl, interner: &Arc<Interner>, defs: &mut Definitions)
     let fields = decl
         .fields
         .iter()
-        .map(|field| (field.name, lower_field(field, interner)))
+        .map(|field| {
+            (
+                field.name,
+                lower_field_with_params(field, &decl.type_params, interner),
+            )
+        })
         .collect();
 
-    defs.types.insert(decl.name, TypeDef { fields });
+    defs.types.insert(
+        decl.name,
+        TypeDef {
+            type_params: decl.type_params.clone(),
+            fields,
+        },
+    );
 }
 
 fn lower_model(decl: &ModelDecl, interner: &Arc<Interner>, defs: &mut Definitions) {
@@ -177,17 +188,23 @@ fn lower_function(
         let params = decl
             .params
             .iter()
-            .map(|param| (param.name, lower_type_expr(&param.ty, interner)))
+            .map(|param| {
+                (
+                    param.name,
+                    lower_type_expr_with_params(&param.ty, &decl.type_params, interner),
+                )
+            })
             .collect();
 
         defs.functions.insert(
             decl.name,
             FunctionDef {
+                type_params: decl.type_params.clone(),
                 params,
                 returns: decl
                     .return_ty
                     .as_ref()
-                    .map(|ty| lower_type_expr(ty, interner))
+                    .map(|ty| lower_type_expr_with_params(ty, &decl.type_params, interner))
                     .unwrap_or(IrType::Void),
                 graph_ref,
             },
@@ -196,6 +213,14 @@ fn lower_function(
 }
 
 pub(crate) fn lower_type_expr(expr: &TypeExpr, interner: &Arc<Interner>) -> IrType {
+    lower_type_expr_with_params(expr, &[], interner)
+}
+
+pub(crate) fn lower_type_expr_with_params(
+    expr: &TypeExpr,
+    type_params: &[InternedStr],
+    interner: &Arc<Interner>,
+) -> IrType {
     match expr {
         TypeExpr::Named(name, _) => match interner.resolve(*name) {
             "string" => IrType::String,
@@ -205,24 +230,38 @@ pub(crate) fn lower_type_expr(expr: &TypeExpr, interner: &Arc<Interner>) -> IrTy
             "null" => IrType::Null,
             "void" => IrType::Void,
             "Text" => IrType::Text,
+            _ if type_params.contains(name) => IrType::GenericParam(*name),
             _ => IrType::Named(*name),
         },
         TypeExpr::Union(members, _) => IrType::Union(
             members
                 .iter()
-                .map(|member| lower_type_expr(member, interner))
+                .map(|member| lower_type_expr_with_params(member, type_params, interner))
                 .collect(),
         ),
         TypeExpr::Optional(inner, _) => {
-            IrType::Union(vec![lower_type_expr(inner, interner), IrType::Null])
+            IrType::Union(vec![
+                lower_type_expr_with_params(inner, type_params, interner),
+                IrType::Null,
+            ])
         }
-        TypeExpr::Generic(name, _, _) => IrType::Named(*name),
+        TypeExpr::Generic(name, args, _) => IrType::GenericInstance {
+            name: *name,
+            args: args
+                .iter()
+                .map(|arg| lower_type_expr_with_params(arg, type_params, interner))
+                .collect(),
+        },
     }
 }
 
-fn lower_field(field: &FieldDef, interner: &Arc<Interner>) -> IrField {
+fn lower_field_with_params(
+    field: &FieldDef,
+    type_params: &[InternedStr],
+    interner: &Arc<Interner>,
+) -> IrField {
     IrField {
-        ty: lower_type_expr(&field.ty, interner),
+        ty: lower_type_expr_with_params(&field.ty, type_params, interner),
         optional: field.optional,
     }
 }
@@ -323,6 +362,10 @@ mod tests {
         TypeExpr::Named(interner.intern(name), sp())
     }
 
+    fn generic(interner: &Arc<Interner>, name: &str, args: Vec<TypeExpr>) -> TypeExpr {
+        TypeExpr::Generic(interner.intern(name), args, sp())
+    }
+
     fn string_lit(interner: &Arc<Interner>, value: &str) -> StringLit {
         StringLit {
             value: interner.intern(value),
@@ -347,6 +390,7 @@ mod tests {
         let mut defs = Definitions::default();
         let decl = TypeDecl {
             name: interner.intern("User"),
+            type_params: vec![],
             fields: vec![
                 FieldDef {
                     name: interner.intern("id"),
@@ -371,6 +415,69 @@ mod tests {
         assert_eq!(names, vec!["id", "age"]);
         assert_eq!(fields[&interner.intern("id")].ty, IrType::String);
         assert!(fields[&interner.intern("age")].optional);
+    }
+
+    #[test]
+    fn lower_generic_type_decl_preserves_params_and_generic_fields() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let t = interner.intern("T");
+        let decl = TypeDecl {
+            name: interner.intern("Box"),
+            type_params: vec![t],
+            fields: vec![FieldDef {
+                name: interner.intern("value"),
+                ty: named(&interner, "T"),
+                optional: false,
+                span: sp(),
+            }],
+            span: sp(),
+        };
+
+        lower_type(&decl, &interner, &mut defs);
+
+        let def = &defs.types[&decl.name];
+        assert_eq!(def.type_params, vec![t]);
+        assert_eq!(
+            def.fields[&interner.intern("value")].ty,
+            IrType::GenericParam(t)
+        );
+    }
+
+    #[test]
+    fn lower_generic_function_preserves_params_and_instantiated_return() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let mut graphs = IndexMap::new();
+        let t = interner.intern("T");
+        let decl = FunctionDecl {
+            annotations: vec![],
+            name: interner.intern("wrap"),
+            type_params: vec![t],
+            params: vec![Param {
+                binding: ParamBinding::Normal,
+                name: interner.intern("value"),
+                ty: named(&interner, "T"),
+                optional: false,
+                span: sp(),
+            }],
+            return_ty: Some(generic(&interner, "Box", vec![named(&interner, "T")])),
+            body: vec![],
+            span: sp(),
+        };
+
+        lower_function(&decl, &interner, &mut defs, &mut graphs);
+
+        let def = &defs.functions[&decl.name];
+        assert_eq!(def.type_params, vec![t]);
+        assert_eq!(def.params[&interner.intern("value")], IrType::GenericParam(t));
+        assert_eq!(
+            def.returns,
+            IrType::GenericInstance {
+                name: interner.intern("Box"),
+                args: vec![IrType::GenericParam(t)]
+            }
+        );
     }
 
     #[test]

@@ -4,9 +4,13 @@
 //! to validate a parsed Module and emit Diagnostics.
 use std::sync::Arc;
 
+mod keys;
+mod generics;
+mod type_resolve;
+
 use indexmap::IndexMap;
 use quew_ast::{
-    ElseClause, Expr, Item, Lit, Module, Stmt, TypeExpr,
+    ElseClause, Expr, Item, Lit, Module, Stmt,
     expr::Provider as AstProvider,
     item::AnnotationArgs,
     stmt::{ReplyStmt, WithField},
@@ -18,77 +22,14 @@ use quew_lexer::AnnotationKind;
 use quew_scope::{SymbolKind, SymbolTable, build_symbol_table};
 use quew_types::{ProviderKind, Ty};
 use quew_unify::UnifyTable;
+use keys::{PrimKeys, WellKnownKeys};
+use generics::instantiate_function_call;
+use type_resolve::{resolve_semantic_ty, resolve_type, resolve_type_with_params};
 
 // ── Interned key caches ─────────────────────────────────────────────────────
 
 /// Keys for validating `reply(...) with { ... }` fields.
-struct WellKnownKeys {
-    model: InternedStr,
-    fallback: InternedStr,
-    prompt: InternedStr,
-    tools: InternedStr,
-    retry: InternedStr,
-    max_turn: InternedStr,
-    ctx: InternedStr,
-}
-
-impl WellKnownKeys {
-    fn new(i: &Interner) -> Self {
-        Self {
-            model: i.intern("model"),
-            fallback: i.intern("fallback"),
-            prompt: i.intern("prompt"),
-            tools: i.intern("tools"),
-            retry: i.intern("retry"),
-            max_turn: i.intern("maxTurn"),
-            ctx: i.intern("ctx"),
-        }
-    }
-}
-
 /// Primitive type name → `Ty` mapping (avoids raw &str comparisons on InternedStr).
-struct PrimKeys {
-    string: InternedStr,
-    number: InternedStr,
-    bool_k: InternedStr,
-    float: InternedStr,
-    null: InternedStr,
-    void: InternedStr,
-    text: InternedStr,
-}
-
-impl PrimKeys {
-    fn new(i: &Interner) -> Self {
-        Self {
-            string: i.intern("string"),
-            number: i.intern("number"),
-            bool_k: i.intern("bool"),
-            float: i.intern("float"),
-            null: i.intern("null"),
-            void: i.intern("void"),
-            text: i.intern("Text"),
-        }
-    }
-
-    fn resolve(&self, name: InternedStr) -> Option<Ty> {
-        if name == self.string || name == self.text {
-            Some(Ty::string())
-        } else if name == self.number {
-            Some(Ty::number())
-        } else if name == self.bool_k {
-            Some(Ty::bool_ty())
-        } else if name == self.float {
-            Some(Ty::float())
-        } else if name == self.null {
-            Some(Ty::null())
-        } else if name == self.void {
-            Some(Ty::void())
-        } else {
-            None
-        }
-    }
-}
-
 // ── Local scope stack ────────────────────────────────────────────────────────
 
 /// A stack of lexical frames for tracking local variables inside function bodies.
@@ -192,6 +133,7 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     &mut local,
                     ret_ty.as_ref(),
                     &wk,
+                    &prim,
                     &mut unify,
                     &mut diagnostics,
                 );
@@ -202,19 +144,34 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                 local.push();
                 for p in &decl.params {
                     // BoundRef params (@id) are still in scope — they resolve at runtime
-                    let ty = resolve_type(&p.ty, &symbol_table, &prim, &mut diagnostics);
+                    let ty = resolve_type_with_params(
+                        &p.ty,
+                        &decl.type_params,
+                        &symbol_table,
+                        &prim,
+                        &mut diagnostics,
+                    );
                     local.define(p.name, ty, p.span, &mut diagnostics);
                 }
                 let ret_ty = decl
                     .return_ty
                     .as_ref()
-                    .map(|t| resolve_type(t, &symbol_table, &prim, &mut diagnostics));
+                    .map(|t| {
+                        resolve_type_with_params(
+                            t,
+                            &decl.type_params,
+                            &symbol_table,
+                            &prim,
+                            &mut diagnostics,
+                        )
+                    });
                 check_body(
                     &decl.body,
                     &symbol_table,
                     &mut local,
                     ret_ty.as_ref(),
                     &wk,
+                    &prim,
                     &mut unify,
                     &mut diagnostics,
                 );
@@ -233,49 +190,6 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
 // ── Type lowering (name-aware) ────────────────────────────────────────────────
 
 /// Lower a `TypeExpr` to `Ty`, resolving named types against the symbol table.
-fn resolve_type(
-    expr: &TypeExpr,
-    table: &SymbolTable,
-    prim: &PrimKeys,
-    diags: &mut Vec<Diagnostic>,
-) -> Ty {
-    match expr {
-        TypeExpr::Named(name, span) => {
-            // Primitive first (string, number, bool, float, null, void, Text)
-            if let Some(ty) = prim.resolve(*name) {
-                return ty;
-            }
-            if let Some(sym) = table.globals.get(name) {
-                match sym.kind {
-                    SymbolKind::Type | SymbolKind::Agent => sym.ty.clone(),
-                    _ => {
-                        diags.push(type_error(*span, format!("`{name:?}` is not a type")));
-                        Ty::Error
-                    }
-                }
-            } else {
-                diags.push(type_error(*span, format!("unknown type `{name:?}`")));
-                Ty::Error
-            }
-        }
-        TypeExpr::Optional(inner, _) => resolve_type(inner, table, prim, diags).optional(),
-        TypeExpr::Union(arms, _) => {
-            let lowered: Vec<Ty> = arms
-                .iter()
-                .map(|a| resolve_type(a, table, prim, diags))
-                .collect();
-            Ty::Union(lowered).flatten_union()
-        }
-        TypeExpr::Generic(_, _, span) => {
-            diags.push(type_error(
-                *span,
-                "generic types are not yet supported".into(),
-            ));
-            Ty::Error
-        }
-    }
-}
-
 // ── Statement body checker ────────────────────────────────────────────────────
 
 fn check_body(
@@ -284,6 +198,7 @@ fn check_body(
     local: &mut LocalScope,
     ret_ty: Option<&Ty>,
     wk: &WellKnownKeys,
+    prim: &PrimKeys,
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -306,7 +221,7 @@ fn check_body(
                 let actual = r
                     .value
                     .as_ref()
-                    .map(|v| infer_expr(v, table, local, unify, diags))
+                    .map(|v| infer_expr(v, table, local, wk, prim, unify, diags))
                     .unwrap_or(Ty::void());
                 // Validate return type if declared and both sides are concrete
                 if let Some(declared) = ret_ty {
@@ -332,44 +247,64 @@ fn check_body(
                 unreachable = true;
             }
             Stmt::Let(l) => {
-                let ty = infer_expr(&l.init, table, local, unify, diags);
+                let inferred = infer_expr(&l.init, table, local, wk, prim, unify, diags);
+                let ty = if let Some(annotation) = &l.ty {
+                    let declared = resolve_type(annotation, table, prim, diags);
+                    if inferred.is_ok() && declared.is_ok() && !inferred.is_assignable_to(&declared)
+                    {
+                        diags.push(Diagnostic {
+                            severity: Severity::Error,
+                            message: format!(
+                                "let type mismatch: expected `{declared}`, found `{inferred}`"
+                            ),
+                            primary_span: l.span,
+                            primary_label: Some("initializer does not match annotation".into()),
+                            secondary: vec![],
+                            help: None,
+                            code: None,
+                        });
+                    }
+                    declared
+                } else {
+                    inferred
+                };
                 local.define(l.name, ty, l.span, diags);
             }
             Stmt::If(s) => {
-                infer_expr(&s.condition, table, local, unify, diags);
+                infer_expr(&s.condition, table, local, wk, prim, unify, diags);
                 local.push();
-                check_body(&s.then_body, table, local, ret_ty, wk, unify, diags);
+                check_body(&s.then_body, table, local, ret_ty, wk, prim, unify, diags);
                 local.pop();
                 match &s.else_clause {
                     ElseClause::None => {}
                     ElseClause::Else(body, _) => {
                         local.push();
-                        check_body(body, table, local, ret_ty, wk, unify, diags);
+                        check_body(body, table, local, ret_ty, wk, prim, unify, diags);
                         local.pop();
                     }
                     ElseClause::ElseIf(if_stmt) => {
-                        infer_expr(&if_stmt.condition, table, local, unify, diags);
+                        infer_expr(&if_stmt.condition, table, local, wk, prim, unify, diags);
                         local.push();
-                        check_body(&if_stmt.then_body, table, local, ret_ty, wk, unify, diags);
+                        check_body(&if_stmt.then_body, table, local, ret_ty, wk, prim, unify, diags);
                         local.pop();
                     }
                 }
             }
             Stmt::Reply(r) => {
-                check_with_block(r, wk, table, local, unify, diags);
+                check_with_block(r, wk, prim, table, local, unify, diags);
             }
             Stmt::For(f) => {
-                infer_expr(&f.iterable, table, local, unify, diags);
+                infer_expr(&f.iterable, table, local, wk, prim, unify, diags);
                 local.push();
                 local.define(f.value, Ty::Error, f.span, diags);
                 if let Some(idx) = f.index {
                     local.define(idx, Ty::Error, f.span, diags);
                 }
-                check_body(&f.body, table, local, ret_ty, wk, unify, diags);
+                check_body(&f.body, table, local, ret_ty, wk, prim, unify, diags);
                 local.pop();
             }
             Stmt::Expr(e) => {
-                infer_expr(&e.expr, table, local, unify, diags);
+                infer_expr(&e.expr, table, local, wk, prim, unify, diags);
             }
         }
     }
@@ -384,6 +319,8 @@ fn infer_expr(
     expr: &Expr,
     table: &SymbolTable,
     local: &mut LocalScope,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
 ) -> Ty {
@@ -396,7 +333,7 @@ fn infer_expr(
                 return ty.clone();
             }
             if let Some(sym) = table.globals.get(&id.name) {
-                sym.ty.clone()
+                resolve_semantic_ty(&sym.ty, table, prim, diags, id.span)
             } else {
                 diags.push(Diagnostic {
                     severity: Severity::Error,
@@ -412,8 +349,8 @@ fn infer_expr(
         }
 
         Expr::Binary(b) => {
-            let l = infer_expr(&b.left, table, local, unify, diags);
-            let r = infer_expr(&b.right, table, local, unify, diags);
+            let l = infer_expr(&b.left, table, local, wk, prim, unify, diags);
+            let r = infer_expr(&b.right, table, local, wk, prim, unify, diags);
             // For assignment, result is the rhs type
             match b.op {
                 quew_ast::BinaryOp::Assign => r,
@@ -440,26 +377,36 @@ fn infer_expr(
         }
 
         Expr::Unary(u) => {
-            let _ = infer_expr(&u.operand, table, local, unify, diags);
+            let _ = infer_expr(&u.operand, table, local, wk, prim, unify, diags);
             Ty::bool_ty()
         }
 
         Expr::Call(c) => {
-            let callee = infer_expr(&c.callee, table, local, unify, diags);
-            for arg in &c.args {
-                infer_expr(arg, table, local, unify, diags);
+            if let Expr::Member(m) = c.callee.as_ref() {
+                if let Some(ty) =
+                    infer_builtin_method_call(m, &c.args, table, local, wk, prim, unify, diags, c.span)
+                {
+                    return ty;
+                }
             }
+
+            let callee = infer_expr(&c.callee, table, local, wk, prim, unify, diags);
+            let arg_tys: Vec<Ty> = c
+                .args
+                .iter()
+                .map(|arg| infer_expr(arg, table, local, wk, prim, unify, diags))
+                .collect();
             match callee {
-                Ty::Function(f) => *f.return_ty,
-                Ty::Tool(t) => *t.return_ty,
-                Ty::Agent(a) => *a.return_ty,
+                Ty::Function(f) => instantiate_function_call(&f, &arg_tys, c.span, diags),
+                Ty::Tool(t) => resolve_semantic_ty(&t.return_ty, table, prim, diags, c.span),
+                Ty::Agent(a) => resolve_semantic_ty(&a.return_ty, table, prim, diags, c.span),
                 Ty::Error => Ty::Error,
                 _ => Ty::Error,
             }
         }
 
         Expr::Member(m) => {
-            let obj = infer_expr(&m.object, table, local, unify, diags);
+            let obj = infer_expr(&m.object, table, local, wk, prim, unify, diags);
             match obj {
                 Ty::Record(fields) => fields.get(&m.field).cloned().unwrap_or(Ty::Error),
                 Ty::Error => Ty::Error,
@@ -471,10 +418,10 @@ fn infer_expr(
             let elem_ty = a
                 .elements
                 .first()
-                .map(|e| infer_expr(e, table, local, unify, diags))
+                .map(|e| infer_expr(e, table, local, wk, prim, unify, diags))
                 .unwrap_or(Ty::Error);
             for e in a.elements.iter().skip(1) {
-                infer_expr(e, table, local, unify, diags);
+                infer_expr(e, table, local, wk, prim, unify, diags);
             }
             elem_ty
         }
@@ -490,11 +437,55 @@ fn infer_expr(
         Expr::Is(_) => Ty::bool_ty(),
         Expr::Error(_) => Ty::Error,
         Expr::PostfixIf(p) => {
-            infer_expr(&p.condition, table, local, unify, diags);
-            let v = infer_expr(&p.value, table, local, unify, diags);
-            infer_expr(&p.else_value, table, local, unify, diags);
+            infer_expr(&p.condition, table, local, wk, prim, unify, diags);
+            let v = infer_expr(&p.value, table, local, wk, prim, unify, diags);
+            infer_expr(&p.else_value, table, local, wk, prim, unify, diags);
             v
         }
+    }
+}
+
+fn infer_builtin_method_call(
+    member: &quew_ast::expr::MemberExpr,
+    args: &[Expr],
+    table: &SymbolTable,
+    local: &mut LocalScope,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    unify: &mut UnifyTable,
+    diags: &mut Vec<Diagnostic>,
+    call_span: Span,
+) -> Option<Ty> {
+    let receiver = infer_expr(&member.object, table, local, wk, prim, unify, diags);
+    for arg in args {
+        infer_expr(arg, table, local, wk, prim, unify, diags);
+    }
+
+    match receiver {
+        Ty::Primitive(quew_types::PrimTy::String) if member.field == wk.is_empty => {
+            if !args.is_empty() {
+                diags.push(mk_err(
+                    call_span,
+                    format!("`string.isEmpty()` expects 0 argument(s), found {}", args.len()),
+                    "wrong number of arguments",
+                    None,
+                ));
+                return Some(Ty::Error);
+            }
+            Some(Ty::bool_ty())
+        }
+        Ty::Primitive(quew_types::PrimTy::String) => None,
+        Ty::Error => Some(Ty::Error),
+        _ if member.field == wk.is_empty => {
+            diags.push(mk_err(
+                member.span,
+                "`isEmpty()` is only defined on `string`".into(),
+                "receiver is not a string",
+                None,
+            ));
+            Some(Ty::Error)
+        }
+        _ => None,
     }
 }
 
@@ -521,18 +512,6 @@ fn stmt_span(stmt: &Stmt) -> Span {
     }
 }
 
-fn type_error(span: Span, msg: String) -> Diagnostic {
-    Diagnostic {
-        severity: Severity::Error,
-        message: msg,
-        primary_span: span,
-        primary_label: None,
-        secondary: vec![],
-        help: None,
-        code: None,
-    }
-}
-
 fn mk_err(span: Span, msg: String, label: &str, help: Option<String>) -> Diagnostic {
     Diagnostic {
         severity: Severity::Error,
@@ -552,19 +531,20 @@ fn mk_err(span: Span, msg: String, label: &str, help: Option<String>) -> Diagnos
 fn check_with_block(
     stmt: &ReplyStmt,
     wk: &WellKnownKeys,
+    prim: &PrimKeys,
     table: &SymbolTable,
     local: &mut LocalScope,
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
 ) {
     // The reply input is a normal expression
-    infer_expr(&stmt.input, table, local, unify, diags);
+    infer_expr(&stmt.input, table, local, wk, prim, unify, diags);
 
     for field in &stmt.with_block.fields {
         let k = field.key;
         if k == wk.model || k == wk.fallback {
             let label = if k == wk.model { "model" } else { "fallback" };
-            let ty = infer_expr(&field.value, table, local, unify, diags);
+            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
             if !matches!(&ty, Ty::Provider(_) | Ty::Error) {
                 diags.push(mk_err(
                     field.span,
@@ -574,9 +554,9 @@ fn check_with_block(
                 ));
             }
         } else if k == wk.tools {
-            check_tools_field(field, table, local, unify, diags);
+            check_tools_field(field, table, local, wk, prim, unify, diags);
         } else if k == wk.prompt {
-            let ty = infer_expr(&field.value, table, local, unify, diags);
+            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
             if !matches!(&ty, Ty::Primitive(quew_types::PrimTy::String) | Ty::Error) {
                 diags.push(mk_err(
                     field.span,
@@ -587,7 +567,7 @@ fn check_with_block(
             }
         } else if k == wk.retry || k == wk.max_turn {
             let label = if k == wk.retry { "retry" } else { "maxTurn" };
-            let ty = infer_expr(&field.value, table, local, unify, diags);
+            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
             if !matches!(
                 &ty,
                 Ty::Primitive(quew_types::PrimTy::Number | quew_types::PrimTy::Float) | Ty::Error
@@ -601,7 +581,7 @@ fn check_with_block(
             }
         } else {
             // builtin, agents, and any future fields — infer without semantic gate
-            infer_expr(&field.value, table, local, unify, diags);
+            infer_expr(&field.value, table, local, wk, prim, unify, diags);
         }
     }
 }
@@ -612,13 +592,15 @@ fn check_tools_field(
     field: &WithField,
     table: &SymbolTable,
     local: &mut LocalScope,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
 ) {
     match &field.value {
         Expr::Array(arr) => {
             for elem in &arr.elements {
-                check_tool_element(elem, table, local, unify, diags);
+                check_tool_element(elem, table, local, wk, prim, unify, diags);
             }
         }
         other => {
@@ -629,7 +611,7 @@ fn check_tools_field(
                     return; // local var; trust it
                 }
             }
-            let ty = infer_expr(other, table, local, unify, diags);
+            let ty = infer_expr(other, table, local, wk, prim, unify, diags);
             if !matches!(ty, Ty::Error) {
                 diags.push(mk_err(
                     field.span,
@@ -654,6 +636,8 @@ fn check_tool_element(
     elem: &Expr,
     table: &SymbolTable,
     local: &mut LocalScope,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
 ) {
@@ -717,9 +701,9 @@ fn check_tool_element(
         }
         Expr::Call(call) => {
             // Partial application: `myTool(ctx.value)` pre-binds host params
-            let callee_ty = infer_expr(&call.callee, table, local, unify, diags);
+            let callee_ty = infer_expr(&call.callee, table, local, wk, prim, unify, diags);
             for arg in &call.args {
-                infer_expr(arg, table, local, unify, diags);
+                infer_expr(arg, table, local, wk, prim, unify, diags);
             }
             match &callee_ty {
                 Ty::Tool(tt) => {
@@ -750,7 +734,7 @@ fn check_tool_element(
             }
         }
         other => {
-            let ty = infer_expr(other, table, local, unify, diags);
+            let ty = infer_expr(other, table, local, wk, prim, unify, diags);
             if !matches!(ty, Ty::Error) {
                 diags.push(mk_err(
                     other.span(),
@@ -852,6 +836,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "greet"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: None,
                 body: vec![return_stmt(Some(str_lit_expr()))],
@@ -876,6 +861,7 @@ mod tests {
             Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "foo"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: None,
                 body: vec![],
@@ -901,6 +887,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "bad"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: Some(ty_str(&i)),
                 body: vec![return_stmt(Some(Expr::Lit(Lit::Int(42, sp()))))],
@@ -925,6 +912,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "unreachable_fn"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: None,
                 body: vec![
@@ -983,6 +971,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Type(TypeDecl {
                 name: intern(&i, "MyType"),
+                type_params: vec![],
                 fields: vec![],
                 span: sp(),
             })],
@@ -1017,6 +1006,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 name: intern(&i, "deleteUser"),
+                type_params: vec![],
                 params: vec![Param {
                     binding: ParamBinding::BoundRef,
                     name: intern(&i, "missing"),
@@ -1047,6 +1037,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "foo"),
+                type_params: vec![],
                 params: vec![
                     normal_param(&i, "x"),
                     // second param with same name
@@ -1094,6 +1085,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "bar"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: None,
                 body: vec![make_let(0), make_let(20)],
@@ -1143,6 +1135,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "shadow_fn"),
+                type_params: vec![],
                 params: vec![],
                 return_ty: None,
                 body: vec![outer_let, if_stmt],
@@ -1167,12 +1160,14 @@ mod tests {
             items: vec![
                 Item::Type(TypeDecl {
                     name: intern(&i, "Foo"),
+                    type_params: vec![],
                     fields: vec![],
                     span: sp(),
                 }),
                 Item::Function(FunctionDecl {
                     annotations: vec![],
                     name: intern(&i, "Foo"),
+                    type_params: vec![],
                     params: vec![],
                     return_ty: None,
                     body: vec![],

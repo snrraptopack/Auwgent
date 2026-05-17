@@ -31,6 +31,7 @@ pub struct Symbol {
     pub ty: Ty,
     pub kind: SymbolKind,
     pub def_span: Span,
+    pub type_params: Vec<InternedStr>,
 }
 
 // ── SymbolTable ───────────────────────────────────────────────────────────────
@@ -70,8 +71,19 @@ impl SymbolTable {
 /// Convert a syntactic `TypeExpr` to a semantic `Ty`.
 /// Unknown named types become `Ty::Error` with a diagnostic queued.
 pub fn lower_type(expr: &TypeExpr, diags: &mut Vec<Diagnostic>) -> Ty {
+    lower_type_with_params(expr, &[], diags)
+}
+
+fn lower_type_with_params(
+    expr: &TypeExpr,
+    type_params: &[InternedStr],
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
     match expr {
         TypeExpr::Named(name, span) => {
+            if type_params.contains(name) {
+                return Ty::GenericParam(*name);
+            }
             // Check well-known primitive names
             // InternedStr is opaque so we cannot compare to &str directly;
             // the checker will resolve user-defined names. Here we return
@@ -80,17 +92,23 @@ pub fn lower_type(expr: &TypeExpr, diags: &mut Vec<Diagnostic>) -> Ty {
             let _ = (name, span, diags);
             // Defer full resolution to the checker; return a placeholder.
             // This function only lowers structural shape, not names.
-            Ty::Error // will be replaced by the checker's name-resolution pass
+            Ty::Named(*name)
         }
-        TypeExpr::Optional(inner, _) => lower_type(inner, diags).optional(),
+        TypeExpr::Optional(inner, _) => lower_type_with_params(inner, type_params, diags).optional(),
         TypeExpr::Union(arms, _) => {
-            let lowered: Vec<Ty> = arms.iter().map(|a| lower_type(a, diags)).collect();
+            let lowered: Vec<Ty> = arms
+                .iter()
+                .map(|a| lower_type_with_params(a, type_params, diags))
+                .collect();
             Ty::Union(lowered).flatten_union()
         }
-        TypeExpr::Generic(_, args, _) => {
+        TypeExpr::Generic(name, args, _) => {
             // Generics are structural; lower args but leave name unresolved
-            let _ = args;
-            Ty::Error
+            let args = args
+                .iter()
+                .map(|arg| lower_type_with_params(arg, type_params, diags))
+                .collect();
+            Ty::GenericInstance { name: *name, args }
         }
     }
 }
@@ -111,8 +129,8 @@ pub fn lower_primitive(name: &str) -> Option<Ty> {
 
 // ── Param lowering ────────────────────────────────────────────────────────────
 
-fn lower_param_ty(_param: &Param, diags: &mut Vec<Diagnostic>) -> Ty {
-    lower_type(&_param.ty, diags)
+fn lower_param_ty(param: &Param, type_params: &[InternedStr], diags: &mut Vec<Diagnostic>) -> Ty {
+    lower_type_with_params(&param.ty, type_params, diags)
 }
 
 // ── Provider lowering ─────────────────────────────────────────────────────────
@@ -127,16 +145,39 @@ fn lower_provider(p: &Provider) -> ProviderKind {
 
 // ── Record type from TypeDecl fields ─────────────────────────────────────────
 
-fn lower_record(fields: &[FieldDef], diags: &mut Vec<Diagnostic>) -> Ty {
+fn lower_record_with_params(
+    fields: &[FieldDef],
+    type_params: &[InternedStr],
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
     let mut map = IndexMap::new();
     for f in fields {
-        let mut ty = lower_type(&f.ty, diags);
+        let mut ty = lower_type_with_params(&f.ty, type_params, diags);
         if f.optional {
             ty = ty.optional();
         }
         map.insert(f.name, ty);
     }
     Ty::Record(map)
+}
+
+fn validate_type_params(type_params: &[InternedStr], span: Span, diags: &mut Vec<Diagnostic>) {
+    let mut seen = IndexMap::<InternedStr, ()>::new();
+    for param in type_params {
+        if seen.contains_key(param) {
+            diags.push(Diagnostic {
+                severity: Severity::Error,
+                message: format!("duplicate generic parameter `{param:?}`"),
+                primary_span: span,
+                primary_label: Some("generic parameter declared more than once".into()),
+                secondary: vec![],
+                help: None,
+                code: None,
+            });
+        } else {
+            seen.insert(*param, ());
+        }
+    }
 }
 
 // ── Tool param splitting ──────────────────────────────────────────────────────
@@ -146,10 +187,18 @@ fn split_params(
     params: &[Param],
     diags: &mut Vec<Diagnostic>,
 ) -> (Vec<(InternedStr, Ty)>, Vec<(InternedStr, Ty)>) {
+    split_params_with_type_params(params, &[], diags)
+}
+
+fn split_params_with_type_params(
+    params: &[Param],
+    type_params: &[InternedStr],
+    diags: &mut Vec<Diagnostic>,
+) -> (Vec<(InternedStr, Ty)>, Vec<(InternedStr, Ty)>) {
     let mut bound = vec![];
     let mut model = vec![];
     for p in params {
-        let ty = lower_param_ty(p, diags);
+        let ty = lower_param_ty(p, type_params, diags);
         match p.binding {
             ParamBinding::BoundRef => bound.push((p.name, ty)),
             ParamBinding::Normal => model.push((p.name, ty)),
@@ -168,7 +217,7 @@ fn extract_tool_annotation_params(
             if let AnnotationArgs::Params(params) = &ann.args {
                 return params
                     .iter()
-                    .map(|p| (p.name, lower_param_ty(p, diags)))
+                    .map(|p| (p.name, lower_param_ty(p, &[], diags)))
                     .collect();
             }
         }
@@ -192,7 +241,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
         match item {
             // ── agent ──────────────────────────────────────────────────────────
             Item::Agent(decl) => {
-                let input_ty = lower_param_ty(&decl.param, &mut d);
+                let input_ty = lower_param_ty(&decl.param, &[], &mut d);
                 let return_ty = decl
                     .return_ty
                     .as_ref()
@@ -210,21 +259,24 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                         ty,
                         kind: SymbolKind::Agent,
                         def_span: decl.span,
+                        type_params: vec![],
                     },
                 );
             }
 
             // ── function ───────────────────────────────────────────────────────
             Item::Function(decl) => {
+                validate_type_params(&decl.type_params, decl.span, &mut d);
                 let bound = extract_tool_annotation_params(decl, &mut d);
-                let (_, model) = split_params(&decl.params, &mut d);
+                let (_, model) = split_params_with_type_params(&decl.params, &decl.type_params, &mut d);
                 let return_ty = decl
                     .return_ty
                     .as_ref()
-                    .map(|t| lower_type(t, &mut d))
+                    .map(|t| lower_type_with_params(t, &decl.type_params, &mut d))
                     .unwrap_or_else(Ty::void);
                 let ty = if bound.is_empty() {
                     Ty::Function(FunctionTy {
+                        type_params: decl.type_params.clone(),
                         params: model,
                         return_ty: Box::new(return_ty),
                     })
@@ -248,6 +300,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                         ty,
                         kind,
                         def_span: decl.span,
+                        type_params: decl.type_params.clone(),
                     },
                 );
             }
@@ -271,6 +324,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                             ty: Ty::void(),
                             kind: SymbolKind::ToolGroup,
                             def_span: decl.span,
+                            type_params: vec![],
                         },
                     );
                 } else {
@@ -280,7 +334,8 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
 
             // ── type ───────────────────────────────────────────────────────────
             Item::Type(decl) => {
-                let ty = lower_record(&decl.fields, &mut d);
+                validate_type_params(&decl.type_params, decl.span, &mut d);
+                let ty = lower_record_with_params(&decl.fields, &decl.type_params, &mut d);
                 table.diagnostics.extend(d);
                 table.define_global(
                     decl.name,
@@ -288,6 +343,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                         ty,
                         kind: SymbolKind::Type,
                         def_span: decl.span,
+                        type_params: decl.type_params.clone(),
                     },
                 );
             }
@@ -302,6 +358,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                         ty,
                         kind: SymbolKind::Model,
                         def_span: decl.span,
+                        type_params: vec![],
                     },
                 );
             }
@@ -320,6 +377,7 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                         ty,
                         kind: SymbolKind::Let,
                         def_span: decl.span,
+                        type_params: vec![],
                     },
                 );
             }
@@ -348,6 +406,7 @@ fn register_tool_decl(table: &mut SymbolTable, decl: &ToolDecl) {
             ty,
             kind: SymbolKind::Tool,
             def_span: decl.span,
+            type_params: vec![],
         },
     );
 }
@@ -366,6 +425,7 @@ fn register_tool_entry(table: &mut SymbolTable, entry: &ToolEntry, d: &mut Vec<D
             ty,
             kind: SymbolKind::Tool,
             def_span: entry.span,
+            type_params: vec![],
         },
     );
 }
@@ -489,6 +549,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Type(TypeDecl {
                 name: intern(&i, "Response"),
+                type_params: vec![],
                 fields: vec![FieldDef {
                     name: intern(&i, "msg"),
                     ty: ty_str(&i),
@@ -568,6 +629,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 name: intern(&i, "greet"),
+                type_params: vec![],
                 params: vec![normal_param(&i, "name")],
                 return_ty: Some(ty_str(&i)),
                 body: vec![],
@@ -582,6 +644,68 @@ mod tests {
             .expect("greet not found");
         assert_eq!(sym.kind, SymbolKind::Function);
         assert!(matches!(sym.ty, Ty::Function(_)));
+    }
+
+    #[test]
+    fn generic_function_registers_type_params_and_generic_param_types() {
+        let i = interner();
+        let t_param = intern(&i, "T");
+        let module = Module {
+            items: vec![Item::Function(FunctionDecl {
+                annotations: vec![],
+                name: intern(&i, "identity"),
+                type_params: vec![t_param],
+                params: vec![Param {
+                    binding: ParamBinding::Normal,
+                    name: intern(&i, "value"),
+                    ty: TypeExpr::Named(t_param, sp()),
+                    optional: false,
+                    span: sp(),
+                }],
+                return_ty: Some(TypeExpr::Named(t_param, sp())),
+                body: vec![],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        let sym = &table.globals[&intern(&i, "identity")];
+        assert_eq!(sym.type_params, vec![t_param]);
+        match &sym.ty {
+            Ty::Function(function) => {
+                assert_eq!(function.type_params, vec![t_param]);
+                assert_eq!(function.params[0].1, Ty::GenericParam(t_param));
+                assert_eq!(*function.return_ty, Ty::GenericParam(t_param));
+            }
+            other => panic!("expected function, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duplicate_generic_type_params_error() {
+        let i = interner();
+        let t_param = intern(&i, "T");
+        let module = Module {
+            items: vec![Item::Type(TypeDecl {
+                name: intern(&i, "Bad"),
+                type_params: vec![t_param, t_param],
+                fields: vec![],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module);
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate generic parameter")),
+            "expected duplicate generic parameter diagnostic, got {:?}",
+            table.diagnostics
+        );
     }
 
     #[test]
@@ -617,6 +741,7 @@ mod tests {
         let decl = || {
             Item::Type(TypeDecl {
                 name: intern(&i, "Foo"),
+                type_params: vec![],
                 fields: vec![],
                 span: sp(),
             })
@@ -650,6 +775,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 name: intern(&i, "deleteUser"),
+                type_params: vec![],
                 params: vec![normal_param(&i, "isAdmin"), bound_param(&i, "id")],
                 return_ty: Some(ty_str(&i)),
                 body: vec![],
@@ -694,6 +820,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 name: intern(&i, "deleteUser"),
+                type_params: vec![],
                 params: vec![bound_param(&i, "missing")],
                 return_ty: None,
                 body: vec![],

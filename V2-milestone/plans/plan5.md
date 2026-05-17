@@ -1,5 +1,13 @@
 # Plan 5: Parser Finalisation + IR Lowering
 
+**Status: Complete.**
+
+Completed in `quew-compiler` as the first end-to-end compiler pipeline:
+source text -> lex -> parse -> check -> in-memory `QuewGraphIR`.
+The CLI now supports `quew check <file>` and `quew compile <file>`; compile
+prints an IR summary and does not emit JSON IR. Remaining execution semantics
+are runtime work for the next plan.
+
 ## Where We Are
 
 `quew-checker` is complete and locked. **83 tests, 0 failures.**

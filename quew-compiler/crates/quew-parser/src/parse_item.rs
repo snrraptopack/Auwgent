@@ -87,6 +87,22 @@ where
         .ignored()
 }
 
+fn type_params<'tok, I>(
+    source: &'tok str,
+    interner: Arc<Interner>,
+) -> impl Parser<'tok, I, Vec<quew_interner::InternedStr>, ParseError<'tok>> + Clone
+where
+    I: Input<'tok>,
+{
+    ident(source, interner)
+        .separated_by(just(TokenKind::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(TokenKind::LAngle), just(TokenKind::RAngle))
+        .or_not()
+        .map(|params| params.unwrap_or_default())
+}
+
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
 fn agent<'tok, I>(
@@ -133,6 +149,7 @@ where
     annotations(source, interner.clone())
         .then_ignore(just(TokenKind::KwFunction))
         .then(ident(source, interner.clone()))
+        .then(type_params(source, interner.clone()))
         .then(param_list(source, interner.clone()))
         .then(
             just(TokenKind::Colon)
@@ -141,10 +158,11 @@ where
         )
         .then(block(source, interner.clone()))
         .map_with(
-            |((((annotations, name), params), return_ty), body), extra| {
+            |(((((annotations, name), type_params), params), return_ty), body), extra| {
                 Item::Function(FunctionDecl {
                     annotations,
                     name,
+                    type_params,
                     params,
                     return_ty,
                     body,
@@ -283,11 +301,13 @@ where
 
     just(TokenKind::KwType)
         .ignore_then(ident(source, interner.clone()))
+        .then(type_params(source, interner.clone()))
         .then_ignore(just(TokenKind::Eq))
         .then(fields)
-        .map_with(|(name, fields), extra| {
+        .map_with(|((name, type_params), fields), extra| {
             Item::Type(TypeDecl {
                 name,
+                type_params,
                 fields,
                 span: to_span(extra.span()),
             })

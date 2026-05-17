@@ -111,6 +111,7 @@ pub struct AgentDecl {
 pub struct FunctionDecl {
     pub annotations: Vec<Annotation>,
     pub name: InternedStr,
+    pub type_params: Vec<InternedStr>,
     pub params: Vec<Param>,
     /// `None` means the function's return type is inferred (checked later).
     pub return_ty: Option<TypeExpr>,
@@ -158,6 +159,7 @@ pub struct ToolEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeDecl {
     pub name: InternedStr,
+    pub type_params: Vec<InternedStr>,
     pub fields: Vec<FieldDef>,
     pub span: Span,
 }
@@ -261,6 +263,7 @@ mod tests {
         let f = FunctionDecl {
             annotations: vec![],
             name: intern("greet"),
+            type_params: vec![],
             params: vec![normal_param("name")],
             return_ty: Some(ty_string()),
             body: vec![],
@@ -308,6 +311,7 @@ mod tests {
     fn type_decl_with_fields() {
         let t = TypeDecl {
             name: intern("Response"),
+            type_params: vec![],
             fields: vec![
                 FieldDef {
                     name: intern("userName"),

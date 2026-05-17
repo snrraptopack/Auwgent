@@ -86,6 +86,110 @@ function getMessage(): string {
 }
 
 #[test]
+fn valid_generic_type_and_function_identity() {
+    let r = check_source(
+        r#"
+type Box<T> = { value: T }
+
+function identity<T>(value: T): T {
+    return value
+}
+
+function demo(input: string): string {
+    return identity(input)
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_generic_record_field_substitution() {
+    let r = check_source(
+        r#"
+type Pair<A, B> = {
+    first: A
+    second: B
+}
+
+function first<A, B>(pair: Pair<A, B>): A {
+    return pair.first
+}
+
+function demo(pair: Pair<string, bool>): string {
+    return first(pair)
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_nested_generic_stress_case() {
+    let r = check_source(
+        r#"
+type Box<T> = { value: T }
+type Pair<A, B> = { first: A, second: B }
+
+function unbox<T>(box: Box<T>): T {
+    return box.value
+}
+
+function first<A, B>(pair: Pair<A, B>): A {
+    return pair.first
+}
+
+function demo(input: Box<Pair<string, bool>>): string {
+    let pair = unbox(input)
+    return first(pair)
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn invalid_generic_type_arity_errors() {
+    let r = check_source(
+        r#"
+type Box<T> = { value: T }
+
+function bad(value: Box<string, number>) {
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("expects 1 type argument")),
+        "expected arity diagnostic, got: {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn invalid_generic_function_conflicting_inference_errors() {
+    let r = check_source(
+        r#"
+function same<T>(left: T, right: T): T {
+    return left
+}
+
+function demo(input: string): string {
+    return same(input, 1)
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("conflicting inference")),
+        "expected conflicting inference diagnostic, got: {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
 fn valid_function_with_params() {
     let r = check_source(
         r#"

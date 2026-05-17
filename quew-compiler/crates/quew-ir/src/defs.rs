@@ -41,6 +41,8 @@ pub struct Definitions {
 /// A `type T = { … }` declaration lowered to its field map.
 #[derive(Debug, Clone)]
 pub struct TypeDef {
+    /// Generic parameters declared by the type, such as `<T, E>`.
+    pub type_params: Vec<InternedStr>,
     /// All fields in declaration order.
     pub fields: IndexMap<InternedStr, IrField>,
 }
@@ -134,6 +136,8 @@ pub enum DisclosureMode {
 /// A non-tool function declaration.
 #[derive(Debug, Clone)]
 pub struct FunctionDef {
+    /// Generic parameters declared by the function, such as `<T>`.
+    pub type_params: Vec<InternedStr>,
     pub params: IndexMap<InternedStr, IrType>,
     pub returns: IrType,
     /// Key into `QuewGraphIR::graphs` for this function's body.

@@ -39,6 +39,15 @@ pub enum IrType {
     /// Resolved by name; the runtime looks it up in the definitions table.
     Named(InternedStr),
 
+    /// A generic type application such as `Box<string>` or `Pair<A, B>`.
+    GenericInstance {
+        name: InternedStr,
+        args: Vec<IrType>,
+    },
+
+    /// A generic parameter in a generic type or function declaration.
+    GenericParam(InternedStr),
+
     // ── Special ───────────────────────────────────────────────────────────────
     /// The `Text` DSL alias — equivalent to `String` at the IR level.
     Text,

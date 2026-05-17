@@ -152,6 +152,30 @@ fn type_with_optional_field_parses() {
 }
 
 #[test]
+fn generic_type_declaration_parses() {
+    let result = lex_and_parse("type Box<T> = { value: T }");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
+fn nested_generic_type_usage_parses() {
+    let result = lex_and_parse("let nested: Box<Pair<string, number>> = value");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
+fn generic_function_declaration_parses() {
+    let result = lex_and_parse(
+        r#"
+function identity<T>(value: T): T {
+    return value
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
 fn multiple_top_level_items_parse() {
     let src = concat!("let x = 1\n", "let y = 2\n", "let z = 3\n",);
     let result = lex_and_parse(src);
