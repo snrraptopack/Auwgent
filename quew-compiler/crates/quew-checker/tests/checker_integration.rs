@@ -416,6 +416,59 @@ function compute() {
 }
 
 #[test]
+fn valid_extension_method_uses_implicit_self() {
+    let r = check_source(
+        r#"
+function string_is_empty(value: string): bool {
+    return true
+}
+
+extend string {
+    function isEmpty(): bool {
+        return string_is_empty(self)
+    }
+}
+
+function check(value: string): bool {
+    return value.isEmpty()
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_prelude_string_extension_methods_are_available() {
+    let r = check_source_with_prelude(
+        r#"
+function check(value: string): bool {
+    return value.contains("x")
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn invalid_extension_method_argument_type_errors() {
+    let r = check_source_with_prelude(
+        r#"
+function check(value: string): bool {
+    return value.contains(123)
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error
+                && d.message.contains("argument type mismatch")),
+        "expected argument type mismatch, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
 fn valid_if_in_body() {
     let r = check_source(
         r#"

@@ -4,8 +4,8 @@ pub mod roles;
 use indexmap::IndexMap;
 use quew_ast::{
     AnnotationArgs, BuiltinFunctionMeta, BuiltinTypeMeta,
-    BuiltinVisibility as AstBuiltinVisibility, FieldDef, FunctionDecl, Item, Module, Param,
-    ParamBinding, Provider, ToolDecl, ToolEntry, TypeExpr,
+    BuiltinVisibility as AstBuiltinVisibility, ExtendDecl, FieldDef, FunctionDecl, Item, Module,
+    Param, ParamBinding, Provider, ToolDecl, ToolEntry, TypeExpr,
 };
 use quew_errors::{Diagnostic, Severity, Span};
 use quew_interner::{InternedStr, Interner};
@@ -48,7 +48,19 @@ pub struct SymbolTable {
     pub globals: IndexMap<InternedStr, Symbol>,
     /// Compiler role bindings declared by builtin types.
     pub roles: RoleRegistry,
+    /// Extension methods declared by `extend Type { ... }`.
+    pub extension_methods: Vec<ExtensionMethod>,
     pub diagnostics: Vec<Diagnostic>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionMethod {
+    pub receiver_ty: Ty,
+    pub name: InternedStr,
+    pub type_params: Vec<InternedStr>,
+    pub params: Vec<(InternedStr, Ty)>,
+    pub return_ty: Ty,
+    pub def_span: Span,
 }
 
 impl SymbolTable {
@@ -483,6 +495,11 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
             }
 
             // ── let ────────────────────────────────────────────────────────────
+            Item::Extend(decl) => {
+                table.diagnostics.extend(d);
+                register_extension_decl(&mut table, decl, interner);
+            }
+
             Item::Let(decl) => {
                 let ty = decl
                     .ty
@@ -508,6 +525,60 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
 }
 
 // ── Helper: register a single ToolDecl ───────────────────────────────────────
+
+fn register_extension_decl(table: &mut SymbolTable, decl: &ExtendDecl, interner: &Interner) {
+    let mut d = vec![];
+    let receiver_ty = lower_extension_receiver(&decl.receiver, interner, &mut d);
+    for method in &decl.methods {
+        validate_type_params(&method.type_params, method.span, &mut d);
+        if table
+            .extension_methods
+            .iter()
+            .any(|existing| existing.receiver_ty == receiver_ty && existing.name == method.name)
+        {
+            d.push(Diagnostic {
+                severity: Severity::Error,
+                message: format!("duplicate extension method `{:?}`", method.name),
+                primary_span: method.span,
+                primary_label: Some("method defined again for this receiver".into()),
+                secondary: vec![],
+                help: None,
+                code: None,
+            });
+            continue;
+        }
+
+        let (_, params) =
+            split_params_with_type_params(&method.params, &method.type_params, &mut d);
+        let return_ty = method
+            .return_ty
+            .as_ref()
+            .map(|ty| lower_type_with_params(ty, &method.type_params, &mut d))
+            .unwrap_or_else(Ty::void);
+        table.extension_methods.push(ExtensionMethod {
+            receiver_ty: receiver_ty.clone(),
+            name: method.name,
+            type_params: method.type_params.clone(),
+            params,
+            return_ty,
+            def_span: method.span,
+        });
+    }
+    table.diagnostics.extend(d);
+}
+
+fn lower_extension_receiver(
+    receiver: &TypeExpr,
+    interner: &Interner,
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
+    if let TypeExpr::Named(name, _) = receiver {
+        if let Some(primitive) = lower_primitive(interner.resolve(*name)) {
+            return primitive;
+        }
+    }
+    lower_type(receiver, diags)
+}
 
 fn register_tool_decl(table: &mut SymbolTable, decl: &ToolDecl) {
     let mut d = vec![];
@@ -770,6 +841,69 @@ mod tests {
             .expect("greet not found");
         assert_eq!(sym.kind, SymbolKind::Function);
         assert!(matches!(sym.ty, Ty::Function(_)));
+    }
+
+    #[test]
+    fn extension_method_registers_in_method_table() {
+        let i = interner();
+        let module = Module {
+            items: vec![Item::Extend(ExtendDecl {
+                receiver: ty_str(&i),
+                methods: vec![FunctionDecl {
+                    annotations: vec![],
+                    builtin: BuiltinFunctionMeta::User,
+                    native: None,
+                    name: intern(&i, "isEmpty"),
+                    type_params: vec![],
+                    params: vec![],
+                    return_ty: Some(TypeExpr::Named(intern(&i, "bool"), sp())),
+                    body: vec![],
+                    span: sp(),
+                }],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert_eq!(table.extension_methods.len(), 1);
+        assert_eq!(table.extension_methods[0].name, intern(&i, "isEmpty"));
+        assert_eq!(table.extension_methods[0].receiver_ty, Ty::string());
+    }
+
+    #[test]
+    fn duplicate_extension_method_errors() {
+        let i = interner();
+        let method = || FunctionDecl {
+            annotations: vec![],
+            builtin: BuiltinFunctionMeta::User,
+            native: None,
+            name: intern(&i, "isEmpty"),
+            type_params: vec![],
+            params: vec![],
+            return_ty: Some(TypeExpr::Named(intern(&i, "bool"), sp())),
+            body: vec![],
+            span: sp(),
+        };
+        let module = Module {
+            items: vec![Item::Extend(ExtendDecl {
+                receiver: ty_str(&i),
+                methods: vec![method(), method()],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate extension method")),
+            "expected duplicate extension method diagnostic, got {:?}",
+            table.diagnostics
+        );
     }
 
     #[test]

@@ -6,9 +6,9 @@ use chumsky::prelude::*;
 use quew_ast::expr::{Provider, ProviderCall};
 use quew_ast::lit::{StringKind, StringLit};
 use quew_ast::{
-    AgentDecl, BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, ConfigField, FieldDef,
-    FunctionDecl, Item, LetDecl, ModelDecl, Module, NativeBinding, RoleBindingSyntax, ToolDecl,
-    ToolEntry, ToolsDecl, TypeDecl,
+    AgentDecl, BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, ConfigField, ExtendDecl,
+    FieldDef, FunctionDecl, Item, LetDecl, ModelDecl, Module, NativeBinding, RoleBindingSyntax,
+    ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
 };
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
@@ -56,6 +56,7 @@ where
         tool_decl(source, interner.clone()),
         type_decl(source, interner.clone()),
         model_decl(source, interner.clone()),
+        extend_decl(source, interner.clone()),
         let_decl(source, interner.clone()),
     ))
     .recover_with(via_parser(
@@ -169,6 +170,16 @@ fn function<'tok, I>(
 where
     I: Input<'tok>,
 {
+    function_decl(source, interner).map(Item::Function)
+}
+
+fn function_decl<'tok, I>(
+    source: &'tok str,
+    interner: Arc<Interner>,
+) -> impl Parser<'tok, I, FunctionDecl, ParseError<'tok>> + Clone
+where
+    I: Input<'tok>,
+{
     annotations(source, interner.clone())
         .then_ignore(just(TokenKind::KwFunction))
         .then(function_name(source, interner.clone()))
@@ -182,7 +193,7 @@ where
         .then(block(source, interner.clone()))
         .map_with(
             |(((((annotations, name), type_params), params), return_ty), body), extra| {
-                Item::Function(FunctionDecl {
+                FunctionDecl {
                     annotations,
                     builtin: BuiltinFunctionMeta::User,
                     native: None,
@@ -192,7 +203,7 @@ where
                     return_ty,
                     body,
                     span: to_span(extra.span()),
-                })
+                }
             },
         )
 }
@@ -523,6 +534,32 @@ where
 }
 
 // ── Top-level let ─────────────────────────────────────────────────────────────
+
+fn extend_decl<'tok, I>(
+    source: &'tok str,
+    interner: Arc<Interner>,
+) -> impl Parser<'tok, I, Item, ParseError<'tok>> + Clone
+where
+    I: Input<'tok>,
+{
+    let methods = function_decl(source, interner.clone())
+        .separated_by(just(TokenKind::Newline).repeated().at_least(1))
+        .allow_leading()
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace));
+
+    just(TokenKind::KwExtend)
+        .ignore_then(type_expr(source, interner.clone()))
+        .then(methods)
+        .map_with(|(receiver, methods), extra| {
+            Item::Extend(ExtendDecl {
+                receiver,
+                methods,
+                span: to_span(extra.span()),
+            })
+        })
+}
 
 fn let_decl<'tok, I>(
     source: &'tok str,

@@ -26,6 +26,7 @@ pub enum Item {
     Tools(ToolsDecl),
     Type(TypeDecl),
     Model(ModelDecl),
+    Extend(ExtendDecl),
     /// Top-level `let` binding (rare but valid).
     Let(LetDecl),
 }
@@ -39,6 +40,7 @@ impl Item {
             Self::Tools(d) => d.span,
             Self::Type(d) => d.span,
             Self::Model(d) => d.span,
+            Self::Extend(d) => d.span,
             Self::Let(d) => d.span,
         }
     }
@@ -187,6 +189,13 @@ pub struct ModelDecl {
     pub name: InternedStr,
     pub provider: ProviderCall,
     pub config: Vec<ConfigField>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtendDecl {
+    pub receiver: TypeExpr,
+    pub methods: Vec<FunctionDecl>,
     pub span: Span,
 }
 
@@ -350,6 +359,16 @@ mod tests {
             span: sp(),
         };
         assert_eq!(Item::Model(m).span(), sp());
+    }
+
+    #[test]
+    fn extend_decl_item_span() {
+        let d = ExtendDecl {
+            receiver: ty_string(),
+            methods: vec![],
+            span: sp(),
+        };
+        assert_eq!(Item::Extend(d).span(), sp());
     }
 
     #[test]

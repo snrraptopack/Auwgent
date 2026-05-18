@@ -3,3 +3,13 @@
 
 @@rust("std.string.contains")
 !@@function string_contains(value: string, substring: string): bool
+
+extend string {
+    function isEmpty(): bool {
+        return string_is_empty(self)
+    }
+
+    function contains(substring: string): bool {
+        return string_contains(self, substring)
+    }
+}

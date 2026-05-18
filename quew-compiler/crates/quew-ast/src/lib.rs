@@ -39,8 +39,8 @@ pub use expr::{
     PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
 };
 pub use item::{
-    AgentDecl, Annotation, AnnotationArgs, FieldDef, FunctionDecl, Item, LetDecl, ModelDecl,
-    Module, Param, ParamBinding, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
+    AgentDecl, Annotation, AnnotationArgs, ExtendDecl, FieldDef, FunctionDecl, Item, LetDecl,
+    ModelDecl, Module, Param, ParamBinding, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
 };
 pub use lit::{Lit, StringKind, StringLit};
 pub use stmt::{

@@ -37,6 +37,9 @@ pub struct Definitions {
 
     /// Compiler role bindings declared by builtin types.
     pub roles: IndexMap<IrRoleKey, IrRoleBinding>,
+
+    /// Extension methods declared with `extend Type { ... }`.
+    pub extensions: Vec<ExtensionDef>,
 }
 
 // ── Type definitions ──────────────────────────────────────────────────────────
@@ -175,6 +178,16 @@ pub struct FunctionDef {
 // ── Agent definitions ─────────────────────────────────────────────────────────
 
 /// An agent declaration — metadata only. The body lives in `QuewGraphIR::graphs`.
+#[derive(Debug, Clone)]
+pub struct ExtensionDef {
+    pub receiver: IrType,
+    pub method_name: InternedStr,
+    pub type_params: Vec<InternedStr>,
+    pub params: IndexMap<InternedStr, IrType>,
+    pub returns: IrType,
+    pub graph_ref: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentDef {
     /// Type of the agent's input parameter.

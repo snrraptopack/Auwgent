@@ -82,6 +82,7 @@ where
         TokenKind::KwTools       => (),
         TokenKind::KwType        => (),
         TokenKind::KwModel       => (),
+        TokenKind::KwExtend      => (),
         TokenKind::KwLet         => (),
         TokenKind::KwIf          => (),
         TokenKind::KwElse        => (),

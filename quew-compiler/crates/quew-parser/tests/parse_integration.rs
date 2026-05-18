@@ -185,6 +185,26 @@ function identity<T>(value: T): T {
 }
 
 #[test]
+fn extension_method_declaration_parses() {
+    let result = lex_and_parse(
+        r#"
+extend string {
+    function isEmpty(): bool {
+        return string_is_empty(self)
+    }
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Extend(decl) => {
+            assert_eq!(decl.methods.len(), 1);
+        }
+        other => panic!("expected extension declaration, got {other:?}"),
+    }
+}
+
+#[test]
 fn public_builtin_type_declaration_parses() {
     let result = lex_and_parse("@@type Text = { value: string }");
     assert!(result.errors.is_empty(), "{:?}", result.errors);

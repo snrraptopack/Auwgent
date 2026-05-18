@@ -89,6 +89,8 @@ pub enum TokenKind {
     KwType,
     #[token("model")]
     KwModel,
+    #[token("extend")]
+    KwExtend,
     #[token("let")]
     KwLet,
 
@@ -265,6 +267,7 @@ impl std::fmt::Display for TokenKind {
             Self::KwTools => "`tools`",
             Self::KwType => "`type`",
             Self::KwModel => "`model`",
+            Self::KwExtend => "`extend`",
             Self::KwLet => "`let`",
             Self::KwIf => "`if`",
             Self::KwElse => "`else`",
@@ -369,6 +372,10 @@ mod tests {
     #[test]
     fn kw_model() {
         assert_eq!(tokens("model"), vec![TokenKind::KwModel]);
+    }
+    #[test]
+    fn kw_extend() {
+        assert_eq!(tokens("extend"), vec![TokenKind::KwExtend]);
     }
     #[test]
     fn kw_let() {

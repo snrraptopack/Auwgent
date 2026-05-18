@@ -79,7 +79,7 @@ mod tests {
             "unexpected diagnostics: {:?}",
             parsed.diagnostics
         );
-        assert_eq!(parsed.module.items.len(), 10);
+        assert_eq!(parsed.module.items.len(), 11);
     }
 
     #[test]
@@ -153,6 +153,18 @@ mod tests {
             table.globals[&contains].native,
             Some(interner.intern("std.string.contains"))
         );
+        assert!(
+            table
+                .extension_methods
+                .iter()
+                .any(|method| method.name == interner.intern("isEmpty"))
+        );
+        assert!(
+            table
+                .extension_methods
+                .iter()
+                .any(|method| method.name == interner.intern("contains"))
+        );
     }
 
     #[test]
@@ -165,6 +177,6 @@ mod tests {
         let merged = module_with_prelude(&user, &interner);
 
         assert!(merged.diagnostics.is_empty(), "{:?}", merged.diagnostics);
-        assert_eq!(merged.module.items.len(), 10);
+        assert_eq!(merged.module.items.len(), 11);
     }
 }

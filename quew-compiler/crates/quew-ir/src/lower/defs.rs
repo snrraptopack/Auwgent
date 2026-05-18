@@ -11,8 +11,8 @@ use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 
 use crate::defs::{
-    AgentDef, Definitions, DisclosureMode, FunctionDef, IrRoleBinding, IrRoleKey, IrTypeVisibility,
-    ModelDef, ProtocolMode, ProviderKind, ToolDef, ToolKind, ToolParam, TypeDef,
+    AgentDef, Definitions, DisclosureMode, ExtensionDef, FunctionDef, IrRoleBinding, IrRoleKey,
+    IrTypeVisibility, ModelDef, ProtocolMode, ProviderKind, ToolDef, ToolKind, ToolParam, TypeDef,
 };
 use crate::graph::AgentGraph;
 use crate::types::{IrField, IrType};
@@ -33,6 +33,7 @@ pub fn lower_definitions(
             Item::Tool(decl) => lower_tool(decl, interner, definitions),
             Item::Tools(decl) => lower_tools_group(decl, interner, definitions),
             Item::Function(decl) => lower_function(decl, interner, definitions, graphs),
+            Item::Extend(decl) => lower_extend(decl, interner, definitions),
             Item::Agent(decl) => {
                 let context = decl.annotations.iter().find_map(|ann| {
                     if ann.kind == AnnotationKind::Context {
@@ -59,6 +60,60 @@ pub fn lower_definitions(
             }
             Item::Let(_) => { /* top-level let: not yet supported */ }
         }
+    }
+}
+
+fn lower_extend(
+    decl: &quew_ast::ExtendDecl,
+    interner: &Arc<Interner>,
+    defs: &mut Definitions,
+) {
+    let receiver = lower_type_expr(&decl.receiver, interner);
+    for method in &decl.methods {
+        let params = method
+            .params
+            .iter()
+            .map(|param| {
+                (
+                    param.name,
+                    lower_type_expr_with_params(&param.ty, &method.type_params, interner),
+                )
+            })
+            .collect();
+        defs.extensions.push(ExtensionDef {
+            receiver: receiver.clone(),
+            method_name: method.name,
+            type_params: method.type_params.clone(),
+            params,
+            returns: method
+                .return_ty
+                .as_ref()
+                .map(|ty| lower_type_expr_with_params(ty, &method.type_params, interner))
+                .unwrap_or(IrType::Void),
+            graph_ref: format!(
+                "extension:{}:{}",
+                type_ref_name(&receiver, interner),
+                interner.resolve(method.name)
+            ),
+        });
+    }
+}
+
+fn type_ref_name(ty: &IrType, interner: &Arc<Interner>) -> String {
+    match ty {
+        IrType::String | IrType::Text => "string".into(),
+        IrType::Number => "number".into(),
+        IrType::Float => "float".into(),
+        IrType::Bool => "bool".into(),
+        IrType::Null => "null".into(),
+        IrType::Void => "void".into(),
+        IrType::Named(name) | IrType::GenericParam(name) | IrType::AgentOutput(name) => {
+            interner.resolve(*name).to_string()
+        }
+        IrType::GenericInstance { name, .. } => interner.resolve(*name).to_string(),
+        IrType::Object(_) => "object".into(),
+        IrType::Array(_) => "array".into(),
+        IrType::Union(_) => "union".into(),
     }
 }
 
@@ -619,6 +674,42 @@ mod tests {
 
         let def = &defs.functions[&decl.name];
         assert_eq!(def.native, Some(native_id));
+    }
+
+    #[test]
+    fn lower_extension_method_preserves_receiver_and_signature() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let decl = quew_ast::ExtendDecl {
+            receiver: named(&interner, "string"),
+            methods: vec![FunctionDecl {
+                annotations: vec![],
+                builtin: quew_ast::BuiltinFunctionMeta::User,
+                native: None,
+                name: interner.intern("contains"),
+                type_params: vec![],
+                params: vec![Param {
+                    binding: ParamBinding::Normal,
+                    name: interner.intern("substring"),
+                    ty: named(&interner, "string"),
+                    optional: false,
+                    span: sp(),
+                }],
+                return_ty: Some(named(&interner, "bool")),
+                body: vec![],
+                span: sp(),
+            }],
+            span: sp(),
+        };
+
+        lower_extend(&decl, &interner, &mut defs);
+
+        assert_eq!(defs.extensions.len(), 1);
+        let method = &defs.extensions[0];
+        assert_eq!(method.receiver, IrType::String);
+        assert_eq!(method.method_name, interner.intern("contains"));
+        assert_eq!(method.params[&interner.intern("substring")], IrType::String);
+        assert_eq!(method.returns, IrType::Bool);
     }
 
     #[test]

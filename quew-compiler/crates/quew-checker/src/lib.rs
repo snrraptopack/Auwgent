@@ -188,6 +188,45 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     &mut diagnostics,
                 );
             }
+            Item::Extend(decl) => {
+                let self_ty =
+                    resolve_type(&decl.receiver, &symbol_table, &prim, &mut diagnostics);
+                for method in &decl.methods {
+                    let mut local = LocalScope::new();
+                    local.push();
+                    local.define(wk.self_ident, self_ty.clone(), method.span, &mut diagnostics);
+                    for p in &method.params {
+                        let ty = resolve_type_with_params(
+                            &p.ty,
+                            &method.type_params,
+                            &symbol_table,
+                            &prim,
+                            &mut diagnostics,
+                        );
+                        local.define(p.name, ty, p.span, &mut diagnostics);
+                    }
+                    let ret_ty = method.return_ty.as_ref().map(|t| {
+                        resolve_type_with_params(
+                            t,
+                            &method.type_params,
+                            &symbol_table,
+                            &prim,
+                            &mut diagnostics,
+                        )
+                    });
+                    check_body(
+                        &method.body,
+                        &symbol_table,
+                        &mut local,
+                        ret_ty.as_ref(),
+                        &wk,
+                        &prim,
+                        &mut unify,
+                        &mut diagnostics,
+                    );
+                    local.pop();
+                }
+            }
             _ => {}
         }
     }
@@ -417,7 +456,7 @@ fn infer_expr(
 
         Expr::Call(c) => {
             if let Expr::Member(m) = c.callee.as_ref() {
-                if let Some(ty) = infer_builtin_method_call(
+                if let Some(ty) = infer_extension_method_call(
                     m, &c.args, table, local, wk, prim, unify, diags, c.span,
                 ) {
                     return ty;
@@ -520,7 +559,7 @@ fn provider_call_ty(
     Ty::Provider(kind)
 }
 
-fn infer_builtin_method_call(
+fn infer_extension_method_call(
     member: &quew_ast::expr::MemberExpr,
     args: &[Expr],
     table: &SymbolTable,
@@ -532,40 +571,50 @@ fn infer_builtin_method_call(
     call_span: Span,
 ) -> Option<Ty> {
     let receiver = infer_expr(&member.object, table, local, wk, prim, unify, diags);
-    for arg in args {
-        infer_expr(arg, table, local, wk, prim, unify, diags);
+
+    if receiver == Ty::Error {
+        for arg in args {
+            infer_expr(arg, table, local, wk, prim, unify, diags);
+        }
+        return Some(Ty::Error);
     }
 
-    match receiver {
-        Ty::Primitive(quew_types::PrimTy::String) if member.field == wk.is_empty => {
-            if !args.is_empty() {
-                diags.push(mk_err(
-                    call_span,
-                    format!(
-                        "`string.isEmpty()` expects 0 argument(s), found {}",
-                        args.len()
-                    ),
-                    "wrong number of arguments",
-                    None,
-                ));
-                return Some(Ty::Error);
-            }
-            Some(Ty::bool_ty())
-        }
-        Ty::Primitive(quew_types::PrimTy::String) => None,
-        Ty::Error => Some(Ty::Error),
-        _ if member.field == wk.is_empty => {
-            diags.push(mk_err(
+    let method = table.extension_methods.iter().find(|method| {
+        method.name == member.field
+            && receiver.is_assignable_to(&resolve_semantic_ty(
+                &method.receiver_ty,
+                table,
+                prim,
+                &mut vec![],
                 member.span,
-                "`isEmpty()` is only defined on `string`".into(),
-                "receiver is not a string",
-                None,
-            ));
-            Some(Ty::Error)
-        }
-        _ => None,
-    }
+            ))
+    })?;
+
+    let arg_tys: Vec<Ty> = args
+        .iter()
+        .map(|arg| infer_expr(arg, table, local, wk, prim, unify, diags))
+        .collect();
+
+    let function = quew_types::FunctionTy {
+        type_params: method.type_params.clone(),
+        params: method
+            .params
+            .iter()
+            .map(|(name, ty)| (*name, resolve_semantic_ty(ty, table, prim, diags, call_span)))
+            .collect(),
+        return_ty: Box::new(resolve_semantic_ty(
+            &method.return_ty,
+            table,
+            prim,
+            diags,
+            call_span,
+        )),
+    };
+    Some(instantiate_function_call(
+        &function, &arg_tys, call_span, diags,
+    ))
 }
+
 
 fn infer_lit(lit: &Lit) -> Ty {
     match lit {
