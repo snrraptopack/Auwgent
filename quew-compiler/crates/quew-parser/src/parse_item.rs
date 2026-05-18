@@ -7,8 +7,8 @@ use quew_ast::expr::{Provider, ProviderCall};
 use quew_ast::lit::{StringKind, StringLit};
 use quew_ast::{
     AgentDecl, BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, ConfigField, FieldDef,
-    FunctionDecl, Item, LetDecl, ModelDecl, Module, RoleBindingSyntax, ToolDecl, ToolEntry,
-    ToolsDecl, TypeDecl,
+    FunctionDecl, Item, LetDecl, ModelDecl, Module, NativeBinding, RoleBindingSyntax, ToolDecl,
+    ToolEntry, ToolsDecl, TypeDecl,
 };
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
@@ -185,6 +185,7 @@ where
                 Item::Function(FunctionDecl {
                     annotations,
                     builtin: BuiltinFunctionMeta::User,
+                    native: None,
                     name,
                     type_params,
                     params,
@@ -203,36 +204,54 @@ fn builtin_function<'tok, I>(
 where
     I: Input<'tok>,
 {
+    let native_binding = just(TokenKind::AtAtRust)
+        .ignore_then(
+            string_literal(source, interner.clone())
+                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
+        )
+        .map_with(|(id, id_span), extra: &mut _| NativeBinding {
+            id: quew_ast::StringLit {
+                value: id,
+                kind: quew_ast::StringKind::Regular,
+                span: to_span(id_span),
+            },
+            span: to_span(extra.span()),
+        })
+        .then_ignore(just(TokenKind::Newline).repeated().ignored())
+        .or_not();
+
     // Builtin function declarations are trusted prelude signatures. They do not
-    // need a Quew body until Plan 11 introduces explicit `#rust("id")` leaves.
-    choice((
-        just(TokenKind::BangAtAt).to(BuiltinFunctionMeta::internal()),
-        just(TokenKind::AtAt).to(BuiltinFunctionMeta::public()),
-    ))
-    .then_ignore(just(TokenKind::Newline).repeated().ignored())
-    .then_ignore(just(TokenKind::KwFunction))
-    .then(function_name(source, interner.clone()))
-    .then(type_params(source, interner.clone()))
-    .then(param_list(source, interner.clone()))
-    .then(
-        just(TokenKind::Colon)
-            .ignore_then(type_expr(source, interner.clone()))
-            .or_not(),
-    )
-    .map_with(
-        |((((builtin, name), type_params), params), return_ty), extra| {
-            Item::Function(FunctionDecl {
-                annotations: vec![],
-                builtin,
-                name,
-                type_params,
-                params,
-                return_ty,
-                body: vec![],
-                span: to_span(extra.span()),
-            })
-        },
-    )
+    // need a Quew body until Plan 11 introduces explicit `@@rust("id")` leaves.
+    native_binding
+        .then(choice((
+            just(TokenKind::BangAtAt).to(BuiltinFunctionMeta::internal()),
+            just(TokenKind::AtAt).to(BuiltinFunctionMeta::public()),
+        )))
+        .then_ignore(just(TokenKind::Newline).repeated().ignored())
+        .then_ignore(just(TokenKind::KwFunction))
+        .then(function_name(source, interner.clone()))
+        .then(type_params(source, interner.clone()))
+        .then(param_list(source, interner.clone()))
+        .then(
+            just(TokenKind::Colon)
+                .ignore_then(type_expr(source, interner.clone()))
+                .or_not(),
+        )
+        .map_with(
+            |(((((native, builtin), name), type_params), params), return_ty), extra| {
+                Item::Function(FunctionDecl {
+                    annotations: vec![],
+                    builtin,
+                    native,
+                    name,
+                    type_params,
+                    params,
+                    return_ty,
+                    body: vec![],
+                    span: to_span(extra.span()),
+                })
+            },
+        )
 }
 
 // ── Tool ──────────────────────────────────────────────────────────────────────

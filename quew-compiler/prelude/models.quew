@@ -11,6 +11,6 @@ type ModelBody = {
     config?: ModelConfig
 }
 
-@@function gemini(name: string): Model
-@@function openai(name: string): Model
-@@function groq(name: string): Model
+@@function gemini(name: string,config?: ModelConfig): Model
+@@function openai(name: string,config?: ModelConfig): Model
+@@function groq(name: string,config?: ModelConfig): Model

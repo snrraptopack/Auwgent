@@ -6,6 +6,7 @@ use quew_types::Ty;
 pub(crate) struct WellKnownKeys {
     pub(crate) model: InternedStr,
     pub(crate) model_type: InternedStr,
+    pub(crate) config: InternedStr,
     pub(crate) fallback: InternedStr,
     pub(crate) prompt: InternedStr,
     pub(crate) tools: InternedStr,
@@ -25,6 +26,7 @@ impl WellKnownKeys {
         Self {
             model: i.intern("model"),
             model_type: i.intern("Model"),
+            config: i.intern("config"),
             fallback: i.intern("fallback"),
             prompt: i.intern("prompt"),
             tools: i.intern("tools"),

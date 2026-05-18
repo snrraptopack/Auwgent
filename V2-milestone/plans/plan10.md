@@ -1,6 +1,6 @@
 # Plan 10: Builtin Functions And Model Body Contract
 
-**Status: In Progress.**
+**Status: Complete.**
 
 Plan 10 starts moving hardcoded model/provider construction into compiler-owned
 Quew source without introducing a separate provider-role system.
@@ -425,16 +425,16 @@ Testing should be layered and aggressive.
 - [x] `Model`, `ModelConfig`, and `ModelBody` are available from the prelude.
 - [x] `gemini`, `openai`, and `groq` are declared as builtin functions in the
   prelude.
-- [ ] Checker resolves role-bound `ModelBody` without hardcoding its name.
-- [ ] Model declaration bodies are validated through `(model, body)` where
+- [x] Checker resolves role-bound `ModelBody` without hardcoding its name.
+- [x] Model declaration bodies are validated through `(model, body)` where
   expressible.
-- [ ] Existing `model Gemini = { model: gemini("gemini-pro") }` behavior remains
+- [x] Existing `model Gemini = { model: gemini("gemini-pro") }` behavior remains
   compatible.
-- [ ] Model declarations lower to the same provider IR shape as before.
-- [ ] `with { model, fallback }` specialized validation remains compatible.
-- [ ] Prelude-free `check()` still supports isolated tests.
-- [ ] Aggressive tests cover parser, scope, checker, prelude, and IR behavior.
-- [ ] `cargo test --workspace` passes.
+- [x] Model declarations lower to the same provider IR shape as before.
+- [x] `with { model, fallback }` specialized validation remains compatible.
+- [x] Prelude-free `check()` still supports isolated tests.
+- [x] Aggressive tests cover parser, scope, checker, prelude, and IR behavior.
+- [x] `cargo test --workspace` passes.
 
 ---
 

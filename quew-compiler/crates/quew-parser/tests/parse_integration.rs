@@ -28,6 +28,14 @@ fn lex_and_parse(source: &str) -> quew_parser::ParseResult {
     parse(&lex_result, source, &interner)
 }
 
+fn lex_and_parse_with_interner(source: &str) -> (quew_parser::ParseResult, Arc<Interner>) {
+    let interner = Arc::new(Interner::new());
+    let map = SourceMap::new(Arc::clone(&interner));
+    let sid = map.add("<test>", source);
+    let lex_result = lex(source, sid, &interner);
+    (parse(&lex_result, source, &interner), interner)
+}
+
 // ── valid fixture tests ───────────────────────────────────────────────────────
 
 #[test]
@@ -203,6 +211,7 @@ fn public_builtin_function_signature_parses_without_body() {
     match &result.module.items[0] {
         Item::Function(decl) => {
             assert_eq!(decl.builtin, BuiltinFunctionMeta::public());
+            assert!(decl.native.is_none());
             assert_eq!(decl.params.len(), 1);
             assert!(decl.body.is_empty());
         }
@@ -221,6 +230,38 @@ fn internal_builtin_function_signature_parses_without_body() {
 }
 
 #[test]
+fn public_native_builtin_function_signature_parses() {
+    let (result, interner) = lex_and_parse_with_interner(
+        "@@rust(\"std.provider.gemini\")\n@@function gemini(name: string): Model",
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Function(decl) => {
+            assert_eq!(decl.builtin, BuiltinFunctionMeta::public());
+            let native = decl.native.as_ref().expect("missing native binding");
+            assert_eq!(native.id.value, interner.intern("std.provider.gemini"));
+        }
+        other => panic!("expected builtin function declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn internal_native_builtin_function_signature_parses() {
+    let (result, interner) = lex_and_parse_with_interner(
+        "@@rust(\"std.string.is_empty\")\n!@@function string_is_empty(value: string): bool",
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Function(decl) => {
+            assert_eq!(decl.builtin, BuiltinFunctionMeta::internal());
+            let native = decl.native.as_ref().expect("missing native binding");
+            assert_eq!(native.id.value, interner.intern("std.string.is_empty"));
+        }
+        other => panic!("expected builtin function declaration, got {other:?}"),
+    }
+}
+
+#[test]
 fn ordinary_function_remains_user_function() {
     let result = lex_and_parse(
         r#"
@@ -231,7 +272,10 @@ function greet(name: string): string {
     );
     assert!(result.errors.is_empty(), "{:?}", result.errors);
     match &result.module.items[0] {
-        Item::Function(decl) => assert_eq!(decl.builtin, BuiltinFunctionMeta::User),
+        Item::Function(decl) => {
+            assert_eq!(decl.builtin, BuiltinFunctionMeta::User);
+            assert!(decl.native.is_none());
+        }
         other => panic!("expected function declaration, got {other:?}"),
     }
 }

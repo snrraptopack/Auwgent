@@ -8,6 +8,8 @@
 use quew_errors::Span;
 use quew_interner::InternedStr;
 
+use crate::lit::StringLit;
+
 /// Extra metadata carried by a `type` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuiltinTypeMeta {
@@ -84,6 +86,16 @@ pub enum BuiltinVisibility {
 pub struct RoleBindingSyntax {
     pub keyword: InternedStr,
     pub place: InternedStr,
+    pub span: Span,
+}
+
+/// Native implementation id attached to a trusted builtin function.
+///
+/// Plan 11 records this metadata only. Runtime dispatch is deliberately a later
+/// layer so the compiler can first prove the source -> AST -> scope -> IR path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeBinding {
+    pub id: StringLit,
     pub span: Span,
 }
 

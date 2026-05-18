@@ -37,6 +37,7 @@ pub struct Symbol {
     pub def_span: Span,
     pub type_params: Vec<InternedStr>,
     pub visibility: BuiltinVisibility,
+    pub native: Option<InternedStr>,
 }
 
 // ── SymbolTable ───────────────────────────────────────────────────────────────
@@ -86,6 +87,25 @@ fn symbol(
         def_span,
         type_params,
         visibility,
+        native: None,
+    }
+}
+
+fn symbol_with_native(
+    ty: Ty,
+    kind: SymbolKind,
+    def_span: Span,
+    type_params: Vec<InternedStr>,
+    visibility: BuiltinVisibility,
+    native: Option<InternedStr>,
+) -> Symbol {
+    Symbol {
+        ty,
+        kind,
+        def_span,
+        type_params,
+        visibility,
+        native,
     }
 }
 
@@ -328,6 +348,20 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
             // ── function ───────────────────────────────────────────────────────
             Item::Function(decl) => {
                 validate_type_params(&decl.type_params, decl.span, &mut d);
+                if decl.native.is_some() && matches!(decl.builtin, BuiltinFunctionMeta::User) {
+                    d.push(Diagnostic {
+                        severity: Severity::Error,
+                        message: "`@@rust` native bindings are only allowed on builtin functions"
+                            .into(),
+                        primary_span: decl.span,
+                        primary_label: Some("ordinary function cannot be native".into()),
+                        secondary: vec![],
+                        help: Some(
+                            "use `@@function` or `!@@function` in trusted prelude source".into(),
+                        ),
+                        code: None,
+                    });
+                }
                 let bound = extract_tool_annotation_params(decl, &mut d);
                 let (_, model) =
                     split_params_with_type_params(&decl.params, &decl.type_params, &mut d);
@@ -358,12 +392,13 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
                 table.diagnostics.extend(d);
                 table.define_global(
                     decl.name,
-                    symbol(
+                    symbol_with_native(
                         ty,
                         kind,
                         decl.span,
                         decl.type_params.clone(),
                         visibility_from_function_builtin(&decl.builtin),
+                        decl.native.as_ref().map(|native| native.id.value),
                     ),
                 );
             }
@@ -718,6 +753,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "greet"),
                 type_params: vec![],
                 params: vec![normal_param(&i, "name")],
@@ -744,6 +780,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "identity"),
                 type_params: vec![t_param],
                 params: vec![Param {
@@ -841,6 +878,75 @@ mod tests {
         assert_eq!(
             table.globals[&intern(&i, "InternalText")].visibility,
             super::BuiltinVisibility::InternalBuiltin
+        );
+    }
+
+    #[test]
+    fn internal_builtin_function_preserves_native_binding() {
+        let i = interner();
+        let native_id = intern(&i, "std.string.is_empty");
+        let module = Module {
+            items: vec![Item::Function(FunctionDecl {
+                annotations: vec![],
+                builtin: BuiltinFunctionMeta::internal(),
+                native: Some(NativeBinding {
+                    id: StringLit {
+                        value: native_id,
+                        kind: StringKind::Regular,
+                        span: sp(),
+                    },
+                    span: sp(),
+                }),
+                name: intern(&i, "string_is_empty"),
+                type_params: vec![],
+                params: vec![normal_param(&i, "value")],
+                return_ty: Some(TypeExpr::Named(intern(&i, "bool"), sp())),
+                body: vec![],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        let sym = &table.globals[&intern(&i, "string_is_empty")];
+        assert_eq!(sym.visibility, super::BuiltinVisibility::InternalBuiltin);
+        assert_eq!(sym.native, Some(native_id));
+    }
+
+    #[test]
+    fn user_function_native_binding_errors() {
+        let i = interner();
+        let module = Module {
+            items: vec![Item::Function(FunctionDecl {
+                annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
+                native: Some(NativeBinding {
+                    id: StringLit {
+                        value: intern(&i, "std.bad"),
+                        kind: StringKind::Regular,
+                        span: sp(),
+                    },
+                    span: sp(),
+                }),
+                name: intern(&i, "bad"),
+                type_params: vec![],
+                params: vec![],
+                return_ty: None,
+                body: vec![],
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("only allowed on builtin functions")),
+            "expected native binding diagnostic, got {:?}",
+            table.diagnostics
         );
     }
 
@@ -1026,6 +1132,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 builtin: quew_ast::BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![normal_param(&i, "isAdmin"), bound_param(&i, "id")],
@@ -1072,6 +1179,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 builtin: quew_ast::BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![bound_param(&i, "missing")],

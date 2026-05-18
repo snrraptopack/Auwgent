@@ -4,7 +4,7 @@ use quew_errors::Span;
 use quew_interner::InternedStr;
 use quew_lexer::AnnotationKind;
 
-use crate::builtin::{BuiltinFunctionMeta, BuiltinTypeMeta};
+use crate::builtin::{BuiltinFunctionMeta, BuiltinTypeMeta, NativeBinding};
 use crate::expr::{ConfigField, Expr, ProviderCall};
 use crate::lit::StringLit;
 use crate::stmt::Stmt;
@@ -113,6 +113,8 @@ pub struct FunctionDecl {
     pub annotations: Vec<Annotation>,
     /// Builtin/prelude metadata. User functions carry `BuiltinFunctionMeta::User`.
     pub builtin: BuiltinFunctionMeta,
+    /// Optional native Rust implementation id for trusted builtin leaves.
+    pub native: Option<NativeBinding>,
     pub name: InternedStr,
     pub type_params: Vec<InternedStr>,
     pub params: Vec<Param>,
@@ -267,6 +269,7 @@ mod tests {
         let f = FunctionDecl {
             annotations: vec![],
             builtin: BuiltinFunctionMeta::User,
+            native: None,
             name: intern("greet"),
             type_params: vec![],
             params: vec![normal_param("name")],

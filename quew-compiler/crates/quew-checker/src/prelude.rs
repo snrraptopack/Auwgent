@@ -13,11 +13,13 @@ use quew_source::SourceMap;
 const TOOLS_PRELUDE: &str = include_str!("../../../prelude/tools.quew");
 const WITH_PRELUDE: &str = include_str!("../../../prelude/with.quew");
 const MODELS_PRELUDE: &str = include_str!("../../../prelude/models.quew");
+const NATIVE_PRELUDE: &str = include_str!("../../../prelude/native.quew");
 
 const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<quew-prelude:tools.quew>", TOOLS_PRELUDE),
     ("<quew-prelude:with.quew>", WITH_PRELUDE),
     ("<quew-prelude:models.quew>", MODELS_PRELUDE),
+    ("<quew-prelude:native.quew>", NATIVE_PRELUDE),
 ];
 
 #[derive(Debug)]
@@ -77,7 +79,7 @@ mod tests {
             "unexpected diagnostics: {:?}",
             parsed.diagnostics
         );
-        assert_eq!(parsed.module.items.len(), 8);
+        assert_eq!(parsed.module.items.len(), 10);
     }
 
     #[test]
@@ -135,6 +137,25 @@ mod tests {
     }
 
     #[test]
+    fn prelude_registers_native_builtin_functions() {
+        let interner = Arc::new(Interner::new());
+        let parsed = parse_prelude(&interner);
+        let table = build_symbol_table(&parsed.module, &interner);
+        let is_empty = interner.intern("string_is_empty");
+        let contains = interner.intern("string_contains");
+
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert_eq!(
+            table.globals[&is_empty].native,
+            Some(interner.intern("std.string.is_empty"))
+        );
+        assert_eq!(
+            table.globals[&contains].native,
+            Some(interner.intern("std.string.contains"))
+        );
+    }
+
+    #[test]
     fn merge_keeps_user_module_items_after_prelude_items() {
         let interner = Arc::new(Interner::new());
         let user = Module {
@@ -144,6 +165,6 @@ mod tests {
         let merged = module_with_prelude(&user, &interner);
 
         assert!(merged.diagnostics.is_empty(), "{:?}", merged.diagnostics);
-        assert_eq!(merged.module.items.len(), 8);
+        assert_eq!(merged.module.items.len(), 10);
     }
 }

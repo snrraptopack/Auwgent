@@ -237,6 +237,7 @@ fn lower_function(
                     .as_ref()
                     .map(|ty| lower_type_expr_with_params(ty, &decl.type_params, interner))
                     .unwrap_or(IrType::Void),
+                native: decl.native.as_ref().map(|native| native.id.value),
                 graph_ref,
             },
         );
@@ -550,6 +551,7 @@ mod tests {
         let decl = FunctionDecl {
             annotations: vec![],
             builtin: quew_ast::BuiltinFunctionMeta::User,
+            native: None,
             name: interner.intern("wrap"),
             type_params: vec![t],
             params: vec![Param {
@@ -579,6 +581,44 @@ mod tests {
                 args: vec![IrType::GenericParam(t)]
             }
         );
+        assert_eq!(def.native, None);
+    }
+
+    #[test]
+    fn lower_native_builtin_function_preserves_native_id() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let mut graphs = IndexMap::new();
+        let native_id = interner.intern("std.string.is_empty");
+        let decl = FunctionDecl {
+            annotations: vec![],
+            builtin: quew_ast::BuiltinFunctionMeta::internal(),
+            native: Some(quew_ast::NativeBinding {
+                id: quew_ast::StringLit {
+                    value: native_id,
+                    kind: quew_ast::StringKind::Regular,
+                    span: sp(),
+                },
+                span: sp(),
+            }),
+            name: interner.intern("string_is_empty"),
+            type_params: vec![],
+            params: vec![Param {
+                binding: ParamBinding::Normal,
+                name: interner.intern("value"),
+                ty: named(&interner, "string"),
+                optional: false,
+                span: sp(),
+            }],
+            return_ty: Some(named(&interner, "bool")),
+            body: vec![],
+            span: sp(),
+        };
+
+        lower_function(&decl, &interner, &mut defs, &mut graphs);
+
+        let def = &defs.functions[&decl.name];
+        assert_eq!(def.native, Some(native_id));
     }
 
     #[test]

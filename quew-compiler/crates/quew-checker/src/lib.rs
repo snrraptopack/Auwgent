@@ -16,7 +16,7 @@ use keys::{PrimKeys, WellKnownKeys};
 use quew_ast::{
     ElseClause, Expr, Item, Lit, Module, Stmt,
     expr::Provider as AstProvider,
-    item::AnnotationArgs,
+    item::{AnnotationArgs, ModelDecl},
     stmt::{ReplyStmt, WithField},
 };
 use quew_errors::{Diagnostic, Severity, Span};
@@ -177,6 +177,16 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     &mut diagnostics,
                 );
                 local.pop();
+            }
+            Item::Model(decl) => {
+                check_model_decl(
+                    decl,
+                    &symbol_table,
+                    &wk,
+                    &prim,
+                    &mut unify,
+                    &mut diagnostics,
+                );
             }
             _ => {}
         }
@@ -461,16 +471,7 @@ fn infer_expr(
             // emits `Expr::Provider`, prefer the Quew-defined `Model` contract
             // whenever it is loaded. Prelude-free checks keep the old provider
             // type so isolated tests remain possible.
-            if let Some(model_ty) = model_type_if_available(table, wk, prim, diags, call.span) {
-                return model_ty;
-            }
-
-            let kind = match call.provider {
-                AstProvider::Gemini => ProviderKind::Gemini,
-                AstProvider::OpenAi => ProviderKind::OpenAi,
-                AstProvider::Groq => ProviderKind::Groq,
-            };
-            Ty::Provider(kind)
+            provider_call_ty(call, table, wk, prim, diags)
         }
         Expr::Is(_) => Ty::bool_ty(),
         Expr::Error(_) => Ty::Error,
@@ -498,6 +499,25 @@ fn model_type_if_available(
         diags,
         span,
     ))
+}
+
+fn provider_call_ty(
+    call: &quew_ast::expr::ProviderCall,
+    table: &SymbolTable,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
+    if let Some(model_ty) = model_type_if_available(table, wk, prim, diags, call.span) {
+        return model_ty;
+    }
+
+    let kind = match call.provider {
+        AstProvider::Gemini => ProviderKind::Gemini,
+        AstProvider::OpenAi => ProviderKind::OpenAi,
+        AstProvider::Groq => ProviderKind::Groq,
+    };
+    Ty::Provider(kind)
 }
 
 fn infer_builtin_method_call(
@@ -558,6 +578,95 @@ fn infer_lit(lit: &Lit) -> Ty {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Model declarations are still parsed as a dedicated compatibility AST node.
+// The expected body shape now comes from the `(model, body)` role so the
+// compiler can migrate validation into Quew-owned prelude contracts.
+fn check_model_decl(
+    decl: &ModelDecl,
+    table: &SymbolTable,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    unify: &mut UnifyTable,
+    diags: &mut Vec<Diagnostic>,
+) {
+    let Some(contract_fields) = model_body_contract_fields(decl.span, wk, prim, table, diags)
+    else {
+        return;
+    };
+
+    if let Some(expected) = contract_fields.get(&wk.model) {
+        let ty = provider_call_ty(&decl.provider, table, wk, prim, diags);
+        if ty.is_ok() && expected.is_ok() && !ty.is_assignable_to(expected) {
+            diags.push(mk_err(
+                decl.provider.span,
+                format!("`model` must be `{expected}`, found `{ty}`"),
+                &format!("expected `{expected}`"),
+                None,
+            ));
+        }
+    }
+
+    if let Some(expected) = contract_fields.get(&wk.config) {
+        let ty = infer_config_record(&decl.config, table, wk, prim, unify, diags);
+        if ty.is_ok() && expected.is_ok() && !ty.is_assignable_to(expected) {
+            diags.push(mk_err(
+                decl.span,
+                format!("`config` must be `{expected}`, found `{ty}`"),
+                &format!("expected `{expected}`"),
+                None,
+            ));
+        }
+    } else {
+        let mut local = LocalScope::new();
+        local.push();
+        for field in &decl.config {
+            infer_expr(&field.value, table, &mut local, wk, prim, unify, diags);
+        }
+    }
+}
+
+fn infer_config_record(
+    fields: &[quew_ast::expr::ConfigField],
+    table: &SymbolTable,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    unify: &mut UnifyTable,
+    diags: &mut Vec<Diagnostic>,
+) -> Ty {
+    let mut local = LocalScope::new();
+    local.push();
+
+    let mut record = IndexMap::new();
+    for field in fields {
+        let ty = infer_expr(&field.value, table, &mut local, wk, prim, unify, diags);
+        record.insert(field.key, ty);
+    }
+    Ty::Record(record)
+}
+
+fn model_body_contract_fields(
+    span: Span,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    table: &SymbolTable,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<IndexMap<InternedStr, Ty>> {
+    let ty = roles::resolve_role_type(wk.model, wk.body, table, prim, diags, span)?;
+    match ty {
+        Ty::Record(fields) => Some(fields),
+        Ty::Error => None,
+        other => {
+            diags.push(mk_err(
+                span,
+                format!("`(model, body)` role must resolve to a record type, found `{other}`"),
+                "invalid model-body role binding",
+                None,
+            ));
+            None
+        }
+    }
+}
 
 fn stmt_span(stmt: &Stmt) -> Span {
     match stmt {
@@ -949,6 +1058,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "greet"),
                 type_params: vec![],
                 params: vec![],
@@ -975,6 +1085,7 @@ mod tests {
             Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "foo"),
                 type_params: vec![],
                 params: vec![],
@@ -1002,6 +1113,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "bad"),
                 type_params: vec![],
                 params: vec![],
@@ -1028,6 +1140,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "unreachable_fn"),
                 type_params: vec![],
                 params: vec![],
@@ -1124,6 +1237,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
                 builtin: quew_ast::BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![Param {
@@ -1156,6 +1270,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "foo"),
                 type_params: vec![],
                 params: vec![
@@ -1205,6 +1320,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "bar"),
                 type_params: vec![],
                 params: vec![],
@@ -1256,6 +1372,7 @@ mod tests {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
                 builtin: BuiltinFunctionMeta::User,
+                native: None,
                 name: intern(&i, "shadow_fn"),
                 type_params: vec![],
                 params: vec![],
@@ -1290,6 +1407,7 @@ mod tests {
                 Item::Function(FunctionDecl {
                     annotations: vec![],
                     builtin: quew_ast::BuiltinFunctionMeta::User,
+                    native: None,
                     name: intern(&i, "Foo"),
                     type_params: vec![],
                     params: vec![],

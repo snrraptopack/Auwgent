@@ -163,6 +163,11 @@ pub struct FunctionDef {
     pub type_params: Vec<InternedStr>,
     pub params: IndexMap<InternedStr, IrType>,
     pub returns: IrType,
+    /// Native implementation id for trusted builtin leaves.
+    ///
+    /// Plan 11 only preserves this id. Runtime dispatch can later use it without
+    /// reparsing Quew prelude source.
+    pub native: Option<InternedStr>,
     /// Key into `QuewGraphIR::graphs` for this function's body.
     pub graph_ref: String,
 }

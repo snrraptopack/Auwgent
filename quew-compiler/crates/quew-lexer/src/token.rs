@@ -155,6 +155,9 @@ pub enum TokenKind {
     /// `!@@` — internal builtin declaration prefix.
     #[token("!@@")]
     BangAtAt,
+    /// `@@rust` - native implementation binding for trusted builtin functions.
+    #[token("@@rust")]
+    AtAtRust,
     /// `@@` — public builtin declaration or role-binding prefix.
     #[token("@@")]
     AtAt,
@@ -246,6 +249,8 @@ pub enum TokenKind {
     Newline,
 
     // ── Error fallback ────────────────────────────────────────────────────────
+    #[regex(r"@@rust[a-zA-Z0-9_]+")]
+    #[regex(r"#[a-zA-Z][a-zA-Z0-9_]*")]
     /// Any character the DFA cannot classify. The lexer continues rather than
     /// aborting — callers should treat this as a non-fatal lex error.
     Error,
@@ -285,6 +290,7 @@ impl std::fmt::Display for TokenKind {
             Self::False => "`false`",
             Self::NullLiteral => "`null`",
             Self::BangAtAt => "`!@@`",
+            Self::AtAtRust => "`@@rust`",
             Self::AtAt => "`@@`",
             Self::Annotation(k) => return write!(f, "`@{k:?}`"),
             Self::IntLiteral => "integer literal",
@@ -480,6 +486,7 @@ mod tests {
             tokens("!@@type"),
             vec![TokenKind::BangAtAt, TokenKind::KwType]
         );
+        assert_eq!(tokens("@@rust"), vec![TokenKind::AtAtRust]);
         assert_eq!(
             tokens("@@(tool, value) type"),
             vec![
@@ -492,6 +499,12 @@ mod tests {
                 TokenKind::KwType
             ]
         );
+    }
+
+    #[test]
+    fn native_binding_prefix_does_not_bleed_into_identifier() {
+        let toks = tokens("@@rusty");
+        assert!(!toks.contains(&TokenKind::AtAtRust));
     }
 
     #[test]

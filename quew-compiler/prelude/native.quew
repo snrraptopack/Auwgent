@@ -1,0 +1,5 @@
+@@rust("std.string.is_empty")
+!@@function string_is_empty(value: string): bool
+
+@@rust("std.string.contains")
+!@@function string_contains(value: string, substring: string): bool
