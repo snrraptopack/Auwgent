@@ -10,11 +10,11 @@
 
 use std::sync::Arc;
 
+use quew_ast::{BuiltinTypeMeta, BuiltinVisibility, Item};
 use quew_interner::Interner;
 use quew_lexer::lex;
 use quew_parser::parse;
 use quew_source::SourceMap;
-use quew_ast::{BuiltinTypeMeta, BuiltinVisibility, Item};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 

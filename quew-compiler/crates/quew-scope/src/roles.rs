@@ -105,4 +105,3 @@ fn validate_role_key(
 
     keyword_ok && place_ok
 }
-

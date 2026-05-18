@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use quew_checker::{CheckResult, check};
+use quew_checker::{CheckResult, check, check_with_prelude};
 use quew_errors::Severity;
 use quew_interner::Interner;
 use quew_source::SourceMap;
@@ -27,6 +27,20 @@ fn check_source(src: &str) -> CheckResult {
         parsed.errors
     );
     check(&parsed.module, &interner)
+}
+
+fn check_source_with_prelude(src: &str) -> CheckResult {
+    let interner = Arc::new(Interner::new());
+    let map = SourceMap::new(Arc::clone(&interner));
+    let sid = map.add("<test>", src);
+    let lex = quew_lexer::lex(src, sid, &interner);
+    let parsed = quew_parser::parse(&lex, src, &interner);
+    assert!(
+        parsed.errors.is_empty(),
+        "source has parse errors (fix the test fixture):\n{:?}",
+        parsed.errors
+    );
+    check_with_prelude(&parsed.module, &interner)
 }
 
 // ── model field: wrong types ──────────────────────────────────────────────────
@@ -497,4 +511,104 @@ agent Admin(input: string) {
 "#,
     );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_with_body_role_from_prelude_accepts_contract_fields() {
+    let r = check_source_with_prelude(
+        r#"
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are helpful."
+        model: gemini("gemini-pro")
+        retry: 3
+        maxTurn: 4
+        builtin: ["code_execution"]
+    }
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn invalid_with_body_role_rejects_prompt_type() {
+    let r = check_source_with_prelude(
+        r#"
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: false
+        model: gemini("gemini-pro")
+    }
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("`prompt` must be")),
+        "expected prompt role-contract diagnostic, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn invalid_with_body_role_rejects_builtin_element_type() {
+    let r = check_source_with_prelude(
+        r#"
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are helpful."
+        model: gemini("gemini-pro")
+        builtin: [42]
+    }
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("`builtin` must be")),
+        "expected builtin role-contract diagnostic, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn valid_with_body_role_keeps_tools_specialized_validation() {
+    let r = check_source_with_prelude(
+        r#"
+tool getWeather(): string
+
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are helpful."
+        model: gemini("gemini-pro")
+        tools: [getWeather]
+    }
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_with_body_role_keeps_model_specialized_validation() {
+    let r = check_source_with_prelude(
+        r#"
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are helpful."
+        model: "gemini-pro"
+    }
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("`model` must be a model")),
+        "expected existing model diagnostic, got {:?}",
+        r.diagnostics
+    );
 }

@@ -11,8 +11,8 @@ use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 
 use crate::defs::{
-    AgentDef, Definitions, DisclosureMode, FunctionDef, IrRoleBinding, IrRoleKey,
-    IrTypeVisibility, ModelDef, ProtocolMode, ProviderKind, ToolDef, ToolKind, ToolParam, TypeDef,
+    AgentDef, Definitions, DisclosureMode, FunctionDef, IrRoleBinding, IrRoleKey, IrTypeVisibility,
+    ModelDef, ProtocolMode, ProviderKind, ToolDef, ToolKind, ToolParam, TypeDef,
 };
 use crate::graph::AgentGraph;
 use crate::types::{IrField, IrType};
@@ -94,7 +94,10 @@ fn lower_type(decl: &TypeDecl, interner: &Arc<Interner>, defs: &mut Definitions)
         },
     );
 
-    if let BuiltinTypeMeta::Builtin { role: Some(role), .. } = &decl.builtin {
+    if let BuiltinTypeMeta::Builtin {
+        role: Some(role), ..
+    } = &decl.builtin
+    {
         defs.roles.insert(
             IrRoleKey {
                 keyword: role.keyword,
@@ -267,12 +270,10 @@ pub(crate) fn lower_type_expr_with_params(
                 .map(|member| lower_type_expr_with_params(member, type_params, interner))
                 .collect(),
         ),
-        TypeExpr::Optional(inner, _) => {
-            IrType::Union(vec![
-                lower_type_expr_with_params(inner, type_params, interner),
-                IrType::Null,
-            ])
-        }
+        TypeExpr::Optional(inner, _) => IrType::Union(vec![
+            lower_type_expr_with_params(inner, type_params, interner),
+            IrType::Null,
+        ]),
         TypeExpr::Generic(name, args, _) => IrType::GenericInstance {
             name: *name,
             args: args
@@ -566,7 +567,10 @@ mod tests {
 
         let def = &defs.functions[&decl.name];
         assert_eq!(def.type_params, vec![t]);
-        assert_eq!(def.params[&interner.intern("value")], IrType::GenericParam(t));
+        assert_eq!(
+            def.params[&interner.intern("value")],
+            IrType::GenericParam(t)
+        );
         assert_eq!(
             def.returns,
             IrType::GenericInstance {

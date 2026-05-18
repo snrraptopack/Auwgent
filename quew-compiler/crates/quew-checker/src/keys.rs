@@ -12,6 +12,11 @@ pub(crate) struct WellKnownKeys {
     pub(crate) max_turn: InternedStr,
     pub(crate) ctx: InternedStr,
     pub(crate) is_empty: InternedStr,
+    pub(crate) tool: InternedStr,
+    pub(crate) value: InternedStr,
+    pub(crate) with: InternedStr,
+    pub(crate) body: InternedStr,
+    pub(crate) builtin: InternedStr,
 }
 
 impl WellKnownKeys {
@@ -25,6 +30,11 @@ impl WellKnownKeys {
             max_turn: i.intern("maxTurn"),
             ctx: i.intern("ctx"),
             is_empty: i.intern("isEmpty"),
+            tool: i.intern("tool"),
+            value: i.intern("value"),
+            with: i.intern("with"),
+            body: i.intern("body"),
+            builtin: i.intern("builtin"),
         }
     }
 }

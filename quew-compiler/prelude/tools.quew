@@ -1,0 +1,5 @@
+@@(tool, value)
+type ToolResult<T> = {
+    data: T
+    error: string
+}

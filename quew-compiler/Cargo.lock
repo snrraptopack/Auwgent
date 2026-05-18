@@ -612,6 +612,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "insta",
+ "quew-ast",
  "quew-checker",
  "quew-codegen",
  "quew-errors",

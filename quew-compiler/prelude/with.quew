@@ -1,0 +1,7 @@
+@@(with, body)
+type WithBlock = {
+    prompt?: string
+    retry?: number | float
+    maxTurn?: number | float
+    builtin?: string
+}

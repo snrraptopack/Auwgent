@@ -11,6 +11,7 @@ quew-errors = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
 quew-source = { path = "../quew-source" }
 quew-lexer = { path = "../quew-lexer" }
+quew-parser = { path = "../quew-parser" }
 quew-ast = { path = "../quew-ast" }
 quew-types = { path = "../quew-types" }
 quew-scope = { path = "../quew-scope" }
@@ -20,5 +21,4 @@ indexmap = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
-quew-parser = { path = "../quew-parser" }
 quew-source = { path = "../quew-source" }

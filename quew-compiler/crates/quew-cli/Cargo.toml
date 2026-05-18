@@ -17,6 +17,7 @@ quew-interner = { path = "../quew-interner" }
 quew-source = { path = "../quew-source" }
 quew-lexer = { path = "../quew-lexer" }
 quew-parser = { path = "../quew-parser" }
+quew-ast = { path = "../quew-ast" }
 quew-checker = { path = "../quew-checker" }
 quew-ir = { path = "../quew-ir" }
 quew-codegen = { path = "../quew-codegen" }

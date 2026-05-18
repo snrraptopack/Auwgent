@@ -4,11 +4,15 @@
 //! to validate a parsed Module and emit Diagnostics.
 use std::sync::Arc;
 
-mod keys;
 mod generics;
+mod keys;
+mod prelude;
+mod roles;
 mod type_resolve;
 
+use generics::instantiate_function_call;
 use indexmap::IndexMap;
+use keys::{PrimKeys, WellKnownKeys};
 use quew_ast::{
     ElseClause, Expr, Item, Lit, Module, Stmt,
     expr::Provider as AstProvider,
@@ -22,9 +26,9 @@ use quew_lexer::AnnotationKind;
 use quew_scope::{SymbolKind, SymbolTable, build_symbol_table};
 use quew_types::{ProviderKind, Ty};
 use quew_unify::UnifyTable;
-use keys::{PrimKeys, WellKnownKeys};
-use generics::instantiate_function_call;
 use type_resolve::{resolve_semantic_ty, resolve_type, resolve_type_with_params};
+
+pub use prelude::{PreludeModule, module_with_prelude};
 
 // ── Interned key caches ─────────────────────────────────────────────────────
 
@@ -153,18 +157,15 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     );
                     local.define(p.name, ty, p.span, &mut diagnostics);
                 }
-                let ret_ty = decl
-                    .return_ty
-                    .as_ref()
-                    .map(|t| {
-                        resolve_type_with_params(
-                            t,
-                            &decl.type_params,
-                            &symbol_table,
-                            &prim,
-                            &mut diagnostics,
-                        )
-                    });
+                let ret_ty = decl.return_ty.as_ref().map(|t| {
+                    resolve_type_with_params(
+                        t,
+                        &decl.type_params,
+                        &symbol_table,
+                        &prim,
+                        &mut diagnostics,
+                    )
+                });
                 check_body(
                     &decl.body,
                     &symbol_table,
@@ -185,6 +186,20 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
         symbol_table,
         diagnostics,
     }
+}
+
+/// Run semantic checks after prepending the Quew-owned prelude.
+pub fn check_with_prelude(module: &Module, interner: &Arc<Interner>) -> CheckResult {
+    let prelude = module_with_prelude(module, interner);
+    let mut result = check(&prelude.module, interner);
+
+    if !prelude.diagnostics.is_empty() {
+        let mut diagnostics = prelude.diagnostics;
+        diagnostics.extend(result.diagnostics);
+        result.diagnostics = diagnostics;
+    }
+
+    result
 }
 
 // ── Type lowering (name-aware) ────────────────────────────────────────────────
@@ -285,7 +300,16 @@ fn check_body(
                     ElseClause::ElseIf(if_stmt) => {
                         infer_expr(&if_stmt.condition, table, local, wk, prim, unify, diags);
                         local.push();
-                        check_body(&if_stmt.then_body, table, local, ret_ty, wk, prim, unify, diags);
+                        check_body(
+                            &if_stmt.then_body,
+                            table,
+                            local,
+                            ret_ty,
+                            wk,
+                            prim,
+                            unify,
+                            diags,
+                        );
                         local.pop();
                     }
                 }
@@ -383,9 +407,9 @@ fn infer_expr(
 
         Expr::Call(c) => {
             if let Expr::Member(m) = c.callee.as_ref() {
-                if let Some(ty) =
-                    infer_builtin_method_call(m, &c.args, table, local, wk, prim, unify, diags, c.span)
-                {
+                if let Some(ty) = infer_builtin_method_call(
+                    m, &c.args, table, local, wk, prim, unify, diags, c.span,
+                ) {
                     return ty;
                 }
             }
@@ -398,7 +422,12 @@ fn infer_expr(
                 .collect();
             match callee {
                 Ty::Function(f) => instantiate_function_call(&f, &arg_tys, c.span, diags),
-                Ty::Tool(t) => resolve_semantic_ty(&t.return_ty, table, prim, diags, c.span),
+                Ty::Tool(t) => {
+                    let return_ty = resolve_semantic_ty(&t.return_ty, table, prim, diags, c.span);
+                    roles::wrap_value_if_bound(
+                        wk.tool, wk.value, return_ty, table, prim, diags, c.span,
+                    )
+                }
                 Ty::Agent(a) => resolve_semantic_ty(&a.return_ty, table, prim, diags, c.span),
                 Ty::Error => Ty::Error,
                 _ => Ty::Error,
@@ -466,7 +495,10 @@ fn infer_builtin_method_call(
             if !args.is_empty() {
                 diags.push(mk_err(
                     call_span,
-                    format!("`string.isEmpty()` expects 0 argument(s), found {}", args.len()),
+                    format!(
+                        "`string.isEmpty()` expects 0 argument(s), found {}",
+                        args.len()
+                    ),
                     "wrong number of arguments",
                     None,
                 ));
@@ -539,6 +571,7 @@ fn check_with_block(
 ) {
     // The reply input is a normal expression
     infer_expr(&stmt.input, table, local, wk, prim, unify, diags);
+    let contract_fields = with_body_contract_fields(stmt.span, wk, prim, table, diags);
 
     for field in &stmt.with_block.fields {
         let k = field.key;
@@ -555,6 +588,19 @@ fn check_with_block(
             }
         } else if k == wk.tools {
             check_tools_field(field, table, local, wk, prim, unify, diags);
+        } else if let Some(expected) = contract_fields.as_ref().and_then(|fields| fields.get(&k)) {
+            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
+            if ty.is_ok() && expected.is_ok() && !ty.is_assignable_to(expected) {
+                diags.push(mk_err(
+                    field.span,
+                    format!(
+                        "`{}` must be `{expected}`, found `{ty}`",
+                        with_field_label(k, wk)
+                    ),
+                    &format!("expected `{expected}`"),
+                    None,
+                ));
+            }
         } else if k == wk.prompt {
             let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
             if !matches!(&ty, Ty::Primitive(quew_types::PrimTy::String) | Ty::Error) {
@@ -583,6 +629,43 @@ fn check_with_block(
             // builtin, agents, and any future fields — infer without semantic gate
             infer_expr(&field.value, table, local, wk, prim, unify, diags);
         }
+    }
+}
+
+fn with_body_contract_fields(
+    span: Span,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    table: &SymbolTable,
+    diags: &mut Vec<Diagnostic>,
+) -> Option<IndexMap<InternedStr, Ty>> {
+    let ty = roles::resolve_role_type(wk.with, wk.body, table, prim, diags, span)?;
+    match ty {
+        Ty::Record(fields) => Some(fields),
+        Ty::Error => None,
+        other => {
+            diags.push(mk_err(
+                span,
+                format!("`(with, body)` role must resolve to a record type, found `{other}`"),
+                "invalid with-body role binding",
+                None,
+            ));
+            None
+        }
+    }
+}
+
+fn with_field_label(name: InternedStr, wk: &WellKnownKeys) -> &'static str {
+    if name == wk.prompt {
+        "prompt"
+    } else if name == wk.retry {
+        "retry"
+    } else if name == wk.max_turn {
+        "maxTurn"
+    } else if name == wk.builtin {
+        "builtin"
+    } else {
+        "with field"
     }
 }
 

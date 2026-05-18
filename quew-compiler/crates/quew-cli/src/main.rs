@@ -48,8 +48,7 @@ fn run() -> Result<(), ExitCode> {
                 return Err(ExitCode::from(1));
             }
 
-            let ir =
-                quew_ir::lower::lower(&pipeline.parse.module, &pipeline.check, &pipeline.interner);
+            let ir = quew_ir::lower::lower(&pipeline.module, &pipeline.check, &pipeline.interner);
             let node_count: usize = ir.graphs.values().map(|graph| graph.nodes.len()).sum();
             let edge_count: usize = ir.graphs.values().map(|graph| graph.edges.len()).sum();
 
@@ -78,6 +77,7 @@ fn run() -> Result<(), ExitCode> {
 struct Pipeline {
     interner: Arc<Interner>,
     parse: quew_parser::ParseResult,
+    module: quew_ast::Module,
     check: quew_checker::CheckResult,
     diagnostics: Vec<Diagnostic>,
 }
@@ -93,16 +93,19 @@ fn compile_frontend(file: &PathBuf) -> Result<Pipeline, ExitCode> {
 
     let lex = quew_lexer::lex(&source, source_id, &interner);
     let parse = quew_parser::parse(&lex, &source, &interner);
-    let check = quew_checker::check(&parse.module, &interner);
+    let prelude = quew_checker::module_with_prelude(&parse.module, &interner);
+    let check = quew_checker::check(&prelude.module, &interner);
 
     let mut diagnostics = Vec::new();
     diagnostics.extend(lex.errors);
     diagnostics.extend(parse.errors.clone());
+    diagnostics.extend(prelude.diagnostics.clone());
     diagnostics.extend(check.diagnostics.clone());
 
     Ok(Pipeline {
         interner,
         parse,
+        module: prelude.module,
         check,
         diagnostics,
     })

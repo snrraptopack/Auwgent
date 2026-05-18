@@ -102,7 +102,6 @@ fn visibility_from_builtin(meta: &BuiltinTypeMeta) -> BuiltinVisibility {
     }
 }
 
-
 // ── TypeExpr → Ty lowering ────────────────────────────────────────────────────
 
 /// Convert a syntactic `TypeExpr` to a semantic `Ty`.
@@ -131,7 +130,9 @@ fn lower_type_with_params(
             // This function only lowers structural shape, not names.
             Ty::Named(*name)
         }
-        TypeExpr::Optional(inner, _) => lower_type_with_params(inner, type_params, diags).optional(),
+        TypeExpr::Optional(inner, _) => {
+            lower_type_with_params(inner, type_params, diags).optional()
+        }
         TypeExpr::Union(arms, _) => {
             let lowered: Vec<Ty> = arms
                 .iter()
@@ -306,7 +307,8 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
             Item::Function(decl) => {
                 validate_type_params(&decl.type_params, decl.span, &mut d);
                 let bound = extract_tool_annotation_params(decl, &mut d);
-                let (_, model) = split_params_with_type_params(&decl.params, &decl.type_params, &mut d);
+                let (_, model) =
+                    split_params_with_type_params(&decl.params, &decl.type_params, &mut d);
                 let return_ty = decl
                     .return_ty
                     .as_ref()
@@ -377,7 +379,10 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
                 validate_type_params(&decl.type_params, decl.span, &mut d);
                 let ty = lower_record_with_params(&decl.fields, &decl.type_params, &mut d);
                 table.diagnostics.extend(d);
-                if let BuiltinTypeMeta::Builtin { role: Some(role), .. } = &decl.builtin {
+                if let BuiltinTypeMeta::Builtin {
+                    role: Some(role), ..
+                } = &decl.builtin
+                {
                     table.roles.register(
                         RoleKey {
                             keyword: role.keyword,
@@ -846,21 +851,22 @@ mod tests {
             table.roles.bindings[&key].type_name,
             intern(&i, "ToolResult")
         );
-        assert_eq!(table.globals[&intern(&i, "ToolResult")].type_params, vec![t_param]);
+        assert_eq!(
+            table.globals[&intern(&i, "ToolResult")].type_params,
+            vec![t_param]
+        );
     }
 
     #[test]
     fn duplicate_role_binding_errors() {
         let i = interner();
-        let role = || {
-            BuiltinTypeMeta::Builtin {
-                visibility: AstBuiltinVisibility::Public,
-                role: Some(RoleBindingSyntax {
-                    keyword: intern(&i, "tool"),
-                    place: intern(&i, "value"),
-                    span: sp(),
-                }),
-            }
+        let role = || BuiltinTypeMeta::Builtin {
+            visibility: AstBuiltinVisibility::Public,
+            role: Some(RoleBindingSyntax {
+                keyword: intern(&i, "tool"),
+                place: intern(&i, "value"),
+                span: sp(),
+            }),
         };
         let decl = |name: &str| {
             Item::Type(TypeDecl {

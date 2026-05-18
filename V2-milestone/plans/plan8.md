@@ -1,6 +1,6 @@
 # Plan 8: Prelude Loading And Tool Result Role Consumption
 
-**Status: Planned.**
+**Status: Complete.**
 
 Plan 8 is the first consumer of the role-binding system from Plan 7.
 
@@ -359,18 +359,18 @@ Testing should be aggressive and layered.
 
 ## Definition Of Done
 
-- [ ] `quew-compiler/prelude/tools.quew` exists.
-- [ ] Prelude source defines `ToolResult<T>` with `(tool, value)`.
-- [ ] Prelude source parses in tests.
-- [ ] `check_with_prelude()` exists.
-- [ ] CLI `check` uses prelude-aware checking.
-- [ ] CLI `compile` uses prelude-aware checking.
-- [ ] Direct tool calls are typed as the role-bound wrapper.
-- [ ] Tool call wrapper uses role lookup, not the name `ToolResult`.
-- [ ] `result.data` and `result.error` type-check.
-- [ ] Raw wrapped tool result mismatches plain declared returns.
-- [ ] Existing `tools: [...]` behavior remains compatible.
-- [ ] `cargo test --workspace` passes.
+- [x] `quew-compiler/prelude/tools.quew` exists.
+- [x] Prelude source defines `ToolResult<T>` with `(tool, value)`.
+- [x] Prelude source parses in tests.
+- [x] `check_with_prelude()` exists.
+- [x] CLI `check` uses prelude-aware checking.
+- [x] CLI `compile` uses prelude-aware checking.
+- [x] Direct tool calls are typed as the role-bound wrapper.
+- [x] Tool call wrapper uses role lookup, not the name `ToolResult`.
+- [x] `result.data` and `result.error` type-check.
+- [x] Raw wrapped tool result mismatches plain declared returns.
+- [x] Existing `tools: [...]` behavior remains compatible.
+- [x] `cargo test --workspace` passes.
 
 ---
 
@@ -383,4 +383,3 @@ Plan 10 should add builtin functions and begin provider migration.
 Plan 11 should introduce `#rust("id")` native builtin leaves.
 
 Plan 12 should add `extend Type { ... }`, implicit `self`, and method lookup.
-

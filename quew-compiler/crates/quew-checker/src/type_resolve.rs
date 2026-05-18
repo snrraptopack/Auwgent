@@ -73,7 +73,10 @@ pub(crate) fn resolve_semantic_ty(
         Ty::Record(fields) => {
             let mut out = IndexMap::new();
             for (name, field_ty) in fields {
-                out.insert(*name, resolve_semantic_ty(field_ty, table, prim, diags, span));
+                out.insert(
+                    *name,
+                    resolve_semantic_ty(field_ty, table, prim, diags, span),
+                );
             }
             Ty::Record(out)
         }
@@ -83,9 +86,9 @@ pub(crate) fn resolve_semantic_ty(
                 .collect(),
         )
         .flatten_union(),
-        Ty::Optional(inner) => {
-            Ty::Optional(Box::new(resolve_semantic_ty(inner, table, prim, diags, span)))
-        }
+        Ty::Optional(inner) => Ty::Optional(Box::new(resolve_semantic_ty(
+            inner, table, prim, diags, span,
+        ))),
         Ty::Function(f) => Ty::Function(FunctionTy {
             type_params: f.type_params.clone(),
             params: f
@@ -166,7 +169,10 @@ fn instantiate_generic_type(
     span: Span,
 ) -> Ty {
     let Some(sym) = table.globals.get(&name) else {
-        diags.push(type_error(span, format!("unknown generic type `{:?}`", name)));
+        diags.push(type_error(
+            span,
+            format!("unknown generic type `{:?}`", name),
+        ));
         return Ty::Error;
     };
 

@@ -8,7 +8,7 @@
 
 use std::sync::Arc;
 
-use quew_checker::{CheckResult, check};
+use quew_checker::{CheckResult, check, check_with_prelude};
 use quew_errors::Severity;
 use quew_interner::Interner;
 use quew_source::SourceMap;
@@ -28,6 +28,21 @@ fn check_source(src: &str) -> CheckResult {
         parse_result.errors
     );
     check(&parse_result.module, &interner)
+}
+
+/// Lex -> parse -> prelude-aware check. Panics if the user source has parse errors.
+fn check_source_with_prelude(src: &str) -> CheckResult {
+    let interner = Arc::new(Interner::new());
+    let map = SourceMap::new(Arc::clone(&interner));
+    let sid = map.add("<test>", src);
+    let lex_result = quew_lexer::lex(src, sid, &interner);
+    let parse_result = quew_parser::parse(&lex_result, src, &interner);
+    assert!(
+        parse_result.errors.is_empty(),
+        "source has parse errors (fix the test, not the checker):\n{:?}",
+        parse_result.errors
+    );
+    check_with_prelude(&parse_result.module, &interner)
 }
 
 // ── Valid programs: zero diagnostics expected ─────────────────────────────────
@@ -119,6 +134,130 @@ function unwrap(result: ToolResult<string>): string {
 "#,
     );
     assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_prelude_type_is_available_without_user_declaration() {
+    let r = check_source_with_prelude(
+        r#"
+function unwrap(result: ToolResult<string>): string {
+    return result.data
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_direct_tool_call_value_uses_prelude_wrapper_data() {
+    let r = check_source_with_prelude(
+        r#"
+tool getName(): string
+
+function demo(): string {
+    let result = getName()
+    return result.data
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_direct_tool_call_value_uses_prelude_wrapper_error() {
+    let r = check_source_with_prelude(
+        r#"
+tool getName(): string
+
+function demo(): string {
+    let result = getName()
+    return result.error
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_direct_tool_call_number_data_preserves_return_type() {
+    let r = check_source_with_prelude(
+        r#"
+tool getScore(): number
+
+function demo(): number {
+    return getScore().data
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_tools_list_remains_compatible_with_prelude() {
+    let r = check_source_with_prelude(
+        r#"
+tool getName(): string
+
+agent Hello(input: string) {
+    reply(input) with {
+        prompt: "You are helpful."
+        model: gemini("gemini-pro")
+        tools: [getName]
+    }
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn valid_direct_tool_call_stays_raw_without_prelude_for_isolated_tests() {
+    let r = check_source(
+        r#"
+tool getName(): string
+
+function demo(): string {
+    return getName()
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn invalid_direct_tool_call_raw_value_mismatches_with_prelude() {
+    let r = check_source_with_prelude(
+        r#"
+tool getName(): string
+
+function demo(): string {
+    return getName()
+}
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("return type mismatch")),
+        "expected return type mismatch, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn invalid_user_tool_result_collides_with_prelude_type() {
+    let r = check_source_with_prelude(
+        r#"
+type ToolResult<T> = { data: T }
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate definition")),
+        "expected duplicate symbol diagnostic, got {:?}",
+        r.diagnostics
+    );
 }
 
 #[test]
