@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 
-use quew_ast::{BuiltinTypeMeta, BuiltinVisibility, Item};
+use quew_ast::{BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, Item};
 use quew_interner::Interner;
 use quew_lexer::lex;
 use quew_parser::parse;
@@ -193,6 +193,46 @@ fn internal_builtin_type_declaration_parses() {
     match &result.module.items[0] {
         Item::Type(decl) => assert_eq!(decl.builtin, BuiltinTypeMeta::internal()),
         other => panic!("expected type declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn public_builtin_function_signature_parses_without_body() {
+    let result = lex_and_parse("@@function gemini(name: string): Model");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Function(decl) => {
+            assert_eq!(decl.builtin, BuiltinFunctionMeta::public());
+            assert_eq!(decl.params.len(), 1);
+            assert!(decl.body.is_empty());
+        }
+        other => panic!("expected builtin function declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn internal_builtin_function_signature_parses_without_body() {
+    let result = lex_and_parse("!@@function string_is_empty(value: string): bool");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Function(decl) => assert_eq!(decl.builtin, BuiltinFunctionMeta::internal()),
+        other => panic!("expected builtin function declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn ordinary_function_remains_user_function() {
+    let result = lex_and_parse(
+        r#"
+function greet(name: string): string {
+    return name
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Function(decl) => assert_eq!(decl.builtin, BuiltinFunctionMeta::User),
+        other => panic!("expected function declaration, got {other:?}"),
     }
 }
 

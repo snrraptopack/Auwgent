@@ -6,8 +6,9 @@ use chumsky::prelude::*;
 use quew_ast::expr::{Provider, ProviderCall};
 use quew_ast::lit::{StringKind, StringLit};
 use quew_ast::{
-    AgentDecl, BuiltinTypeMeta, BuiltinVisibility, ConfigField, FieldDef, FunctionDecl, Item,
-    LetDecl, ModelDecl, Module, RoleBindingSyntax, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
+    AgentDecl, BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, ConfigField, FieldDef,
+    FunctionDecl, Item, LetDecl, ModelDecl, Module, RoleBindingSyntax, ToolDecl, ToolEntry,
+    ToolsDecl, TypeDecl,
 };
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
@@ -49,6 +50,7 @@ where
 {
     choice((
         agent(source, interner.clone()),
+        builtin_function(source, interner.clone()),
         function(source, interner.clone()),
         tools_group(source, interner.clone()), // `tools` before `tool`
         tool_decl(source, interner.clone()),
@@ -139,6 +141,27 @@ where
 
 // ── Function ──────────────────────────────────────────────────────────────────
 
+fn function_name<'tok, I>(
+    source: &'tok str,
+    interner: Arc<Interner>,
+) -> impl Parser<'tok, I, quew_interner::InternedStr, ParseError<'tok>> + Clone
+where
+    I: Input<'tok>,
+{
+    // Provider builders are still keyword tokens during the migration to
+    // prelude-backed `@@function` declarations. Accept only those transitional
+    // keyword tokens as function names; do not make every keyword callable.
+    ident(source, interner.clone()).or(select! {
+        TokenKind::KwGemini => (),
+        TokenKind::KwOpenAi => (),
+        TokenKind::KwGroq => (),
+    }
+    .map_with(move |_, extra| {
+        let s: crate::common::CSpan = extra.span();
+        interner.intern(&source[s.start..s.end])
+    }))
+}
+
 fn function<'tok, I>(
     source: &'tok str,
     interner: Arc<Interner>,
@@ -148,7 +171,7 @@ where
 {
     annotations(source, interner.clone())
         .then_ignore(just(TokenKind::KwFunction))
-        .then(ident(source, interner.clone()))
+        .then(function_name(source, interner.clone()))
         .then(type_params(source, interner.clone()))
         .then(param_list(source, interner.clone()))
         .then(
@@ -161,6 +184,7 @@ where
             |(((((annotations, name), type_params), params), return_ty), body), extra| {
                 Item::Function(FunctionDecl {
                     annotations,
+                    builtin: BuiltinFunctionMeta::User,
                     name,
                     type_params,
                     params,
@@ -170,6 +194,45 @@ where
                 })
             },
         )
+}
+
+fn builtin_function<'tok, I>(
+    source: &'tok str,
+    interner: Arc<Interner>,
+) -> impl Parser<'tok, I, Item, ParseError<'tok>> + Clone
+where
+    I: Input<'tok>,
+{
+    // Builtin function declarations are trusted prelude signatures. They do not
+    // need a Quew body until Plan 11 introduces explicit `#rust("id")` leaves.
+    choice((
+        just(TokenKind::BangAtAt).to(BuiltinFunctionMeta::internal()),
+        just(TokenKind::AtAt).to(BuiltinFunctionMeta::public()),
+    ))
+    .then_ignore(just(TokenKind::Newline).repeated().ignored())
+    .then_ignore(just(TokenKind::KwFunction))
+    .then(function_name(source, interner.clone()))
+    .then(type_params(source, interner.clone()))
+    .then(param_list(source, interner.clone()))
+    .then(
+        just(TokenKind::Colon)
+            .ignore_then(type_expr(source, interner.clone()))
+            .or_not(),
+    )
+    .map_with(
+        |((((builtin, name), type_params), params), return_ty), extra| {
+            Item::Function(FunctionDecl {
+                annotations: vec![],
+                builtin,
+                name,
+                type_params,
+                params,
+                return_ty,
+                body: vec![],
+                span: to_span(extra.span()),
+            })
+        },
+    )
 }
 
 // ── Tool ──────────────────────────────────────────────────────────────────────

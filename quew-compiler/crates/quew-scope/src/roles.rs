@@ -76,7 +76,7 @@ fn validate_role_key(
 ) -> bool {
     let keyword = interner.resolve(key.keyword);
     let place = interner.resolve(key.place);
-    let keyword_ok = matches!(keyword, "tool" | "with" | "middleware");
+    let keyword_ok = matches!(keyword, "tool" | "with" | "middleware" | "model");
     let place_ok = matches!(place, "value" | "args" | "body");
 
     if !keyword_ok {
@@ -86,7 +86,9 @@ fn validate_role_key(
             primary_span: span,
             primary_label: Some("unknown compiler role keyword".into()),
             secondary: vec![],
-            help: Some("supported role keywords are `tool`, `with`, and `middleware`".into()),
+            help: Some(
+                "supported role keywords are `tool`, `with`, `middleware`, and `model`".into(),
+            ),
             code: None,
         });
     }

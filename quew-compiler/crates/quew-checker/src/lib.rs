@@ -456,6 +456,15 @@ fn infer_expr(
         }
 
         Expr::Provider(call) => {
+            // Provider builders are migrating to prelude `@@function`s that
+            // return the globally available `Model` type. While the parser still
+            // emits `Expr::Provider`, prefer the Quew-defined `Model` contract
+            // whenever it is loaded. Prelude-free checks keep the old provider
+            // type so isolated tests remain possible.
+            if let Some(model_ty) = model_type_if_available(table, wk, prim, diags, call.span) {
+                return model_ty;
+            }
+
             let kind = match call.provider {
                 AstProvider::Gemini => ProviderKind::Gemini,
                 AstProvider::OpenAi => ProviderKind::OpenAi,
@@ -472,6 +481,23 @@ fn infer_expr(
             v
         }
     }
+}
+
+fn model_type_if_available(
+    table: &SymbolTable,
+    wk: &WellKnownKeys,
+    prim: &PrimKeys,
+    diags: &mut Vec<Diagnostic>,
+    span: Span,
+) -> Option<Ty> {
+    table.globals.get(&wk.model_type)?;
+    Some(resolve_semantic_ty(
+        &Ty::Named(wk.model_type),
+        table,
+        prim,
+        diags,
+        span,
+    ))
 }
 
 fn infer_builtin_method_call(
@@ -575,18 +601,7 @@ fn check_with_block(
 
     for field in &stmt.with_block.fields {
         let k = field.key;
-        if k == wk.model || k == wk.fallback {
-            let label = if k == wk.model { "model" } else { "fallback" };
-            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
-            if !matches!(&ty, Ty::Provider(_) | Ty::Error) {
-                diags.push(mk_err(
-                    field.span,
-                    format!("`{label}` must be a model — use gemini(\"...\"), openai(\"...\"), groq(\"...\") or a named `model` declaration, found `{ty}`"),
-                    &format!("expected a model, found `{ty}`"),
-                    Some("example: `model: gemini(\"gemini-pro\")` or `model: MyModel`".into()),
-                ));
-            }
-        } else if k == wk.tools {
+        if k == wk.tools {
             check_tools_field(field, table, local, wk, prim, unify, diags);
         } else if let Some(expected) = contract_fields.as_ref().and_then(|fields| fields.get(&k)) {
             let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
@@ -598,6 +613,17 @@ fn check_with_block(
                         with_field_label(k, wk)
                     ),
                     &format!("expected `{expected}`"),
+                    None,
+                ));
+            }
+        } else if k == wk.model || k == wk.fallback {
+            let label = if k == wk.model { "model" } else { "fallback" };
+            let ty = infer_expr(&field.value, table, local, wk, prim, unify, diags);
+            if !matches!(&ty, Ty::Provider(_) | Ty::Error) {
+                diags.push(mk_err(
+                    field.span,
+                    format!("`{label}` must be a model, found `{ty}`"),
+                    &format!("expected a model, found `{ty}`"),
                     None,
                 ));
             }
@@ -664,6 +690,10 @@ fn with_field_label(name: InternedStr, wk: &WellKnownKeys) -> &'static str {
         "maxTurn"
     } else if name == wk.builtin {
         "builtin"
+    } else if name == wk.model {
+        "model"
+    } else if name == wk.fallback {
+        "fallback"
     } else {
         "with field"
     }
@@ -918,6 +948,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "greet"),
                 type_params: vec![],
                 params: vec![],
@@ -943,6 +974,7 @@ mod tests {
         let mk_fn = || {
             Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "foo"),
                 type_params: vec![],
                 params: vec![],
@@ -969,6 +1001,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "bad"),
                 type_params: vec![],
                 params: vec![],
@@ -994,6 +1027,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "unreachable_fn"),
                 type_params: vec![],
                 params: vec![],
@@ -1089,6 +1123,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
+                builtin: quew_ast::BuiltinFunctionMeta::User,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![Param {
@@ -1120,6 +1155,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "foo"),
                 type_params: vec![],
                 params: vec![
@@ -1168,6 +1204,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "bar"),
                 type_params: vec![],
                 params: vec![],
@@ -1218,6 +1255,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "shadow_fn"),
                 type_params: vec![],
                 params: vec![],
@@ -1251,6 +1289,7 @@ mod tests {
                 }),
                 Item::Function(FunctionDecl {
                     annotations: vec![],
+                    builtin: quew_ast::BuiltinFunctionMeta::User,
                     name: intern(&i, "Foo"),
                     type_params: vec![],
                     params: vec![],

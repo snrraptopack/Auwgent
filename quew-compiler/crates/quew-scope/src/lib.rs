@@ -3,8 +3,9 @@ pub mod roles;
 
 use indexmap::IndexMap;
 use quew_ast::{
-    AnnotationArgs, BuiltinTypeMeta, BuiltinVisibility as AstBuiltinVisibility, FieldDef,
-    FunctionDecl, Item, Module, Param, ParamBinding, Provider, ToolDecl, ToolEntry, TypeExpr,
+    AnnotationArgs, BuiltinFunctionMeta, BuiltinTypeMeta,
+    BuiltinVisibility as AstBuiltinVisibility, FieldDef, FunctionDecl, Item, Module, Param,
+    ParamBinding, Provider, ToolDecl, ToolEntry, TypeExpr,
 };
 use quew_errors::{Diagnostic, Severity, Span};
 use quew_interner::{InternedStr, Interner};
@@ -88,7 +89,7 @@ fn symbol(
     }
 }
 
-fn visibility_from_builtin(meta: &BuiltinTypeMeta) -> BuiltinVisibility {
+fn visibility_from_type_builtin(meta: &BuiltinTypeMeta) -> BuiltinVisibility {
     match meta {
         BuiltinTypeMeta::User => BuiltinVisibility::User,
         BuiltinTypeMeta::Builtin {
@@ -98,6 +99,18 @@ fn visibility_from_builtin(meta: &BuiltinTypeMeta) -> BuiltinVisibility {
         BuiltinTypeMeta::Builtin {
             visibility: AstBuiltinVisibility::Internal,
             ..
+        } => BuiltinVisibility::InternalBuiltin,
+    }
+}
+
+fn visibility_from_function_builtin(meta: &BuiltinFunctionMeta) -> BuiltinVisibility {
+    match meta {
+        BuiltinFunctionMeta::User => BuiltinVisibility::User,
+        BuiltinFunctionMeta::Builtin {
+            visibility: AstBuiltinVisibility::Public,
+        } => BuiltinVisibility::PublicBuiltin,
+        BuiltinFunctionMeta::Builtin {
+            visibility: AstBuiltinVisibility::Internal,
         } => BuiltinVisibility::InternalBuiltin,
     }
 }
@@ -171,7 +184,16 @@ fn lower_param_ty(param: &Param, type_params: &[InternedStr], diags: &mut Vec<Di
     lower_type_with_params(&param.ty, type_params, diags)
 }
 
-// ── Provider lowering ─────────────────────────────────────────────────────────
+// ── Model / provider lowering ─────────────────────────────────────────────────
+
+/// During the Plan 10 migration, model declarations become values of the
+/// prelude-defined `Model` type when that type is loaded. Prelude-free tests keep
+/// the old provider-specific type path.
+fn model_type_if_available(table: &SymbolTable, interner: &Interner) -> Option<Ty> {
+    let model_name = interner.intern("Model");
+    table.globals.get(&model_name)?;
+    Some(Ty::Named(model_name))
+}
 
 fn lower_provider(p: &Provider) -> ProviderKind {
     match p {
@@ -341,7 +363,7 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
                         kind,
                         decl.span,
                         decl.type_params.clone(),
-                        BuiltinVisibility::User,
+                        visibility_from_function_builtin(&decl.builtin),
                     ),
                 );
             }
@@ -403,7 +425,7 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
                         SymbolKind::Type,
                         decl.span,
                         decl.type_params.clone(),
-                        visibility_from_builtin(&decl.builtin),
+                        visibility_from_type_builtin(&decl.builtin),
                     ),
                 );
             }
@@ -411,7 +433,8 @@ pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
             // ── model ──────────────────────────────────────────────────────────
             Item::Model(decl) => {
                 table.diagnostics.extend(d);
-                let ty = Ty::Provider(lower_provider(&decl.provider.provider));
+                let ty = model_type_if_available(&table, interner)
+                    .unwrap_or_else(|| Ty::Provider(lower_provider(&decl.provider.provider)));
                 table.define_global(
                     decl.name,
                     symbol(
@@ -694,6 +717,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "greet"),
                 type_params: vec![],
                 params: vec![normal_param(&i, "name")],
@@ -719,6 +743,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![],
+                builtin: BuiltinFunctionMeta::User,
                 name: intern(&i, "identity"),
                 type_params: vec![t_param],
                 params: vec![Param {
@@ -1000,6 +1025,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
+                builtin: quew_ast::BuiltinFunctionMeta::User,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![normal_param(&i, "isAdmin"), bound_param(&i, "id")],
@@ -1045,6 +1071,7 @@ mod tests {
         let module = Module {
             items: vec![Item::Function(FunctionDecl {
                 annotations: vec![tool_ann],
+                builtin: quew_ast::BuiltinFunctionMeta::User,
                 name: intern(&i, "deleteUser"),
                 type_params: vec![],
                 params: vec![bound_param(&i, "missing")],

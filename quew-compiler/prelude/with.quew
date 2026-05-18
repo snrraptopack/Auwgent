@@ -1,5 +1,7 @@
 @@(with, body)
 type WithBlock = {
+    model?: Model
+    fallback?: Model
     prompt?: string
     retry?: number | float
     maxTurn?: number | float

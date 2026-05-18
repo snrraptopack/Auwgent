@@ -1,0 +1,16 @@
+@@type Model = {
+    provider: string
+    name: string
+}
+
+@@type ModelConfig = {}
+
+@@(model, body)
+type ModelBody = {
+    model: Model
+    config?: ModelConfig
+}
+
+@@function gemini(name: string): Model
+@@function openai(name: string): Model
+@@function groq(name: string): Model

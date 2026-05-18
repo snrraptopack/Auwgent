@@ -31,7 +31,7 @@ pub mod stmt;
 pub mod ty;
 
 // Flatten the most commonly used types to the crate root for convenience.
-pub use builtin::{BuiltinTypeMeta, BuiltinVisibility, RoleBindingSyntax};
+pub use builtin::{BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, RoleBindingSyntax};
 pub use expr::{
     ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr, IsExpr, MemberExpr,
     PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,

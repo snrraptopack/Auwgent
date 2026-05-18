@@ -549,6 +549,7 @@ mod tests {
         let t = interner.intern("T");
         let decl = FunctionDecl {
             annotations: vec![],
+            builtin: quew_ast::BuiltinFunctionMeta::User,
             name: interner.intern("wrap"),
             type_params: vec![t],
             params: vec![Param {

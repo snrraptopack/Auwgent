@@ -593,7 +593,7 @@ agent Hello(input: string) {
 }
 
 #[test]
-fn valid_with_body_role_keeps_model_specialized_validation() {
+fn invalid_with_body_role_validates_model_from_quew_contract() {
     let r = check_source_with_prelude(
         r#"
 agent Hello(input: string) {
@@ -607,8 +607,8 @@ agent Hello(input: string) {
     assert!(
         r.diagnostics
             .iter()
-            .any(|d| d.message.contains("`model` must be a model")),
-        "expected existing model diagnostic, got {:?}",
+            .any(|d| d.message.contains("`model` must be")),
+        "expected role-contract model diagnostic, got {:?}",
         r.diagnostics
     );
 }

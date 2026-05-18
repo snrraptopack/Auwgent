@@ -40,6 +40,38 @@ impl BuiltinTypeMeta {
     }
 }
 
+/// Extra metadata carried by a `function` declaration.
+///
+/// Builtin functions are ordinary function declarations whose signatures are
+/// trusted compiler/prelude source. Plan 10 uses this for provider/model builder
+/// signatures such as `@@function gemini(model: string): Model` without adding
+/// provider-specific role metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuiltinFunctionMeta {
+    /// Ordinary user source: `function name(...) { ... }`.
+    User,
+    /// Compiler/prelude-owned builtin source.
+    Builtin { visibility: BuiltinVisibility },
+}
+
+impl BuiltinFunctionMeta {
+    pub fn user() -> Self {
+        Self::User
+    }
+
+    pub fn public() -> Self {
+        Self::Builtin {
+            visibility: BuiltinVisibility::Public,
+        }
+    }
+
+    pub fn internal() -> Self {
+        Self::Builtin {
+            visibility: BuiltinVisibility::Internal,
+        }
+    }
+}
+
 /// Whether a builtin declaration is part of the public language surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinVisibility {
@@ -82,6 +114,26 @@ mod tests {
             BuiltinTypeMeta::Builtin {
                 visibility: BuiltinVisibility::Internal,
                 role: None
+            }
+        );
+    }
+
+    #[test]
+    fn public_builtin_function_meta_has_public_visibility() {
+        assert_eq!(
+            BuiltinFunctionMeta::public(),
+            BuiltinFunctionMeta::Builtin {
+                visibility: BuiltinVisibility::Public
+            }
+        );
+    }
+
+    #[test]
+    fn internal_builtin_function_meta_has_internal_visibility() {
+        assert_eq!(
+            BuiltinFunctionMeta::internal(),
+            BuiltinFunctionMeta::Builtin {
+                visibility: BuiltinVisibility::Internal
             }
         );
     }

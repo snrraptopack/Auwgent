@@ -12,10 +12,12 @@ use quew_source::SourceMap;
 
 const TOOLS_PRELUDE: &str = include_str!("../../../prelude/tools.quew");
 const WITH_PRELUDE: &str = include_str!("../../../prelude/with.quew");
+const MODELS_PRELUDE: &str = include_str!("../../../prelude/models.quew");
 
 const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<quew-prelude:tools.quew>", TOOLS_PRELUDE),
     ("<quew-prelude:with.quew>", WITH_PRELUDE),
+    ("<quew-prelude:models.quew>", MODELS_PRELUDE),
 ];
 
 #[derive(Debug)]
@@ -75,7 +77,7 @@ mod tests {
             "unexpected diagnostics: {:?}",
             parsed.diagnostics
         );
-        assert_eq!(parsed.module.items.len(), 2);
+        assert_eq!(parsed.module.items.len(), 8);
     }
 
     #[test]
@@ -107,6 +109,32 @@ mod tests {
     }
 
     #[test]
+    fn prelude_registers_model_body_role() {
+        let interner = Arc::new(Interner::new());
+        let parsed = parse_prelude(&interner);
+        let table = build_symbol_table(&parsed.module, &interner);
+        let key = RoleKey {
+            keyword: interner.intern("model"),
+            place: interner.intern("body"),
+        };
+
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert!(table.roles.bindings.contains_key(&key));
+    }
+
+    #[test]
+    fn prelude_registers_model_builder_functions() {
+        let interner = Arc::new(Interner::new());
+        let parsed = parse_prelude(&interner);
+        let table = build_symbol_table(&parsed.module, &interner);
+
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert!(table.globals.contains_key(&interner.intern("gemini")));
+        assert!(table.globals.contains_key(&interner.intern("openai")));
+        assert!(table.globals.contains_key(&interner.intern("groq")));
+    }
+
+    #[test]
     fn merge_keeps_user_module_items_after_prelude_items() {
         let interner = Arc::new(Interner::new());
         let user = Module {
@@ -116,6 +144,6 @@ mod tests {
         let merged = module_with_prelude(&user, &interner);
 
         assert!(merged.diagnostics.is_empty(), "{:?}", merged.diagnostics);
-        assert_eq!(merged.module.items.len(), 2);
+        assert_eq!(merged.module.items.len(), 8);
     }
 }

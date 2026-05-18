@@ -5,6 +5,7 @@ use quew_types::Ty;
 /// method experiments before real `extend` method tables exist.
 pub(crate) struct WellKnownKeys {
     pub(crate) model: InternedStr,
+    pub(crate) model_type: InternedStr,
     pub(crate) fallback: InternedStr,
     pub(crate) prompt: InternedStr,
     pub(crate) tools: InternedStr,
@@ -23,6 +24,7 @@ impl WellKnownKeys {
     pub(crate) fn new(i: &Interner) -> Self {
         Self {
             model: i.intern("model"),
+            model_type: i.intern("Model"),
             fallback: i.intern("fallback"),
             prompt: i.intern("prompt"),
             tools: i.intern("tools"),
