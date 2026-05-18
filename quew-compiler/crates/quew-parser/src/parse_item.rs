@@ -6,8 +6,8 @@ use chumsky::prelude::*;
 use quew_ast::expr::{Provider, ProviderCall};
 use quew_ast::lit::{StringKind, StringLit};
 use quew_ast::{
-    AgentDecl, ConfigField, FieldDef, FunctionDecl, Item, LetDecl, ModelDecl, Module, ToolDecl,
-    ToolEntry, ToolsDecl, TypeDecl,
+    AgentDecl, BuiltinTypeMeta, BuiltinVisibility, ConfigField, FieldDef, FunctionDecl, Item,
+    LetDecl, ModelDecl, Module, RoleBindingSyntax, ToolDecl, ToolEntry, ToolsDecl, TypeDecl,
 };
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
@@ -280,6 +280,35 @@ fn type_decl<'tok, I>(
 where
     I: Input<'tok>,
 {
+    let role_prefix = just(TokenKind::AtAt)
+        .ignore_then(
+            field_name(source, interner.clone())
+                .then_ignore(just(TokenKind::Comma))
+                .then(field_name(source, interner.clone()))
+                .map_with(|(keyword, place), extra| RoleBindingSyntax {
+                    keyword,
+                    place,
+                    span: to_span(extra.span()),
+                })
+                .delimited_by(just(TokenKind::LParen), just(TokenKind::RParen)),
+        )
+        .map(|role| BuiltinTypeMeta::Builtin {
+            visibility: BuiltinVisibility::Public,
+            role: Some(role),
+        })
+        .then_ignore(just(TokenKind::Newline).repeated().ignored());
+
+    let builtin_prefix = choice((
+        role_prefix,
+        just(TokenKind::BangAtAt)
+            .to(BuiltinTypeMeta::internal())
+            .then_ignore(just(TokenKind::Newline).repeated().ignored()),
+        just(TokenKind::AtAt)
+            .to(BuiltinTypeMeta::public())
+            .then_ignore(just(TokenKind::Newline).repeated().ignored()),
+        empty().to(BuiltinTypeMeta::User),
+    ));
+
     // Keywords like `agent`, `model`, `for` are valid field names inside a type.
     let field = field_name(source, interner.clone())
         .then(just(TokenKind::Question).or_not())
@@ -299,16 +328,18 @@ where
         .collect::<Vec<_>>()
         .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace));
 
-    just(TokenKind::KwType)
-        .ignore_then(ident(source, interner.clone()))
+    builtin_prefix
+        .then_ignore(just(TokenKind::KwType))
+        .then(ident(source, interner.clone()))
         .then(type_params(source, interner.clone()))
         .then_ignore(just(TokenKind::Eq))
         .then(fields)
-        .map_with(|((name, type_params), fields), extra| {
+        .map_with(|(((builtin, name), type_params), fields), extra| {
             Item::Type(TypeDecl {
                 name,
                 type_params,
                 fields,
+                builtin,
                 span: to_span(extra.span()),
             })
         })

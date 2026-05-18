@@ -152,6 +152,13 @@ pub enum TokenKind {
     #[token("null")]
     NullLiteral,
 
+    /// `!@@` — internal builtin declaration prefix.
+    #[token("!@@")]
+    BangAtAt,
+    /// `@@` — public builtin declaration or role-binding prefix.
+    #[token("@@")]
+    AtAt,
+
     // ── Annotations ──────────────────────────────────────────────────────────
     /// `@tool`, `@desc`, `@middleware`, etc. — all `@name` patterns.
     /// Unknown annotations produce `AnnotationKind::Unknown`, not an error.
@@ -277,6 +284,8 @@ impl std::fmt::Display for TokenKind {
             Self::True => "`true`",
             Self::False => "`false`",
             Self::NullLiteral => "`null`",
+            Self::BangAtAt => "`!@@`",
+            Self::AtAt => "`@@`",
             Self::Annotation(k) => return write!(f, "`@{k:?}`"),
             Self::IntLiteral => "integer literal",
             Self::FloatLiteral => "float literal",
@@ -462,6 +471,27 @@ mod tests {
     #[test]
     fn null_literal() {
         assert_eq!(tokens("null"), vec![TokenKind::NullLiteral]);
+    }
+
+    #[test]
+    fn builtin_prefixes() {
+        assert_eq!(tokens("@@type"), vec![TokenKind::AtAt, TokenKind::KwType]);
+        assert_eq!(
+            tokens("!@@type"),
+            vec![TokenKind::BangAtAt, TokenKind::KwType]
+        );
+        assert_eq!(
+            tokens("@@(tool, value) type"),
+            vec![
+                TokenKind::AtAt,
+                TokenKind::LParen,
+                TokenKind::KwTool,
+                TokenKind::Comma,
+                TokenKind::Ident,
+                TokenKind::RParen,
+                TokenKind::KwType
+            ]
+        );
     }
 
     #[test]

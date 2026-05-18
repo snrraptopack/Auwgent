@@ -104,6 +104,68 @@ function demo(input: string): string {
 }
 
 #[test]
+fn valid_role_bound_generic_type() {
+    let r = check_source(
+        r#"
+@@(tool, value)
+type ToolResult<T> = {
+    data: T
+    error: string
+}
+
+function unwrap(result: ToolResult<string>): string {
+    return result.data
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn invalid_duplicate_role_binding_flows_through_check() {
+    let r = check_source(
+        r#"
+@@(tool, value)
+type ToolResult<T> = { data: T }
+
+@@(tool, value)
+type OtherToolResult<T> = { data: T }
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("duplicate role binding")),
+        "expected duplicate role binding diagnostic, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn invalid_unknown_role_key_flows_through_check() {
+    let r = check_source(
+        r#"
+@@(unknown, elsewhere)
+type BadRole = { value: string }
+"#,
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown role keyword")),
+        "expected unknown role keyword diagnostic, got {:?}",
+        r.diagnostics
+    );
+    assert!(
+        r.diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown role place")),
+        "expected unknown role place diagnostic, got {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
 fn valid_generic_record_field_substitution() {
     let r = check_source(
         r#"

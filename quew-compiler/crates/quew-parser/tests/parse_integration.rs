@@ -14,6 +14,7 @@ use quew_interner::Interner;
 use quew_lexer::lex;
 use quew_parser::parse;
 use quew_source::SourceMap;
+use quew_ast::{BuiltinTypeMeta, BuiltinVisibility, Item};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -173,6 +174,46 @@ function identity<T>(value: T): T {
 "#,
     );
     assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
+fn public_builtin_type_declaration_parses() {
+    let result = lex_and_parse("@@type Text = { value: string }");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Type(decl) => assert_eq!(decl.builtin, BuiltinTypeMeta::public()),
+        other => panic!("expected type declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn internal_builtin_type_declaration_parses() {
+    let result = lex_and_parse("!@@type InternalText = { value: string }");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Type(decl) => assert_eq!(decl.builtin, BuiltinTypeMeta::internal()),
+        other => panic!("expected type declaration, got {other:?}"),
+    }
+}
+
+#[test]
+fn role_bound_generic_type_declaration_parses() {
+    let result = lex_and_parse("@@(tool, value) type ToolResult<T> = { data: T, error: string }");
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    match &result.module.items[0] {
+        Item::Type(decl) => match &decl.builtin {
+            BuiltinTypeMeta::Builtin {
+                visibility,
+                role: Some(role),
+            } => {
+                assert_eq!(*visibility, BuiltinVisibility::Public);
+                assert_eq!(decl.type_params.len(), 1);
+                assert!(role.span.end > role.span.start);
+            }
+            other => panic!("expected role-bound builtin type, got {other:?}"),
+        },
+        other => panic!("expected type declaration, got {other:?}"),
+    }
 }
 
 #[test]

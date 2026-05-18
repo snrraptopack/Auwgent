@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use quew_ast::{
-    AnnotationArgs, ConfigField, Expr, FieldDef, FunctionDecl, Item, Lit, ModelDecl, Module, Param,
-    ParamBinding, Provider, ToolDecl, ToolEntry, ToolsDecl, TypeDecl, TypeExpr,
+    AnnotationArgs, BuiltinTypeMeta, BuiltinVisibility, ConfigField, Expr, FieldDef, FunctionDecl,
+    Item, Lit, ModelDecl, Module, Param, ParamBinding, Provider, ToolDecl, ToolEntry, ToolsDecl,
+    TypeDecl, TypeExpr,
 };
 use quew_checker::CheckResult;
 use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 
 use crate::defs::{
-    AgentDef, Definitions, DisclosureMode, FunctionDef, ModelDef, ProtocolMode, ProviderKind,
-    ToolDef, ToolKind, ToolParam, TypeDef,
+    AgentDef, Definitions, DisclosureMode, FunctionDef, IrRoleBinding, IrRoleKey,
+    IrTypeVisibility, ModelDef, ProtocolMode, ProviderKind, ToolDef, ToolKind, ToolParam, TypeDef,
 };
 use crate::graph::AgentGraph;
 use crate::types::{IrField, IrType};
@@ -89,8 +90,35 @@ fn lower_type(decl: &TypeDecl, interner: &Arc<Interner>, defs: &mut Definitions)
         TypeDef {
             type_params: decl.type_params.clone(),
             fields,
+            visibility: ir_visibility(&decl.builtin),
         },
     );
+
+    if let BuiltinTypeMeta::Builtin { role: Some(role), .. } = &decl.builtin {
+        defs.roles.insert(
+            IrRoleKey {
+                keyword: role.keyword,
+                place: role.place,
+            },
+            IrRoleBinding {
+                type_name: decl.name,
+            },
+        );
+    }
+}
+
+fn ir_visibility(meta: &BuiltinTypeMeta) -> IrTypeVisibility {
+    match meta {
+        BuiltinTypeMeta::User => IrTypeVisibility::User,
+        BuiltinTypeMeta::Builtin {
+            visibility: BuiltinVisibility::Public,
+            ..
+        } => IrTypeVisibility::PublicBuiltin,
+        BuiltinTypeMeta::Builtin {
+            visibility: BuiltinVisibility::Internal,
+            ..
+        } => IrTypeVisibility::InternalBuiltin,
+    }
 }
 
 fn lower_model(decl: &ModelDecl, interner: &Arc<Interner>, defs: &mut Definitions) {
@@ -405,6 +433,7 @@ mod tests {
                     span: sp(),
                 },
             ],
+            builtin: quew_ast::BuiltinTypeMeta::User,
             span: sp(),
         };
 
@@ -431,6 +460,7 @@ mod tests {
                 optional: false,
                 span: sp(),
             }],
+            builtin: quew_ast::BuiltinTypeMeta::User,
             span: sp(),
         };
 
@@ -441,6 +471,72 @@ mod tests {
         assert_eq!(
             def.fields[&interner.intern("value")].ty,
             IrType::GenericParam(t)
+        );
+    }
+
+    #[test]
+    fn lower_builtin_type_preserves_visibility() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let decl = TypeDecl {
+            name: interner.intern("Text"),
+            type_params: vec![],
+            fields: vec![FieldDef {
+                name: interner.intern("value"),
+                ty: named(&interner, "string"),
+                optional: false,
+                span: sp(),
+            }],
+            builtin: BuiltinTypeMeta::public(),
+            span: sp(),
+        };
+
+        lower_type(&decl, &interner, &mut defs);
+
+        assert_eq!(
+            defs.types[&decl.name].visibility,
+            IrTypeVisibility::PublicBuiltin
+        );
+    }
+
+    #[test]
+    fn lower_role_bound_builtin_type_preserves_role_binding() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let t = interner.intern("T");
+        let tool = interner.intern("tool");
+        let value = interner.intern("value");
+        let decl = TypeDecl {
+            name: interner.intern("ToolResult"),
+            type_params: vec![t],
+            fields: vec![FieldDef {
+                name: interner.intern("data"),
+                ty: named(&interner, "T"),
+                optional: false,
+                span: sp(),
+            }],
+            builtin: BuiltinTypeMeta::Builtin {
+                visibility: BuiltinVisibility::Public,
+                role: Some(quew_ast::RoleBindingSyntax {
+                    keyword: tool,
+                    place: value,
+                    span: sp(),
+                }),
+            },
+            span: sp(),
+        };
+
+        lower_type(&decl, &interner, &mut defs);
+
+        let key = IrRoleKey {
+            keyword: tool,
+            place: value,
+        };
+        assert_eq!(defs.roles[&key].type_name, decl.name);
+        assert_eq!(defs.types[&decl.name].type_params, vec![t]);
+        assert_eq!(
+            defs.types[&decl.name].visibility,
+            IrTypeVisibility::PublicBuiltin
         );
     }
 

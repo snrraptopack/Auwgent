@@ -99,7 +99,7 @@ pub struct CheckResult {
 ///
 /// Errors are accumulated and returned — this function never panics on bad input.
 pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
-    let symbol_table = build_symbol_table(module);
+    let symbol_table = build_symbol_table(module, interner);
     let mut diagnostics: Vec<Diagnostic> = symbol_table.diagnostics.clone();
     let mut unify = UnifyTable::new();
     let prim = PrimKeys::new(interner);
@@ -973,6 +973,7 @@ mod tests {
                 name: intern(&i, "MyType"),
                 type_params: vec![],
                 fields: vec![],
+                builtin: BuiltinTypeMeta::User,
                 span: sp(),
             })],
             span: sp(),
@@ -1162,6 +1163,7 @@ mod tests {
                     name: intern(&i, "Foo"),
                     type_params: vec![],
                     fields: vec![],
+                    builtin: BuiltinTypeMeta::User,
                     span: sp(),
                 }),
                 Item::Function(FunctionDecl {

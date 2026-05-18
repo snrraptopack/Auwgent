@@ -34,6 +34,9 @@ pub struct Definitions {
 
     /// One entry per `agent` declaration.
     pub agents: IndexMap<InternedStr, AgentDef>,
+
+    /// Compiler role bindings declared by builtin types.
+    pub roles: IndexMap<IrRoleKey, IrRoleBinding>,
 }
 
 // ── Type definitions ──────────────────────────────────────────────────────────
@@ -45,6 +48,26 @@ pub struct TypeDef {
     pub type_params: Vec<InternedStr>,
     /// All fields in declaration order.
     pub fields: IndexMap<InternedStr, IrField>,
+    /// Whether this type is ordinary user source or builtin language surface.
+    pub visibility: IrTypeVisibility,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IrTypeVisibility {
+    User,
+    PublicBuiltin,
+    InternalBuiltin,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IrRoleKey {
+    pub keyword: InternedStr,
+    pub place: InternedStr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IrRoleBinding {
+    pub type_name: InternedStr,
 }
 
 // ── Model definitions ─────────────────────────────────────────────────────────

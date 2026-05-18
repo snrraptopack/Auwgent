@@ -1,13 +1,16 @@
 //! Per-file symbol table for the quew compiler.
+pub mod roles;
+
 use indexmap::IndexMap;
 use quew_ast::{
-    AnnotationArgs, FieldDef, FunctionDecl, Item, Module, Param, ParamBinding, Provider, ToolDecl,
-    ToolEntry, TypeExpr,
+    AnnotationArgs, BuiltinTypeMeta, BuiltinVisibility as AstBuiltinVisibility, FieldDef,
+    FunctionDecl, Item, Module, Param, ParamBinding, Provider, ToolDecl, ToolEntry, TypeExpr,
 };
 use quew_errors::{Diagnostic, Severity, Span};
-use quew_interner::InternedStr;
+use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 use quew_types::{AgentTy, FunctionTy, ProviderKind, ToolTy, Ty};
+pub use roles::{BuiltinVisibility, RoleBinding, RoleKey, RoleRegistry};
 
 // ── SymbolKind ────────────────────────────────────────────────────────────────
 
@@ -32,6 +35,7 @@ pub struct Symbol {
     pub kind: SymbolKind,
     pub def_span: Span,
     pub type_params: Vec<InternedStr>,
+    pub visibility: BuiltinVisibility,
 }
 
 // ── SymbolTable ───────────────────────────────────────────────────────────────
@@ -40,6 +44,8 @@ pub struct Symbol {
 pub struct SymbolTable {
     /// Top-level names declared in the file (ordered).
     pub globals: IndexMap<InternedStr, Symbol>,
+    /// Compiler role bindings declared by builtin types.
+    pub roles: RoleRegistry,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -65,6 +71,37 @@ impl SymbolTable {
         }
     }
 }
+
+fn symbol(
+    ty: Ty,
+    kind: SymbolKind,
+    def_span: Span,
+    type_params: Vec<InternedStr>,
+    visibility: BuiltinVisibility,
+) -> Symbol {
+    Symbol {
+        ty,
+        kind,
+        def_span,
+        type_params,
+        visibility,
+    }
+}
+
+fn visibility_from_builtin(meta: &BuiltinTypeMeta) -> BuiltinVisibility {
+    match meta {
+        BuiltinTypeMeta::User => BuiltinVisibility::User,
+        BuiltinTypeMeta::Builtin {
+            visibility: AstBuiltinVisibility::Public,
+            ..
+        } => BuiltinVisibility::PublicBuiltin,
+        BuiltinTypeMeta::Builtin {
+            visibility: AstBuiltinVisibility::Internal,
+            ..
+        } => BuiltinVisibility::InternalBuiltin,
+    }
+}
+
 
 // ── TypeExpr → Ty lowering ────────────────────────────────────────────────────
 
@@ -231,7 +268,7 @@ fn extract_tool_annotation_params(
 ///
 /// Errors are accumulated into `SymbolTable::diagnostics`.
 /// This function never panics on malformed input.
-pub fn build_symbol_table(module: &Module) -> SymbolTable {
+pub fn build_symbol_table(module: &Module, interner: &Interner) -> SymbolTable {
     let mut table = SymbolTable::new();
 
     for item in &module.items {
@@ -255,12 +292,13 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                 table.diagnostics.extend(d);
                 table.define_global(
                     decl.name,
-                    Symbol {
+                    symbol(
                         ty,
-                        kind: SymbolKind::Agent,
-                        def_span: decl.span,
-                        type_params: vec![],
-                    },
+                        SymbolKind::Agent,
+                        decl.span,
+                        vec![],
+                        BuiltinVisibility::User,
+                    ),
                 );
             }
 
@@ -296,12 +334,13 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                 table.diagnostics.extend(d);
                 table.define_global(
                     decl.name,
-                    Symbol {
+                    symbol(
                         ty,
                         kind,
-                        def_span: decl.span,
-                        type_params: decl.type_params.clone(),
-                    },
+                        decl.span,
+                        decl.type_params.clone(),
+                        BuiltinVisibility::User,
+                    ),
                 );
             }
 
@@ -320,12 +359,13 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                     table.diagnostics.extend(d);
                     table.define_global(
                         name,
-                        Symbol {
-                            ty: Ty::void(),
-                            kind: SymbolKind::ToolGroup,
-                            def_span: decl.span,
-                            type_params: vec![],
-                        },
+                        symbol(
+                            Ty::void(),
+                            SymbolKind::ToolGroup,
+                            decl.span,
+                            vec![],
+                            BuiltinVisibility::User,
+                        ),
                     );
                 } else {
                     table.diagnostics.extend(d);
@@ -337,14 +377,29 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                 validate_type_params(&decl.type_params, decl.span, &mut d);
                 let ty = lower_record_with_params(&decl.fields, &decl.type_params, &mut d);
                 table.diagnostics.extend(d);
+                if let BuiltinTypeMeta::Builtin { role: Some(role), .. } = &decl.builtin {
+                    table.roles.register(
+                        RoleKey {
+                            keyword: role.keyword,
+                            place: role.place,
+                        },
+                        RoleBinding {
+                            type_name: decl.name,
+                            span: role.span,
+                        },
+                        interner,
+                        &mut table.diagnostics,
+                    );
+                }
                 table.define_global(
                     decl.name,
-                    Symbol {
+                    symbol(
                         ty,
-                        kind: SymbolKind::Type,
-                        def_span: decl.span,
-                        type_params: decl.type_params.clone(),
-                    },
+                        SymbolKind::Type,
+                        decl.span,
+                        decl.type_params.clone(),
+                        visibility_from_builtin(&decl.builtin),
+                    ),
                 );
             }
 
@@ -354,12 +409,13 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                 let ty = Ty::Provider(lower_provider(&decl.provider.provider));
                 table.define_global(
                     decl.name,
-                    Symbol {
+                    symbol(
                         ty,
-                        kind: SymbolKind::Model,
-                        def_span: decl.span,
-                        type_params: vec![],
-                    },
+                        SymbolKind::Model,
+                        decl.span,
+                        vec![],
+                        BuiltinVisibility::User,
+                    ),
                 );
             }
 
@@ -373,12 +429,13 @@ pub fn build_symbol_table(module: &Module) -> SymbolTable {
                 table.diagnostics.extend(d);
                 table.define_global(
                     decl.name,
-                    Symbol {
+                    symbol(
                         ty,
-                        kind: SymbolKind::Let,
-                        def_span: decl.span,
-                        type_params: vec![],
-                    },
+                        SymbolKind::Let,
+                        decl.span,
+                        vec![],
+                        BuiltinVisibility::User,
+                    ),
                 );
             }
         }
@@ -402,12 +459,13 @@ fn register_tool_decl(table: &mut SymbolTable, decl: &ToolDecl) {
     });
     table.define_global(
         decl.name,
-        Symbol {
+        symbol(
             ty,
-            kind: SymbolKind::Tool,
-            def_span: decl.span,
-            type_params: vec![],
-        },
+            SymbolKind::Tool,
+            decl.span,
+            vec![],
+            BuiltinVisibility::User,
+        ),
     );
 }
 
@@ -421,12 +479,13 @@ fn register_tool_entry(table: &mut SymbolTable, entry: &ToolEntry, d: &mut Vec<D
     });
     table.define_global(
         entry.name,
-        Symbol {
+        symbol(
             ty,
-            kind: SymbolKind::Tool,
-            def_span: entry.span,
-            type_params: vec![],
-        },
+            SymbolKind::Tool,
+            entry.span,
+            vec![],
+            BuiltinVisibility::User,
+        ),
     );
 }
 
@@ -538,7 +597,8 @@ mod tests {
 
     #[test]
     fn empty_module_yields_empty_table() {
-        let t = build_symbol_table(&empty_module());
+        let i = interner();
+        let t = build_symbol_table(&empty_module(), &i);
         assert!(t.globals.is_empty());
         assert!(t.diagnostics.is_empty());
     }
@@ -556,11 +616,12 @@ mod tests {
                     optional: false,
                     span: sp(),
                 }],
+                builtin: BuiltinTypeMeta::User,
                 span: sp(),
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         let sym = t
             .globals
             .get(&intern(&i, "Response"))
@@ -590,7 +651,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         let sym = t
             .globals
             .get(&intern(&i, "MyModel"))
@@ -613,7 +674,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         let sym = t
             .globals
             .get(&intern(&i, "ChatAgent"))
@@ -637,7 +698,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         let sym = t
             .globals
             .get(&intern(&i, "greet"))
@@ -669,7 +730,7 @@ mod tests {
             span: sp(),
         };
 
-        let table = build_symbol_table(&module);
+        let table = build_symbol_table(&module, &i);
         assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
         let sym = &table.globals[&intern(&i, "identity")];
         assert_eq!(sym.type_params, vec![t_param]);
@@ -692,18 +753,176 @@ mod tests {
                 name: intern(&i, "Bad"),
                 type_params: vec![t_param, t_param],
                 fields: vec![],
+                builtin: BuiltinTypeMeta::User,
                 span: sp(),
             })],
             span: sp(),
         };
 
-        let table = build_symbol_table(&module);
+        let table = build_symbol_table(&module, &i);
         assert!(
             table
                 .diagnostics
                 .iter()
                 .any(|d| d.message.contains("duplicate generic parameter")),
             "expected duplicate generic parameter diagnostic, got {:?}",
+            table.diagnostics
+        );
+    }
+
+    #[test]
+    fn public_builtin_type_preserves_visibility() {
+        let i = interner();
+        let module = Module {
+            items: vec![Item::Type(TypeDecl {
+                name: intern(&i, "Text"),
+                type_params: vec![],
+                fields: vec![],
+                builtin: BuiltinTypeMeta::public(),
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert_eq!(
+            table.globals[&intern(&i, "Text")].visibility,
+            super::BuiltinVisibility::PublicBuiltin
+        );
+    }
+
+    #[test]
+    fn internal_builtin_type_preserves_visibility() {
+        let i = interner();
+        let module = Module {
+            items: vec![Item::Type(TypeDecl {
+                name: intern(&i, "InternalText"),
+                type_params: vec![],
+                fields: vec![],
+                builtin: BuiltinTypeMeta::internal(),
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        assert_eq!(
+            table.globals[&intern(&i, "InternalText")].visibility,
+            super::BuiltinVisibility::InternalBuiltin
+        );
+    }
+
+    #[test]
+    fn role_bound_generic_type_registers_role_and_params() {
+        let i = interner();
+        let t_param = intern(&i, "T");
+        let module = Module {
+            items: vec![Item::Type(TypeDecl {
+                name: intern(&i, "ToolResult"),
+                type_params: vec![t_param],
+                fields: vec![],
+                builtin: BuiltinTypeMeta::Builtin {
+                    visibility: AstBuiltinVisibility::Public,
+                    role: Some(RoleBindingSyntax {
+                        keyword: intern(&i, "tool"),
+                        place: intern(&i, "value"),
+                        span: sp(),
+                    }),
+                },
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+        let key = RoleKey {
+            keyword: intern(&i, "tool"),
+            place: intern(&i, "value"),
+        };
+        assert_eq!(
+            table.roles.bindings[&key].type_name,
+            intern(&i, "ToolResult")
+        );
+        assert_eq!(table.globals[&intern(&i, "ToolResult")].type_params, vec![t_param]);
+    }
+
+    #[test]
+    fn duplicate_role_binding_errors() {
+        let i = interner();
+        let role = || {
+            BuiltinTypeMeta::Builtin {
+                visibility: AstBuiltinVisibility::Public,
+                role: Some(RoleBindingSyntax {
+                    keyword: intern(&i, "tool"),
+                    place: intern(&i, "value"),
+                    span: sp(),
+                }),
+            }
+        };
+        let decl = |name: &str| {
+            Item::Type(TypeDecl {
+                name: intern(&i, name),
+                type_params: vec![],
+                fields: vec![],
+                builtin: role(),
+                span: sp(),
+            })
+        };
+        let module = Module {
+            items: vec![decl("ToolResult"), decl("OtherToolResult")],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("duplicate role binding")),
+            "expected duplicate role binding diagnostic, got {:?}",
+            table.diagnostics
+        );
+    }
+
+    #[test]
+    fn unknown_role_keyword_and_place_error() {
+        let i = interner();
+        let module = Module {
+            items: vec![Item::Type(TypeDecl {
+                name: intern(&i, "BadRole"),
+                type_params: vec![],
+                fields: vec![],
+                builtin: BuiltinTypeMeta::Builtin {
+                    visibility: AstBuiltinVisibility::Public,
+                    role: Some(RoleBindingSyntax {
+                        keyword: intern(&i, "unknown"),
+                        place: intern(&i, "elsewhere"),
+                        span: sp(),
+                    }),
+                },
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let table = build_symbol_table(&module, &i);
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unknown role keyword")),
+            "expected unknown role keyword diagnostic, got {:?}",
+            table.diagnostics
+        );
+        assert!(
+            table
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("unknown role place")),
+            "expected unknown role place diagnostic, got {:?}",
             table.diagnostics
         );
     }
@@ -721,7 +940,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         let sym = t
             .globals
             .get(&intern(&i, "delete_user"))
@@ -743,6 +962,7 @@ mod tests {
                 name: intern(&i, "Foo"),
                 type_params: vec![],
                 fields: vec![],
+                builtin: BuiltinTypeMeta::User,
                 span: sp(),
             })
         };
@@ -750,7 +970,7 @@ mod tests {
             items: vec![decl(), decl()],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         assert_eq!(t.diagnostics.len(), 1);
         assert_eq!(t.diagnostics[0].severity, Severity::Error);
         assert!(t.diagnostics[0].message.contains("duplicate"));
@@ -783,7 +1003,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         assert!(
             t.diagnostics.is_empty(),
             "unexpected diags: {:?}",
@@ -828,7 +1048,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         assert!(
             !t.diagnostics.is_empty(),
             "expected error for unmatched bound param"
@@ -855,7 +1075,7 @@ mod tests {
             })],
             span: sp(),
         };
-        let t = build_symbol_table(&module);
+        let t = build_symbol_table(&module, &i);
         assert!(t.globals.contains_key(&intern(&i, "getWeather")));
     }
 

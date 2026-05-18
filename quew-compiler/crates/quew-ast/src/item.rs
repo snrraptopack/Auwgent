@@ -4,6 +4,7 @@ use quew_errors::Span;
 use quew_interner::InternedStr;
 use quew_lexer::AnnotationKind;
 
+use crate::builtin::BuiltinTypeMeta;
 use crate::expr::{ConfigField, Expr, ProviderCall};
 use crate::lit::StringLit;
 use crate::stmt::Stmt;
@@ -161,6 +162,7 @@ pub struct TypeDecl {
     pub name: InternedStr,
     pub type_params: Vec<InternedStr>,
     pub fields: Vec<FieldDef>,
+    pub builtin: BuiltinTypeMeta,
     pub span: Span,
 }
 
@@ -326,6 +328,7 @@ mod tests {
                     span: sp(),
                 },
             ],
+            builtin: BuiltinTypeMeta::User,
             span: sp(),
         };
         assert_eq!(t.fields.len(), 2);

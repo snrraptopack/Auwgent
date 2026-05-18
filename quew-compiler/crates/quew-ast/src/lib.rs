@@ -21,7 +21,9 @@
 //! | `expr` | `Expr` and all sub-nodes |
 //! | `stmt` | `Stmt` and all sub-nodes |
 //! | `item` | `Module`, `Item`, top-level declarations, `Annotation`, `Param` |
+//! | `builtin` | Builtin visibility and compiler role metadata |
 
+pub mod builtin;
 pub mod expr;
 pub mod item;
 pub mod lit;
@@ -29,6 +31,7 @@ pub mod stmt;
 pub mod ty;
 
 // Flatten the most commonly used types to the crate root for convenience.
+pub use builtin::{BuiltinTypeMeta, BuiltinVisibility, RoleBindingSyntax};
 pub use expr::{
     ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr, IsExpr, MemberExpr,
     PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
