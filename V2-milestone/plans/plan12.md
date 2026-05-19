@@ -5,7 +5,7 @@
 Plan 11 preserved native Rust binding metadata with `@@rust("id")`. Plan 12
 turns that foundation into the first user-facing method layer:
 
-```quew
+```ts
 extend string {
     function isEmpty(): bool {
         return string_is_empty(self)
@@ -59,7 +59,7 @@ The first implementation should support:
 
 Example:
 
-```quew
+```ts
 @@rust("std.string.is_empty")
 !@@function string_is_empty(value: string): bool
 

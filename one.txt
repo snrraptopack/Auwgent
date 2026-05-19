@@ -1,0 +1,27 @@
+@middleware("logger")
+function logger(event:MiddlewareEvent) {
+    if event.type is Intent {
+        if event.responseText {
+            log(event.text)
+        }
+
+        if event is ToolCall {
+            log(event.toolCall)
+        }
+    }
+
+}
+
+
+@middlewares(logger)
+agent one(input:string): string {
+
+    reply(input) with {
+        model:gemini(),
+        prompt: "You are a helpful assistant. "
+    }
+}
+
+let oneAgent = one("")
+
+// the onAgent should have some shape which is the session,

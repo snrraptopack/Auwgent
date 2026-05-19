@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use indexmap::IndexMap;
 use quew_ast::{AgentDecl, ElseClause, Expr, ReturnMode, Stmt};
+use quew_checker::resolved::CallKind;
 use quew_checker::CheckResult;
 use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
@@ -81,6 +82,61 @@ pub fn lower_agent(
     }
 }
 
+/// Lower a function or extension-method body into an `AgentGraph`.
+///
+/// The first parameter is bound to the graph's `Input` node.  Additional
+/// parameters are bound as fields of that input (a simplification until the
+/// runtime supports multi-input graphs).
+pub fn lower_function_graph(
+    graph_id: String,
+    params: &IndexMap<InternedStr, crate::types::IrType>,
+    body: &[Stmt],
+    check: &CheckResult,
+    interner: &Arc<Interner>,
+    definitions: &mut Definitions,
+) -> AgentGraph {
+    let mut builder = GraphBuilder::new(graph_id, interner);
+
+    let input_ty = params.first().map(|(_, ty)| ty.clone()).unwrap_or(crate::types::IrType::Void);
+    let input_id = builder.push(
+        NodeKind::Input { input_ty },
+        CheckpointPolicy::Never,
+    );
+
+    for (idx, (name, _ty)) in params.iter().enumerate() {
+        let data_ref = if idx == 0 {
+            DataRef::scalar(input_id)
+        } else {
+            DataRef::field(input_id, *name)
+        };
+        builder.ctx.bind(*name, data_ref);
+    }
+
+    let mut result = DataRef::scalar(input_id);
+    for stmt in body {
+        if let Some(value) = lower_stmt(stmt, check, interner, definitions, &mut builder) {
+            result = value;
+            break;
+        }
+    }
+
+    let output_id = builder.push(
+        NodeKind::Output {
+            value: result.clone(),
+        },
+        CheckpointPolicy::Never,
+    );
+    builder.edge(result.node, output_id, interner.intern("value"));
+
+    AgentGraph {
+        graph_id: builder.graph_id,
+        entry_node: input_id,
+        return_node: output_id,
+        nodes: builder.nodes,
+        edges: builder.edges,
+    }
+}
+
 fn lower_stmt(
     stmt: &Stmt,
     check: &CheckResult,
@@ -100,7 +156,7 @@ fn lower_stmt(
             None
         }
         Stmt::Reply(reply) => {
-            let message = ensure_ref(&reply.input, check, builder);
+            let message = ensure_ref(&reply.input, check, definitions, builder);
             let config = lower_reply_config(
                 &reply.with_block,
                 check,
@@ -138,11 +194,11 @@ fn lower_stmt(
                 }
                 Some(DataRef::scalar(id))
             } else {
-                Some(ensure_ref(value, check, builder))
+                Some(ensure_ref(value, check, definitions, builder))
             }
         }
         Stmt::If(if_stmt) => {
-            let condition = ensure_ref(&if_stmt.condition, check, builder);
+            let condition = ensure_ref(&if_stmt.condition, check, definitions, builder);
             let branch_id = builder.next_id();
             let then_node = if if_stmt.then_body.is_empty() {
                 condition.node
@@ -191,7 +247,7 @@ fn lower_stmt(
             None
         }
         Stmt::Expr(expr_stmt) => {
-            let _ = ensure_ref(&expr_stmt.expr, check, builder);
+            let _ = ensure_ref(&expr_stmt.expr, check, definitions, builder);
             None
         }
         Stmt::For(_) => None,
@@ -242,24 +298,69 @@ fn lower_value_node(
                     args,
                 );
             }
+        } else if let Expr::Member(member) = call.callee.as_ref() {
+            // Extension method call: value.method()
+            if let Some(resolved) = check.resolved.get_call(call.span) {
+                if resolved.kind == CallKind::ExtensionMethod {
+                    let graph_ref = extension_graph_ref(resolved, builder.interner);
+                    let function = builder.interner.intern(&graph_ref);
+
+                    let mut args = IndexMap::new();
+                    let receiver_ref = ensure_ref(&member.object, check, definitions, builder);
+                    args.insert(builder.interner.intern("self"), receiver_ref);
+
+                    // Map explicit args using param names from the extension def.
+                    if let Some(ext) = definitions
+                        .extensions
+                        .iter()
+                        .find(|e| e.graph_ref == graph_ref)
+                    {
+                        for (idx, (param_name, _)) in ext.params.iter().enumerate() {
+                            if let Some(arg) = call.args.get(idx) {
+                                args.insert(*param_name, ensure_ref(arg, check, definitions, builder));
+                            }
+                        }
+                    } else {
+                        // Fallback: positional args with generated names.
+                        for (idx, arg) in call.args.iter().enumerate() {
+                            let name = builder.interner.intern(&format!("arg{idx}"));
+                            args.insert(name, ensure_ref(arg, check, definitions, builder));
+                        }
+                    }
+
+                    return (
+                        NodeKind::FuncCall {
+                            function,
+                            args: args.clone(),
+                        },
+                        CheckpointPolicy::Optional,
+                        args,
+                    );
+                }
+            }
         }
     }
 
     (
         NodeKind::LetBind {
             name: builder.interner.intern("_"),
-            value: lower_expr(expr, check, &mut builder.ctx),
+            value: lower_expr(expr, check, definitions, builder.interner, &mut builder.ctx),
         },
         CheckpointPolicy::Optional,
         IndexMap::new(),
     )
 }
 
-fn ensure_ref(expr: &Expr, check: &CheckResult, builder: &mut GraphBuilder) -> DataRef {
+fn ensure_ref(
+    expr: &Expr,
+    check: &CheckResult,
+    definitions: &Definitions,
+    builder: &mut GraphBuilder,
+) -> DataRef {
     match expr {
         Expr::Ident(_) | Expr::Member(_) => lower_expr_as_ref(expr, check, &mut builder.ctx),
         _ => {
-            let value = lower_expr(expr, check, &mut builder.ctx);
+            let value = lower_expr(expr, check, definitions, builder.interner, &mut builder.ctx);
             let id = builder.push(
                 NodeKind::LetBind {
                     name: builder.interner.intern("_"),
@@ -308,7 +409,7 @@ fn call_args(
                 .get(idx)
                 .copied()
                 .unwrap_or_else(|| builder.interner.intern(&format!("arg{idx}")));
-            (name, ensure_ref(arg, check, builder))
+            (name, ensure_ref(arg, check, definitions, builder))
         })
         .collect()
 }
@@ -336,6 +437,38 @@ fn param_names(callee: InternedStr, definitions: &Definitions) -> Vec<InternedSt
         };
     }
     Vec::new()
+}
+
+/// Build the graph_ref string for an extension method from checker resolution.
+fn extension_graph_ref(
+    resolved: &quew_checker::resolved::ResolvedCall,
+    interner: &Arc<Interner>,
+) -> String {
+    let receiver_ty = resolved
+        .receiver_ty
+        .as_ref()
+        .expect("extension method resolved call missing receiver_ty");
+    let receiver_name = ty_to_string(receiver_ty, interner);
+    format!(
+        "extension:{}:{}",
+        receiver_name,
+        interner.resolve(resolved.target)
+    )
+}
+
+/// Convert a checker `Ty` into the string form used in IR `graph_ref`s.
+fn ty_to_string(ty: &quew_types::Ty, interner: &Arc<Interner>) -> String {
+    use quew_types::{PrimTy, Ty};
+    match ty {
+        Ty::Primitive(PrimTy::String) => "string".into(),
+        Ty::Primitive(PrimTy::Number) => "number".into(),
+        Ty::Primitive(PrimTy::Float) => "float".into(),
+        Ty::Primitive(PrimTy::Bool) => "bool".into(),
+        Ty::Primitive(PrimTy::Null) => "null".into(),
+        Ty::Primitive(PrimTy::Void) => "void".into(),
+        Ty::Named(name) => interner.resolve(*name).to_string(),
+        _ => "unknown".into(),
+    }
 }
 
 fn estimated_body_nodes(body: &[Stmt]) -> u32 {

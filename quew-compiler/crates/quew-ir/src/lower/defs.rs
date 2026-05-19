@@ -32,8 +32,8 @@ pub fn lower_definitions(
             Item::Model(decl) => lower_model(decl, interner, definitions),
             Item::Tool(decl) => lower_tool(decl, interner, definitions),
             Item::Tools(decl) => lower_tools_group(decl, interner, definitions),
-            Item::Function(decl) => lower_function(decl, interner, definitions, graphs),
-            Item::Extend(decl) => lower_extend(decl, interner, definitions),
+            Item::Function(decl) => lower_function(decl, _check, interner, definitions, graphs),
+            Item::Extend(decl) => lower_extend(decl, _check, interner, definitions, graphs),
             Item::Agent(decl) => {
                 let context = decl.annotations.iter().find_map(|ann| {
                     if ann.kind == AnnotationKind::Context {
@@ -65,12 +65,14 @@ pub fn lower_definitions(
 
 fn lower_extend(
     decl: &quew_ast::ExtendDecl,
+    check: &CheckResult,
     interner: &Arc<Interner>,
     defs: &mut Definitions,
+    graphs: &mut IndexMap<String, AgentGraph>,
 ) {
     let receiver = lower_type_expr(&decl.receiver, interner);
     for method in &decl.methods {
-        let params = method
+        let params: IndexMap<InternedStr, IrType> = method
             .params
             .iter()
             .map(|param| {
@@ -80,6 +82,33 @@ fn lower_extend(
                 )
             })
             .collect();
+        let graph_ref = format!(
+            "extension:{}:{}",
+            type_ref_name(&receiver, interner),
+            interner.resolve(method.name)
+        );
+
+        // Build parameter list with `self` prepended.
+        let mut all_params: IndexMap<InternedStr, IrType> = IndexMap::new();
+        all_params.insert(
+            interner.intern("self"),
+            receiver.clone(),
+        );
+        for (k, v) in params.iter() {
+            all_params.insert(*k, v.clone());
+        }
+
+        // Lower the method body into a graph.
+        let graph = super::graph_lower::lower_function_graph(
+            graph_ref.clone(),
+            &all_params,
+            &method.body,
+            check,
+            interner,
+            defs,
+        );
+        graphs.insert(graph_ref.clone(), graph);
+
         defs.extensions.push(ExtensionDef {
             receiver: receiver.clone(),
             method_name: method.name,
@@ -90,11 +119,7 @@ fn lower_extend(
                 .as_ref()
                 .map(|ty| lower_type_expr_with_params(ty, &method.type_params, interner))
                 .unwrap_or(IrType::Void),
-            graph_ref: format!(
-                "extension:{}:{}",
-                type_ref_name(&receiver, interner),
-                interner.resolve(method.name)
-            ),
+            graph_ref,
         });
     }
 }
@@ -221,9 +246,10 @@ fn lower_tools_group(decl: &ToolsDecl, interner: &Arc<Interner>, defs: &mut Defi
 
 fn lower_function(
     decl: &FunctionDecl,
+    check: &CheckResult,
     interner: &Arc<Interner>,
     defs: &mut Definitions,
-    _graphs: &mut IndexMap<String, AgentGraph>,
+    graphs: &mut IndexMap<String, AgentGraph>,
 ) {
     let graph_ref = format!("function:{}", interner.resolve(decl.name));
     let is_tool = decl
@@ -271,7 +297,7 @@ fn lower_function(
             },
         );
     } else {
-        let params = decl
+        let params: IndexMap<InternedStr, IrType> = decl
             .params
             .iter()
             .map(|param| {
@@ -281,6 +307,17 @@ fn lower_function(
                 )
             })
             .collect();
+
+        // Lower the function body into a graph.
+        let graph = super::graph_lower::lower_function_graph(
+            graph_ref.clone(),
+            &params,
+            &decl.body,
+            check,
+            interner,
+            defs,
+        );
+        graphs.insert(graph_ref.clone(), graph);
 
         defs.functions.insert(
             decl.name,
@@ -621,7 +658,12 @@ mod tests {
             span: sp(),
         };
 
-        lower_function(&decl, &interner, &mut defs, &mut graphs);
+        let check = CheckResult {
+            symbol_table: quew_checker::SymbolTable::default(),
+            diagnostics: vec![],
+            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
+        };
+        lower_function(&decl, &check, &interner, &mut defs, &mut graphs);
 
         let def = &defs.functions[&decl.name];
         assert_eq!(def.type_params, vec![t]);
@@ -670,7 +712,12 @@ mod tests {
             span: sp(),
         };
 
-        lower_function(&decl, &interner, &mut defs, &mut graphs);
+        let check = CheckResult {
+            symbol_table: quew_checker::SymbolTable::default(),
+            diagnostics: vec![],
+            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
+        };
+        lower_function(&decl, &check, &interner, &mut defs, &mut graphs);
 
         let def = &defs.functions[&decl.name];
         assert_eq!(def.native, Some(native_id));
@@ -702,7 +749,13 @@ mod tests {
             span: sp(),
         };
 
-        lower_extend(&decl, &interner, &mut defs);
+        let mut graphs = IndexMap::new();
+        let check = CheckResult {
+            symbol_table: quew_checker::SymbolTable::default(),
+            diagnostics: vec![],
+            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
+        };
+        lower_extend(&decl, &check, &interner, &mut defs, &mut graphs);
 
         assert_eq!(defs.extensions.len(), 1);
         let method = &defs.extensions[0];

@@ -184,4 +184,92 @@ agent Vision(input: string) {
         let agent = &ir.definitions.agents[&interner.intern("Vision")];
         assert_eq!(agent.protocol, crate::defs::ProtocolMode::Native);
     }
+
+    #[test]
+    fn lowers_extension_method_call_into_func_call() {
+        let (interner, ir) = lower_source(
+            r#"
+extend string {
+    function isSuperEmpty(): bool { return true }
+}
+agent Main(input: string) {
+    let result = input.isSuperEmpty()
+}
+"#,
+        );
+
+        // The extension method body should be lowered into a graph.
+        let ext_graph = &ir.graphs["extension:string:isSuperEmpty"];
+        assert_eq!(ext_graph.nodes.len(), 3); // Input, LetBind(true), Output
+
+        // The agent body should contain a FuncCall to the extension method.
+        let agent_graph = &ir.graphs["agent:Main"];
+        let func_name = interner.intern("extension:string:isSuperEmpty");
+        assert!(agent_graph.nodes.values().any(|node| {
+            matches!(
+                &node.kind,
+                crate::graph::NodeKind::FuncCall { function, .. } if *function == func_name
+            )
+        }));
+    }
+
+    #[test]
+    fn lowers_function_body_into_graph() {
+        let (interner, ir) = lower_source(
+            r#"
+function custom_string_is_empty(value: string): bool { return true }
+agent Main(input: string) {
+    let result = custom_string_is_empty(input)
+}
+"#,
+        );
+
+        let func_graph = &ir.graphs["function:custom_string_is_empty"];
+        assert_eq!(func_graph.nodes.len(), 3); // Input, LetBind(true), Output
+
+        let agent_graph = &ir.graphs["agent:Main"];
+        let func_name = interner.intern("custom_string_is_empty");
+        assert!(agent_graph.nodes.values().any(|node| {
+            matches!(
+                &node.kind,
+                crate::graph::NodeKind::FuncCall { function, .. } if *function == func_name
+            )
+        }));
+    }
+
+    #[test]
+    fn lowers_extension_method_calling_another_function() {
+        let (interner, ir) = lower_source(
+            r#"
+function custom_string_is_empty(value: string): bool { return true }
+extend string {
+    function isSuperEmpty(): bool { return custom_string_is_empty(self) }
+}
+agent Main(input: string) {
+    let result = input.isSuperEmpty()
+}
+"#,
+        );
+
+        // Extension method body should call the function (inlined as IrExpr::Call).
+        let ext_graph = &ir.graphs["extension:string:isSuperEmpty"];
+        let func_name = interner.intern("custom_string_is_empty");
+        assert!(ext_graph.nodes.values().any(|node| {
+            matches!(
+                &node.kind,
+                crate::graph::NodeKind::LetBind { value: crate::graph::IrExpr::Call { function, .. }, .. }
+                    if *function == func_name
+            )
+        }));
+
+        // Agent body should call the extension method.
+        let agent_graph = &ir.graphs["agent:Main"];
+        let ext_name = interner.intern("extension:string:isSuperEmpty");
+        assert!(agent_graph.nodes.values().any(|node| {
+            matches!(
+                &node.kind,
+                crate::graph::NodeKind::FuncCall { function, .. } if *function == ext_name
+            )
+        }));
+    }
 }
