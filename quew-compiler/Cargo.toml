@@ -29,6 +29,9 @@ members = [
 
     # Layer 7 — user-facing binary
     "crates/quew-cli",
+
+    # Layer 8 — runtime executor
+    "crates/quew-runtime",
 ]
 resolver = "2"
 

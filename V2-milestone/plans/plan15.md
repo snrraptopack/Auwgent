@@ -1,6 +1,6 @@
 # Plan 15: Graph IR Runtime Executor — Value System and Deterministic Execution
 
-**Status:** Proposed. Derived from Discussion 9, Section 4–5.
+**Status:** Completed. Derived from Discussion 9, Section 4–5.
 
 **Scope:** First runtime crate. Phase 1 (Value system + expression evaluator) and Phase 2 (deterministic graph executor). No LLM, no host tools, no checkpoint store yet.
 

@@ -703,6 +703,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "quew-runtime"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "quew-checker",
+ "quew-errors",
+ "quew-interner",
+ "quew-ir",
+ "quew-lexer",
+ "quew-parser",
+ "quew-source",
+]
+
+[[package]]
 name = "quew-scope"
 version = "0.1.0"
 dependencies = [
