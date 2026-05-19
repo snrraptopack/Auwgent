@@ -658,11 +658,7 @@ mod tests {
             span: sp(),
         };
 
-        let check = CheckResult {
-            symbol_table: quew_checker::SymbolTable::default(),
-            diagnostics: vec![],
-            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
-        };
+        let check = CheckResult::default();
         lower_function(&decl, &check, &interner, &mut defs, &mut graphs);
 
         let def = &defs.functions[&decl.name];
@@ -712,11 +708,7 @@ mod tests {
             span: sp(),
         };
 
-        let check = CheckResult {
-            symbol_table: quew_checker::SymbolTable::default(),
-            diagnostics: vec![],
-            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
-        };
+        let check = CheckResult::default();
         lower_function(&decl, &check, &interner, &mut defs, &mut graphs);
 
         let def = &defs.functions[&decl.name];
@@ -750,11 +742,7 @@ mod tests {
         };
 
         let mut graphs = IndexMap::new();
-        let check = CheckResult {
-            symbol_table: quew_checker::SymbolTable::default(),
-            diagnostics: vec![],
-            resolved: quew_checker::resolved::ResolvedExpressionMap::default(),
-        };
+        let check = CheckResult::default();
         lower_extend(&decl, &check, &interner, &mut defs, &mut graphs);
 
         assert_eq!(defs.extensions.len(), 1);

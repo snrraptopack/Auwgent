@@ -26,7 +26,7 @@ use quew_interner::InternedStr;
 use quew_interner::Interner;
 use quew_lexer::AnnotationKind;
 use quew_scope::{SymbolKind, build_symbol_table};
-pub use quew_scope::SymbolTable;
+use quew_scope::SymbolTable;
 use quew_types::{ProviderKind, Ty};
 use quew_unify::UnifyTable;
 use type_resolve::{resolve_semantic_ty, resolve_type, resolve_type_with_params};
@@ -101,6 +101,16 @@ pub struct CheckResult {
     /// Per-expression resolutions from type inference.
     /// The IR lowerer consumes this to avoid re-resolving calls without type context.
     pub resolved: ResolvedExpressionMap,
+}
+
+impl Default for CheckResult {
+    fn default() -> Self {
+        Self {
+            symbol_table: SymbolTable::default(),
+            diagnostics: Vec::new(),
+            resolved: ResolvedExpressionMap::default(),
+        }
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────

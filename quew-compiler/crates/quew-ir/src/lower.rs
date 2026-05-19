@@ -272,4 +272,46 @@ agent Main(input: string) {
             )
         }));
     }
+
+    #[test]
+    fn lowers_function_call_args_inside_expression() {
+        let (interner, ir) = lower_source(
+            r#"
+function add(a: number, b: number): number { return a }
+agent Main(input: number) {
+    let result = add(input, 1) + 0
+}
+"#,
+        );
+
+        let agent_graph = &ir.graphs["agent:Main"];
+        let func_name = interner.intern("add");
+        let a = interner.intern("a");
+        let b = interner.intern("b");
+
+        // The binary expression `add(input, 1) + 0` falls through to LetBind
+        // with lower_expr, which must preserve the function call arguments.
+        let let_bind = agent_graph
+            .nodes
+            .values()
+            .find(|node| matches!(&node.kind, crate::graph::NodeKind::LetBind { .. }))
+            .expect("expected a LetBind node");
+
+        if let crate::graph::NodeKind::LetBind { value, .. } = &let_bind.kind {
+            if let crate::graph::IrExpr::Binary { left, .. } = value {
+                if let crate::graph::IrExpr::Call { function, args } = left.as_ref() {
+                    assert_eq!(*function, func_name);
+                    assert_eq!(args.len(), 2, "function call should have 2 arguments");
+                    assert!(args.contains_key(&a), "args should contain 'a'");
+                    assert!(args.contains_key(&b), "args should contain 'b'");
+                } else {
+                    panic!("expected Call expression, got {:?}", left);
+                }
+            } else {
+                panic!("expected Binary expression, got {:?}", value);
+            }
+        } else {
+            panic!("expected LetBind node");
+        }
+    }
 }

@@ -86,11 +86,26 @@ pub fn lower_expr(
                     "lowering bug: non-identifier call callee in pure expression: {other:?}"
                 ),
             };
-            let _ = call;
-            IrExpr::Call {
-                function,
-                args: Default::default(),
+
+            let mut args = indexmap::IndexMap::new();
+            if let Some(func) = definitions.functions.get(&function) {
+                for (idx, (param_name, _)) in func.params.iter().enumerate() {
+                    if let Some(arg) = call.args.get(idx) {
+                        args.insert(
+                            *param_name,
+                            lower_expr(arg, check, definitions, interner, ctx),
+                        );
+                    }
+                }
+            } else {
+                // Fallback for tools, agents, or unresolved calls: positional arg0, arg1, ...
+                for (idx, arg) in call.args.iter().enumerate() {
+                    let name = interner.intern(&format!("arg{idx}"));
+                    args.insert(name, lower_expr(arg, check, definitions, interner, ctx));
+                }
             }
+
+            IrExpr::Call { function, args }
         }
         Expr::Array(array) => IrExpr::Array(
             array
