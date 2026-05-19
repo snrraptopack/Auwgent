@@ -18,6 +18,8 @@
 //!        │
 //!        ├──► eval_expr ──► Value
 //!        │
+//!        ├──► NativeRegistry ──► @@rust builtin dispatch
+//!        │
 //!        └──► node outputs map ──► final result
 //! ```
 //!
@@ -26,7 +28,9 @@
 //! | [`value`] | Runtime value representation (`Value`, `ValueError`) |
 //! | [`eval`] | Pure expression evaluator (`eval_expr`, `EvalError`) |
 //! | [`execution`] | Graph walker (`Execution::run`, `ExecutionError`) |
+//! | [`native`] | Native function registry (`NativeRegistry`, `NativeEntry`) |
 
 pub mod eval;
 pub mod execution;
+pub mod native;
 pub mod value;

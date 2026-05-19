@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use quew_interner::Interner;
 use quew_ir::graph::{BinaryOp, DataRef, IrExpr, IrLit, NodeId, UnaryOp};
+use quew_ir::QuewGraphIR;
 
+use crate::native::{NativeEntry, NativeRegistry};
 use crate::value::{Value, ValueError};
 
 /// An error produced while evaluating an expression.
@@ -23,6 +25,10 @@ pub enum EvalError {
     ValueError(ValueError),
     /// A ternary condition did not evaluate to a boolean.
     NonBooleanCondition,
+    /// A native function call failed.
+    NativeError { message: String },
+    /// An inline graph call failed.
+    GraphCallError { message: String },
 }
 
 impl From<ValueError> for EvalError {
@@ -44,8 +50,40 @@ impl std::fmt::Display for EvalError {
             EvalError::NonBooleanCondition => {
                 write!(f, "ternary condition did not evaluate to a boolean")
             }
+            EvalError::NativeError { message } => {
+                write!(f, "native function error: {message}")
+            }
+            EvalError::GraphCallError { message } => {
+                write!(f, "graph call error: {message}")
+            }
         }
     }
+}
+
+/// Resolve a function interned name to its graph reference, if any.
+fn resolve_function_graph(
+    function: quew_interner::InternedStr,
+    func_name: &str,
+    ir: &QuewGraphIR,
+) -> Option<String> {
+    // Direct graph refs (already contain prefix).
+    if func_name.starts_with("function:") || func_name.starts_with("extension:") {
+        return Some(func_name.to_string());
+    }
+
+    // Look up in definitions.functions.
+    if let Some(func_def) = ir.definitions.functions.get(&function) {
+        return Some(func_def.graph_ref.clone());
+    }
+
+    // Look up in definitions.extensions.
+    for ext in &ir.definitions.extensions {
+        if ext.method_name == function {
+            return Some(ext.graph_ref.clone());
+        }
+    }
+
+    None
 }
 
 impl std::error::Error for EvalError {}
@@ -58,25 +96,33 @@ impl std::error::Error for EvalError {}
 ///
 /// The `interner` is used to resolve `InternedStr` field names into readable
 /// strings for object field access and error messages.
+///
+/// The `natives` registry is used to dispatch `IrExpr::Call` nodes that
+/// reference builtin functions (`@@rust`).
+///
+/// The `ir` is used to look up and recurse into function graphs for inline
+/// calls that are not native builtins.
 pub fn eval_expr(
     expr: &IrExpr,
     outputs: &HashMap<NodeId, Value>,
     interner: &Arc<Interner>,
+    natives: &NativeRegistry,
+    ir: &QuewGraphIR,
 ) -> Result<Value, EvalError> {
     match expr {
         IrExpr::Lit(lit) => Ok(eval_lit(lit, interner)),
         IrExpr::Ref(data_ref) => eval_data_ref(data_ref, outputs, interner),
         IrExpr::Binary { left, op, right } => {
-            let l = eval_expr(left, outputs, interner)?;
-            let r = eval_expr(right, outputs, interner)?;
+            let l = eval_expr(left, outputs, interner, natives, ir)?;
+            let r = eval_expr(right, outputs, interner, natives, ir)?;
             eval_binary_op(&l, *op, &r)
         }
         IrExpr::Unary { op, expr } => {
-            let v = eval_expr(expr, outputs, interner)?;
+            let v = eval_expr(expr, outputs, interner, natives, ir)?;
             eval_unary_op(*op, &v)
         }
         IrExpr::Member { base, field } => {
-            let base_val = eval_expr(base, outputs, interner)?;
+            let base_val = eval_expr(base, outputs, interner, natives, ir)?;
             let field_name = interner.resolve(*field).to_string();
             match base_val {
                 Value::Object(map) => map
@@ -93,32 +139,62 @@ pub fn eval_expr(
             }
         }
         IrExpr::Call { function, args } => {
-            // For pure inline calls (e.g. inside a larger expression), we
-            // evaluate each argument. The actual dispatch happens at the
-            // Execution level for graph-level FuncCall nodes.
-            //
-            // TODO(Plan 16): When we add the native registry, inline calls
-            // should dispatch here. For now, we return Null so that graphs
-            // without inline function calls execute correctly.
-            let _ = function;
-            let _ = args;
-            Ok(Value::Null)
+            let func_name = interner.resolve(*function);
+
+            // Look up in native registry first.
+            if let Some(entry) = natives.get(func_name) {
+                let mut arg_values = Vec::with_capacity(args.len());
+                for (_name, arg_expr) in args {
+                    arg_values.push(eval_expr(arg_expr, outputs, interner, natives, ir)?);
+                }
+                match entry {
+                    NativeEntry::Sync(f) => {
+                        f(&arg_values).map_err(|e| EvalError::NativeError {
+                            message: e.message,
+                        })
+                    }
+                }
+            } else {
+                // Not a native function — try to recurse into a graph.
+                let graph_ref = resolve_function_graph(*function, func_name, ir);
+
+                if let Some(graph_id) = graph_ref {
+                    // The compiler binds all parameters as `input.<name>`, so the
+                    // runtime always packages arguments into an object keyed by
+                    // parameter name, even for single-argument functions.
+                    let mut obj = indexmap::IndexMap::new();
+                    for (name, arg_expr) in args {
+                        let val = eval_expr(arg_expr, outputs, interner, natives, ir)?;
+                        let key = interner.resolve(*name).to_string();
+                        obj.insert(key, val);
+                    }
+
+                    let child = crate::execution::Execution::new(ir, interner, natives);
+                    child
+                        .run(&graph_id, Value::Object(obj))
+                        .map_err(|e| EvalError::GraphCallError {
+                            message: e.to_string(),
+                        })
+                } else {
+                    Ok(Value::Null)
+                }
+            }
         }
         IrExpr::Array(elements) => {
             let mut vals = Vec::with_capacity(elements.len());
             for elem in elements {
-                vals.push(eval_expr(elem, outputs, interner)?);
+                vals.push(eval_expr(elem, outputs, interner, natives, ir)?);
             }
             Ok(Value::Array(vals))
         }
         IrExpr::Ternary { cond, then, else_ } => {
-            let c = eval_expr(cond, outputs, interner)?;
+            let c = eval_expr(cond, outputs, interner, natives, ir)?;
             match c {
                 Value::Bool(b) => {
                     if b {
-                        eval_expr(then, outputs, interner)
+                        eval_expr(then, outputs, interner, natives, ir)
                     } else {
-                        eval_expr(else_, outputs, interner)
+                        eval_expr(else_, outputs, interner, natives, ir)
                     }
                 }
                 _ => Err(EvalError::NonBooleanCondition),
@@ -212,11 +288,24 @@ mod tests {
         Arc::new(Interner::new())
     }
 
+    fn empty_ir(interner: &Arc<Interner>) -> QuewGraphIR {
+        QuewGraphIR {
+            program: quew_ir::ProgramMeta {
+                name: interner.intern(""),
+                entry_agent: interner.intern(""),
+            },
+            definitions: quew_ir::Definitions::default(),
+            graphs: indexmap::IndexMap::new(),
+        }
+    }
+
     #[test]
     fn eval_literal() {
         let outputs = HashMap::new();
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&lit_int(42), &outputs, &interner()).unwrap(),
+            eval_expr(&lit_int(42), &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Number(42)
         );
     }
@@ -227,15 +316,19 @@ mod tests {
         outputs.insert(NodeId(5), Value::Number(99));
 
         let expr = IrExpr::Ref(DataRef::scalar(NodeId(5)));
-        assert_eq!(eval_expr(&expr, &outputs, &interner()).unwrap(), Value::Number(99));
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
+        assert_eq!(eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(), Value::Number(99));
     }
 
     #[test]
     fn eval_data_ref_missing() {
         let outputs = HashMap::new();
         let expr = IrExpr::Ref(DataRef::scalar(NodeId(99)));
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert!(matches!(
-            eval_expr(&expr, &outputs, &interner()),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir),
             Err(EvalError::MissingNodeOutput { node: NodeId(99) })
         ));
     }
@@ -248,8 +341,10 @@ mod tests {
             op: BinaryOp::Add,
             right: Box::new(lit_int(4)),
         };
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&expr, &outputs, &interner()).unwrap(),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Number(7)
         );
     }
@@ -261,8 +356,10 @@ mod tests {
             op: UnaryOp::Not,
             expr: Box::new(lit_bool(false)),
         };
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&expr, &outputs, &interner()).unwrap(),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Bool(true)
         );
     }
@@ -275,8 +372,10 @@ mod tests {
             then: Box::new(lit_int(1)),
             else_: Box::new(lit_int(2)),
         };
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&expr, &outputs, &interner()).unwrap(),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Number(1)
         );
     }
@@ -289,8 +388,10 @@ mod tests {
             then: Box::new(lit_int(1)),
             else_: Box::new(lit_int(2)),
         };
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&expr, &outputs, &interner()).unwrap(),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Number(2)
         );
     }
@@ -303,8 +404,10 @@ mod tests {
             then: Box::new(lit_int(1)),
             else_: Box::new(lit_int(2)),
         };
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert!(matches!(
-            eval_expr(&expr, &outputs, &interner()),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir),
             Err(EvalError::NonBooleanCondition)
         ));
     }
@@ -313,8 +416,10 @@ mod tests {
     fn eval_array() {
         let outputs = HashMap::new();
         let expr = IrExpr::Array(vec![lit_int(1), lit_int(2), lit_int(3)]);
+        let natives = crate::native::NativeRegistry::new();
+        let ir = empty_ir(&interner());
         assert_eq!(
-            eval_expr(&expr, &outputs, &interner()).unwrap(),
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
             Value::Array(vec![Value::Number(1), Value::Number(2), Value::Number(3)])
         );
     }

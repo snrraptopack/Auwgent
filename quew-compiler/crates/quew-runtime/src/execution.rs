@@ -2,10 +2,12 @@
 //!
 //! [`Execution`] walks an [`AgentGraph`] and evaluates each node, producing a
 //! [`Value`] for the graph's [`Output`] node. It handles the deterministic
-//! node kinds: [`Input`], [`Context`], [`Output`], [`LetBind`], and [`Branch`].
+//! node kinds: [`Input`], [`Context`], [`Output`], [`LetBind`], [`Branch`],
+//! and [`FuncCall`] (including recursive calls to user functions and extension
+//! methods).
 //!
-//! Effectful nodes ([`FuncCall`], [`HostToolCall`], [`Reply`], [`AgentCall`])
-//! are **not** supported in this plan — they will be added in Plans 16–19.
+//! Effectful nodes ([`HostToolCall`], [`Reply`], [`AgentCall`]) are **not**
+//! supported in this plan — they will be added in Plans 17–19.
 //!
 //! # Execution model
 //!
@@ -25,6 +27,7 @@ use quew_ir::graph::{AgentGraph, NodeId, NodeKind};
 use quew_ir::QuewGraphIR;
 
 use crate::eval::{eval_expr, EvalError};
+use crate::native::NativeRegistry;
 use crate::value::Value;
 
 /// An error produced during graph execution.
@@ -40,8 +43,10 @@ pub enum ExecutionError {
     InvalidBranchCondition { node: NodeId },
     /// The Output node could not be resolved.
     MissingReturnValue { graph_id: String },
-    /// An unsupported node kind was encountered (FuncCall, HostToolCall, etc.)
+    /// An unsupported node kind was encountered (HostToolCall, Reply, AgentCall)
     UnsupportedNode { node: NodeId, kind: String },
+    /// A function call referenced a graph that does not exist.
+    MissingFunctionGraph { function: String },
 }
 
 impl std::fmt::Display for ExecutionError {
@@ -65,6 +70,9 @@ impl std::fmt::Display for ExecutionError {
             ExecutionError::UnsupportedNode { node, kind } => {
                 write!(f, "node {node} has unsupported kind '{kind}'")
             }
+            ExecutionError::MissingFunctionGraph { function } => {
+                write!(f, "function '{function}' has no compiled graph")
+            }
         }
     }
 }
@@ -77,12 +85,18 @@ pub struct Execution<'a> {
     pub ir: &'a QuewGraphIR,
     /// The interner for resolving string handles.
     pub interner: &'a Arc<Interner>,
+    /// Registry of native functions (`@@rust` builtins).
+    pub natives: &'a NativeRegistry,
 }
 
 impl<'a> Execution<'a> {
     /// Create a new execution context bound to a compiled IR.
-    pub fn new(ir: &'a QuewGraphIR, interner: &'a Arc<Interner>) -> Self {
-        Self { ir, interner }
+    pub fn new(
+        ir: &'a QuewGraphIR,
+        interner: &'a Arc<Interner>,
+        natives: &'a NativeRegistry,
+    ) -> Self {
+        Self { ir, interner, natives }
     }
 
     /// Run a single graph from its entry node to its output node.
@@ -138,7 +152,7 @@ impl<'a> Execution<'a> {
                     outputs.insert(*node_id, output_value);
                 }
                 NodeKind::LetBind { name: _, value } => {
-                    let result = eval_expr(value, &outputs, self.interner).map_err(|e| {
+                    let result = eval_expr(value, &outputs, self.interner, self.natives, self.ir).map_err(|e| {
                         ExecutionError::EvalError {
                             node: *node_id,
                             source: e,
@@ -188,6 +202,26 @@ impl<'a> Execution<'a> {
                     // The branch node itself produces no value.
                     outputs.insert(*node_id, Value::Null);
                 }
+                NodeKind::FuncCall { function, args } => {
+                    let graph_ref = self.resolve_function_graph(*function);
+
+                    // The compiler binds all parameters as `input.<name>`, so the
+                    // runtime always packages arguments into an object keyed by
+                    // parameter name, even for single-argument functions.
+                    let mut obj = indexmap::IndexMap::new();
+                    for (slot, data_ref) in args {
+                        let val = self
+                            .resolve_data_ref(data_ref, &outputs)
+                            .map_err(|_| ExecutionError::MissingOutput {
+                                node: data_ref.node,
+                            })?;
+                        let key = self.interner.resolve(*slot).to_string();
+                        obj.insert(key, val);
+                    }
+
+                    let result = self.run(&graph_ref, Value::Object(obj))?;
+                    outputs.insert(*node_id, result);
+                }
                 other => {
                     return Err(ExecutionError::UnsupportedNode {
                         node: *node_id,
@@ -224,6 +258,28 @@ impl<'a> Execution<'a> {
                 }
             }
         }
+    }
+
+    /// Resolve a function name to its graph reference.
+    ///
+    /// For extension methods and regular functions, the `function` field in
+    /// `FuncCall` contains the interned name. We look up the corresponding
+    /// `graph_ref` in `definitions.functions` or `definitions.extensions`.
+    fn resolve_function_graph(&self, function: quew_interner::InternedStr) -> String {
+        let name = self.interner.resolve(function);
+
+        // Direct graph refs (already contain prefix).
+        if name.starts_with("function:") || name.starts_with("extension:") {
+            return name.to_string();
+        }
+
+        // Look up in definitions.functions.
+        if let Some(func_def) = self.ir.definitions.functions.get(&function) {
+            return func_def.graph_ref.clone();
+        }
+
+        // Fallback: construct the graph ref from the name.
+        format!("function:{name}")
     }
 
     /// Mark a node and all nodes transitively reachable from it as unreachable.
@@ -292,7 +348,8 @@ agent Main(input: number) {
 "#,
         );
 
-        let exec = Execution::new(&ir, &interner);
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
         let result = exec.run("function:answer", Value::Null).unwrap();
         assert_eq!(result, Value::Number(42));
     }
@@ -308,8 +365,11 @@ agent Main(input: number) {
 "#,
         );
 
-        let exec = Execution::new(&ir, &interner);
-        let result = exec.run("function:identity", Value::Number(7)).unwrap();
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("x".to_string(), Value::Number(7));
+        let result = exec.run("function:identity", Value::Object(input)).unwrap();
         assert_eq!(result, Value::Number(7));
     }
 
@@ -324,8 +384,11 @@ agent Main(input: number) {
 "#,
         );
 
-        let exec = Execution::new(&ir, &interner);
-        let result = exec.run("function:double", Value::Number(5)).unwrap();
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("x".to_string(), Value::Number(5));
+        let result = exec.run("function:double", Value::Object(input)).unwrap();
         assert_eq!(result, Value::Number(10));
     }
 
@@ -430,7 +493,8 @@ agent Main(input: number) {
             graphs,
         };
 
-        let exec = Execution::new(&ir, &interner);
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
 
         // When input is true, the then arm (n2) should execute.
         let result = exec.run("agent:BranchTest", Value::Bool(true)).unwrap();
@@ -441,6 +505,134 @@ agent Main(input: number) {
         // output is still wired to n2 which won't have run. This is expected
         // for this simplified graph — in a real program the output would be
         // wired to a phi-like merge node.
+    }
+
+    #[test]
+    fn execute_function_calling_another_function() {
+        let (interner, ir) = compile_source(
+            r#"
+function add(a: number, b: number): number { return a + b }
+function add_three(x: number): number { return add(x, 3) }
+agent Main(input: number) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("x".to_string(), Value::Number(4));
+        let result = exec.run("function:add_three", Value::Object(input)).unwrap();
+        assert_eq!(result, Value::Number(7));
+    }
+
+    #[test]
+    fn execute_extension_method_call() {
+        let (interner, ir) = compile_source(
+            r#"
+extend string {
+    function withPrefix(prefix: string): string { return prefix + self }
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("self".to_string(), Value::String("world".into()));
+        input.insert("prefix".to_string(), Value::String("Hello, ".into()));
+        let result = exec.run("extension:string:withPrefix", Value::Object(input)).unwrap();
+        assert_eq!(result, Value::String("Hello, world".into()));
+    }
+
+    #[test]
+    fn execute_native_builtin_dispatch() {
+        let interner = Arc::new(Interner::new());
+
+        // Build a minimal graph that calls a native function inline.
+        let mut nodes = indexmap::IndexMap::new();
+
+        nodes.insert(
+            NodeId(0),
+            quew_ir::graph::IrNode {
+                id: NodeId(0),
+                kind: NodeKind::Input {
+                    input_ty: quew_ir::types::IrType::String,
+                },
+                checkpoint: quew_ir::graph::CheckpointPolicy::Never,
+            },
+        );
+
+        // n1: LetBind that calls the native len function inline.
+        let func_name = interner.intern("std.string.len");
+        nodes.insert(
+            NodeId(1),
+            quew_ir::graph::IrNode {
+                id: NodeId(1),
+                kind: NodeKind::LetBind {
+                    name: interner.intern("len"),
+                    value: quew_ir::graph::IrExpr::Call {
+                        function: func_name,
+                        args: {
+                            let mut m = indexmap::IndexMap::new();
+                            m.insert(
+                                interner.intern("self"),
+                                quew_ir::graph::IrExpr::Ref(quew_ir::graph::DataRef::scalar(NodeId(0))),
+                            );
+                            m
+                        },
+                    },
+                },
+                checkpoint: quew_ir::graph::CheckpointPolicy::Optional,
+            },
+        );
+
+        nodes.insert(
+            NodeId(2),
+            quew_ir::graph::IrNode {
+                id: NodeId(2),
+                kind: NodeKind::Output {
+                    value: quew_ir::graph::DataRef::scalar(NodeId(1)),
+                },
+                checkpoint: quew_ir::graph::CheckpointPolicy::Never,
+            },
+        );
+
+        let graph = quew_ir::graph::AgentGraph {
+            graph_id: "function:len_test".to_string(),
+            entry_node: NodeId(0),
+            return_node: NodeId(2),
+            nodes,
+            edges: Vec::new(),
+        };
+
+        let mut graphs = indexmap::IndexMap::new();
+        graphs.insert("function:len_test".to_string(), graph);
+
+        let ir = QuewGraphIR {
+            program: quew_ir::ProgramMeta {
+                name: interner.intern("LenTest"),
+                entry_agent: interner.intern("LenTest"),
+            },
+            definitions: quew_ir::Definitions::default(),
+            graphs,
+        };
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.string.len",
+            crate::native::NativeEntry::Sync(|args| {
+                let s = args[0].as_str().ok_or("len: expected string")?;
+                Ok(Value::Number(s.len() as i64))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:len_test", Value::String("hello".into())).unwrap();
+        assert_eq!(result, Value::Number(5));
     }
 
     #[test]
@@ -455,7 +647,8 @@ agent Main(input: number) {
             graphs: indexmap::IndexMap::new(),
         };
 
-        let exec = Execution::new(&ir, &interner);
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
         let err = exec.run("function:missing", Value::Null).unwrap_err();
         assert!(matches!(err, ExecutionError::GraphNotFound { .. }));
     }

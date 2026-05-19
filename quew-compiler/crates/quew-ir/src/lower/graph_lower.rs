@@ -103,13 +103,11 @@ pub fn lower_function_graph(
         CheckpointPolicy::Never,
     );
 
-    for (idx, (name, _ty)) in params.iter().enumerate() {
-        let data_ref = if idx == 0 {
-            DataRef::scalar(input_id)
-        } else {
-            DataRef::field(input_id, *name)
-        };
-        builder.ctx.bind(*name, data_ref);
+    // All parameters are bound as fields of the Input node.  The runtime
+    // always packages arguments into an object, even for single-parameter
+    // functions, so every parameter resolves to `input.<name>`.
+    for (name, _ty) in params.iter() {
+        builder.ctx.bind(*name, DataRef::field(input_id, *name));
     }
 
     let mut result = DataRef::scalar(input_id);
