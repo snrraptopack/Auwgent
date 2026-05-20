@@ -1,9 +1,10 @@
 //! Lower an agent body into an `AgentGraph`.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use quew_ast::{AgentDecl, ElseClause, Expr, ReturnMode, Stmt};
+use quew_ast::{AgentDecl, BinaryOp as AstBinaryOp, ElseClause, Expr, ForStmt, IdentExpr, ReturnMode, ReturnStmt, Stmt, WhileStmt};
 use quew_checker::resolved::CallKind;
 use quew_checker::CheckResult;
 use quew_interner::{InternedStr, Interner};
@@ -19,15 +20,52 @@ use super::ctx::LowerCtx;
 use super::defs::lower_type_expr;
 use super::expr::{lower_expr, lower_expr_as_ref};
 
+/// Collect all variable names that are explicitly mutated via `=` in a statement list.
+fn assigned_vars_in_body(body: &[Stmt]) -> HashSet<InternedStr> {
+    let mut vars = HashSet::new();
+    for stmt in body {
+        match stmt {
+            Stmt::Expr(quew_ast::stmt::ExprStmt { expr: Expr::Binary(b), .. })
+                if b.op == AstBinaryOp::Assign =>
+            {
+                if let Expr::Ident(ident) = b.left.as_ref() {
+                    vars.insert(ident.name);
+                }
+            }
+            Stmt::If(if_stmt) => {
+                vars.extend(assigned_vars_in_body(&if_stmt.then_body));
+                match &if_stmt.else_clause {
+                    ElseClause::Else(body, _) => {
+                        vars.extend(assigned_vars_in_body(body));
+                    }
+                    ElseClause::ElseIf(nested) => {
+                        vars.extend(assigned_vars_in_body(&[Stmt::If((**nested).clone())]));
+                    }
+                    ElseClause::None => {}
+                }
+            }
+            Stmt::While(while_stmt) => {
+                vars.extend(assigned_vars_in_body(&while_stmt.body));
+            }
+            Stmt::For(for_stmt) => {
+                vars.extend(assigned_vars_in_body(&for_stmt.body));
+            }
+            _ => {}
+        }
+    }
+    vars
+}
+
 /// Lower one agent declaration's body into an immutable execution graph.
 pub fn lower_agent(
     agent: &AgentDecl,
     check: &CheckResult,
     interner: &Arc<Interner>,
     definitions: &mut Definitions,
+    graphs: &mut IndexMap<String, AgentGraph>,
 ) -> AgentGraph {
     let mut builder =
-        GraphBuilder::new(format!("agent:{}", interner.resolve(agent.name)), interner);
+        GraphBuilder::new(format!("agent:{}", interner.resolve(agent.name)), interner, graphs);
 
     let input_id = builder.push(
         NodeKind::Input {
@@ -94,8 +132,9 @@ pub fn lower_function_graph(
     check: &CheckResult,
     interner: &Arc<Interner>,
     definitions: &mut Definitions,
+    graphs: &mut IndexMap<String, AgentGraph>,
 ) -> AgentGraph {
-    let mut builder = GraphBuilder::new(graph_id, interner);
+    let mut builder = GraphBuilder::new(graph_id, interner, graphs);
 
     let input_ty = params.first().map(|(_, ty)| ty.clone()).unwrap_or(crate::types::IrType::Void);
     let input_id = builder.push(
@@ -197,6 +236,25 @@ fn lower_stmt(
         }
         Stmt::If(if_stmt) => {
             let condition = ensure_ref(&if_stmt.condition, check, definitions, builder);
+
+            // Determine which variables are mutated inside either branch.
+            let then_assigned = assigned_vars_in_body(&if_stmt.then_body);
+            let else_assigned = match &if_stmt.else_clause {
+                ElseClause::Else(body, _) => assigned_vars_in_body(body),
+                ElseClause::ElseIf(nested) => assigned_vars_in_body(&[Stmt::If((**nested).clone())]),
+                ElseClause::None => HashSet::new(),
+            };
+            let mut merged: Vec<InternedStr> = then_assigned
+                .union(&else_assigned)
+                .copied()
+                .collect();
+            // Only merge variables that exist in the outer scope.
+            merged.retain(|name| builder.ctx.slots.contains_key(name));
+
+            // Snapshot bindings before the branch — always restore so that
+            // let-declarations inside a branch do not leak into the outer scope.
+            let snapshot = builder.ctx.slots.clone();
+
             let branch_id = builder.next_id();
             let then_node = if if_stmt.then_body.is_empty() {
                 condition.node
@@ -222,9 +280,15 @@ fn lower_stmt(
                 CheckpointPolicy::Optional,
             );
             builder.edge(condition.node, id, interner.intern("condition"));
+
+            // Lower then-branch.
             for stmt in &if_stmt.then_body {
                 let _ = lower_stmt(stmt, check, interner, definitions, builder);
             }
+            let then_slots = builder.ctx.slots.clone();
+
+            // Restore snapshot and lower else-branch.
+            builder.ctx.slots = snapshot.clone();
             match &if_stmt.else_clause {
                 ElseClause::Else(body, _) => {
                     for stmt in body {
@@ -242,14 +306,267 @@ fn lower_stmt(
                 }
                 ElseClause::None => {}
             }
+            let else_slots = builder.ctx.slots.clone();
+
+            // Restore snapshot and create merge nodes for variables assigned in either branch.
+            builder.ctx.slots = snapshot.clone();
+            for name in merged {
+                let then_ref = then_slots.get(&name);
+                let else_ref = else_slots.get(&name);
+                let snapshot_ref = &snapshot[&name];
+                let changed = then_ref != Some(snapshot_ref)
+                    || else_ref != Some(snapshot_ref);
+                if changed {
+                    let merge_value = crate::graph::IrExpr::Ternary {
+                        cond: Box::new(crate::graph::IrExpr::Ref(condition.clone())),
+                        then: Box::new(crate::graph::IrExpr::Ref(
+                            then_ref.cloned().unwrap_or_else(|| snapshot_ref.clone()),
+                        )),
+                        else_: Box::new(crate::graph::IrExpr::Ref(
+                            else_ref.cloned().unwrap_or_else(|| snapshot_ref.clone()),
+                        )),
+                    };
+                    let merge_id = builder.push(
+                        NodeKind::LetBind {
+                            name,
+                            value: merge_value,
+                        },
+                        CheckpointPolicy::Optional,
+                    );
+                    builder.ctx.bind(name, DataRef::scalar(merge_id));
+                }
+            }
+
             None
         }
         Stmt::Expr(expr_stmt) => {
+            if let Expr::Binary(binary) = &expr_stmt.expr {
+                if binary.op == AstBinaryOp::Assign {
+                    return lower_assignment(binary, check, interner, definitions, builder);
+                }
+            }
             let _ = ensure_ref(&expr_stmt.expr, check, definitions, builder);
             None
         }
-        Stmt::For(_) => None,
+        Stmt::For(for_stmt) => {
+            lower_for_loop(for_stmt, check, interner, definitions, builder)
+        }
+        Stmt::While(while_stmt) => {
+            lower_while_loop(while_stmt, check, interner, definitions, builder)
+        }
     }
+}
+
+fn lower_assignment(
+    binary: &quew_ast::expr::BinaryExpr,
+    check: &CheckResult,
+    interner: &Arc<Interner>,
+    definitions: &Definitions,
+    builder: &mut GraphBuilder,
+) -> Option<DataRef> {
+    let name = match binary.left.as_ref() {
+        Expr::Ident(ident) => ident.name,
+        _ => panic!("lowering bug: assignment target is not an identifier"),
+    };
+
+    // If RHS is a call, reuse lower_value_node to get the proper node kind.
+    if matches!(binary.right.as_ref(), Expr::Call(_)) {
+        let (kind, checkpoint, args) = lower_value_node(&binary.right, check, definitions, builder);
+        let id = builder.push(kind, checkpoint);
+        for (slot, data) in args {
+            builder.edge(data.node, id, slot);
+        }
+        builder.ctx.bind(name, DataRef::scalar(id));
+    } else {
+        let value = lower_expr(&binary.right, check, definitions, interner, &mut builder.ctx);
+        let id = builder.push(
+            NodeKind::LetBind { name, value },
+            CheckpointPolicy::Optional,
+        );
+        builder.ctx.bind(name, DataRef::scalar(id));
+    }
+
+    None
+}
+
+fn lower_for_loop(
+    for_stmt: &ForStmt,
+    check: &CheckResult,
+    interner: &Arc<Interner>,
+    definitions: &mut Definitions,
+    builder: &mut GraphBuilder,
+) -> Option<DataRef> {
+    // Lower the iterable expression.
+    let iterable_ref = ensure_ref(&for_stmt.iterable, check, definitions, builder);
+
+    // Collect captured variables (all bindings except the loop variable and index).
+    let skip: std::collections::HashSet<InternedStr> =
+        [Some(for_stmt.value), for_stmt.index]
+            .into_iter()
+            .flatten()
+            .collect();
+
+    let captured: Vec<(InternedStr, DataRef)> = builder
+        .ctx
+        .slots
+        .iter()
+        .filter(|(name, _)| !skip.contains(name))
+        .map(|(name, data_ref)| (*name, data_ref.clone()))
+        .collect();
+
+    // Generate a unique body graph ID.
+    let body_graph_id = format!(
+        "{}:for:{}",
+        builder.graph_id,
+        interner.resolve(for_stmt.value)
+    );
+
+    // Build body parameters.
+    let mut body_params: IndexMap<InternedStr, crate::types::IrType> = IndexMap::new();
+    body_params.insert(for_stmt.value, crate::types::IrType::Void);
+    if let Some(idx) = for_stmt.index {
+        body_params.insert(idx, crate::types::IrType::Void);
+    }
+    for (name, _) in &captured {
+        body_params.insert(*name, crate::types::IrType::Void);
+    }
+
+    // Lower the body into a graph.
+    let body_graph = lower_function_graph(
+        body_graph_id.clone(),
+        &body_params,
+        &for_stmt.body,
+        check,
+        interner,
+        definitions,
+        builder.graphs,
+    );
+    builder.graphs.insert(body_graph_id.clone(), body_graph);
+
+    // Create the Loop node.
+    let loop_id = builder.push(
+        NodeKind::Loop {
+            iterable: iterable_ref.clone(),
+            body_graph: body_graph_id,
+            value_name: for_stmt.value,
+            index_name: for_stmt.index,
+            captured: captured.clone(),
+        },
+        CheckpointPolicy::Optional,
+    );
+    builder.edge(iterable_ref.node, loop_id, interner.intern("iterable"));
+
+    // Bind captured variables as edges so the lowerer knows they're used.
+    for (name, data_ref) in &captured {
+        builder.edge(data_ref.node, loop_id, *name);
+    }
+
+    None
+}
+
+fn lower_while_loop(
+    while_stmt: &WhileStmt,
+    check: &CheckResult,
+    interner: &Arc<Interner>,
+    definitions: &mut Definitions,
+    builder: &mut GraphBuilder,
+) -> Option<DataRef> {
+    // Collect captured variables.
+    let captured: Vec<(InternedStr, DataRef)> = builder
+        .ctx
+        .slots
+        .iter()
+        .map(|(name, data_ref)| (*name, data_ref.clone()))
+        .collect();
+
+    // Generate a unique body graph ID.
+    let body_graph_id = format!("{}:while", builder.graph_id);
+
+    // Build synthetic body:
+    //   let __cond = condition
+    //   if __cond { body... }
+    //   return { __cond: __cond, captured_var1: captured_var1, ... }
+    let cond_name = interner.intern("__cond");
+    let cond_span = while_stmt.condition.span();
+
+    let mut return_fields = vec![quew_ast::expr::ObjectField {
+        name: cond_name,
+        value: Box::new(Expr::Ident(IdentExpr {
+            name: cond_name,
+            span: cond_span,
+        })),
+        span: cond_span,
+    }];
+    for (name, _) in &captured {
+        return_fields.push(quew_ast::expr::ObjectField {
+            name: *name,
+            value: Box::new(Expr::Ident(IdentExpr {
+                name: *name,
+                span: cond_span,
+            })),
+            span: cond_span,
+        });
+    }
+
+    let synthetic_body = vec![
+        Stmt::Let(quew_ast::stmt::LetStmt {
+            name: cond_name,
+            ty: None,
+            init: while_stmt.condition.clone(),
+            span: cond_span,
+        }),
+        Stmt::If(quew_ast::stmt::IfStmt {
+            condition: Expr::Ident(IdentExpr {
+                name: cond_name,
+                span: cond_span,
+            }),
+            then_body: while_stmt.body.clone(),
+            else_clause: ElseClause::None,
+            span: cond_span,
+        }),
+        Stmt::Return(ReturnStmt {
+            value: Some(Expr::Object(quew_ast::expr::ObjectExpr {
+                fields: return_fields,
+                span: cond_span,
+            })),
+            mode: ReturnMode::Normal,
+            span: cond_span,
+        }),
+    ];
+
+    // Build body parameters.
+    let mut body_params: IndexMap<InternedStr, crate::types::IrType> = IndexMap::new();
+    for (name, _) in &captured {
+        body_params.insert(*name, crate::types::IrType::Void);
+    }
+
+    // Lower the synthetic body into a graph.
+    let body_graph = lower_function_graph(
+        body_graph_id.clone(),
+        &body_params,
+        &synthetic_body,
+        check,
+        interner,
+        definitions,
+        builder.graphs,
+    );
+    builder.graphs.insert(body_graph_id.clone(), body_graph);
+
+    // Create the WhileLoop node.
+    let while_id = builder.push(
+        NodeKind::WhileLoop {
+            body_graph: body_graph_id,
+            captured: captured.clone(),
+        },
+        CheckpointPolicy::Optional,
+    );
+
+    // Bind captured variables as edges.
+    for (name, data_ref) in &captured {
+        builder.edge(data_ref.node, while_id, *name);
+    }
+
+    None
 }
 
 fn lower_value_node(
@@ -491,16 +808,22 @@ struct GraphBuilder<'a> {
     ctx: LowerCtx,
     nodes: IndexMap<crate::graph::NodeId, IrNode>,
     edges: Vec<Edge>,
+    graphs: &'a mut IndexMap<String, AgentGraph>,
 }
 
 impl<'a> GraphBuilder<'a> {
-    fn new(graph_id: String, interner: &'a Arc<Interner>) -> Self {
+    fn new(
+        graph_id: String,
+        interner: &'a Arc<Interner>,
+        graphs: &'a mut IndexMap<String, AgentGraph>,
+    ) -> Self {
         Self {
             graph_id,
             interner,
             ctx: LowerCtx::new(),
             nodes: IndexMap::new(),
             edges: Vec::new(),
+            graphs,
         }
     }
 

@@ -12,6 +12,7 @@ quew-errors   = { path = "../quew-errors" }
 quew-interner = { path = "../quew-interner" }
 quew-lexer    = { path = "../quew-lexer" }
 quew-ast      = { path = "../quew-ast" }
+quew-source   = { path = "../quew-source" }
 
 [dev-dependencies]
 quew-source = { path = "../quew-source" }

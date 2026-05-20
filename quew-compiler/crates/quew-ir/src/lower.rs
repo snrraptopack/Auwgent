@@ -57,7 +57,7 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
     for item in &module.items {
         if let quew_ast::Item::Agent(agent) = item {
             let graph_key = format!("agent:{}", interner.resolve(agent.name));
-            let graph = graph_lower::lower_agent(agent, check, interner, &mut definitions);
+            let graph = graph_lower::lower_agent(agent, check, interner, &mut definitions, &mut graphs);
             graphs.insert(graph_key, graph);
         }
     }
@@ -307,6 +307,48 @@ agent Main(input: number) {
                 } else {
                     panic!("expected Call expression, got {:?}", left);
                 }
+            } else {
+                panic!("expected Binary expression, got {:?}", value);
+            }
+        } else {
+            panic!("expected LetBind node");
+        }
+    }
+
+    #[test]
+    fn lowers_string_interpolation_to_binary_add_chain() {
+        let (interner, ir) = lower_source(
+            r#"
+function greet(name: string): string {
+    return "hello {name}"
+}
+agent Main(input: string) {
+    let msg = greet(input)
+}
+"#,
+        );
+
+        let func_graph = &ir.graphs["function:greet"];
+        // Find the LetBind node that holds the interpolated string expression.
+        let let_bind = func_graph
+            .nodes
+            .values()
+            .find(|node| matches!(&node.kind, crate::graph::NodeKind::LetBind { .. }))
+            .expect("expected a LetBind node");
+
+        if let crate::graph::NodeKind::LetBind { value, .. } = &let_bind.kind {
+            // "hello {name}" should lower to ("hello " + name)
+            if let crate::graph::IrExpr::Binary { left, op, right } = value {
+                assert!(matches!(op, crate::graph::BinaryOp::Add));
+                let hello = interner.intern("hello ");
+                assert!(
+                    matches!(left.as_ref(), crate::graph::IrExpr::Lit(crate::graph::IrLit::String(s)) if *s == hello),
+                    "expected literal 'hello ', got {:?}", left
+                );
+                assert!(
+                    matches!(right.as_ref(), crate::graph::IrExpr::Ref(..)),
+                    "expected Ref, got {:?}", right
+                );
             } else {
                 panic!("expected Binary expression, got {:?}", value);
             }

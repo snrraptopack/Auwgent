@@ -35,6 +35,13 @@ impl SourceId {
     pub fn raw(self) -> u32 {
         self.0
     }
+
+    /// Create a dummy source id for synthetic / sub-expression lexing.
+    /// Not associated with any real file in a SourceMap.
+    #[inline]
+    pub const fn dummy() -> Self {
+        Self(0)
+    }
 }
 
 /// A 1-based line + 1-based column position within a source file.

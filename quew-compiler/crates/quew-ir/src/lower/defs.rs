@@ -106,6 +106,7 @@ fn lower_extend(
             check,
             interner,
             defs,
+            graphs,
         );
         graphs.insert(graph_ref.clone(), graph);
 
@@ -316,6 +317,7 @@ fn lower_function(
             check,
             interner,
             defs,
+            graphs,
         );
         graphs.insert(graph_ref.clone(), graph);
 
@@ -374,6 +376,11 @@ pub(crate) fn lower_type_expr_with_params(
                 .map(|arg| lower_type_expr_with_params(arg, type_params, interner))
                 .collect(),
         },
+        TypeExpr::Array(elem, _) => IrType::Array(Box::new(lower_type_expr_with_params(
+            elem,
+            type_params,
+            interner,
+        ))),
     }
 }
 

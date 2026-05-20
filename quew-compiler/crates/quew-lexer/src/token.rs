@@ -109,6 +109,8 @@ pub enum TokenKind {
     KwFor,
     #[token("in")]
     KwIn,
+    #[token("while")]
+    KwWhile,
     /// `turns` — reserved keyword. Only valid in `return expr with turns`.
     /// No variable or binding may be named `turns`.
     #[token("turns")]
@@ -227,6 +229,10 @@ pub enum TokenKind {
     Pipe,
 
     // ── Operators (multi-char before single-char) ─────────────────────────────
+    #[token("<=")]
+    LtEq,
+    #[token(">=")]
+    GtEq,
     #[token("==")]
     EqEq,
     #[token("!=")]
@@ -275,6 +281,7 @@ impl std::fmt::Display for TokenKind {
             Self::KwReply => "`reply`",
             Self::KwWith => "`with`",
             Self::KwFor => "`for`",
+            Self::KwWhile => "`while`",
             Self::KwIn => "`in`",
             Self::KwTurns => "`turns`",
             Self::KwIs => "`is`",
@@ -314,6 +321,8 @@ impl std::fmt::Display for TokenKind {
             Self::Dot => "`.`",
             Self::Question => "`?`",
             Self::Pipe => "`|`",
+            Self::LtEq => "`<=`",
+            Self::GtEq => "`>=`",
             Self::EqEq => "`==`",
             Self::BangEq => "`!=`",
             Self::Eq => "`=`",

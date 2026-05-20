@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use keys::{PrimKeys, WellKnownKeys};
 use resolved::{ResolvedExpressionMap, ResolvedCall};
 use quew_ast::{
-    ElseClause, Expr, Item, Lit, Module, Stmt,
+    ElseClause, Expr, InterpolatedSegment, Item, Lit, Module, Stmt,
     expr::Provider as AstProvider,
     item::{AnnotationArgs, ModelDecl},
     stmt::{ReplyStmt, WithField},
@@ -391,13 +391,41 @@ fn check_body(
                 check_with_block(r, wk, prim, table, local, unify, diags, resolved);
             }
             Stmt::For(f) => {
-                infer_expr(&f.iterable, table, local, wk, prim, unify, diags, resolved);
+                let iterable_ty =
+                    infer_expr(&f.iterable, table, local, wk, prim, unify, diags, resolved);
+                let elem_ty = match &iterable_ty {
+                    Ty::Array(elem) => *elem.clone(),
+                    Ty::Error => Ty::Error,
+                    _ => {
+                        diags.push(mk_err(
+                            f.iterable.span(),
+                            format!("`for` requires an array, found `{iterable_ty}`"),
+                            "expected an array expression",
+                            None,
+                        ));
+                        Ty::Error
+                    }
+                };
                 local.push();
-                local.define(f.value, Ty::Error, f.span, diags);
+                local.define(f.value, elem_ty, f.span, diags);
                 if let Some(idx) = f.index {
-                    local.define(idx, Ty::Error, f.span, diags);
+                    local.define(idx, Ty::number(), f.span, diags);
                 }
                 check_body(&f.body, table, local, ret_ty, wk, prim, unify, diags, resolved);
+                local.pop();
+            }
+            Stmt::While(w) => {
+                let cond_ty = infer_expr(&w.condition, table, local, wk, prim, unify, diags, resolved);
+                if !matches!(&cond_ty, Ty::Primitive(quew_types::PrimTy::Bool) | Ty::Error) {
+                    diags.push(mk_err(
+                        w.condition.span(),
+                        format!("`while` condition must be a bool, found `{cond_ty}`"),
+                        "expected a boolean expression",
+                        None,
+                    ));
+                }
+                local.push();
+                check_body(&w.body, table, local, ret_ty, wk, prim, unify, diags, resolved);
                 local.pop();
             }
             Stmt::Expr(e) => {
@@ -451,9 +479,46 @@ fn infer_expr(
             let r = infer_expr(&b.right, table, local, wk, prim, unify, diags, resolved);
             // For assignment, result is the rhs type
             match b.op {
-                quew_ast::BinaryOp::Assign => r,
+                quew_ast::BinaryOp::Assign => {
+                    // Verify LHS is a valid assignment target
+                    let target_ty = match b.left.as_ref() {
+                        Expr::Ident(ident) => {
+                            local.lookup(ident.name)
+                                .cloned()
+                                .unwrap_or_else(|| {
+                                    diags.push(mk_err(
+                                        ident.span,
+                                        format!("cannot assign to undeclared variable `{ident:?}`"),
+                                        "variable must be declared before assignment",
+                                        None,
+                                    ));
+                                    Ty::Error
+                                })
+                        }
+                        _ => {
+                            diags.push(mk_err(
+                                b.left.span(),
+                                "assignment target must be a variable name".to_string(),
+                                "expected an identifier",
+                                None,
+                            ));
+                            Ty::Error
+                        }
+                    };
+                    if target_ty.is_ok() && r.is_ok() && !r.is_assignable_to(&target_ty) {
+                        diags.push(mk_err(
+                            b.span,
+                            format!("cannot assign `{r}` to variable of type `{target_ty}`"),
+                            &format!("expected `{target_ty}`"),
+                            None,
+                        ));
+                    }
+                    r
+                }
                 quew_ast::BinaryOp::And | quew_ast::BinaryOp::Or => Ty::bool_ty(),
-                quew_ast::BinaryOp::Eq | quew_ast::BinaryOp::NotEq => Ty::bool_ty(),
+                quew_ast::BinaryOp::Eq | quew_ast::BinaryOp::NotEq |
+                quew_ast::BinaryOp::Lt | quew_ast::BinaryOp::Lte |
+                quew_ast::BinaryOp::Gt | quew_ast::BinaryOp::Gte => Ty::bool_ty(),
                 _ => {
                     // Arithmetic: expect same type, return it
                     if let Err(e) = unify.unify(&l, &r) {
@@ -537,7 +602,16 @@ fn infer_expr(
             for e in a.elements.iter().skip(1) {
                 infer_expr(e, table, local, wk, prim, unify, diags, resolved);
             }
-            elem_ty
+            Ty::Array(Box::new(elem_ty))
+        }
+
+        Expr::Object(o) => {
+            let mut fields = IndexMap::new();
+            for f in &o.fields {
+                let ty = infer_expr(&f.value, table, local, wk, prim, unify, diags, resolved);
+                fields.insert(f.name, ty);
+            }
+            Ty::Record(fields)
         }
 
         Expr::Provider(call) => {
@@ -549,6 +623,32 @@ fn infer_expr(
             provider_call_ty(call, table, wk, prim, diags)
         }
         Expr::Is(_) => Ty::bool_ty(),
+        Expr::Interpolated(interp) => {
+            for seg in &interp.segments {
+                if let InterpolatedSegment::Expr(expr) = seg {
+                    let ty = infer_expr(
+                        expr, table, local, wk, prim, unify, diags, resolved,
+                    );
+                    if ty != Ty::string() && ty != Ty::Error {
+                        diags.push(Diagnostic {
+                            severity: Severity::Error,
+                            message: format!(
+                                "interpolated expression must be a string, found `{ty}`"
+                            ),
+                            primary_span: expr.span(),
+                            primary_label: Some("expected string".into()),
+                            secondary: vec![],
+                            help: Some(
+                                "only string-typed expressions can appear inside string interpolation"
+                                    .into(),
+                            ),
+                            code: None,
+                        });
+                    }
+                }
+            }
+            Ty::string()
+        }
         Expr::Error(_) => Ty::Error,
         Expr::PostfixIf(p) => {
             infer_expr(&p.condition, table, local, wk, prim, unify, diags, resolved);
@@ -769,6 +869,7 @@ fn stmt_span(stmt: &Stmt) -> Span {
         Stmt::Return(s) => s.span,
         Stmt::Reply(s) => s.span,
         Stmt::For(s) => s.span,
+        Stmt::While(s) => s.span,
         Stmt::Expr(s) => s.span,
     }
 }

@@ -55,7 +55,7 @@
 | Literals (int, float, bool, null) | ✅ | ✅ | ✅ | ✅ |
 | String `"..."` | ✅ | ✅ | ✅ | ✅ |
 | String `"""..."""` | ✅ | ✅ | ✅ | ✅ |
-| String interpolation `"hello {name}"` | ❌ | ❌ | ❌ | ❌ |
+| String interpolation `"hello {name}"` | ✅ | ✅ | ✅ | ✅ |
 | Identifier | ✅ | ✅ | ✅ | ✅ |
 | Binary ops (+, -, ==, and, or, =) | ✅ | ✅ | ✅ | ✅ |
 | Unary `not` | ✅ | ✅ | ✅ | ✅ |
@@ -68,7 +68,6 @@
 | Ternary `cond then a else b` | ❌ | ❌ | ❌ | ❌ |
 
 **Gaps:**
-- String interpolation is stored raw in the literal; no parser support for extracting `{expr}` segments.
 - `x is Type` parses and checks but is NOT lowered to IR (no runtime discrimination).
 - `not.txt` uses `then` in expressions like `inputType.data.includes("high") then One(input) else Two(input)` — this is distinct from postfix-if and not parsed.
 
@@ -132,8 +131,8 @@
 | `@@rust("id")` builtin marker | ✅ |
 | `NativeRegistry` mechanism | ✅ |
 | Hardcoded stdlib in runtime | ❌ (removed per `one.txt`) |
-| `#[quew_builtin]` proc-macro | ❌ |
-| `inventory` link-time registration | ❌ |
+| `#[quew_builtin]` proc-macro | ✅ |
+| `inventory` link-time registration | ✅ |
 | `fetch()` / HTTP stdlib | ❌ |
 
 ---
@@ -147,9 +146,9 @@
 | `FuncCall` (user functions, extensions) | ✅ |
 | `IrExpr::Call` → native dispatch | ✅ |
 | `IrExpr::Call` → graph recursion | ✅ |
-| `HostToolCall` | ❌ |
-| `Reply` (LLM turn) | ❌ |
-| `AgentCall` (sub-agent) | ❌ |
+| `HostToolCall` | ❌ (LLM-related, deferred) |
+| `Reply` (LLM turn) | ❌ (LLM-related, deferred) |
+| `AgentCall` (sub-agent) | ❌ (LLM-related, deferred) |
 | Checkpoint / resume | ❌ |
 | Middleware execution | ❌ |
 
@@ -162,19 +161,18 @@
 | Regular strings `"..."` | ✅ |
 | Triple strings `"""..."""` | ✅ |
 | Escape sequences | ✅ |
-| String interpolation | ❌ |
-| Template literals / multiline formatting | ❌ |
+| String interpolation | ✅ |
+| Template literals / multiline formatting | ❌ (deferred) |
 
 ---
 
 ## Summary: Biggest Missing Pieces
 
 1. **Middleware** — Tokenized but never parsed, checked, or lowered. This is a major feature in `not.txt`.
-2. **String interpolation** — Critical for prompt building (`"hello {name}"`).
-3. **`while`, `break`, `continue`** — Basic control flow missing.
+2. **`while`, `break`, `continue`** — Basic control flow missing.
+3. **`x is Type` runtime discrimination** — Parsed but not lowered or executed.
 4. **`x is Type` runtime discrimination** — Parsed but not lowered or executed.
 5. **`for` loop** — Parsed but checker treats as no-op; lowerer emits no IR.
 6. **Dynamic model in `with` block** — Not properly validated/lowered.
 7. **HostToolCall / Reply / AgentCall runtime** — IR nodes exist but executor can't run them.
-8. **`#[quew_builtin]` proc-macro** — Future stdlib registration mechanism.
-9. **String interpolation lowering** — Even if parsed, would need IR support and runtime evaluation.
+8. **`#[quew_builtin]` proc-macro** — Implemented in Plan 17.

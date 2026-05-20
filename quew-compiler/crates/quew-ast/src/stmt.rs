@@ -14,6 +14,7 @@ pub enum Stmt {
     Return(ReturnStmt),
     Reply(ReplyStmt),
     For(ForStmt),
+    While(WhileStmt),
     /// An expression used as a statement (e.g. a bare function call).
     Expr(ExprStmt),
 }
@@ -26,6 +27,7 @@ impl Stmt {
             Self::Return(s) => s.span,
             Self::Reply(s) => s.span,
             Self::For(s) => s.span,
+            Self::While(s) => s.span,
             Self::Expr(s) => s.span,
         }
     }
@@ -124,6 +126,16 @@ pub struct ForStmt {
     pub index: Option<InternedStr>,
     pub value: InternedStr,
     pub iterable: Expr,
+    pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+// ── While ─────────────────────────────────────────────────────────────────────
+
+/// `while condition { body }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WhileStmt {
+    pub condition: Expr,
     pub body: Vec<Stmt>,
     pub span: Span,
 }

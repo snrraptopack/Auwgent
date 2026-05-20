@@ -95,6 +95,9 @@ fn bind_generics(
                 bind_generics(p, a, bindings, span, diags);
             }
         }
+        (Ty::Array(p), Ty::Array(a)) => {
+            bind_generics(p, a, bindings, span, diags);
+        }
         _ => {}
     }
 }

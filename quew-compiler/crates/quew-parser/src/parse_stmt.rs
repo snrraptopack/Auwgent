@@ -7,7 +7,7 @@ use quew_ast::{
     Stmt,
     stmt::{
         ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnMode, ReturnStmt,
-        WithBlock, WithField,
+        WhileStmt, WithBlock, WithField,
     },
 };
 use quew_interner::Interner;
@@ -196,6 +196,28 @@ where
                 })
         };
 
+        // `while condition { body }`
+        let while_stmt = {
+            let block_inner = stmt_rec
+                .clone()
+                .separated_by(just(TokenKind::Newline).repeated().at_least(1))
+                .allow_leading()
+                .allow_trailing()
+                .collect::<Vec<_>>()
+                .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace));
+
+            just(TokenKind::KwWhile)
+                .ignore_then(e.clone())
+                .then(block_inner)
+                .map_with(|(condition, body), extra| {
+                    Stmt::While(WhileStmt {
+                        condition,
+                        body,
+                        span: to_span(extra.span()),
+                    })
+                })
+        };
+
         // Fall-through: bare expression statement
         let expr_stmt = e.clone().map_with(|expr, extra| {
             Stmt::Expr(ExprStmt {
@@ -210,6 +232,7 @@ where
             return_stmt,
             reply_stmt,
             for_stmt,
+            while_stmt,
             expr_stmt,
         ))
         // On stmt error, consume to end of line or closing brace and emit an Error expr.

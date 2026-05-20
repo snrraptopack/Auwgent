@@ -24,6 +24,8 @@ syntaxes/
 
 # Rust build artifacts (scoped to specific crates/workspaces, not the targets/ source folder)
 auwgent-compiler/target/
+quew-compiler/target/
+quew-runtime/target/
 runtime/target/
 runtime/crates/*/target/
 c-abi/target/

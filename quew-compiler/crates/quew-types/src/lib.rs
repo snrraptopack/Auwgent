@@ -107,6 +107,9 @@ pub enum Ty {
     /// Named record: `{ name: string, age: number }`. Fields are ordered.
     Record(IndexMap<InternedStr, Ty>),
 
+    /// Homogeneous array: `T[]`.
+    Array(Box<Ty>),
+
     /// A generic parameter declared by a generic type or method, such as `T`.
     GenericParam(InternedStr),
 
@@ -182,6 +185,7 @@ impl Ty {
             Ty::Optional(inner) => inner.has_error(),
             Ty::Union(arms) => arms.iter().any(|a| a.has_error()),
             Ty::Record(fields) => fields.values().any(|t| t.has_error()),
+            Ty::Array(elem) => elem.has_error(),
             Ty::GenericParam(_) => false,
             Ty::Function(f) => {
                 f.return_ty.has_error() || f.params.iter().any(|(_, t)| t.has_error())
@@ -212,6 +216,7 @@ impl Ty {
                 }
                 Ty::Record(out)
             }
+            Ty::Array(elem) => Ty::Array(Box::new(elem.substitute(subst))),
             Ty::Union(arms) => {
                 Ty::Union(arms.iter().map(|ty| ty.substitute(subst)).collect()).flatten_union()
             }
@@ -364,6 +369,9 @@ impl Ty {
                 })
             }
 
+            // Array covariance: element type must be assignable
+            (Ty::Array(src), Ty::Array(tgt)) => src.is_assignable_to(tgt),
+
             // Primitive identity already handled above by the `self == target` arm.
             // All other combinations are incompatible.
             _ => false,
@@ -399,6 +407,7 @@ impl std::fmt::Display for Ty {
                 }
                 write!(f, " }}")
             }
+            Ty::Array(elem) => write!(f, "{elem}[]"),
             Ty::GenericParam(name) => write!(f, "{name:?}"),
             Ty::Function(ft) => {
                 let generics = if ft.type_params.is_empty() {

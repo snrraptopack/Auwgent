@@ -165,6 +165,32 @@ pub enum NodeKind {
         args: IndexMap<InternedStr, DataRef>,
         mode: AgentCallMode,
     },
+
+    /// `for value in iterable { body }`
+    ///
+    /// The executor iterates over `iterable` (which must be an array) and
+    /// calls `body_graph` once per element. The body graph receives the
+    /// element as an input parameter named `value_name`, the index as
+    /// `index_name` (if present), and all `captured` variables from the
+    /// enclosing scope.
+    Loop {
+        iterable: DataRef,
+        body_graph: String,
+        value_name: InternedStr,
+        index_name: Option<InternedStr>,
+        captured: Vec<(InternedStr, DataRef)>,
+    },
+
+    /// `while condition { body }`
+    ///
+    /// The executor repeatedly calls `body_graph` while it returns `true`.
+    /// The body graph receives all `captured` variables from the enclosing
+    /// scope. It should evaluate the condition, execute the body if true,
+    /// and return the condition value.
+    WhileLoop {
+        body_graph: String,
+        captured: Vec<(InternedStr, DataRef)>,
+    },
 }
 
 /// How an `AgentCall` node merges the child's execution context.
@@ -303,6 +329,8 @@ pub enum IrExpr {
     },
     /// An array literal: `[elem, …]`.
     Array(Vec<IrExpr>),
+    /// An object literal: `{ field: expr, … }`.
+    Object(IndexMap<InternedStr, IrExpr>),
     /// A ternary/inline conditional: `expr if cond else expr`.
     Ternary {
         cond: Box<IrExpr>,

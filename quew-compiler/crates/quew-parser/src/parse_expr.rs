@@ -7,11 +7,13 @@ use chumsky::prelude::*;
 use quew_ast::{
     Expr,
     expr::{
-        ArrayExpr, BinaryExpr, BinaryOp, CallExpr, IdentExpr, IsExpr, MemberExpr, PostfixIfExpr,
-        Provider, ProviderCall, UnaryExpr, UnaryOp,
+        ArrayExpr, BinaryExpr, BinaryOp, CallExpr, IdentExpr, InterpolatedSegment,
+        InterpolatedString, IsExpr, MemberExpr, ObjectExpr, ObjectField, PostfixIfExpr, Provider,
+        ProviderCall, UnaryExpr, UnaryOp,
     },
     lit::{Lit, StringKind, StringLit},
 };
+use quew_errors::{Diagnostic, Span};
 use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
@@ -50,20 +52,34 @@ where
             Expr::Lit(Lit::Float(f, to_span(s)))
         });
 
-        let triple = triple_string(source, interner.clone()).map(|(val, s)| {
-            Expr::Lit(Lit::String(StringLit {
-                value: val,
-                kind: StringKind::Triple,
-                span: to_span(s),
-            }))
+        let int_interp = interner.clone();
+        let triple = triple_string(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
+            let raw = &source[s.start..s.end];
+            let content = &raw[3..raw.len().saturating_sub(3)];
+            if has_interpolation(content) {
+                build_interpolated(content, s.start + 3, &int_interp)
+            } else {
+                Expr::Lit(Lit::String(StringLit {
+                    value: val,
+                    kind: StringKind::Triple,
+                    span: to_span(s),
+                }))
+            }
         });
 
-        let str_lit = string_literal(source, interner.clone()).map(|(val, s)| {
-            Expr::Lit(Lit::String(StringLit {
-                value: val,
-                kind: StringKind::Regular,
-                span: to_span(s),
-            }))
+        let int_interp2 = interner.clone();
+        let str_lit = string_literal(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
+            let raw = &source[s.start..s.end];
+            let content = &raw[1..raw.len().saturating_sub(1)];
+            if has_interpolation(content) {
+                build_interpolated(content, s.start + 1, &int_interp2)
+            } else {
+                Expr::Lit(Lit::String(StringLit {
+                    value: val,
+                    kind: StringKind::Regular,
+                    span: to_span(s),
+                }))
+            }
         });
 
         let bool_lit = select! {
@@ -100,7 +116,7 @@ where
             })
         });
 
-        // ── Array and grouping ────────────────────────────────────────────────
+        // ── Array, object, and grouping ───────────────────────────────────────
 
         let array = expr_rec
             .clone()
@@ -111,6 +127,27 @@ where
             .map_with(|elements, extra: &mut _| {
                 Expr::Array(ArrayExpr {
                     elements,
+                    span: to_span(extra.span()),
+                })
+            });
+
+        let object_field = ident(source, interner.clone())
+            .then_ignore(just(TokenKind::Colon))
+            .then(expr_rec.clone())
+            .map_with(|(name, value), extra: &mut _| ObjectField {
+                name,
+                value: Box::new(value),
+                span: to_span(extra.span()),
+            });
+
+        let object = object_field
+            .separated_by(just(TokenKind::Comma))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace))
+            .map_with(|fields, extra: &mut _| {
+                Expr::Object(ObjectExpr {
+                    fields,
                     span: to_span(extra.span()),
                 })
             });
@@ -136,6 +173,7 @@ where
             .or(null_lit)
             .or(provider_call)
             .or(array)
+            .or(object)
             .or(grouped)
             .or(ident_expr);
 
@@ -187,6 +225,27 @@ where
                 left(4),
                 just(TokenKind::Minus),
                 |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Sub, r, extra.span()),
+            ),
+            // Comparison
+            infix(
+                left(3),
+                just(TokenKind::LAngle),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Lt, r, extra.span()),
+            ),
+            infix(
+                left(3),
+                just(TokenKind::LtEq),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Lte, r, extra.span()),
+            ),
+            infix(
+                left(3),
+                just(TokenKind::RAngle),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Gt, r, extra.span()),
+            ),
+            infix(
+                left(3),
+                just(TokenKind::GtEq),
+                |l, _op: TokenKind, r, extra: &mut _| bin(l, BinaryOp::Gte, r, extra.span()),
             ),
             // Equality
             infix(
@@ -281,4 +340,155 @@ fn bin(l: Expr, op: BinaryOp, r: Expr, s: CSpan) -> Expr {
         right: Box::new(r),
         span: to_span(s),
     })
+}
+
+/// Returns `true` if the string content contains an unescaped `{`.
+fn has_interpolation(content: &str) -> bool {
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+                i += 2; // escaped {{ → skip both
+            } else {
+                return true;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    false
+}
+
+/// Build an `Expr::Interpolated` from string content that contains `{expr}` segments.
+fn build_interpolated(content: &str, offset: usize, interner: &Arc<Interner>) -> Expr {
+    let mut segments = Vec::new();
+    let mut i = 0;
+    let mut text_start = 0;
+    let bytes = content.as_bytes();
+
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            if i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+                // Escaped brace — skip both, they'll be unescaped in post-processing.
+                i += 2;
+                continue;
+            }
+
+            // Interpolation start
+            if i > text_start {
+                let text = unescape_braces(&content[text_start..i]);
+                if !text.is_empty() {
+                    segments.push(InterpolatedSegment::Text(text));
+                }
+            }
+
+            let expr_start = i + 1;
+            let mut depth = 1;
+            let mut in_string = false;
+            let mut j = expr_start;
+            while j < bytes.len() && depth > 0 {
+                let c = bytes[j];
+                if !in_string {
+                    if c == b'"' {
+                        in_string = true;
+                    } else if c == b'{' {
+                        depth += 1;
+                    } else if c == b'}' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                } else {
+                    if c == b'\\' && j + 1 < bytes.len() {
+                        j += 1; // skip escaped char
+                    } else if c == b'"' {
+                        in_string = false;
+                    }
+                }
+                j += 1;
+            }
+
+            if depth == 0 {
+                let expr_text = &content[expr_start..j];
+                match parse_expr_str(expr_text, interner) {
+                    Ok(expr) => {
+                        segments.push(InterpolatedSegment::Expr(Box::new(expr)));
+                    }
+                    Err(_) => {
+                        // Fallback: treat as literal text on parse error.
+                        segments.push(InterpolatedSegment::Text(
+                            format!("{{{expr_text}}}"),
+                        ));
+                    }
+                }
+                i = j + 1;
+                text_start = i;
+            } else {
+                // Unterminated interpolation — consume rest as text.
+                let text = unescape_braces(&content[i..]);
+                if !text.is_empty() {
+                    segments.push(InterpolatedSegment::Text(text));
+                }
+                break;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    if text_start < content.len() {
+        let text = unescape_braces(&content[text_start..]);
+        if !text.is_empty() {
+            segments.push(InterpolatedSegment::Text(text));
+        }
+    }
+
+    Expr::Interpolated(InterpolatedString {
+        segments,
+        span: Span::new(offset, offset + content.len()),
+    })
+}
+
+/// Replace `{{` with `{` and `}}` with `}` in a text fragment.
+fn unescape_braces(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
+            result.push('{');
+            i += 2;
+        } else if bytes[i] == b'}' && i + 1 < bytes.len() && bytes[i + 1] == b'}' {
+            result.push('}');
+            i += 2;
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Parse a single expression from a standalone string.
+/// Used by string interpolation to parse `{expr}` segments.
+pub fn parse_expr_str(source: &str, interner: &Arc<Interner>) -> Result<Expr, Vec<Diagnostic>> {
+    let lex_result = quew_lexer::lex(source, quew_source::SourceId::dummy(), interner);
+    let stream = crate::common::make_stream(&lex_result.tokens, source.len());
+    let (expr, errs) = expr(source, Arc::clone(interner))
+        .parse(stream)
+        .into_output_errors();
+
+    let mut errors: Vec<Diagnostic> = errs
+        .into_iter()
+        .map(|err| {
+            let span = Span::new(err.span().start, err.span().end);
+            Diagnostic::error(format!("{}", err.reason()), span)
+        })
+        .collect();
+
+    errors.extend(lex_result.errors);
+
+    expr.ok_or(errors)
 }

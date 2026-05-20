@@ -405,3 +405,44 @@ fn unclosed_brace_recovers() {
     let result = lex_and_parse("type Foo = {\n  name: string\n");
     let _ = result; // must not panic; errors expected
 }
+
+
+// ── string interpolation tests ────────────────────────────────────────────────
+
+#[test]
+fn basic_string_interpolation_parses() {
+    let result = lex_and_parse(r#"let msg = "hello {name}""#);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+    assert_eq!(result.module.items.len(), 1);
+}
+
+#[test]
+fn multiple_interpolations_parses() {
+    let result = lex_and_parse(r#"let msg = "{a} and {b}""#);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+}
+
+#[test]
+fn escaped_braces_parses_as_literal() {
+    let result = lex_and_parse(r#"let msg = "{{literal}}""#);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+}
+
+#[test]
+fn triple_quoted_interpolation_parses() {
+    let src = r#"let msg = """hello {name}""""#;
+    let result = lex_and_parse(src);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+}
+
+#[test]
+fn interpolation_with_function_call_parses() {
+    let result = lex_and_parse(r#"let msg = "result: {get_name()}""#);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+}
+
+#[test]
+fn interpolation_with_member_access_parses() {
+    let result = lex_and_parse(r#"let msg = "user: {user.name}""#);
+    assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+}

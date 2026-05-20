@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use quew_ast::{BinaryOp as AstBinaryOp, Expr, Lit, UnaryOp as AstUnaryOp};
+use quew_ast::{BinaryOp as AstBinaryOp, Expr, InterpolatedSegment, Lit, UnaryOp as AstUnaryOp};
 use quew_checker::resolved::CallKind;
 use quew_checker::CheckResult;
 use quew_interner::Interner;
@@ -114,11 +114,43 @@ pub fn lower_expr(
                 .map(|element| lower_expr(element, check, definitions, interner, ctx))
                 .collect(),
         ),
+        Expr::Object(obj) => {
+            let mut fields = indexmap::IndexMap::new();
+            for f in &obj.fields {
+                fields.insert(
+                    f.name,
+                    lower_expr(&f.value, check, definitions, interner, ctx),
+                );
+            }
+            IrExpr::Object(fields)
+        }
         Expr::PostfixIf(postfix) => IrExpr::Ternary {
             cond: Box::new(lower_expr(&postfix.condition, check, definitions, interner, ctx)),
             then: Box::new(lower_expr(&postfix.value, check, definitions, interner, ctx)),
             else_: Box::new(lower_expr(&postfix.else_value, check, definitions, interner, ctx)),
         },
+        Expr::Interpolated(interp) => {
+            let mut result: Option<IrExpr> = None;
+            for seg in &interp.segments {
+                let expr = match seg {
+                    InterpolatedSegment::Text(text) => {
+                        IrExpr::Lit(IrLit::String(interner.intern(text)))
+                    }
+                    InterpolatedSegment::Expr(expr) => {
+                        lower_expr(expr, check, definitions, interner, ctx)
+                    }
+                };
+                result = match result {
+                    None => Some(expr),
+                    Some(prev) => Some(IrExpr::Binary {
+                        left: Box::new(prev),
+                        op: BinaryOp::Add,
+                        right: Box::new(expr),
+                    }),
+                };
+            }
+            result.unwrap_or(IrExpr::Lit(IrLit::String(interner.intern(""))))
+        }
         Expr::Is(_) | Expr::Provider(_) | Expr::Error(_) => IrExpr::Lit(IrLit::Null),
     }
 }
@@ -184,6 +216,10 @@ fn lower_binary_op(op: AstBinaryOp) -> BinaryOp {
         AstBinaryOp::Mod => BinaryOp::Rem,
         AstBinaryOp::Eq | AstBinaryOp::Assign => BinaryOp::Eq,
         AstBinaryOp::NotEq => BinaryOp::NotEq,
+        AstBinaryOp::Lt => BinaryOp::Lt,
+        AstBinaryOp::Lte => BinaryOp::Lte,
+        AstBinaryOp::Gt => BinaryOp::Gt,
+        AstBinaryOp::Gte => BinaryOp::Gte,
         AstBinaryOp::And => BinaryOp::And,
         AstBinaryOp::Or => BinaryOp::Or,
     }

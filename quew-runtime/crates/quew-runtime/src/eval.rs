@@ -11,7 +11,7 @@ use quew_interner::Interner;
 use quew_ir::graph::{BinaryOp, DataRef, IrExpr, IrLit, NodeId, UnaryOp};
 use quew_ir::QuewGraphIR;
 
-use crate::native::{NativeEntry, NativeRegistry};
+use crate::native::{NativeHandler, NativeRegistry};
 use crate::value::{Value, ValueError};
 
 /// An error produced while evaluating an expression.
@@ -142,13 +142,23 @@ pub fn eval_expr(
             let func_name = interner.resolve(*function);
 
             // Look up in native registry first.
-            if let Some(entry) = natives.get(func_name) {
+            // Try direct lookup by function name (for manually constructed IR),
+            // then via definitions.native mapping (for compiled prelude builtins).
+            let native_entry = natives.get(func_name).or_else(|| {
+                ir.definitions
+                    .functions
+                    .get(function)
+                    .and_then(|def| def.native)
+                    .and_then(|native_id| natives.get(interner.resolve(native_id)))
+            });
+
+            if let Some(entry) = native_entry {
                 let mut arg_values = Vec::with_capacity(args.len());
                 for (_name, arg_expr) in args {
                     arg_values.push(eval_expr(arg_expr, outputs, interner, natives, ir)?);
                 }
-                match entry {
-                    NativeEntry::Sync(f) => {
+                match &entry.handler {
+                    NativeHandler::Sync(f) => {
                         f(&arg_values).map_err(|e| EvalError::NativeError {
                             message: e.message,
                         })
@@ -186,6 +196,14 @@ pub fn eval_expr(
                 vals.push(eval_expr(elem, outputs, interner, natives, ir)?);
             }
             Ok(Value::Array(vals))
+        }
+        IrExpr::Object(fields) => {
+            let mut map = indexmap::IndexMap::new();
+            for (name, value_expr) in fields {
+                let val = eval_expr(value_expr, outputs, interner, natives, ir)?;
+                map.insert(interner.resolve(*name).to_string(), val);
+            }
+            Ok(Value::Object(map))
         }
         IrExpr::Ternary { cond, then, else_ } => {
             let c = eval_expr(cond, outputs, interner, natives, ir)?;

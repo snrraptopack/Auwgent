@@ -27,6 +27,9 @@ pub enum TypeExpr {
     /// A generic application: `Fetch<string>`.
     /// Reserved for future use; the checker will reject unknown generics.
     Generic(InternedStr, Vec<TypeExpr>, Span),
+
+    /// An array type: `string[]`, `number[]`.
+    Array(Box<TypeExpr>, Span),
 }
 
 impl TypeExpr {
@@ -37,6 +40,7 @@ impl TypeExpr {
             Self::Union(_, s) => *s,
             Self::Optional(_, s) => *s,
             Self::Generic(_, _, s) => *s,
+            Self::Array(_, s) => *s,
         }
     }
 }

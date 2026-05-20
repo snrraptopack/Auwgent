@@ -35,15 +35,36 @@ pub enum Expr {
     /// Array literal: `[getWeather, userTools]`.
     Array(ArrayExpr),
 
+    /// Object literal: `{ name: "Alice", age: 30 }`.
+    Object(ObjectExpr),
+
     /// Postfix conditional: `value if condition else other`.
     PostfixIf(PostfixIfExpr),
 
     /// Type discrimination: `response is MyType`.
     Is(IsExpr),
 
+    /// String interpolation: `"hello {name}"`.
+    Interpolated(InterpolatedString),
+
     /// Sentinel emitted by the parser when it cannot parse an expression.
     /// Lets parsing continue after a bad expression without losing subsequent items.
     Error(Span),
+}
+
+/// One field of an object literal: `name: expr`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectField {
+    pub name: InternedStr,
+    pub value: Box<Expr>,
+    pub span: Span,
+}
+
+/// An object literal expression: `{ name: "Alice", age: 30 }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ObjectExpr {
+    pub fields: Vec<ObjectField>,
+    pub span: Span,
 }
 
 impl Expr {
@@ -57,8 +78,10 @@ impl Expr {
             Self::Provider(e) => e.span,
             Self::Member(e) => e.span,
             Self::Array(e) => e.span,
+            Self::Object(e) => e.span,
             Self::PostfixIf(e) => e.span,
             Self::Is(e) => e.span,
+            Self::Interpolated(e) => e.span,
             Self::Error(s) => *s,
         }
     }
@@ -92,6 +115,11 @@ pub enum BinaryOp {
     // Equality
     Eq,
     NotEq,
+    // Comparison
+    Lt,
+    Lte,
+    Gt,
+    Gte,
     // Logical (English keywords — no && or ||)
     And,
     Or,
@@ -194,6 +222,22 @@ pub struct IsExpr {
     pub value: Box<Expr>,
     pub ty: TypeExpr,
     pub span: Span,
+}
+
+/// A string with interpolated expressions: `"hello {name}"`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InterpolatedString {
+    pub segments: Vec<InterpolatedSegment>,
+    pub span: Span,
+}
+
+/// One segment of an interpolated string.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpolatedSegment {
+    /// Plain text fragment.
+    Text(String),
+    /// Expression whose value is inserted into the string.
+    Expr(Box<Expr>),
 }
 
 #[cfg(test)]
@@ -326,6 +370,15 @@ mod tests {
     fn error_sentinel_span() {
         let e = Expr::Error(Span::new(3, 7));
         assert_eq!(e.span(), Span::new(3, 7));
+    }
+
+    #[test]
+    fn interpolated_span() {
+        let e = Expr::Interpolated(InterpolatedString {
+            segments: vec![InterpolatedSegment::Text("hello ".into())],
+            span: Span::new(0, 10),
+        });
+        assert_eq!(e.span(), Span::new(0, 10));
     }
 
     // ── Operator enums ────────────────────────────────────────────────────────

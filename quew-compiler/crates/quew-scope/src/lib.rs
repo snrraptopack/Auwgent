@@ -193,6 +193,10 @@ fn lower_type_with_params(
                 .collect();
             Ty::GenericInstance { name: *name, args }
         }
+        TypeExpr::Array(elem, _) => {
+            let elem_ty = lower_type_with_params(elem, type_params, diags);
+            Ty::Array(Box::new(elem_ty))
+        }
     }
 }
 

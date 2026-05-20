@@ -1,0 +1,35 @@
+[workspace]
+members = [
+    "crates/quew-runtime",
+    "crates/quew-macros",
+    "crates/quew-stdlib",
+]
+resolver = "2"
+
+[workspace.dependencies]
+indexmap    = { version = "2.14.0", features = ["std"] }
+inventory   = { version = "0.3" }
+syn         = { version = "2", features = ["full"] }
+quote       = { version = "1" }
+proc-macro2 = { version = "1" }
+
+# Compiler crates the runtime depends on
+quew-ir       = { path = "../quew-compiler/crates/quew-ir" }
+quew-interner = { path = "../quew-compiler/crates/quew-interner" }
+
+[profile.dev]
+debug = 0
+incremental = true
+codegen-units = 256
+
+[profile.test]
+debug = 0
+incremental = true
+codegen-units = 256
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

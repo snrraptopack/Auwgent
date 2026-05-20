@@ -30,8 +30,7 @@ members = [
     # Layer 7 — user-facing binary
     "crates/quew-cli",
 
-    # Layer 8 — runtime executor
-    "crates/quew-runtime",
+    # NOTE: runtime, proc-macros, and stdlib moved to top-level quew-runtime/ workspace
 ]
 resolver = "2"
 
@@ -72,6 +71,14 @@ rayon = { version = "1" }
 
 # Dev-only: snapshot testing for diagnostics and codegen output
 insta = { version = "1", features = ["ron"] }
+
+# Layer: proc-macro support
+syn = { version = "2", features = ["full"] }
+quote = { version = "1" }
+proc-macro2 = { version = "1" }
+
+# Layer: link-time registration of native builtins
+inventory = { version = "0.3" }
 
 # ── Build profiles ────────────────────────────────────────────────────────────
 [profile.dev]

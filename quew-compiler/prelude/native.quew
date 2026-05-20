@@ -1,15 +1,47 @@
+@@rust("std.string.len")
+!@@function len(value: string): number
+
 @@rust("std.string.is_empty")
-!@@function string_is_empty(value: string): bool
+!@@function is_empty(value: string): bool
 
 @@rust("std.string.contains")
-!@@function string_contains(value: string, substring: string): bool
+!@@function contains(value: string, needle: string): bool
+
+@@rust("std.string.starts_with")
+!@@function starts_with(value: string, prefix: string): bool
+
+@@rust("std.number.abs")
+!@@function abs(value: number | float): number | float
+
+@@rust("std.number.clamp")
+!@@function clamp(value: number, min: number, max: number): number
+
+@@rust("std.array.len")
+!@@function array_len<T>(array: T[]): number
+
+@@rust("std.array.get")
+!@@function array_get<T>(array: T[], index: number): T?
+
+@@rust("std.array.push")
+!@@function array_push<T>(array: T[], item: T): T[]
+
+@@rust("std.array.pop")
+!@@function array_pop<T>(array: T[]): T?
 
 extend string {
-    function isEmpty(): bool {
-        return string_is_empty(self)
+    function len(): number {
+        return len(self)
     }
 
-    function contains(substring: string): bool {
-        return string_contains(self, substring)
+    function isEmpty(): bool {
+        return is_empty(self)
+    }
+
+    function contains(needle: string): bool {
+        return contains(self, needle)
+    }
+
+    function startsWith(prefix: string): bool {
+        return starts_with(self, prefix)
     }
 }

@@ -781,7 +781,7 @@ fn for_loop_variable_available_in_body() {
     let r = check_source(
         r#"
 function iter() {
-    let items = "dummy"
+    let items = [1, 2, 3]
     for item in items {
         let x = item
     }
@@ -1170,4 +1170,52 @@ agent Hello(input: string) {
             .iter()
             .any(|d| { d.severity == Severity::Error && d.message.contains("already declared") })
     );
+}
+
+
+// ── string interpolation tests ────────────────────────────────────────────────
+
+#[test]
+fn valid_string_interpolation() {
+    let r = check_source(
+        r#"
+function greet(name: string): string {
+    return "hello {name}"
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
+}
+
+#[test]
+fn interpolated_number_produces_error() {
+    let r = check_source(
+        r#"
+function greet(age: number): string {
+    return "age: {age}"
+}
+"#,
+    );
+    assert!(
+        r.diagnostics.iter().any(|d| {
+            d.severity == Severity::Error && d.message.contains("must be a string")
+        }),
+        "expected string-type error, got: {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn valid_interpolation_with_function_call() {
+    let r = check_source_with_prelude(
+        r#"
+function getName(): string {
+    return "world"
+}
+function greet(): string {
+    return "hello {getName()}"
+}
+"#,
+    );
+    assert!(r.diagnostics.is_empty(), "unexpected: {:?}", r.diagnostics);
 }

@@ -1,0 +1,20 @@
+[package]
+name = "quew-runtime"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic graph executor for the quew compiler. Evaluates compiled QuewGraphIR into runtime values."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+indexmap    = { workspace = true }
+inventory   = { workspace = true }
+quew-ir     = { workspace = true }
+quew-interner = { path = "../../../quew-compiler/crates/quew-interner" }
+
+[dev-dependencies]
+quew-lexer    = { path = "../../../quew-compiler/crates/quew-lexer" }
+quew-parser   = { path = "../../../quew-compiler/crates/quew-parser" }
+quew-checker  = { path = "../../../quew-compiler/crates/quew-checker" }
+quew-source   = { path = "../../../quew-compiler/crates/quew-source" }
+quew-errors   = { path = "../../../quew-compiler/crates/quew-errors" }

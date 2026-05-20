@@ -79,7 +79,7 @@ mod tests {
             "unexpected diagnostics: {:?}",
             parsed.diagnostics
         );
-        assert_eq!(parsed.module.items.len(), 11);
+        assert_eq!(parsed.module.items.len(), 19);
     }
 
     #[test]
@@ -141,10 +141,17 @@ mod tests {
         let interner = Arc::new(Interner::new());
         let parsed = parse_prelude(&interner);
         let table = build_symbol_table(&parsed.module, &interner);
-        let is_empty = interner.intern("string_is_empty");
-        let contains = interner.intern("string_contains");
 
         assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
+
+        // String builtins
+        let len = interner.intern("len");
+        let is_empty = interner.intern("is_empty");
+        let contains = interner.intern("contains");
+        assert_eq!(
+            table.globals[&len].native,
+            Some(interner.intern("std.string.len"))
+        );
         assert_eq!(
             table.globals[&is_empty].native,
             Some(interner.intern("std.string.is_empty"))
@@ -152,6 +159,48 @@ mod tests {
         assert_eq!(
             table.globals[&contains].native,
             Some(interner.intern("std.string.contains"))
+        );
+
+        // Number builtins
+        let abs = interner.intern("abs");
+        let clamp = interner.intern("clamp");
+        assert_eq!(
+            table.globals[&abs].native,
+            Some(interner.intern("std.number.abs"))
+        );
+        assert_eq!(
+            table.globals[&clamp].native,
+            Some(interner.intern("std.number.clamp"))
+        );
+
+        // Array builtins
+        let array_len = interner.intern("array_len");
+        let array_get = interner.intern("array_get");
+        let array_push = interner.intern("array_push");
+        let array_pop = interner.intern("array_pop");
+        assert_eq!(
+            table.globals[&array_len].native,
+            Some(interner.intern("std.array.len"))
+        );
+        assert_eq!(
+            table.globals[&array_get].native,
+            Some(interner.intern("std.array.get"))
+        );
+        assert_eq!(
+            table.globals[&array_push].native,
+            Some(interner.intern("std.array.push"))
+        );
+        assert_eq!(
+            table.globals[&array_pop].native,
+            Some(interner.intern("std.array.pop"))
+        );
+
+        // Extension methods
+        assert!(
+            table
+                .extension_methods
+                .iter()
+                .any(|method| method.name == interner.intern("len"))
         );
         assert!(
             table
@@ -165,6 +214,12 @@ mod tests {
                 .iter()
                 .any(|method| method.name == interner.intern("contains"))
         );
+        assert!(
+            table
+                .extension_methods
+                .iter()
+                .any(|method| method.name == interner.intern("startsWith"))
+        );
     }
 
     #[test]
@@ -177,6 +232,6 @@ mod tests {
         let merged = module_with_prelude(&user, &interner);
 
         assert!(merged.diagnostics.is_empty(), "{:?}", merged.diagnostics);
-        assert_eq!(merged.module.items.len(), 11);
+        assert_eq!(merged.module.items.len(), 19);
     }
 }

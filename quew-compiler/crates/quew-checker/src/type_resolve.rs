@@ -49,6 +49,10 @@ pub(crate) fn resolve_type_with_params(
                 .collect();
             instantiate_generic_type(*name, &args, table, prim, diags, *span)
         }
+        TypeExpr::Array(elem, _) => {
+            let elem_ty = resolve_type_with_params(elem, type_params, table, prim, diags);
+            Ty::Array(Box::new(elem_ty))
+        }
     }
 }
 
@@ -86,6 +90,7 @@ pub(crate) fn resolve_semantic_ty(
                 .collect(),
         )
         .flatten_union(),
+        Ty::Array(elem) => Ty::Array(Box::new(resolve_semantic_ty(elem, table, prim, diags, span))),
         Ty::Optional(inner) => Ty::Optional(Box::new(resolve_semantic_ty(
             inner, table, prim, diags, span,
         ))),

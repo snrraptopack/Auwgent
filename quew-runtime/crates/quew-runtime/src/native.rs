@@ -13,13 +13,13 @@
 //! # Example
 //!
 //! ```
-//! use quew_runtime::native::{NativeRegistry, NativeEntry};
+//! use quew_runtime::native::{NativeRegistry, NativeHandler};
 //! use quew_runtime::value::Value;
 //!
 //! let mut registry = NativeRegistry::new();
 //! registry.register(
 //!     "std.string.is_empty",
-//!     NativeEntry::Sync(|args| {
+//!     NativeHandler::Sync(|args| {
 //!         let s = args[0].as_str().ok_or("expected string")?;
 //!         Ok(Value::Bool(s.is_empty()))
 //!     }),
@@ -37,16 +37,31 @@ pub struct NativeRegistry {
 }
 
 /// A native function implementation.
-#[derive(Clone)]
-pub enum NativeEntry {
-    /// A synchronous pure function.
-    Sync(fn(&[Value]) -> Result<Value, NativeError>),
+#[derive(Clone, Copy)]
+pub struct NativeEntry {
+    /// Stable dispatch id (e.g. `"std.string.len"`).
+    pub id: &'static str,
+    /// The handler implementation.
+    pub handler: NativeHandler,
 }
 
 impl std::fmt::Debug for NativeEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NativeEntry {{ id: {:?}, handler: {:?} }}", self.id, self.handler)
+    }
+}
+
+/// The callable body of a native function.
+#[derive(Clone, Copy)]
+pub enum NativeHandler {
+    /// A synchronous pure function.
+    Sync(fn(&[Value]) -> Result<Value, NativeError>),
+}
+
+impl std::fmt::Debug for NativeHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NativeEntry::Sync(_) => write!(f, "NativeEntry::Sync(<fn>)"),
+            NativeHandler::Sync(_) => write!(f, "NativeHandler::Sync(<fn>)"),
         }
     }
 }
@@ -85,15 +100,36 @@ impl std::fmt::Display for NativeError {
 
 impl std::error::Error for NativeError {}
 
+inventory::collect!(NativeEntry);
+
 impl NativeRegistry {
     /// Create an empty registry.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Collect all link-time registered builtins into a registry.
+    ///
+    /// Call this once at runtime startup when `quew-stdlib` (or other
+    /// builtin-providing crates) are linked into the binary.
+    pub fn collect() -> Self {
+        let mut reg = Self::new();
+        for entry in inventory::iter::<NativeEntry> {
+            reg.entries.insert(entry.id.to_string(), entry.clone());
+        }
+        reg
+    }
+
     /// Register a native function under the given id.
-    pub fn register(&mut self, id: impl Into<String>, entry: NativeEntry) {
-        self.entries.insert(id.into(), entry);
+    pub fn register(&mut self, id: impl Into<String>, handler: NativeHandler) {
+        let id = id.into();
+        self.entries.insert(
+            id.clone(),
+            NativeEntry {
+                id: Box::leak(id.into_boxed_str()),
+                handler,
+            },
+        );
     }
 
     /// Look up a native function by id.
@@ -116,7 +152,7 @@ mod tests {
         let mut reg = NativeRegistry::new();
         reg.register(
             "test.identity",
-            NativeEntry::Sync(|args| Ok(args[0].clone())),
+            NativeHandler::Sync(|args| Ok(args[0].clone())),
         );
 
         assert!(reg.contains("test.identity"));
@@ -128,15 +164,15 @@ mod tests {
         let mut reg = NativeRegistry::new();
         reg.register(
             "test.double",
-            NativeEntry::Sync(|args| {
+            NativeHandler::Sync(|args| {
                 let n = args[0].as_number().ok_or("expected number")?;
                 Ok(Value::Number(n * 2))
             }),
         );
 
         let entry = reg.get("test.double").unwrap();
-        let result = match entry {
-            NativeEntry::Sync(f) => f(&[Value::Number(21)]).unwrap(),
+        let result = match &entry.handler {
+            NativeHandler::Sync(f) => f(&[Value::Number(21)]).unwrap(),
         };
         assert_eq!(result, Value::Number(42));
     }

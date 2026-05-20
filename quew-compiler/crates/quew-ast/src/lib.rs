@@ -35,8 +35,9 @@ pub use builtin::{
     BuiltinFunctionMeta, BuiltinTypeMeta, BuiltinVisibility, NativeBinding, RoleBindingSyntax,
 };
 pub use expr::{
-    ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr, IsExpr, MemberExpr,
-    PostfixIfExpr, Provider, ProviderCall, UnaryExpr, UnaryOp,
+    ArrayExpr, BinaryExpr, BinaryOp, CallExpr, ConfigField, Expr, IdentExpr, InterpolatedSegment,
+    InterpolatedString, IsExpr, MemberExpr, ObjectExpr, ObjectField, PostfixIfExpr, Provider,
+    ProviderCall, UnaryExpr, UnaryOp,
 };
 pub use item::{
     AgentDecl, Annotation, AnnotationArgs, ExtendDecl, FieldDef, FunctionDecl, Item, LetDecl,
@@ -45,6 +46,6 @@ pub use item::{
 pub use lit::{Lit, StringKind, StringLit};
 pub use stmt::{
     ElseClause, ExprStmt, ForStmt, IfStmt, LetStmt, ReplyStmt, ReturnMode, ReturnStmt, Stmt,
-    WithBlock, WithField,
+    WhileStmt, WithBlock, WithField,
 };
 pub use ty::TypeExpr;

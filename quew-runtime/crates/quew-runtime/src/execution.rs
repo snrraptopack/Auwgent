@@ -27,7 +27,7 @@ use quew_ir::graph::{AgentGraph, NodeId, NodeKind};
 use quew_ir::QuewGraphIR;
 
 use crate::eval::{eval_expr, EvalError};
-use crate::native::NativeRegistry;
+use crate::native::{NativeHandler, NativeRegistry};
 use crate::value::Value;
 
 /// An error produced during graph execution.
@@ -47,6 +47,14 @@ pub enum ExecutionError {
     UnsupportedNode { node: NodeId, kind: String },
     /// A function call referenced a graph that does not exist.
     MissingFunctionGraph { function: String },
+    /// A native builtin function returned an error.
+    NativeError { message: String },
+    /// A node received a value of the wrong type.
+    TypeMismatch {
+        expected: String,
+        found: String,
+        node: NodeId,
+    },
 }
 
 impl std::fmt::Display for ExecutionError {
@@ -72,6 +80,15 @@ impl std::fmt::Display for ExecutionError {
             }
             ExecutionError::MissingFunctionGraph { function } => {
                 write!(f, "function '{function}' has no compiled graph")
+            }
+            ExecutionError::NativeError { message } => {
+                write!(f, "native function error: {message}")
+            }
+            ExecutionError::TypeMismatch { expected, found, node } => {
+                write!(
+                    f,
+                    "type mismatch at node {node}: expected {expected}, found {found}"
+                )
             }
         }
     }
@@ -203,6 +220,36 @@ impl<'a> Execution<'a> {
                     outputs.insert(*node_id, Value::Null);
                 }
                 NodeKind::FuncCall { function, args } => {
+                    // Check if this function is a native builtin.
+                    let is_native = self
+                        .ir
+                        .definitions
+                        .functions
+                        .get(function)
+                        .and_then(|def| def.native)
+                        .and_then(|native_id| self.natives.get(self.interner.resolve(native_id)));
+
+                    if let Some(entry) = is_native {
+                        let mut arg_values = Vec::with_capacity(args.len());
+                        for (_slot, data_ref) in args {
+                            let val = self
+                                .resolve_data_ref(data_ref, &outputs)
+                                .map_err(|_| ExecutionError::MissingOutput {
+                                    node: data_ref.node,
+                                })?;
+                            arg_values.push(val);
+                        }
+                        let result = match &entry.handler {
+                            NativeHandler::Sync(f) => {
+                                f(&arg_values).map_err(|e| ExecutionError::NativeError {
+                                    message: e.message,
+                                })?
+                            }
+                        };
+                        outputs.insert(*node_id, result);
+                        continue;
+                    }
+
                     let graph_ref = self.resolve_function_graph(*function);
 
                     // The compiler binds all parameters as `input.<name>`, so the
@@ -221,6 +268,92 @@ impl<'a> Execution<'a> {
 
                     let result = self.run(&graph_ref, Value::Object(obj))?;
                     outputs.insert(*node_id, result);
+                }
+                NodeKind::Loop {
+                    iterable,
+                    body_graph,
+                    value_name,
+                    index_name,
+                    captured,
+                } => {
+                    let array = self
+                        .resolve_data_ref(iterable, &outputs)
+                        .map_err(|_| ExecutionError::MissingOutput {
+                            node: iterable.node,
+                        })?;
+                    let array = array.as_array().ok_or_else(|| ExecutionError::TypeMismatch {
+                        expected: "array".into(),
+                        found: array.type_name().into(),
+                        node: *node_id,
+                    })?;
+
+                    for (idx, item) in array.iter().enumerate() {
+                        let mut obj = indexmap::IndexMap::new();
+                        obj.insert(
+                            self.interner.resolve(*value_name).to_string(),
+                            item.clone(),
+                        );
+                        if let Some(idx_name) = index_name {
+                            obj.insert(
+                                self.interner.resolve(*idx_name).to_string(),
+                                Value::Number(idx as i64),
+                            );
+                        }
+                        for (name, data_ref) in captured {
+                            let val = self.resolve_data_ref(data_ref, &outputs).map_err(|_| {
+                                ExecutionError::MissingOutput {
+                                    node: data_ref.node,
+                                }
+                            })?;
+                            obj.insert(self.interner.resolve(*name).to_string(), val);
+                        }
+
+                        let _ = self.run(body_graph, Value::Object(obj))?;
+                    }
+
+                    outputs.insert(*node_id, Value::Null);
+                }
+                NodeKind::WhileLoop {
+                    body_graph,
+                    captured,
+                } => {
+                    loop {
+                        let mut obj = indexmap::IndexMap::new();
+                        for (name, data_ref) in captured {
+                            let val = self
+                                .resolve_data_ref(data_ref, &outputs)
+                                .map_err(|_| ExecutionError::MissingOutput {
+                                    node: data_ref.node,
+                                })?;
+                            obj.insert(self.interner.resolve(*name).to_string(), val);
+                        }
+
+                        let result = self.run(body_graph, Value::Object(obj))?;
+                        let result_map = match &result {
+                            Value::Object(map) => map,
+                            _ => break,
+                        };
+
+                        let cond = result_map
+                            .get("__cond")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+
+                        // Update captured variables in parent outputs so the next
+                        // iteration sees mutated state.
+                        for (name, data_ref) in captured {
+                            let key = self.interner.resolve(*name).to_string();
+                            if let Some(new_val) = result_map.get(&key) {
+                                outputs.insert(data_ref.node, new_val.clone());
+                            }
+                        }
+
+                        if !cond {
+                            break;
+                        }
+                    }
+
+                    outputs.insert(*node_id, Value::Null);
                 }
                 other => {
                     return Err(ExecutionError::UnsupportedNode {
@@ -334,6 +467,28 @@ mod tests {
             check.diagnostics
         );
         let ir = lower(&parse.module, &check, &interner);
+        (interner, ir)
+    }
+
+    fn compile_source_with_prelude(source: &str) -> (Arc<Interner>, QuewGraphIR) {
+        let interner = Arc::new(Interner::new());
+        let source_map = SourceMap::new(Arc::clone(&interner));
+        let source_id = source_map.add("test.quew", source.to_string());
+        let lex = quew_lexer::lex(source, source_id, &interner);
+        assert!(lex.errors.is_empty(), "lex errors: {:?}", lex.errors);
+        let parse = quew_parser::parse(&lex, source, &interner);
+        assert!(parse.errors.is_empty(), "parse errors: {:?}", parse.errors);
+        let prelude = quew_checker::module_with_prelude(&parse.module, &interner);
+        let check = quew_checker::check(&prelude.module, &interner);
+        assert!(
+            !check
+                .diagnostics
+                .iter()
+                .any(|d| d.severity == Severity::Error),
+            "checker errors: {:?}",
+            check.diagnostics
+        );
+        let ir = lower(&prelude.module, &check, &interner);
         (interner, ir)
     }
 
@@ -625,7 +780,7 @@ agent Main(input: string) {
         let mut natives = crate::native::NativeRegistry::new();
         natives.register(
             "std.string.len",
-            crate::native::NativeEntry::Sync(|args| {
+            crate::native::NativeHandler::Sync(|args| {
                 let s = args[0].as_str().ok_or("len: expected string")?;
                 Ok(Value::Number(s.len() as i64))
             }),
@@ -651,5 +806,450 @@ agent Main(input: string) {
         let exec = Execution::new(&ir, &interner, &natives);
         let err = exec.run("function:missing", Value::Null).unwrap_err();
         assert!(matches!(err, ExecutionError::GraphNotFound { .. }));
+    }
+
+    #[test]
+    fn execute_string_interpolation() {
+        let (interner, ir) = compile_source(
+            r#"
+function greet(name: string): string {
+    return "hello {name}"
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("name".to_string(), Value::String("world".into()));
+        let result = exec.run("function:greet", Value::Object(input)).unwrap();
+        assert_eq!(result, Value::String("hello world".into()));
+    }
+
+    #[test]
+    fn execute_string_interpolation_multiple_segments() {
+        let (interner, ir) = compile_source(
+            r#"
+function format(a: string, b: string): string {
+    return "{a} and {b}"
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("a".to_string(), Value::String("hello".into()));
+        input.insert("b".to_string(), Value::String("world".into()));
+        let result = exec.run("function:format", Value::Object(input)).unwrap();
+        assert_eq!(result, Value::String("hello and world".into()));
+    }
+
+    #[test]
+    fn execute_string_interpolation_with_escaped_braces() {
+        // {{ only escapes when the string also contains interpolation.
+        let (interner, ir) = compile_source(
+            r#"
+function braces(x: string): string {
+    return "{{literal}} {x}"
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let mut input = indexmap::IndexMap::new();
+        input.insert("x".to_string(), Value::String("value".into()));
+        let result = exec.run("function:braces", Value::Object(input)).unwrap();
+        assert_eq!(result, Value::String("{literal} value".into()));
+    }
+
+    // ── Native builtin dispatch from compiled code ────────────────────────────
+
+    #[test]
+    fn execute_string_len_native_from_compiled_code() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    return len("hello")
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.string.len",
+            crate::native::NativeHandler::Sync(|args| {
+                let s = args[0].as_str().ok_or("expected string")?;
+                Ok(Value::Number(s.len() as i64))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(5));
+    }
+
+    #[test]
+    fn execute_array_len_native_from_compiled_code() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let arr = [1, 2, 3]
+    return array_len(arr)
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.array.len",
+            crate::native::NativeHandler::Sync(|args| {
+                let arr = args[0].as_array().ok_or("expected array")?;
+                Ok(Value::Number(arr.len() as i64))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(3));
+    }
+
+    #[test]
+    fn execute_array_get_native_from_compiled_code() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let arr = [10, 20, 30]
+    return array_get(arr, 1)
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.array.get",
+            crate::native::NativeHandler::Sync(|args| {
+                let arr = args[0].as_array().ok_or("expected array")?;
+                let idx = args[1].as_number().ok_or("expected number")?;
+                Ok(arr.get(idx as usize).cloned().unwrap_or(Value::Null))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(20));
+    }
+
+    #[test]
+    fn execute_array_push_native_from_compiled_code() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number[] {
+    let arr = [1, 2]
+    return array_push(arr, 3)
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.array.push",
+            crate::native::NativeHandler::Sync(|args| {
+                let mut arr = args[0].as_array().map(|a| a.to_vec()).unwrap_or_default();
+                arr.push(args[1].clone());
+                Ok(Value::Array(arr))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(
+            result,
+            Value::Array(vec![Value::Number(1), Value::Number(2), Value::Number(3)])
+        );
+    }
+
+    #[test]
+    fn execute_array_pop_native_from_compiled_code() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let arr = [1, 2, 3]
+    return array_pop(arr)
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let mut natives = crate::native::NativeRegistry::new();
+        natives.register(
+            "std.array.pop",
+            crate::native::NativeHandler::Sync(|args| {
+                let arr = args[0].as_array().ok_or("expected array")?;
+                Ok(arr.last().cloned().unwrap_or(Value::Null))
+            }),
+        );
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(3));
+    }
+
+    // ── For loop execution ────────────────────────────────────────────────────
+
+    #[test]
+    fn execute_for_loop_over_literal_array() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    for x in [1, 2, 3] {
+        let y = x
+    }
+    return 42
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(42));
+    }
+
+    #[test]
+    fn execute_for_loop_with_index() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    for item, idx in [10, 20, 30] {
+        let y = item
+    }
+    return 99
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(99));
+    }
+
+    // ── Mutable assignment ────────────────────────────────────────────────────
+
+    #[test]
+    fn execute_mutable_assignment() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let count = 0
+    count = 5
+    return count
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(5));
+    }
+
+    #[test]
+    fn execute_mutable_assignment_with_expression() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let count = 10
+    count = count + 1
+    return count
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(11));
+    }
+
+    #[test]
+    fn execute_assignment_inside_branch_then_taken() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let x = 0
+    if true {
+        x = 42
+    }
+    return x
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(42));
+    }
+
+    #[test]
+    fn execute_assignment_inside_branch_else_taken() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let x = 0
+    if false {
+        x = 99
+    } else {
+        x = 77
+    }
+    return x
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(77));
+    }
+
+    // ── Object literals ───────────────────────────────────────────────────────
+
+    #[test]
+    fn execute_typed_object_literal() {
+        let (interner, ir) = compile_source(
+            r#"
+type Person = {
+    name: string
+    age: number
+}
+function test(): Person {
+    let obj: Person = { name: "Alice", age: 30 }
+    return obj
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        let mut expected = indexmap::IndexMap::new();
+        expected.insert("name".to_string(), Value::String("Alice".into()));
+        expected.insert("age".to_string(), Value::Number(30));
+        assert_eq!(result, Value::Object(expected));
+    }
+
+    #[test]
+    fn execute_object_literal_field_access() {
+        let (interner, ir) = compile_source(
+            r#"
+type Person = {
+    name: string
+    age: number
+}
+function test(): string {
+    let obj: Person = { name: "Bob", age: 25 }
+    return obj.name
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::String("Bob".into()));
+    }
+
+    // ── While loop execution ──────────────────────────────────────────────────
+
+    #[test]
+    fn execute_while_loop_with_mutation() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let count = 0
+    while count < 3 {
+        count = count + 1
+    }
+    return count
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(3));
+    }
+
+    #[test]
+    fn execute_while_loop_zero_iterations() {
+        let (interner, ir) = compile_source_with_prelude(
+            r#"
+function test(): number {
+    let count = 5
+    while count < 3 {
+        let count = count + 1
+    }
+    return count
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+        );
+
+        let natives = crate::native::NativeRegistry::new();
+        let exec = Execution::new(&ir, &interner, &natives);
+        let result = exec.run("function:test", Value::Null).unwrap();
+        assert_eq!(result, Value::Number(5));
     }
 }

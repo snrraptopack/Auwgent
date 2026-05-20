@@ -11,12 +11,13 @@ use crate::common::{Input, ParseError, to_span, type_name};
 
 /// Parse a type expression.
 ///
-/// Handles `Named`, `Union` (`A | B | C`), `Optional` (`T?`),
-/// and `Generic` (`T<A>`).
+/// Handles `Named`, `Array` (`T[]`), `Union` (`A | B | C`),
+/// `Optional` (`T?`), and `Generic` (`T<A>`).
 ///
 /// Grammar:
 /// ```text
-/// type_expr := base_type ( `|` base_type )* `?`?
+/// type_expr := array_type ( `|` array_type )* `?`?
+/// array_type := base_type `[]`?
 /// base_type  := ident ( `<` type_expr (`,` type_expr)* `>` )?
 /// ```
 pub fn type_expr<'tok, I>(
@@ -64,7 +65,22 @@ where
                 }
             });
 
-        union_or_single
+        let array_suffix = just(TokenKind::LBracket)
+            .then(just(TokenKind::RBracket))
+            .or_not();
+
+        let array_or_single = union_or_single
+            .then(array_suffix)
+            .map_with(|(ty, is_array), extra| {
+                if is_array.is_some() {
+                    let span = to_span(extra.span());
+                    TypeExpr::Array(Box::new(ty), span)
+                } else {
+                    ty
+                }
+            });
+
+        array_or_single
             .then(just(TokenKind::Question).or_not())
             .map_with(|(ty, q), extra| {
                 if q.is_some() {
