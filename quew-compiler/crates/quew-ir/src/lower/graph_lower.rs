@@ -117,6 +117,7 @@ pub fn lower_agent(
         return_node: output_id,
         nodes: builder.nodes,
         edges: builder.edges,
+        bindings: builder.ctx.slots.into_iter().collect(),
     }
 }
 
@@ -171,6 +172,7 @@ pub fn lower_function_graph(
         return_node: output_id,
         nodes: builder.nodes,
         edges: builder.edges,
+        bindings: builder.ctx.slots.into_iter().collect(),
     }
 }
 
@@ -353,6 +355,14 @@ fn lower_stmt(
         }
         Stmt::While(while_stmt) => {
             lower_while_loop(while_stmt, check, interner, definitions, builder)
+        }
+        Stmt::Break(_) => {
+            builder.push(NodeKind::Break, CheckpointPolicy::Never);
+            None
+        }
+        Stmt::Continue(_) => {
+            builder.push(NodeKind::Continue, CheckpointPolicy::Never);
+            None
         }
     }
 }

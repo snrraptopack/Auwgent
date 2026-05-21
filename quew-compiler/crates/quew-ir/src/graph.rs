@@ -43,6 +43,9 @@ pub struct AgentGraph {
     pub nodes: IndexMap<NodeId, IrNode>,
     /// Data-flow edges: `from.output → to.slot`.
     pub edges: Vec<Edge>,
+    /// Final variable bindings at the end of the graph. Maps each in-scope
+    /// name to the `DataRef` that holds its latest value.
+    pub bindings: std::collections::HashMap<quew_interner::InternedStr, DataRef>,
 }
 
 impl AgentGraph {
@@ -191,6 +194,18 @@ pub enum NodeKind {
         body_graph: String,
         captured: Vec<(InternedStr, DataRef)>,
     },
+
+    /// `break` — exit the enclosing loop.
+    ///
+    /// The executor returns `ExecutionError::Break` from `run()`, which the
+    /// loop executor catches to terminate the loop.
+    Break,
+
+    /// `continue` — skip to the next loop iteration.
+    ///
+    /// The executor returns `ExecutionError::Continue` from `run()`, which the
+    /// loop executor catches to proceed to the next iteration.
+    Continue,
 }
 
 /// How an `AgentCall` node merges the child's execution context.
@@ -337,6 +352,11 @@ pub enum IrExpr {
         then: Box<IrExpr>,
         else_: Box<IrExpr>,
     },
+    /// Runtime type check: `value is Type`.
+    Is {
+        value: Box<IrExpr>,
+        ty: InternedStr,
+    },
 }
 
 /// A literal value in the IR.
@@ -442,6 +462,7 @@ mod tests {
             return_node: NodeId(ids.last().copied().unwrap_or(0)),
             nodes,
             edges: Vec::new(),
+            bindings: std::collections::HashMap::new(),
         }
     }
 

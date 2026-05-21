@@ -218,6 +218,21 @@ pub fn eval_expr(
                 _ => Err(EvalError::NonBooleanCondition),
             }
         }
+        IrExpr::Is { value, ty } => {
+            let val = eval_expr(value, outputs, interner, natives, ir)?;
+            let ty_name = interner.resolve(*ty);
+            let result = match ty_name {
+                "string" => matches!(val, Value::String(_)),
+                "number" => matches!(val, Value::Number(_)),
+                "float" => matches!(val, Value::Float(_)),
+                "bool" => matches!(val, Value::Bool(_)),
+                "null" => matches!(val, Value::Null),
+                "void" => matches!(val, Value::Null),
+                "array" => matches!(val, Value::Array(_)),
+                _ => matches!(val, Value::Object(_)),
+            };
+            Ok(Value::Bool(result))
+        }
     }
 }
 

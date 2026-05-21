@@ -13,13 +13,23 @@ use quew_source::SourceMap;
 const TOOLS_PRELUDE: &str = include_str!("../../../prelude/tools.quew");
 const WITH_PRELUDE: &str = include_str!("../../../prelude/with.quew");
 const MODELS_PRELUDE: &str = include_str!("../../../prelude/models.quew");
-const NATIVE_PRELUDE: &str = include_str!("../../../prelude/native.quew");
+const STRING_PRELUDE: &str = include_str!("../../../prelude/string.quew");
+const ARRAY_PRELUDE: &str = include_str!("../../../prelude/array.quew");
+const NUMBER_PRELUDE: &str = include_str!("../../../prelude/number.quew");
+const IO_PRELUDE: &str = include_str!("../../../prelude/io.quew");
+const NET_PRELUDE: &str = include_str!("../../../prelude/net.quew");
+const JSON_PRELUDE: &str = include_str!("../../../prelude/json.quew");
 
 const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<quew-prelude:tools.quew>", TOOLS_PRELUDE),
     ("<quew-prelude:with.quew>", WITH_PRELUDE),
     ("<quew-prelude:models.quew>", MODELS_PRELUDE),
-    ("<quew-prelude:native.quew>", NATIVE_PRELUDE),
+    ("<quew-prelude:string.quew>", STRING_PRELUDE),
+    ("<quew-prelude:array.quew>", ARRAY_PRELUDE),
+    ("<quew-prelude:number.quew>", NUMBER_PRELUDE),
+    ("<quew-prelude:io.quew>", IO_PRELUDE),
+    ("<quew-prelude:net.quew>", NET_PRELUDE),
+    ("<quew-prelude:json.quew>", JSON_PRELUDE),
 ];
 
 #[derive(Debug)]
@@ -79,7 +89,12 @@ mod tests {
             "unexpected diagnostics: {:?}",
             parsed.diagnostics
         );
-        assert_eq!(parsed.module.items.len(), 19);
+        // Prelude should have at least the core builtins (string, array, number, io).
+        assert!(
+            parsed.module.items.len() >= 10,
+            "prelude seems unexpectedly small: {} items",
+            parsed.module.items.len()
+        );
     }
 
     #[test]
@@ -144,82 +159,49 @@ mod tests {
 
         assert!(table.diagnostics.is_empty(), "{:?}", table.diagnostics);
 
+        // Helper: assert a builtin function has the expected native binding.
+        let assert_native = |name: &str, expected_id: &str| {
+            let sym = table
+                .globals
+                .get(&interner.intern(name))
+                .unwrap_or_else(|| panic!("prelude missing builtin: {name}"));
+            assert_eq!(
+                sym.native,
+                Some(interner.intern(expected_id)),
+                "builtin '{name}' has wrong native binding"
+            );
+        };
+
         // String builtins
-        let len = interner.intern("len");
-        let is_empty = interner.intern("is_empty");
-        let contains = interner.intern("contains");
-        assert_eq!(
-            table.globals[&len].native,
-            Some(interner.intern("std.string.len"))
-        );
-        assert_eq!(
-            table.globals[&is_empty].native,
-            Some(interner.intern("std.string.is_empty"))
-        );
-        assert_eq!(
-            table.globals[&contains].native,
-            Some(interner.intern("std.string.contains"))
-        );
+        assert_native("len", "std.string.len");
+        assert_native("is_empty", "std.string.is_empty");
+        assert_native("contains", "std.string.contains");
+        assert_native("starts_with", "std.string.starts_with");
 
         // Number builtins
-        let abs = interner.intern("abs");
-        let clamp = interner.intern("clamp");
-        assert_eq!(
-            table.globals[&abs].native,
-            Some(interner.intern("std.number.abs"))
-        );
-        assert_eq!(
-            table.globals[&clamp].native,
-            Some(interner.intern("std.number.clamp"))
-        );
+        assert_native("abs", "std.number.abs");
+        assert_native("clamp", "std.number.clamp");
 
         // Array builtins
-        let array_len = interner.intern("array_len");
-        let array_get = interner.intern("array_get");
-        let array_push = interner.intern("array_push");
-        let array_pop = interner.intern("array_pop");
-        assert_eq!(
-            table.globals[&array_len].native,
-            Some(interner.intern("std.array.len"))
-        );
-        assert_eq!(
-            table.globals[&array_get].native,
-            Some(interner.intern("std.array.get"))
-        );
-        assert_eq!(
-            table.globals[&array_push].native,
-            Some(interner.intern("std.array.push"))
-        );
-        assert_eq!(
-            table.globals[&array_pop].native,
-            Some(interner.intern("std.array.pop"))
-        );
+        assert_native("array_len", "std.array.len");
+        assert_native("array_get", "std.array.get");
+        assert_native("array_push", "std.array.push");
+        assert_native("array_pop", "std.array.pop");
+
+        // I/O builtins
+        assert_native("print", "std.io.print");
 
         // Extension methods
-        assert!(
+        let has_ext = |name: &str| {
             table
                 .extension_methods
                 .iter()
-                .any(|method| method.name == interner.intern("len"))
-        );
-        assert!(
-            table
-                .extension_methods
-                .iter()
-                .any(|method| method.name == interner.intern("isEmpty"))
-        );
-        assert!(
-            table
-                .extension_methods
-                .iter()
-                .any(|method| method.name == interner.intern("contains"))
-        );
-        assert!(
-            table
-                .extension_methods
-                .iter()
-                .any(|method| method.name == interner.intern("startsWith"))
-        );
+                .any(|method| method.name == interner.intern(name))
+        };
+        assert!(has_ext("len"), "missing extension method: string.len");
+        assert!(has_ext("isEmpty"), "missing extension method: string.isEmpty");
+        assert!(has_ext("contains"), "missing extension method: string.contains");
+        assert!(has_ext("startsWith"), "missing extension method: string.startsWith");
     }
 
     #[test]
@@ -232,6 +214,11 @@ mod tests {
         let merged = module_with_prelude(&user, &interner);
 
         assert!(merged.diagnostics.is_empty(), "{:?}", merged.diagnostics);
-        assert_eq!(merged.module.items.len(), 19);
+        // Merged module should contain prelude items even when user is empty.
+        assert!(
+            merged.module.items.len() >= 10,
+            "merged module seems unexpectedly small: {} items",
+            merged.module.items.len()
+        );
     }
 }

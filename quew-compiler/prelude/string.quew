@@ -1,0 +1,29 @@
+@@rust("std.string.len")
+!@@function len(value: string): number
+
+@@rust("std.string.is_empty")
+!@@function is_empty(value: string): bool
+
+@@rust("std.string.contains")
+!@@function contains(value: string, needle: string): bool
+
+@@rust("std.string.starts_with")
+!@@function starts_with(value: string, prefix: string): bool
+
+extend string {
+    function len(): number {
+        return len(self)
+    }
+
+    function isEmpty(): bool {
+        return is_empty(self)
+    }
+
+    function contains(needle: string): bool {
+        return contains(self, needle)
+    }
+
+    function startsWith(prefix: string): bool {
+        return starts_with(self, prefix)
+    }
+}

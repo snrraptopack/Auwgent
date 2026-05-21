@@ -7,6 +7,9 @@
 pub mod array;
 pub mod string;
 pub mod number;
+pub mod io;
+pub mod net;
+pub mod json;
 
 #[cfg(test)]
 mod tests {

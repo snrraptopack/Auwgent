@@ -1,0 +1,2 @@
+@@rust("std.io.print")
+!@@function print<T>(value: T): null

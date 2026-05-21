@@ -158,6 +158,7 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     &mut unify,
                     &mut diagnostics,
                     &mut resolved,
+                    0,
                 );
                 local.pop();
             }
@@ -194,6 +195,7 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                     &mut unify,
                     &mut diagnostics,
                     &mut resolved,
+                    0,
                 );
                 local.pop();
             }
@@ -244,6 +246,7 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                         &mut unify,
                         &mut diagnostics,
                         &mut resolved,
+                        0,
                     );
                     local.pop();
                 }
@@ -288,6 +291,7 @@ fn check_body(
     unify: &mut UnifyTable,
     diags: &mut Vec<Diagnostic>,
     resolved: &mut ResolvedExpressionMap,
+    loop_depth: usize,
 ) {
     let mut unreachable = false;
     for stmt in stmts {
@@ -360,13 +364,13 @@ fn check_body(
             Stmt::If(s) => {
                 infer_expr(&s.condition, table, local, wk, prim, unify, diags, resolved);
                 local.push();
-                check_body(&s.then_body, table, local, ret_ty, wk, prim, unify, diags, resolved);
+                check_body(&s.then_body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth);
                 local.pop();
                 match &s.else_clause {
                     ElseClause::None => {}
                     ElseClause::Else(body, _) => {
                         local.push();
-                        check_body(body, table, local, ret_ty, wk, prim, unify, diags, resolved);
+                        check_body(body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth);
                         local.pop();
                     }
                     ElseClause::ElseIf(if_stmt) => {
@@ -382,6 +386,7 @@ fn check_body(
                             unify,
                             diags,
                             resolved,
+                            loop_depth,
                         );
                         local.pop();
                     }
@@ -411,7 +416,7 @@ fn check_body(
                 if let Some(idx) = f.index {
                     local.define(idx, Ty::number(), f.span, diags);
                 }
-                check_body(&f.body, table, local, ret_ty, wk, prim, unify, diags, resolved);
+                check_body(&f.body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth + 1);
                 local.pop();
             }
             Stmt::While(w) => {
@@ -425,11 +430,31 @@ fn check_body(
                     ));
                 }
                 local.push();
-                check_body(&w.body, table, local, ret_ty, wk, prim, unify, diags, resolved);
+                check_body(&w.body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth + 1);
                 local.pop();
             }
             Stmt::Expr(e) => {
                 infer_expr(&e.expr, table, local, wk, prim, unify, diags, resolved);
+            }
+            Stmt::Break(span) => {
+                if loop_depth == 0 {
+                    diags.push(mk_err(
+                        *span,
+                        "`break` outside of loop".into(),
+                        "can only be used inside a loop",
+                        None,
+                    ));
+                }
+            }
+            Stmt::Continue(span) => {
+                if loop_depth == 0 {
+                    diags.push(mk_err(
+                        *span,
+                        "`continue` outside of loop".into(),
+                        "can only be used inside a loop",
+                        None,
+                    ));
+                }
             }
         }
     }
@@ -871,6 +896,8 @@ fn stmt_span(stmt: &Stmt) -> Span {
         Stmt::For(s) => s.span,
         Stmt::While(s) => s.span,
         Stmt::Expr(s) => s.span,
+        Stmt::Break(span) => *span,
+        Stmt::Continue(span) => *span,
     }
 }
 

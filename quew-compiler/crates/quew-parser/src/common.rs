@@ -125,12 +125,13 @@ where
     I: Input<'tok>,
 {
     select! {
-        TokenKind::Ident    => (),
-        TokenKind::TyString => (),
-        TokenKind::TyNumber => (),
-        TokenKind::TyFloat  => (),
-        TokenKind::TyBool   => (),
-        TokenKind::TyVoid   => (),
+        TokenKind::Ident       => (),
+        TokenKind::TyString    => (),
+        TokenKind::TyNumber    => (),
+        TokenKind::TyFloat     => (),
+        TokenKind::TyBool      => (),
+        TokenKind::TyVoid      => (),
+        TokenKind::NullLiteral => (),
     }
     .map_with(move |_, extra| {
         let s: CSpan = extra.span();

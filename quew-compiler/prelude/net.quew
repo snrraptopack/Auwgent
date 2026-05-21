@@ -1,0 +1,16 @@
+
+@@type Headers = {}
+
+@@type FetchConfig = {
+    method?: string
+    headers?: Headers
+    body?: string
+}
+
+type FetchResult<T> = {
+    data: T
+    error: string
+}
+
+@@rust("std.net.fetch")
+!@@function fetch<T>(url: string, config?: FetchConfig): FetchResult<T>

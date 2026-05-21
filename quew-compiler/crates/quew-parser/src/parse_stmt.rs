@@ -218,6 +218,16 @@ where
                 })
         };
 
+        // `break`
+        let break_stmt = just(TokenKind::KwBreak).map_with(|_, extra| {
+            Stmt::Break(to_span(extra.span()))
+        });
+
+        // `continue`
+        let continue_stmt = just(TokenKind::KwContinue).map_with(|_, extra| {
+            Stmt::Continue(to_span(extra.span()))
+        });
+
         // Fall-through: bare expression statement
         let expr_stmt = e.clone().map_with(|expr, extra| {
             Stmt::Expr(ExprStmt {
@@ -233,6 +243,8 @@ where
             reply_stmt,
             for_stmt,
             while_stmt,
+            break_stmt,
+            continue_stmt,
             expr_stmt,
         ))
         // On stmt error, consume to end of line or closing brace and emit an Error expr.

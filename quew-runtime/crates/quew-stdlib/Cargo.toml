@@ -10,5 +10,8 @@ publish = false
 inventory = { workspace = true }
 quew-macros = { path = "../quew-macros" }
 quew-runtime = { path = "../quew-runtime" }
+reqwest = { version = "0.12", features = ["blocking"] }
+serde_json = "1.0"
+indexmap = { workspace = true }
 
 [build-dependencies]

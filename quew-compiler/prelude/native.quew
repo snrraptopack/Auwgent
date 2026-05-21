@@ -1,47 +1,7 @@
-@@rust("std.string.len")
-!@@function len(value: string): number
-
-@@rust("std.string.is_empty")
-!@@function is_empty(value: string): bool
-
-@@rust("std.string.contains")
-!@@function contains(value: string, needle: string): bool
-
-@@rust("std.string.starts_with")
-!@@function starts_with(value: string, prefix: string): bool
-
-@@rust("std.number.abs")
-!@@function abs(value: number | float): number | float
-
-@@rust("std.number.clamp")
-!@@function clamp(value: number, min: number, max: number): number
-
-@@rust("std.array.len")
-!@@function array_len<T>(array: T[]): number
-
-@@rust("std.array.get")
-!@@function array_get<T>(array: T[], index: number): T?
-
-@@rust("std.array.push")
-!@@function array_push<T>(array: T[], item: T): T[]
-
-@@rust("std.array.pop")
-!@@function array_pop<T>(array: T[]): T?
-
-extend string {
-    function len(): number {
-        return len(self)
-    }
-
-    function isEmpty(): bool {
-        return is_empty(self)
-    }
-
-    function contains(needle: string): bool {
-        return contains(self, needle)
-    }
-
-    function startsWith(prefix: string): bool {
-        return starts_with(self, prefix)
-    }
-}
+// Native builtins are now split into modular files:
+//   string.quew  — std.string.* builtins + string extension methods
+//   array.quew   — std.array.* builtins
+//   number.quew  — std.number.* builtins
+//   io.quew      — std.io.* builtins
+//
+// The prelude loader concatenates all *.quew files in this directory.

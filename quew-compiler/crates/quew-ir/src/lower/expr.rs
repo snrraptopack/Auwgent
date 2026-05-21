@@ -151,7 +151,20 @@ pub fn lower_expr(
             }
             result.unwrap_or(IrExpr::Lit(IrLit::String(interner.intern(""))))
         }
-        Expr::Is(_) | Expr::Provider(_) | Expr::Error(_) => IrExpr::Lit(IrLit::Null),
+        Expr::Is(is_expr) => {
+            let ty_name = match &is_expr.ty {
+                quew_ast::TypeExpr::Named(name, _) => *name,
+                // For array types like `T[]`, use "array" as the runtime check.
+                quew_ast::TypeExpr::Array(_, _) => interner.intern("array"),
+                // Other complex types fall back to object check at runtime.
+                _ => interner.intern("object"),
+            };
+            IrExpr::Is {
+                value: Box::new(lower_expr(&is_expr.value, check, definitions, interner, ctx)),
+                ty: ty_name,
+            }
+        }
+        Expr::Provider(_) | Expr::Error(_) => IrExpr::Lit(IrLit::Null),
     }
 }
 

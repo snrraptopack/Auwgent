@@ -17,6 +17,10 @@ pub enum Stmt {
     While(WhileStmt),
     /// An expression used as a statement (e.g. a bare function call).
     Expr(ExprStmt),
+    /// `break` — exit the enclosing loop.
+    Break(Span),
+    /// `continue` — skip to the next iteration of the enclosing loop.
+    Continue(Span),
 }
 
 impl Stmt {
@@ -29,6 +33,8 @@ impl Stmt {
             Self::For(s) => s.span,
             Self::While(s) => s.span,
             Self::Expr(s) => s.span,
+            Self::Break(span) => *span,
+            Self::Continue(span) => *span,
         }
     }
 }

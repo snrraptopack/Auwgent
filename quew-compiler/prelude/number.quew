@@ -1,0 +1,5 @@
+@@rust("std.number.abs")
+!@@function abs(value: number | float): number | float
+
+@@rust("std.number.clamp")
+!@@function clamp(value: number, min: number, max: number): number

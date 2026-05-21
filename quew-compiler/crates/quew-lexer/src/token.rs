@@ -111,6 +111,10 @@ pub enum TokenKind {
     KwIn,
     #[token("while")]
     KwWhile,
+    #[token("break")]
+    KwBreak,
+    #[token("continue")]
+    KwContinue,
     /// `turns` — reserved keyword. Only valid in `return expr with turns`.
     /// No variable or binding may be named `turns`.
     #[token("turns")]
@@ -282,6 +286,8 @@ impl std::fmt::Display for TokenKind {
             Self::KwWith => "`with`",
             Self::KwFor => "`for`",
             Self::KwWhile => "`while`",
+            Self::KwBreak => "`break`",
+            Self::KwContinue => "`continue`",
             Self::KwIn => "`in`",
             Self::KwTurns => "`turns`",
             Self::KwIs => "`is`",

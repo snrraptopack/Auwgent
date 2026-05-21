@@ -18,3 +18,4 @@ quew-parser   = { path = "../../../quew-compiler/crates/quew-parser" }
 quew-checker  = { path = "../../../quew-compiler/crates/quew-checker" }
 quew-source   = { path = "../../../quew-compiler/crates/quew-source" }
 quew-errors   = { path = "../../../quew-compiler/crates/quew-errors" }
+quew-stdlib   = { path = "../quew-stdlib" }

@@ -37,14 +37,13 @@
 | `return expr` | ✅ | ✅ | ✅ | ✅ |
 | `return expr with turns` | ✅ | ✅ | ✅ | ❌ |
 | `reply(expr) with { ... }` | ✅ | ✅ | ✅ | ❌ |
-| `for idx, value in iterable` | ✅ | ⚠️ | ⚠️ | ❌ |
-| `while` | ❌ | ❌ | ❌ | ❌ |
+| `for idx, value in iterable` | ✅ | ✅ | ✅ | ✅ |
+| `while` | ✅ | ✅ | ✅ | ✅ |
 | `break` / `continue` | ❌ | ❌ | ❌ | ❌ |
 | Expression stmt | ✅ | ✅ | ✅ | ✅ |
 
 **Gaps:**
-- `for` loops parse but the checker treats them as no-ops (empty type) and the lowerer emits nothing useful.
-- No `while`, `break`, or `continue`.
+- No `break` or `continue`.
 
 ---
 
@@ -57,19 +56,18 @@
 | String `"""..."""` | ✅ | ✅ | ✅ | ✅ |
 | String interpolation `"hello {name}"` | ✅ | ✅ | ✅ | ✅ |
 | Identifier | ✅ | ✅ | ✅ | ✅ |
-| Binary ops (+, -, ==, and, or, =) | ✅ | ✅ | ✅ | ✅ |
+| Binary ops (+, -, *, /, %, ==, !=, <, <=, >, >=, and, or, =) | ✅ | ✅ | ✅ | ✅ |
 | Unary `not` | ✅ | ✅ | ✅ | ✅ |
 | Call `foo()` | ✅ | ✅ | ✅ | ✅ |
 | Provider `gemini("...")` | ✅ | ✅ | ✅ | ✅ |
 | Member `obj.field` | ✅ | ✅ | ✅ | ✅ |
 | Array `[a, b]` | ✅ | ✅ | ✅ | ✅ |
+| Object literal `{ k: v }` | ✅ | ✅ | ✅ | ✅ |
 | Postfix if `a if cond else b` | ✅ | ✅ | ✅ | ✅ |
-| Type check `x is Type` | ✅ | ⚠️ | ❌ | ❌ |
-| Ternary `cond then a else b` | ❌ | ❌ | ❌ | ❌ |
+| Type check `x is Type` | ✅ | ⚠️ | ✅ | ✅ |
 
 **Gaps:**
-- `x is Type` parses and checks but is NOT lowered to IR (no runtime discrimination).
-- `not.txt` uses `then` in expressions like `inputType.data.includes("high") then One(input) else Two(input)` — this is distinct from postfix-if and not parsed.
+- `x is Type` is fully functional for primitives and records (best-effort for records — checks `Value::Object` only).
 
 ---
 
@@ -133,6 +131,7 @@
 | Hardcoded stdlib in runtime | ❌ (removed per `one.txt`) |
 | `#[quew_builtin]` proc-macro | ✅ |
 | `inventory` link-time registration | ✅ |
+| `print<T>(value: T): null` | ✅ |
 | `fetch()` / HTTP stdlib | ❌ |
 
 ---
@@ -169,10 +168,8 @@
 ## Summary: Biggest Missing Pieces
 
 1. **Middleware** — Tokenized but never parsed, checked, or lowered. This is a major feature in `not.txt`.
-2. **`while`, `break`, `continue`** — Basic control flow missing.
-3. **`x is Type` runtime discrimination** — Parsed but not lowered or executed.
-4. **`x is Type` runtime discrimination** — Parsed but not lowered or executed.
-5. **`for` loop** — Parsed but checker treats as no-op; lowerer emits no IR.
-6. **Dynamic model in `with` block** — Not properly validated/lowered.
-7. **HostToolCall / Reply / AgentCall runtime** — IR nodes exist but executor can't run them.
-8. **`#[quew_builtin]` proc-macro** — Implemented in Plan 17.
+2. **`break` / `continue`** — Loop control flow missing.
+3. **Dynamic model in `with` block** — Not properly validated/lowered.
+4. **HostToolCall / Reply / AgentCall runtime** — IR nodes exist but executor can't run them (LLM-related, deferred).
+5. **`fetch()` builtin** — Not started; needed for HTTP drivers in quew.
+6. **JSON builtins** (`json_parse`, `json_stringify`, `json_get`) — Not started; needed for response/request handling.
