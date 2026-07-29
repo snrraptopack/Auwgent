@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 
-use super::*;
 use super::utils::compile_source;
+use super::*;
 
 #[test]
 fn execute_typed_object_literal() {

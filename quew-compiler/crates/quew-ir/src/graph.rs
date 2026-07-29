@@ -353,10 +353,7 @@ pub enum IrExpr {
         else_: Box<IrExpr>,
     },
     /// Runtime type check: `value is Type`.
-    Is {
-        value: Box<IrExpr>,
-        ty: InternedStr,
-    },
+    Is { value: Box<IrExpr>, ty: InternedStr },
 }
 
 /// A literal value in the IR.

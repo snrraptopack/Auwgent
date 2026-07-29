@@ -13,7 +13,7 @@ use quew_ast::{
 use quew_interner::Interner;
 use quew_lexer::{AnnotationKind, TokenKind};
 
-use crate::common::{Input, ParseError, field_name, ident, string_literal, to_span};
+use crate::common::{Input, ParseError, field_name, ident, newlines, string_literal, to_span};
 use crate::parse_annot::annotations;
 use crate::parse_expr::expr;
 use crate::parse_param::{param, param_list};
@@ -127,6 +127,7 @@ where
                 .ignore_then(type_expr(source, interner.clone()))
                 .or_not(),
         )
+        .then_ignore(newlines())
         .then(block(source, interner.clone()))
         .map_with(|((((annotations, name), param), return_ty), body), extra| {
             Item::Agent(AgentDecl {
@@ -190,6 +191,7 @@ where
                 .ignore_then(type_expr(source, interner.clone()))
                 .or_not(),
         )
+        .then_ignore(newlines())
         .then(block(source, interner.clone()))
         .map_with(
             |(((((annotations, name), type_params), params), return_ty), body), extra| {
@@ -231,8 +233,8 @@ where
         .then_ignore(just(TokenKind::Newline).repeated().ignored())
         .or_not();
 
-    // Builtin function declarations are trusted prelude signatures. They do not
-    // need a Quew body until Plan 11 introduces explicit `@@rust("id")` leaves.
+    // Builtin function declarations are trusted prelude declarations. Most are
+    // signatures only, but prelude functions may also carry Quew bodies.
     native_binding
         .then(choice((
             just(TokenKind::BangAtAt).to(BuiltinFunctionMeta::internal()),
@@ -248,8 +250,9 @@ where
                 .ignore_then(type_expr(source, interner.clone()))
                 .or_not(),
         )
+        .then(block(source, interner.clone()).or_not())
         .map_with(
-            |(((((native, builtin), name), type_params), params), return_ty), extra| {
+            |((((((native, builtin), name), type_params), params), return_ty), body), extra| {
                 Item::Function(FunctionDecl {
                     annotations: vec![],
                     builtin,
@@ -258,7 +261,7 @@ where
                     type_params,
                     params,
                     return_ty,
-                    body: vec![],
+                    body: body.unwrap_or_default(),
                     span: to_span(extra.span()),
                 })
             },
@@ -551,6 +554,7 @@ where
 
     just(TokenKind::KwExtend)
         .ignore_then(type_expr(source, interner.clone()))
+        .then_ignore(newlines())
         .then(methods)
         .map_with(|(receiver, methods), extra| {
             Item::Extend(ExtendDecl {
@@ -576,6 +580,7 @@ where
                 .or_not(),
         )
         .then_ignore(just(TokenKind::Eq))
+        .then_ignore(newlines())
         .then(expr(source, interner.clone()))
         .map_with(|((name, ty), init), extra| {
             Item::Let(LetDecl {

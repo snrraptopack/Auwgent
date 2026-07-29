@@ -1,0 +1,59 @@
+
+type Message = {
+    role: string
+    content: string
+}
+
+// Declare the payload types for Gemini API
+@@type GeminiPart = {
+    text: string
+}
+
+@@type GeminiContent = {
+    role: string
+    parts: GeminiPart[]
+}
+
+@@type GeminiRequest = {
+    contents: GeminiContent[]
+}
+
+@@function call_gemini(apiKey: string, modelName: string, messages: Message[]): string {
+    // 1. Map our standard Message format to Gemini's content format
+    let geminiContents: GeminiContent[] = []
+    for msg in messages {
+        let parts: GeminiPart[] = [{ text: msg.content }]
+        let role = "model" if msg.role == "assistant" else "user"
+        geminiContents = geminiContents.push({ role: role, parts: parts })
+    }
+
+    let requestBody: GeminiRequest = { contents: geminiContents }
+    let url = "https://generativelanguage.googleapis.com/v1beta/models/{modelName}:generateContent?key={apiKey}"
+
+    // 2. Fetch data directly in Quew
+    let response = fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: json_stringify(requestBody)
+    })
+
+    if response.error != "" {
+        return "Error fetching from Gemini: " + response.error
+    }
+
+    // 3. Extract the response text using JSON helpers
+    let json_data = json_parse(response.data)
+
+    // Path extraction: candidates.0.content.parts.0.text
+    let candidates = json_get(json_data, "candidates")
+    print(candidates)
+    let first_candidate = json_get(candidates, "0")
+    let content = json_get(first_candidate, "content")
+    let parts = json_get(content, "parts")
+    let first_part = json_get(parts, "0")
+    let text = json_get(first_part, "text")
+
+    return text
+}

@@ -23,10 +23,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use quew_interner::Interner;
-use quew_ir::graph::{AgentGraph, NodeId, NodeKind};
 use quew_ir::QuewGraphIR;
+use quew_ir::graph::{AgentGraph, NodeId, NodeKind};
 
-use crate::eval::{eval_expr, EvalError};
+use crate::eval::{EvalError, eval_expr};
 use crate::native::{NativeHandler, NativeRegistry};
 use crate::value::Value;
 
@@ -88,7 +88,11 @@ impl std::fmt::Display for ExecutionError {
             ExecutionError::NativeError { message } => {
                 write!(f, "native function error: {message}")
             }
-            ExecutionError::TypeMismatch { expected, found, node } => {
+            ExecutionError::TypeMismatch {
+                expected,
+                found,
+                node,
+            } => {
                 write!(
                     f,
                     "type mismatch at node {node}: expected {expected}, found {found}"
@@ -119,7 +123,11 @@ impl<'a> Execution<'a> {
         interner: &'a Arc<Interner>,
         natives: &'a NativeRegistry,
     ) -> Self {
-        Self { ir, interner, natives }
+        Self {
+            ir,
+            interner,
+            natives,
+        }
     }
 
     /// Run a single graph from its entry node to its output node.
@@ -184,9 +192,7 @@ impl<'a> Execution<'a> {
                     } => {
                         // merge node — execute below
                     }
-                    NodeKind::LetBind { name, .. }
-                        if self.interner.resolve(*name) == "_" =>
-                    {
+                    NodeKind::LetBind { name, .. } if self.interner.resolve(*name) == "_" => {
                         // temporary binding (e.g. return object) — execute below
                     }
                     NodeKind::Output { .. } => {
@@ -216,18 +222,19 @@ impl<'a> Execution<'a> {
                     outputs.insert(*node_id, output_value);
                 }
                 NodeKind::LetBind { name: _, value } => {
-                    let result = match eval_expr(value, &outputs, self.interner, self.natives, self.ir) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            return (
-                                Err(ExecutionError::EvalError {
-                                    node: *node_id,
-                                    source: e,
-                                }),
-                                outputs,
-                            );
-                        }
-                    };
+                    let result =
+                        match eval_expr(value, &outputs, self.interner, self.natives, self.ir) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                return (
+                                    Err(ExecutionError::EvalError {
+                                        node: *node_id,
+                                        source: e,
+                                    }),
+                                    outputs,
+                                );
+                            }
+                        };
                     outputs.insert(*node_id, result);
                 }
                 NodeKind::Branch {
@@ -257,9 +264,7 @@ impl<'a> Execution<'a> {
                         }
                         _ => {
                             return (
-                                Err(ExecutionError::InvalidBranchCondition {
-                                    node: *node_id,
-                                }),
+                                Err(ExecutionError::InvalidBranchCondition { node: *node_id }),
                                 outputs,
                             );
                         }
@@ -307,9 +312,7 @@ impl<'a> Execution<'a> {
                                 Ok(v) => v,
                                 Err(e) => {
                                     return (
-                                        Err(ExecutionError::NativeError {
-                                            message: e.message,
-                                        }),
+                                        Err(ExecutionError::NativeError { message: e.message }),
                                         outputs,
                                     );
                                 }
@@ -378,10 +381,7 @@ impl<'a> Execution<'a> {
 
                     for (idx, item) in array.iter().enumerate() {
                         let mut obj = indexmap::IndexMap::new();
-                        obj.insert(
-                            self.interner.resolve(*value_name).to_string(),
-                            item.clone(),
-                        );
+                        obj.insert(self.interner.resolve(*value_name).to_string(), item.clone());
                         if let Some(idx_name) = index_name {
                             obj.insert(
                                 self.interner.resolve(*idx_name).to_string(),
@@ -414,12 +414,15 @@ impl<'a> Execution<'a> {
                                 );
                             }
                         };
-                        let (body_result, body_outputs) = self.run_graph(body_graph_ref, Value::Object(obj));
+                        let (body_result, body_outputs) =
+                            self.run_graph(body_graph_ref, Value::Object(obj));
 
                         // Propagate mutated captured variables back to parent outputs.
                         for (name, parent_data_ref) in captured {
                             if let Some(body_data_ref) = body_graph_ref.bindings.get(name) {
-                                if let Ok(new_val) = self.resolve_data_ref(body_data_ref, &body_outputs) {
+                                if let Ok(new_val) =
+                                    self.resolve_data_ref(body_data_ref, &body_outputs)
+                                {
                                     outputs.insert(parent_data_ref.node, new_val.clone());
                                 }
                             }
@@ -467,12 +470,15 @@ impl<'a> Execution<'a> {
                                 );
                             }
                         };
-                        let (body_result, body_outputs) = self.run_graph(body_graph_ref, Value::Object(obj));
+                        let (body_result, body_outputs) =
+                            self.run_graph(body_graph_ref, Value::Object(obj));
 
                         // Propagate mutated captured variables back to parent outputs.
                         for (name, parent_data_ref) in captured {
                             if let Some(body_data_ref) = body_graph_ref.bindings.get(name) {
-                                if let Ok(new_val) = self.resolve_data_ref(body_data_ref, &body_outputs) {
+                                if let Ok(new_val) =
+                                    self.resolve_data_ref(body_data_ref, &body_outputs)
+                                {
                                     outputs.insert(parent_data_ref.node, new_val.clone());
                                 }
                             }
@@ -525,12 +531,11 @@ impl<'a> Execution<'a> {
         // Return the output node's value, or the control error if one was set.
         let result = match control {
             Some(err) => Err(err),
-            None => outputs
-                .get(&graph.return_node)
-                .cloned()
-                .ok_or_else(|| ExecutionError::MissingReturnValue {
+            None => outputs.get(&graph.return_node).cloned().ok_or_else(|| {
+                ExecutionError::MissingReturnValue {
                     graph_id: graph.graph_id.clone(),
-                }),
+                }
+            }),
         };
         (result, outputs)
     }

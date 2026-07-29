@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use quew_errors::{Diagnostic, Severity};
 use quew_interner::Interner;
 use quew_source::SourceMap;
+use quew_stdlib as _;
 
 #[derive(Parser)]
 #[command(name = "quew", version, about = "Compile and check quew source files")]
@@ -20,6 +21,14 @@ enum Command {
     Check { file: PathBuf },
     /// Parse, type-check, lower to in-memory graph IR, and print a summary.
     Compile { file: PathBuf },
+
+    /// Parse, compile, and run a .quew file.
+    Run {
+        file: PathBuf,
+        /// The target function or agent to execute (e.g. "function:main")
+        #[arg(long, default_value = "function:main")]
+        target: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -70,6 +79,33 @@ fn run() -> Result<(), ExitCode> {
                 ir.graphs.len()
             );
             Ok(())
+        }
+
+        Command::Run { file, target } => {
+            let pipeline = compile_frontend(&file)?;
+            emit_diagnostics(&pipeline.diagnostics);
+            if has_errors(&pipeline.diagnostics) {
+                return Err(ExitCode::from(1));
+            }
+
+            // Lower AST to IR
+            let ir = quew_ir::lower::lower(&pipeline.module, &pipeline.check, &pipeline.interner);
+
+            // Collect all native standard library implementations
+            let natives = quew_runtime::native::NativeRegistry::collect();
+
+            // Instantiate and run the interpreter
+            let exec = quew_runtime::execution::Execution::new(&ir, &pipeline.interner, &natives);
+            match exec.run(&target, quew_runtime::value::Value::Null) {
+                Ok(result) => {
+                    println!("Execution result: {}", result);
+                    Ok(())
+                }
+                Err(err) => {
+                    eprintln!("Execution error: {:?}", err);
+                    Err(ExitCode::from(1))
+                }
+            }
         }
     }
 }

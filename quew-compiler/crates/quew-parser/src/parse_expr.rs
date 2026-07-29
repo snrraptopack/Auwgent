@@ -18,7 +18,7 @@ use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
 use crate::common::{
-    CSpan, Input, ParseError, field_name, ident, int_literal, string_literal, to_span,
+    CSpan, Input, ParseError, field_name, ident, int_literal, newlines, string_literal, to_span,
     triple_string,
 };
 use crate::parse_type::type_expr;
@@ -53,34 +53,36 @@ where
         });
 
         let int_interp = interner.clone();
-        let triple = triple_string(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
-            let raw = &source[s.start..s.end];
-            let content = &raw[3..raw.len().saturating_sub(3)];
-            if has_interpolation(content) {
-                build_interpolated(content, s.start + 3, &int_interp)
-            } else {
-                Expr::Lit(Lit::String(StringLit {
-                    value: val,
-                    kind: StringKind::Triple,
-                    span: to_span(s),
-                }))
-            }
-        });
+        let triple =
+            triple_string(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
+                let raw = &source[s.start..s.end];
+                let content = &raw[3..raw.len().saturating_sub(3)];
+                if has_interpolation(content) {
+                    build_interpolated(content, s.start + 3, &int_interp)
+                } else {
+                    Expr::Lit(Lit::String(StringLit {
+                        value: val,
+                        kind: StringKind::Triple,
+                        span: to_span(s),
+                    }))
+                }
+            });
 
         let int_interp2 = interner.clone();
-        let str_lit = string_literal(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
-            let raw = &source[s.start..s.end];
-            let content = &raw[1..raw.len().saturating_sub(1)];
-            if has_interpolation(content) {
-                build_interpolated(content, s.start + 1, &int_interp2)
-            } else {
-                Expr::Lit(Lit::String(StringLit {
-                    value: val,
-                    kind: StringKind::Regular,
-                    span: to_span(s),
-                }))
-            }
-        });
+        let str_lit =
+            string_literal(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
+                let raw = &source[s.start..s.end];
+                let content = &raw[1..raw.len().saturating_sub(1)];
+                if has_interpolation(content) {
+                    build_interpolated(content, s.start + 1, &int_interp2)
+                } else {
+                    Expr::Lit(Lit::String(StringLit {
+                        value: val,
+                        kind: StringKind::Regular,
+                        span: to_span(s),
+                    }))
+                }
+            });
 
         let bool_lit = select! {
             TokenKind::True  => true,
@@ -118,12 +120,21 @@ where
 
         // ── Array, object, and grouping ───────────────────────────────────────
 
+        let expr_sep = just(TokenKind::Comma)
+            .or(just(TokenKind::Newline))
+            .repeated()
+            .at_least(1)
+            .ignored();
+
         let array = expr_rec
             .clone()
-            .separated_by(just(TokenKind::Comma))
+            .separated_by(expr_sep.clone())
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(just(TokenKind::LBracket), just(TokenKind::RBracket))
+            .delimited_by(
+                just(TokenKind::LBracket).then_ignore(newlines()),
+                newlines().ignore_then(just(TokenKind::RBracket)),
+            )
             .map_with(|elements, extra: &mut _| {
                 Expr::Array(ArrayExpr {
                     elements,
@@ -131,7 +142,11 @@ where
                 })
             });
 
-        let object_field = ident(source, interner.clone())
+        let object_key =
+            ident(source, interner.clone())
+                .or(string_literal(source, interner.clone()).map(|(name, _)| name));
+
+        let object_field = object_key
             .then_ignore(just(TokenKind::Colon))
             .then(expr_rec.clone())
             .map_with(|(name, value), extra: &mut _| ObjectField {
@@ -141,10 +156,13 @@ where
             });
 
         let object = object_field
-            .separated_by(just(TokenKind::Comma))
+            .separated_by(expr_sep)
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(just(TokenKind::LBrace), just(TokenKind::RBrace))
+            .delimited_by(
+                just(TokenKind::LBrace).then_ignore(newlines()),
+                newlines().ignore_then(just(TokenKind::RBrace)),
+            )
             .map_with(|fields, extra: &mut _| {
                 Expr::Object(ObjectExpr {
                     fields,
@@ -418,9 +436,7 @@ fn build_interpolated(content: &str, offset: usize, interner: &Arc<Interner>) ->
                     }
                     Err(_) => {
                         // Fallback: treat as literal text on parse error.
-                        segments.push(InterpolatedSegment::Text(
-                            format!("{{{expr_text}}}"),
-                        ));
+                        segments.push(InterpolatedSegment::Text(format!("{{{expr_text}}}")));
                     }
                 }
                 i = j + 1;

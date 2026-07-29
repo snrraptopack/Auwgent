@@ -19,6 +19,7 @@ const NUMBER_PRELUDE: &str = include_str!("../../../prelude/number.quew");
 const IO_PRELUDE: &str = include_str!("../../../prelude/io.quew");
 const NET_PRELUDE: &str = include_str!("../../../prelude/net.quew");
 const JSON_PRELUDE: &str = include_str!("../../../prelude/json.quew");
+const GEMINI_PRELUDE: &str = include_str!("../../../prelude/gemini.quew");
 
 const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<quew-prelude:tools.quew>", TOOLS_PRELUDE),
@@ -30,6 +31,7 @@ const PRELUDE_FILES: &[(&str, &str)] = &[
     ("<quew-prelude:io.quew>", IO_PRELUDE),
     ("<quew-prelude:net.quew>", NET_PRELUDE),
     ("<quew-prelude:json.quew>", JSON_PRELUDE),
+    ("<quew-prelude:gemini.quew>", GEMINI_PRELUDE),
 ];
 
 #[derive(Debug)]
@@ -94,6 +96,20 @@ mod tests {
             parsed.module.items.len() >= 10,
             "prelude seems unexpectedly small: {} items",
             parsed.module.items.len()
+        );
+    }
+
+    #[test]
+    fn prelude_checks_without_diagnostics() {
+        let interner = Arc::new(Interner::new());
+        let parsed = parse_prelude(&interner);
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+
+        let checked = crate::check(&parsed.module, &interner);
+        assert!(
+            checked.diagnostics.is_empty(),
+            "unexpected diagnostics: {:?}",
+            checked.diagnostics
         );
     }
 
@@ -199,9 +215,18 @@ mod tests {
                 .any(|method| method.name == interner.intern(name))
         };
         assert!(has_ext("len"), "missing extension method: string.len");
-        assert!(has_ext("isEmpty"), "missing extension method: string.isEmpty");
-        assert!(has_ext("contains"), "missing extension method: string.contains");
-        assert!(has_ext("startsWith"), "missing extension method: string.startsWith");
+        assert!(
+            has_ext("isEmpty"),
+            "missing extension method: string.isEmpty"
+        );
+        assert!(
+            has_ext("contains"),
+            "missing extension method: string.contains"
+        );
+        assert!(
+            has_ext("startsWith"),
+            "missing extension method: string.startsWith"
+        );
     }
 
     #[test]

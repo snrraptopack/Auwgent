@@ -6,8 +6,8 @@
 use std::sync::Arc;
 
 use quew_ast::{BinaryOp as AstBinaryOp, Expr, InterpolatedSegment, Lit, UnaryOp as AstUnaryOp};
-use quew_checker::resolved::CallKind;
 use quew_checker::CheckResult;
+use quew_checker::resolved::CallKind;
 use quew_interner::Interner;
 use quew_types::{PrimTy, Ty};
 
@@ -37,10 +37,22 @@ pub fn lower_expr(
         },
         Expr::Unary(unary) => IrExpr::Unary {
             op: lower_unary_op(unary.op),
-            expr: Box::new(lower_expr(&unary.operand, check, definitions, interner, ctx)),
+            expr: Box::new(lower_expr(
+                &unary.operand,
+                check,
+                definitions,
+                interner,
+                ctx,
+            )),
         },
         Expr::Member(member) => IrExpr::Member {
-            base: Box::new(lower_expr(&member.object, check, definitions, interner, ctx)),
+            base: Box::new(lower_expr(
+                &member.object,
+                check,
+                definitions,
+                interner,
+                ctx,
+            )),
             field: member.field,
         },
         Expr::Call(call) => {
@@ -58,7 +70,11 @@ pub fn lower_expr(
                         );
 
                         // Map explicit args using param names from the extension def.
-                        if let Some(ext) = definitions.extensions.iter().find(|e| e.graph_ref == graph_ref) {
+                        if let Some(ext) = definitions
+                            .extensions
+                            .iter()
+                            .find(|e| e.graph_ref == graph_ref)
+                        {
                             for (idx, (param_name, _)) in ext.params.iter().enumerate() {
                                 if let Some(arg) = call.args.get(idx) {
                                     args.insert(
@@ -71,7 +87,10 @@ pub fn lower_expr(
                             // Fallback: positional args with generated names.
                             for (idx, arg) in call.args.iter().enumerate() {
                                 let name = interner.intern(&format!("arg{idx}"));
-                                args.insert(name, lower_expr(arg, check, definitions, interner, ctx));
+                                args.insert(
+                                    name,
+                                    lower_expr(arg, check, definitions, interner, ctx),
+                                );
                             }
                         }
 
@@ -82,9 +101,9 @@ pub fn lower_expr(
 
             let function = match call.callee.as_ref() {
                 Expr::Ident(ident) => ident.name,
-                other => panic!(
-                    "lowering bug: non-identifier call callee in pure expression: {other:?}"
-                ),
+                other => {
+                    panic!("lowering bug: non-identifier call callee in pure expression: {other:?}")
+                }
             };
 
             let mut args = indexmap::IndexMap::new();
@@ -125,9 +144,27 @@ pub fn lower_expr(
             IrExpr::Object(fields)
         }
         Expr::PostfixIf(postfix) => IrExpr::Ternary {
-            cond: Box::new(lower_expr(&postfix.condition, check, definitions, interner, ctx)),
-            then: Box::new(lower_expr(&postfix.value, check, definitions, interner, ctx)),
-            else_: Box::new(lower_expr(&postfix.else_value, check, definitions, interner, ctx)),
+            cond: Box::new(lower_expr(
+                &postfix.condition,
+                check,
+                definitions,
+                interner,
+                ctx,
+            )),
+            then: Box::new(lower_expr(
+                &postfix.value,
+                check,
+                definitions,
+                interner,
+                ctx,
+            )),
+            else_: Box::new(lower_expr(
+                &postfix.else_value,
+                check,
+                definitions,
+                interner,
+                ctx,
+            )),
         },
         Expr::Interpolated(interp) => {
             let mut result: Option<IrExpr> = None;
@@ -160,7 +197,13 @@ pub fn lower_expr(
                 _ => interner.intern("object"),
             };
             IrExpr::Is {
-                value: Box::new(lower_expr(&is_expr.value, check, definitions, interner, ctx)),
+                value: Box::new(lower_expr(
+                    &is_expr.value,
+                    check,
+                    definitions,
+                    interner,
+                    ctx,
+                )),
                 ty: ty_name,
             }
         }
@@ -183,7 +226,10 @@ pub fn lower_expr_as_ref(expr: &Expr, _check: &CheckResult, ctx: &mut LowerCtx) 
 }
 
 /// Build the graph_ref string for an extension method from checker resolution.
-fn extension_graph_ref(resolved: &quew_checker::resolved::ResolvedCall, interner: &Arc<Interner>) -> String {
+fn extension_graph_ref(
+    resolved: &quew_checker::resolved::ResolvedCall,
+    interner: &Arc<Interner>,
+) -> String {
     let receiver_ty = resolved
         .receiver_ty
         .as_ref()

@@ -21,6 +21,8 @@ quew-ast = { path = "../quew-ast" }
 quew-checker = { path = "../quew-checker" }
 quew-ir = { path = "../quew-ir" }
 quew-codegen = { path = "../quew-codegen" }
+quew-runtime = { path = "../../../quew-runtime/crates/quew-runtime" }
+quew-stdlib = { path = "../../../quew-runtime/crates/quew-stdlib" }
 
 [dev-dependencies]
 insta = { workspace = true }

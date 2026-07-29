@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 
-use super::*;
 use super::utils::compile_source;
+use super::*;
 
 #[test]
 fn execute_literal_return_function() {
@@ -74,7 +74,9 @@ agent Main(input: number) {
     let exec = Execution::new(&ir, &interner, &natives);
     let mut input = IndexMap::new();
     input.insert("x".to_string(), Value::Number(4));
-    let result = exec.run("function:add_three", Value::Object(input)).unwrap();
+    let result = exec
+        .run("function:add_three", Value::Object(input))
+        .unwrap();
     assert_eq!(result, Value::Number(7));
 }
 

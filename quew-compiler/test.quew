@@ -1,0 +1,29 @@
+
+type User = {
+    name:string
+    location:string
+}
+
+type One = {
+    name:string
+    city:string
+}
+
+
+function main():number|float{
+    let items:number[] = []
+    let count = 0
+
+    while count < 100000 {
+        count = count + 1
+        array_push(items,count)
+    }
+
+    let sum = 0
+    for i in items {
+        sum = sum +1
+    }
+    print(sum)
+
+    return 10.20
+}

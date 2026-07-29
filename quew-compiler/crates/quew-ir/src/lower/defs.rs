@@ -90,10 +90,7 @@ fn lower_extend(
 
         // Build parameter list with `self` prepended.
         let mut all_params: IndexMap<InternedStr, IrType> = IndexMap::new();
-        all_params.insert(
-            interner.intern("self"),
-            receiver.clone(),
-        );
+        all_params.insert(interner.intern("self"), receiver.clone());
         for (k, v) in params.iter() {
             all_params.insert(*k, v.clone());
         }
@@ -309,17 +306,23 @@ fn lower_function(
             })
             .collect();
 
-        // Lower the function body into a graph.
-        let graph = super::graph_lower::lower_function_graph(
-            graph_ref.clone(),
-            &params,
-            &decl.body,
-            check,
-            interner,
-            defs,
-            graphs,
-        );
-        graphs.insert(graph_ref.clone(), graph);
+        let native = decl.native.as_ref().map(|native| native.id.value);
+        let is_user_function = matches!(decl.builtin, quew_ast::BuiltinFunctionMeta::User);
+        if is_user_function {
+            // Builtin/prelude bodies are trusted language surface and are not
+            // type-checked as user DSL, so they do not have the resolution
+            // sidecars required for lowering member/extension calls.
+            let graph = super::graph_lower::lower_function_graph(
+                graph_ref.clone(),
+                &params,
+                &decl.body,
+                check,
+                interner,
+                defs,
+                graphs,
+            );
+            graphs.insert(graph_ref.clone(), graph);
+        }
 
         defs.functions.insert(
             decl.name,
@@ -331,7 +334,7 @@ fn lower_function(
                     .as_ref()
                     .map(|ty| lower_type_expr_with_params(ty, &decl.type_params, interner))
                     .unwrap_or(IrType::Void),
-                native: decl.native.as_ref().map(|native| native.id.value),
+                native,
                 graph_ref,
             },
         );
@@ -720,6 +723,38 @@ mod tests {
 
         let def = &defs.functions[&decl.name];
         assert_eq!(def.native, Some(native_id));
+        assert!(
+            !graphs.contains_key("function:string_is_empty"),
+            "builtin functions should not lower trusted prelude bodies into graphs"
+        );
+    }
+
+    #[test]
+    fn lower_public_builtin_function_with_body_skips_graph() {
+        let interner = interner();
+        let mut defs = Definitions::default();
+        let mut graphs = IndexMap::new();
+        let decl = FunctionDecl {
+            annotations: vec![],
+            builtin: quew_ast::BuiltinFunctionMeta::public(),
+            native: None,
+            name: interner.intern("call_gemini"),
+            type_params: vec![],
+            params: vec![],
+            return_ty: Some(named(&interner, "string")),
+            body: vec![quew_ast::Stmt::Return(quew_ast::ReturnStmt {
+                value: Some(Expr::Lit(Lit::String(string_lit(&interner, "")))),
+                mode: quew_ast::ReturnMode::Normal,
+                span: sp(),
+            })],
+            span: sp(),
+        };
+
+        let check = CheckResult::default();
+        lower_function(&decl, &check, &interner, &mut defs, &mut graphs);
+
+        assert!(defs.functions.contains_key(&decl.name));
+        assert!(!graphs.contains_key("function:call_gemini"));
     }
 
     #[test]

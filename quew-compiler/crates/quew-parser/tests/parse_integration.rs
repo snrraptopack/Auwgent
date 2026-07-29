@@ -185,6 +185,39 @@ function identity<T>(value: T): T {
 }
 
 #[test]
+fn public_builtin_function_with_body_parses() {
+    let result = lex_and_parse(
+        r#"
+@@function call_gemini(apiKey: string, messages: Message[]): string {
+    return ""
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
+fn declaration_body_can_start_on_next_line() {
+    let result = lex_and_parse(
+        r#"
+function greet(name: string): string
+{
+    return name
+}
+
+agent Hello(input: string): string
+{
+    reply(input) with {
+        prompt: ""
+        model: gemini("")
+    }
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
+#[test]
 fn extension_method_declaration_parses() {
     let result = lex_and_parse(
         r#"
@@ -353,6 +386,27 @@ fn array_literal_parses() {
     assert!(result.errors.is_empty(), "{:?}", result.errors);
 }
 
+#[test]
+fn multiline_array_and_object_literals_parse() {
+    let result = lex_and_parse(
+        r#"
+let items =
+[
+    "a"
+    "b"
+]
+let config = {
+    name: "test"
+    values: [
+        1,
+        2
+    ]
+}
+"#,
+    );
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+}
+
 /// `.model` — keywords must be valid field names after a dot.
 #[test]
 fn keyword_as_field_name_parses() {
@@ -405,7 +459,6 @@ fn unclosed_brace_recovers() {
     let result = lex_and_parse("type Foo = {\n  name: string\n");
     let _ = result; // must not panic; errors expected
 }
-
 
 // ── string interpolation tests ────────────────────────────────────────────────
 

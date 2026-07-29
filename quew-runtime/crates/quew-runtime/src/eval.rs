@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use quew_interner::Interner;
-use quew_ir::graph::{BinaryOp, DataRef, IrExpr, IrLit, NodeId, UnaryOp};
 use quew_ir::QuewGraphIR;
+use quew_ir::graph::{BinaryOp, DataRef, IrExpr, IrLit, NodeId, UnaryOp};
 
 use crate::native::{NativeHandler, NativeRegistry};
 use crate::value::{Value, ValueError};
@@ -125,13 +125,14 @@ pub fn eval_expr(
             let base_val = eval_expr(base, outputs, interner, natives, ir)?;
             let field_name = interner.resolve(*field).to_string();
             match base_val {
-                Value::Object(map) => map
-                    .get(&field_name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::MissingField {
-                        node: NodeId(0),
-                        field: field_name,
-                    }),
+                Value::Object(map) => {
+                    map.get(&field_name)
+                        .cloned()
+                        .ok_or_else(|| EvalError::MissingField {
+                            node: NodeId(0),
+                            field: field_name,
+                        })
+                }
                 _ => Err(EvalError::MissingField {
                     node: NodeId(0),
                     field: field_name,
@@ -159,9 +160,7 @@ pub fn eval_expr(
                 }
                 match &entry.handler {
                     NativeHandler::Sync(f) => {
-                        f(&arg_values).map_err(|e| EvalError::NativeError {
-                            message: e.message,
-                        })
+                        f(&arg_values).map_err(|e| EvalError::NativeError { message: e.message })
                     }
                 }
             } else {
@@ -180,11 +179,11 @@ pub fn eval_expr(
                     }
 
                     let child = crate::execution::Execution::new(ir, interner, natives);
-                    child
-                        .run(&graph_id, Value::Object(obj))
-                        .map_err(|e| EvalError::GraphCallError {
+                    child.run(&graph_id, Value::Object(obj)).map_err(|e| {
+                        EvalError::GraphCallError {
                             message: e.to_string(),
-                        })
+                        }
+                    })
                 } else {
                     Ok(Value::Null)
                 }
@@ -229,10 +228,74 @@ pub fn eval_expr(
                 "null" => matches!(val, Value::Null),
                 "void" => matches!(val, Value::Null),
                 "array" => matches!(val, Value::Array(_)),
-                _ => matches!(val, Value::Object(_)),
+                _ => value_matches_named_type(&val, *ty, interner, ir),
             };
             Ok(Value::Bool(result))
         }
+    }
+}
+
+fn value_matches_named_type(
+    value: &Value,
+    ty: quew_interner::InternedStr,
+    interner: &Arc<Interner>,
+    ir: &QuewGraphIR,
+) -> bool {
+    let Some(type_def) = ir.definitions.types.get(&ty) else {
+        return matches!(value, Value::Object(_));
+    };
+    let Value::Object(fields) = value else {
+        return false;
+    };
+
+    type_def.fields.iter().all(|(field_name, field)| {
+        let key = interner.resolve(*field_name);
+        match fields.get(key) {
+            Some(field_value) => value_matches_ir_type(field_value, &field.ty, interner, ir),
+            None => field.optional,
+        }
+    })
+}
+
+fn value_matches_ir_type(
+    value: &Value,
+    ty: &quew_ir::types::IrType,
+    interner: &Arc<Interner>,
+    ir: &QuewGraphIR,
+) -> bool {
+    match ty {
+        quew_ir::types::IrType::String | quew_ir::types::IrType::Text => {
+            matches!(value, Value::String(_))
+        }
+        quew_ir::types::IrType::Number => matches!(value, Value::Number(_)),
+        quew_ir::types::IrType::Float => matches!(value, Value::Float(_)),
+        quew_ir::types::IrType::Bool => matches!(value, Value::Bool(_)),
+        quew_ir::types::IrType::Null | quew_ir::types::IrType::Void => {
+            matches!(value, Value::Null)
+        }
+        quew_ir::types::IrType::Array(_) => matches!(value, Value::Array(_)),
+        quew_ir::types::IrType::Object(fields) => {
+            let Value::Object(value_fields) = value else {
+                return false;
+            };
+            fields.iter().all(|(field_name, field)| {
+                let key = interner.resolve(*field_name);
+                match value_fields.get(key) {
+                    Some(field_value) => {
+                        value_matches_ir_type(field_value, &field.ty, interner, ir)
+                    }
+                    None => field.optional,
+                }
+            })
+        }
+        quew_ir::types::IrType::Named(name) => value_matches_named_type(value, *name, interner, ir),
+        quew_ir::types::IrType::Union(types) => types
+            .iter()
+            .any(|member| value_matches_ir_type(value, member, interner, ir)),
+        quew_ir::types::IrType::GenericInstance { name, .. } => {
+            value_matches_named_type(value, *name, interner, ir)
+        }
+        quew_ir::types::IrType::GenericParam(_) | quew_ir::types::IrType::AgentOutput(_) => true,
     }
 }
 
@@ -263,13 +326,14 @@ fn eval_data_ref(
         Some(slot) => {
             let field_name = interner.resolve(*slot).to_string();
             match base {
-                Value::Object(map) => map
-                    .get(&field_name)
-                    .cloned()
-                    .ok_or_else(|| EvalError::MissingField {
-                        node: data_ref.node,
-                        field: field_name,
-                    }),
+                Value::Object(map) => {
+                    map.get(&field_name)
+                        .cloned()
+                        .ok_or_else(|| EvalError::MissingField {
+                            node: data_ref.node,
+                            field: field_name,
+                        })
+                }
                 _ => Err(EvalError::MissingField {
                     node: data_ref.node,
                     field: field_name,
@@ -351,7 +415,10 @@ mod tests {
         let expr = IrExpr::Ref(DataRef::scalar(NodeId(5)));
         let natives = crate::native::NativeRegistry::new();
         let ir = empty_ir(&interner());
-        assert_eq!(eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(), Value::Number(99));
+        assert_eq!(
+            eval_expr(&expr, &outputs, &interner(), &natives, &ir).unwrap(),
+            Value::Number(99)
+        );
     }
 
     #[test]

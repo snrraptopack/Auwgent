@@ -69,16 +69,17 @@ where
             .then(just(TokenKind::RBracket))
             .or_not();
 
-        let array_or_single = union_or_single
-            .then(array_suffix)
-            .map_with(|(ty, is_array), extra| {
-                if is_array.is_some() {
-                    let span = to_span(extra.span());
-                    TypeExpr::Array(Box::new(ty), span)
-                } else {
-                    ty
-                }
-            });
+        let array_or_single =
+            union_or_single
+                .then(array_suffix)
+                .map_with(|(ty, is_array), extra| {
+                    if is_array.is_some() {
+                        let span = to_span(extra.span());
+                        TypeExpr::Array(Box::new(ty), span)
+                    } else {
+                        ty
+                    }
+                });
 
         array_or_single
             .then(just(TokenKind::Question).or_not())

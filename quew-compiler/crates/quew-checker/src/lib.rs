@@ -14,7 +14,6 @@ mod type_resolve;
 use generics::instantiate_function_call;
 use indexmap::IndexMap;
 use keys::{PrimKeys, WellKnownKeys};
-use resolved::{ResolvedExpressionMap, ResolvedCall};
 use quew_ast::{
     ElseClause, Expr, InterpolatedSegment, Item, Lit, Module, Stmt,
     expr::Provider as AstProvider,
@@ -25,10 +24,11 @@ use quew_errors::{Diagnostic, Severity, Span};
 use quew_interner::InternedStr;
 use quew_interner::Interner;
 use quew_lexer::AnnotationKind;
-use quew_scope::{SymbolKind, build_symbol_table};
 use quew_scope::SymbolTable;
+use quew_scope::{SymbolKind, build_symbol_table};
 use quew_types::{ProviderKind, Ty};
 use quew_unify::UnifyTable;
+use resolved::{ResolvedCall, ResolvedExpressionMap};
 use type_resolve::{resolve_semantic_ty, resolve_type, resolve_type_with_params};
 
 pub use prelude::{PreludeModule, module_with_prelude};
@@ -185,18 +185,20 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                         &mut diagnostics,
                     )
                 });
-                check_body(
-                    &decl.body,
-                    &symbol_table,
-                    &mut local,
-                    ret_ty.as_ref(),
-                    &wk,
-                    &prim,
-                    &mut unify,
-                    &mut diagnostics,
-                    &mut resolved,
-                    0,
-                );
+                if matches!(decl.builtin, quew_ast::BuiltinFunctionMeta::User) {
+                    check_body(
+                        &decl.body,
+                        &symbol_table,
+                        &mut local,
+                        ret_ty.as_ref(),
+                        &wk,
+                        &prim,
+                        &mut unify,
+                        &mut diagnostics,
+                        &mut resolved,
+                        0,
+                    );
+                }
                 local.pop();
             }
             Item::Model(decl) => {
@@ -211,12 +213,22 @@ pub fn check(module: &Module, interner: &Arc<Interner>) -> CheckResult {
                 );
             }
             Item::Extend(decl) => {
-                let self_ty =
-                    resolve_type(&decl.receiver, &symbol_table, &prim, &mut diagnostics);
+                if matches!(
+                    &decl.receiver,
+                    quew_ast::TypeExpr::Named(name, _) if interner.resolve(*name) == "array"
+                ) {
+                    continue;
+                }
+                let self_ty = resolve_type(&decl.receiver, &symbol_table, &prim, &mut diagnostics);
                 for method in &decl.methods {
                     let mut local = LocalScope::new();
                     local.push();
-                    local.define(wk.self_ident, self_ty.clone(), method.span, &mut diagnostics);
+                    local.define(
+                        wk.self_ident,
+                        self_ty.clone(),
+                        method.span,
+                        &mut diagnostics,
+                    );
                     for p in &method.params {
                         let ty = resolve_type_with_params(
                             &p.ty,
@@ -364,17 +376,40 @@ fn check_body(
             Stmt::If(s) => {
                 infer_expr(&s.condition, table, local, wk, prim, unify, diags, resolved);
                 local.push();
-                check_body(&s.then_body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth);
+                check_body(
+                    &s.then_body,
+                    table,
+                    local,
+                    ret_ty,
+                    wk,
+                    prim,
+                    unify,
+                    diags,
+                    resolved,
+                    loop_depth,
+                );
                 local.pop();
                 match &s.else_clause {
                     ElseClause::None => {}
                     ElseClause::Else(body, _) => {
                         local.push();
-                        check_body(body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth);
+                        check_body(
+                            body, table, local, ret_ty, wk, prim, unify, diags, resolved,
+                            loop_depth,
+                        );
                         local.pop();
                     }
                     ElseClause::ElseIf(if_stmt) => {
-                        infer_expr(&if_stmt.condition, table, local, wk, prim, unify, diags, resolved);
+                        infer_expr(
+                            &if_stmt.condition,
+                            table,
+                            local,
+                            wk,
+                            prim,
+                            unify,
+                            diags,
+                            resolved,
+                        );
                         local.push();
                         check_body(
                             &if_stmt.then_body,
@@ -416,12 +451,27 @@ fn check_body(
                 if let Some(idx) = f.index {
                     local.define(idx, Ty::number(), f.span, diags);
                 }
-                check_body(&f.body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth + 1);
+                check_body(
+                    &f.body,
+                    table,
+                    local,
+                    ret_ty,
+                    wk,
+                    prim,
+                    unify,
+                    diags,
+                    resolved,
+                    loop_depth + 1,
+                );
                 local.pop();
             }
             Stmt::While(w) => {
-                let cond_ty = infer_expr(&w.condition, table, local, wk, prim, unify, diags, resolved);
-                if !matches!(&cond_ty, Ty::Primitive(quew_types::PrimTy::Bool) | Ty::Error) {
+                let cond_ty =
+                    infer_expr(&w.condition, table, local, wk, prim, unify, diags, resolved);
+                if !matches!(
+                    &cond_ty,
+                    Ty::Primitive(quew_types::PrimTy::Bool) | Ty::Error
+                ) {
                     diags.push(mk_err(
                         w.condition.span(),
                         format!("`while` condition must be a bool, found `{cond_ty}`"),
@@ -430,7 +480,18 @@ fn check_body(
                     ));
                 }
                 local.push();
-                check_body(&w.body, table, local, ret_ty, wk, prim, unify, diags, resolved, loop_depth + 1);
+                check_body(
+                    &w.body,
+                    table,
+                    local,
+                    ret_ty,
+                    wk,
+                    prim,
+                    unify,
+                    diags,
+                    resolved,
+                    loop_depth + 1,
+                );
                 local.pop();
             }
             Stmt::Expr(e) => {
@@ -508,17 +569,15 @@ fn infer_expr(
                     // Verify LHS is a valid assignment target
                     let target_ty = match b.left.as_ref() {
                         Expr::Ident(ident) => {
-                            local.lookup(ident.name)
-                                .cloned()
-                                .unwrap_or_else(|| {
-                                    diags.push(mk_err(
-                                        ident.span,
-                                        format!("cannot assign to undeclared variable `{ident:?}`"),
-                                        "variable must be declared before assignment",
-                                        None,
-                                    ));
-                                    Ty::Error
-                                })
+                            local.lookup(ident.name).cloned().unwrap_or_else(|| {
+                                diags.push(mk_err(
+                                    ident.span,
+                                    format!("cannot assign to undeclared variable `{ident:?}`"),
+                                    "variable must be declared before assignment",
+                                    None,
+                                ));
+                                Ty::Error
+                            })
                         }
                         _ => {
                             diags.push(mk_err(
@@ -541,9 +600,12 @@ fn infer_expr(
                     r
                 }
                 quew_ast::BinaryOp::And | quew_ast::BinaryOp::Or => Ty::bool_ty(),
-                quew_ast::BinaryOp::Eq | quew_ast::BinaryOp::NotEq |
-                quew_ast::BinaryOp::Lt | quew_ast::BinaryOp::Lte |
-                quew_ast::BinaryOp::Gt | quew_ast::BinaryOp::Gte => Ty::bool_ty(),
+                quew_ast::BinaryOp::Eq
+                | quew_ast::BinaryOp::NotEq
+                | quew_ast::BinaryOp::Lt
+                | quew_ast::BinaryOp::Lte
+                | quew_ast::BinaryOp::Gt
+                | quew_ast::BinaryOp::Gte => Ty::bool_ty(),
                 _ => {
                     // Arithmetic: expect same type, return it
                     if let Err(e) = unify.unify(&l, &r) {
@@ -651,9 +713,7 @@ fn infer_expr(
         Expr::Interpolated(interp) => {
             for seg in &interp.segments {
                 if let InterpolatedSegment::Expr(expr) = seg {
-                    let ty = infer_expr(
-                        expr, table, local, wk, prim, unify, diags, resolved,
-                    );
+                    let ty = infer_expr(expr, table, local, wk, prim, unify, diags, resolved);
                     if ty != Ty::string() && ty != Ty::Error {
                         diags.push(Diagnostic {
                             severity: Severity::Error,
@@ -678,7 +738,16 @@ fn infer_expr(
         Expr::PostfixIf(p) => {
             infer_expr(&p.condition, table, local, wk, prim, unify, diags, resolved);
             let v = infer_expr(&p.value, table, local, wk, prim, unify, diags, resolved);
-            infer_expr(&p.else_value, table, local, wk, prim, unify, diags, resolved);
+            infer_expr(
+                &p.else_value,
+                table,
+                local,
+                wk,
+                prim,
+                unify,
+                diags,
+                resolved,
+            );
             v
         }
     }
@@ -732,7 +801,16 @@ fn infer_extension_method_call(
     call_span: Span,
     resolved: &mut ResolvedExpressionMap,
 ) -> Option<Ty> {
-    let receiver = infer_expr(&member.object, table, local, wk, prim, unify, diags, resolved);
+    let receiver = infer_expr(
+        &member.object,
+        table,
+        local,
+        wk,
+        prim,
+        unify,
+        diags,
+        resolved,
+    );
 
     if receiver == Ty::Error {
         for arg in args {
@@ -768,7 +846,12 @@ fn infer_extension_method_call(
         params: method
             .params
             .iter()
-            .map(|(name, ty)| (*name, resolve_semantic_ty(ty, table, prim, diags, call_span)))
+            .map(|(name, ty)| {
+                (
+                    *name,
+                    resolve_semantic_ty(ty, table, prim, diags, call_span),
+                )
+            })
             .collect(),
         return_ty: Box::new(resolve_semantic_ty(
             &method.return_ty,
@@ -782,7 +865,6 @@ fn infer_extension_method_call(
         &function, &arg_tys, call_span, diags,
     ))
 }
-
 
 fn infer_lit(lit: &Lit) -> Ty {
     match lit {
@@ -839,7 +921,16 @@ fn check_model_decl(
         let mut local = LocalScope::new();
         local.push();
         for field in &decl.config {
-            infer_expr(&field.value, table, &mut local, wk, prim, unify, diags, resolved);
+            infer_expr(
+                &field.value,
+                table,
+                &mut local,
+                wk,
+                prim,
+                unify,
+                diags,
+                resolved,
+            );
         }
     }
 }
@@ -858,7 +949,16 @@ fn infer_config_record(
 
     let mut record = IndexMap::new();
     for field in fields {
-        let ty = infer_expr(&field.value, table, &mut local, wk, prim, unify, diags, resolved);
+        let ty = infer_expr(
+            &field.value,
+            table,
+            &mut local,
+            wk,
+            prim,
+            unify,
+            diags,
+            resolved,
+        );
         record.insert(field.key, ty);
     }
     Ty::Record(record)
@@ -1148,7 +1248,8 @@ fn check_tool_element(
         }
         Expr::Call(call) => {
             // Partial application: `myTool(ctx.value)` pre-binds host params
-            let callee_ty = infer_expr(&call.callee, table, local, wk, prim, unify, diags, resolved);
+            let callee_ty =
+                infer_expr(&call.callee, table, local, wk, prim, unify, diags, resolved);
             for arg in &call.args {
                 infer_expr(arg, table, local, wk, prim, unify, diags, resolved);
             }

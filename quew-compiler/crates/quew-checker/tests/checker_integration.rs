@@ -461,8 +461,7 @@ function check(value: string): bool {
     assert!(
         r.diagnostics
             .iter()
-            .any(|d| d.severity == Severity::Error
-                && d.message.contains("argument type mismatch")),
+            .any(|d| d.severity == Severity::Error && d.message.contains("argument type mismatch")),
         "expected argument type mismatch, got {:?}",
         r.diagnostics
     );
@@ -1172,7 +1171,6 @@ agent Hello(input: string) {
     );
 }
 
-
 // ── string interpolation tests ────────────────────────────────────────────────
 
 #[test]
@@ -1197,9 +1195,9 @@ function greet(age: number): string {
 "#,
     );
     assert!(
-        r.diagnostics.iter().any(|d| {
-            d.severity == Severity::Error && d.message.contains("must be a string")
-        }),
+        r.diagnostics
+            .iter()
+            .any(|d| { d.severity == Severity::Error && d.message.contains("must be a string") }),
         "expected string-type error, got: {:?}",
         r.diagnostics
     );

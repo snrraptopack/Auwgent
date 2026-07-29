@@ -4,8 +4,8 @@ use quew_interner::Interner;
 use quew_ir::graph::{AgentGraph, CheckpointPolicy, DataRef, IrNode, NodeId, NodeKind};
 use quew_ir::{Definitions, ProgramMeta, QuewGraphIR};
 
-use super::*;
 use super::utils::compile_source_with_prelude;
+use super::*;
 
 #[test]
 fn execute_native_builtin_dispatch() {

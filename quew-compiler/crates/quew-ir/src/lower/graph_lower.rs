@@ -4,9 +4,12 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use indexmap::IndexMap;
-use quew_ast::{AgentDecl, BinaryOp as AstBinaryOp, ElseClause, Expr, ForStmt, IdentExpr, ReturnMode, ReturnStmt, Stmt, WhileStmt};
-use quew_checker::resolved::CallKind;
+use quew_ast::{
+    AgentDecl, BinaryOp as AstBinaryOp, ElseClause, Expr, ForStmt, IdentExpr, ReturnMode,
+    ReturnStmt, Stmt, WhileStmt,
+};
 use quew_checker::CheckResult;
+use quew_checker::resolved::CallKind;
 use quew_interner::{InternedStr, Interner};
 use quew_lexer::AnnotationKind;
 
@@ -25,9 +28,10 @@ fn assigned_vars_in_body(body: &[Stmt]) -> HashSet<InternedStr> {
     let mut vars = HashSet::new();
     for stmt in body {
         match stmt {
-            Stmt::Expr(quew_ast::stmt::ExprStmt { expr: Expr::Binary(b), .. })
-                if b.op == AstBinaryOp::Assign =>
-            {
+            Stmt::Expr(quew_ast::stmt::ExprStmt {
+                expr: Expr::Binary(b),
+                ..
+            }) if b.op == AstBinaryOp::Assign => {
                 if let Expr::Ident(ident) = b.left.as_ref() {
                     vars.insert(ident.name);
                 }
@@ -64,8 +68,11 @@ pub fn lower_agent(
     definitions: &mut Definitions,
     graphs: &mut IndexMap<String, AgentGraph>,
 ) -> AgentGraph {
-    let mut builder =
-        GraphBuilder::new(format!("agent:{}", interner.resolve(agent.name)), interner, graphs);
+    let mut builder = GraphBuilder::new(
+        format!("agent:{}", interner.resolve(agent.name)),
+        interner,
+        graphs,
+    );
 
     let input_id = builder.push(
         NodeKind::Input {
@@ -137,11 +144,11 @@ pub fn lower_function_graph(
 ) -> AgentGraph {
     let mut builder = GraphBuilder::new(graph_id, interner, graphs);
 
-    let input_ty = params.first().map(|(_, ty)| ty.clone()).unwrap_or(crate::types::IrType::Void);
-    let input_id = builder.push(
-        NodeKind::Input { input_ty },
-        CheckpointPolicy::Never,
-    );
+    let input_ty = params
+        .first()
+        .map(|(_, ty)| ty.clone())
+        .unwrap_or(crate::types::IrType::Void);
+    let input_id = builder.push(NodeKind::Input { input_ty }, CheckpointPolicy::Never);
 
     // All parameters are bound as fields of the Input node.  The runtime
     // always packages arguments into an object, even for single-parameter
@@ -243,13 +250,13 @@ fn lower_stmt(
             let then_assigned = assigned_vars_in_body(&if_stmt.then_body);
             let else_assigned = match &if_stmt.else_clause {
                 ElseClause::Else(body, _) => assigned_vars_in_body(body),
-                ElseClause::ElseIf(nested) => assigned_vars_in_body(&[Stmt::If((**nested).clone())]),
+                ElseClause::ElseIf(nested) => {
+                    assigned_vars_in_body(&[Stmt::If((**nested).clone())])
+                }
                 ElseClause::None => HashSet::new(),
             };
-            let mut merged: Vec<InternedStr> = then_assigned
-                .union(&else_assigned)
-                .copied()
-                .collect();
+            let mut merged: Vec<InternedStr> =
+                then_assigned.union(&else_assigned).copied().collect();
             // Only merge variables that exist in the outer scope.
             merged.retain(|name| builder.ctx.slots.contains_key(name));
 
@@ -316,8 +323,7 @@ fn lower_stmt(
                 let then_ref = then_slots.get(&name);
                 let else_ref = else_slots.get(&name);
                 let snapshot_ref = &snapshot[&name];
-                let changed = then_ref != Some(snapshot_ref)
-                    || else_ref != Some(snapshot_ref);
+                let changed = then_ref != Some(snapshot_ref) || else_ref != Some(snapshot_ref);
                 if changed {
                     let merge_value = crate::graph::IrExpr::Ternary {
                         cond: Box::new(crate::graph::IrExpr::Ref(condition.clone())),
@@ -350,9 +356,7 @@ fn lower_stmt(
             let _ = ensure_ref(&expr_stmt.expr, check, definitions, builder);
             None
         }
-        Stmt::For(for_stmt) => {
-            lower_for_loop(for_stmt, check, interner, definitions, builder)
-        }
+        Stmt::For(for_stmt) => lower_for_loop(for_stmt, check, interner, definitions, builder),
         Stmt::While(while_stmt) => {
             lower_while_loop(while_stmt, check, interner, definitions, builder)
         }
@@ -388,7 +392,13 @@ fn lower_assignment(
         }
         builder.ctx.bind(name, DataRef::scalar(id));
     } else {
-        let value = lower_expr(&binary.right, check, definitions, interner, &mut builder.ctx);
+        let value = lower_expr(
+            &binary.right,
+            check,
+            definitions,
+            interner,
+            &mut builder.ctx,
+        );
         let id = builder.push(
             NodeKind::LetBind { name, value },
             CheckpointPolicy::Optional,
@@ -410,11 +420,10 @@ fn lower_for_loop(
     let iterable_ref = ensure_ref(&for_stmt.iterable, check, definitions, builder);
 
     // Collect captured variables (all bindings except the loop variable and index).
-    let skip: std::collections::HashSet<InternedStr> =
-        [Some(for_stmt.value), for_stmt.index]
-            .into_iter()
-            .flatten()
-            .collect();
+    let skip: std::collections::HashSet<InternedStr> = [Some(for_stmt.value), for_stmt.index]
+        .into_iter()
+        .flatten()
+        .collect();
 
     let captured: Vec<(InternedStr, DataRef)> = builder
         .ctx
@@ -642,7 +651,10 @@ fn lower_value_node(
                     {
                         for (idx, (param_name, _)) in ext.params.iter().enumerate() {
                             if let Some(arg) = call.args.get(idx) {
-                                args.insert(*param_name, ensure_ref(arg, check, definitions, builder));
+                                args.insert(
+                                    *param_name,
+                                    ensure_ref(arg, check, definitions, builder),
+                                );
                             }
                         }
                     } else {

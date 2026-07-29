@@ -90,7 +90,9 @@ pub(crate) fn resolve_semantic_ty(
                 .collect(),
         )
         .flatten_union(),
-        Ty::Array(elem) => Ty::Array(Box::new(resolve_semantic_ty(elem, table, prim, diags, span))),
+        Ty::Array(elem) => Ty::Array(Box::new(resolve_semantic_ty(
+            elem, table, prim, diags, span,
+        ))),
         Ty::Optional(inner) => Ty::Optional(Box::new(resolve_semantic_ty(
             inner, table, prim, diags, span,
         ))),

@@ -1,5 +1,5 @@
-use super::*;
 use super::utils::compile_source_with_prelude;
+use super::*;
 
 #[test]
 fn execute_mutable_assignment() {

@@ -47,7 +47,11 @@ pub struct NativeEntry {
 
 impl std::fmt::Debug for NativeEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NativeEntry {{ id: {:?}, handler: {:?} }}", self.id, self.handler)
+        write!(
+            f,
+            "NativeEntry {{ id: {:?}, handler: {:?} }}",
+            self.id, self.handler
+        )
     }
 }
 

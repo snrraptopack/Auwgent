@@ -57,13 +57,15 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
     for item in &module.items {
         if let quew_ast::Item::Agent(agent) = item {
             let graph_key = format!("agent:{}", interner.resolve(agent.name));
-            let graph = graph_lower::lower_agent(agent, check, interner, &mut definitions, &mut graphs);
+            let graph =
+                graph_lower::lower_agent(agent, check, interner, &mut definitions, &mut graphs);
             graphs.insert(graph_key, graph);
         }
     }
 
     // ── 3. Determine entry agent ──────────────────────────────────────────────
-    // The entry agent is the first agent declared in the module.
+    // Prefer the first agent, but allow function-only modules so
+    // `quew run --target function:name` can execute deterministic functions.
     // Future: an explicit `@entry` annotation will override this.
     let entry_agent: InternedStr = module
         .items
@@ -75,7 +77,16 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
                 None
             }
         })
-        .expect("lower() called on a module with no agent declarations");
+        .or_else(|| {
+            module.items.iter().find_map(|i| {
+                if let quew_ast::Item::Function(f) = i {
+                    Some(f.name)
+                } else {
+                    None
+                }
+            })
+        })
+        .unwrap_or_else(|| interner.intern("__empty__"));
 
     QuewGraphIR {
         program: ProgramMeta {
@@ -238,6 +249,20 @@ agent Main(input: string) {
     }
 
     #[test]
+    fn lowers_function_only_module_without_agent() {
+        let (interner, ir) = lower_source(
+            r#"
+function main(): null {
+    return null
+}
+"#,
+        );
+
+        assert!(ir.graphs.contains_key("function:main"));
+        assert_eq!(ir.program.entry_agent, interner.intern("main"));
+    }
+
+    #[test]
     fn lowers_extension_method_calling_another_function() {
         let (interner, ir) = lower_source(
             r#"
@@ -343,11 +368,13 @@ agent Main(input: string) {
                 let hello = interner.intern("hello ");
                 assert!(
                     matches!(left.as_ref(), crate::graph::IrExpr::Lit(crate::graph::IrLit::String(s)) if *s == hello),
-                    "expected literal 'hello ', got {:?}", left
+                    "expected literal 'hello ', got {:?}",
+                    left
                 );
                 assert!(
                     matches!(right.as_ref(), crate::graph::IrExpr::Ref(..)),
-                    "expected Ref, got {:?}", right
+                    "expected Ref, got {:?}",
+                    right
                 );
             } else {
                 panic!("expected Binary expression, got {:?}", value);

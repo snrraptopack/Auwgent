@@ -1,5 +1,5 @@
-use super::*;
 use super::utils::compile_source;
+use super::*;
 
 #[test]
 fn execute_is_string_true() {
@@ -136,4 +136,34 @@ agent Main(input: string) {
     let exec = Execution::new(&ir, &interner, &natives);
     let result = exec.run("function:test", Value::Null).unwrap();
     assert_eq!(result, Value::Bool(true));
+}
+
+#[test]
+fn execute_is_record_false_when_required_field_missing() {
+    let (interner, ir) = compile_source(
+        r#"
+type User = {
+    name: string
+    location: string
+}
+
+type One = {
+    name: string
+    city: string
+}
+
+function test(): bool {
+    let one: One = { name: "aaa", city: "tarkwa" }
+    return one is User
+}
+agent Main(input: string) {
+    reply(input) with { prompt: "hi", model: gemini("gemini-pro") }
+}
+"#,
+    );
+
+    let natives = crate::native::NativeRegistry::new();
+    let exec = Execution::new(&ir, &interner, &natives);
+    let result = exec.run("function:test", Value::Null).unwrap();
+    assert_eq!(result, Value::Bool(false));
 }

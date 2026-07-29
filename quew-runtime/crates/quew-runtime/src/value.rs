@@ -346,10 +346,7 @@ impl fmt::Display for Value {
             Value::Bool(b) => write!(f, "{b}"),
             Value::Null => write!(f, "null"),
             Value::Object(o) => {
-                let fields: Vec<String> = o
-                    .iter()
-                    .map(|(k, v)| format!("{k}: {v}"))
-                    .collect();
+                let fields: Vec<String> = o.iter().map(|(k, v)| format!("{k}: {v}")).collect();
                 write!(f, "{{ {}}}", fields.join(", "))
             }
             Value::Array(a) => {
@@ -457,9 +454,9 @@ mod tests {
 
     #[test]
     fn truthiness() {
-        assert!(Value::String("".into()).is_truthy());   // empty string is truthy
-        assert!(Value::Number(0).is_truthy());           // zero is truthy
-        assert!(Value::Float(0.0).is_truthy());          // zero float is truthy
+        assert!(Value::String("".into()).is_truthy()); // empty string is truthy
+        assert!(Value::Number(0).is_truthy()); // zero is truthy
+        assert!(Value::Float(0.0).is_truthy()); // zero float is truthy
         assert!(!Value::Bool(false).is_truthy());
         assert!(!Value::Null.is_truthy());
         assert!(Value::Bool(true).is_truthy());

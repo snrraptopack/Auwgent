@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use quew_errors::Severity;
 use quew_interner::Interner;
-use quew_ir::lower::lower;
 use quew_ir::QuewGraphIR;
+use quew_ir::lower::lower;
 use quew_source::SourceMap;
 
 pub fn compile_source(source: &str) -> (Arc<Interner>, QuewGraphIR) {

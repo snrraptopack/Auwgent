@@ -9,3 +9,9 @@
 
 @@rust("std.array.pop")
 !@@function array_pop<T>(array: T[]): T?
+
+extend array{
+    function push<T>(item: T): T[] {
+        return array_push(self,item)
+    }
+}

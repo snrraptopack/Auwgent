@@ -13,7 +13,7 @@ use quew_ast::{
 use quew_interner::Interner;
 use quew_lexer::TokenKind;
 
-use crate::common::{Input, ParseError, field_name, ident, to_span};
+use crate::common::{Input, ParseError, field_name, ident, newlines, to_span};
 use crate::parse_expr::expr;
 use crate::parse_type::type_expr;
 
@@ -53,6 +53,7 @@ where
                     .or_not(),
             )
             .then_ignore(just(TokenKind::Eq))
+            .then_ignore(newlines())
             .then(e.clone())
             .map_with(|((name, ty), init), extra| {
                 Stmt::Let(LetStmt {
@@ -219,14 +220,12 @@ where
         };
 
         // `break`
-        let break_stmt = just(TokenKind::KwBreak).map_with(|_, extra| {
-            Stmt::Break(to_span(extra.span()))
-        });
+        let break_stmt =
+            just(TokenKind::KwBreak).map_with(|_, extra| Stmt::Break(to_span(extra.span())));
 
         // `continue`
-        let continue_stmt = just(TokenKind::KwContinue).map_with(|_, extra| {
-            Stmt::Continue(to_span(extra.span()))
-        });
+        let continue_stmt =
+            just(TokenKind::KwContinue).map_with(|_, extra| Stmt::Continue(to_span(extra.span())));
 
         // Fall-through: bare expression statement
         let expr_stmt = e.clone().map_with(|expr, extra| {
