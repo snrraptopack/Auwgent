@@ -239,19 +239,19 @@ impl AuwgentEngine {
     #[cfg(target_arch = "wasm32")]
     fn evaluate_workflow_expr_wasm<'a>(
         &'a self,
-        expr: &'a Expression,
+        expr: &'a ExpressionIR,
         scope: &'a mut HashMap<String, Value>,
     ) -> futures_util::future::LocalBoxFuture<'a, AuwgentResult<Value>> {
         use futures_util::FutureExt;
 
         async move {
             match expr {
-                Expression::VariableDeclaration { name, value } => {
+                ExpressionIR::VariableDeclaration { name, value } => {
                     let val = self.evaluate_workflow_expr_wasm(value, scope).await?;
                     scope.insert(name.clone(), val);
                     Ok(Value::Null)
                 }
-                Expression::FunctionCall {
+                ExpressionIR::FunctionCall {
                     value: func_name,
                     args,
                 } => {
@@ -275,7 +275,7 @@ impl AuwgentEngine {
                             message,
                         })
                 }
-                Expression::Return { value } | Expression::Expression { value } => {
+                ExpressionIR::Return { value } | ExpressionIR::Expression { value } => {
                     self.evaluate_workflow_expr_wasm(value, scope).await
                 }
                 _ => {
