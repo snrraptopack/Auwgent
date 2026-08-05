@@ -176,7 +176,18 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # Version is already set in package.json before the tag is pushed.
+          VERSION="${GITHUB_REF_NAME#ts-v}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf8'));
+            pkg.version = '$VERSION';
+            if (pkg.optionalDependencies) {
+              for (const k in pkg.optionalDependencies) {
+                pkg.optionalDependencies[k] = '$VERSION';
+              }
+            }
+            fs.writeFileSync('./package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
           # Just remove any stale local .node files to keep the package slim,
           # then publish.
           rm -f *.node
