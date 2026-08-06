@@ -21,7 +21,7 @@
           "value": "Be polite and concise",
           "type": "literal"
         },
-        "toolProtocol": "block"
+        "toolProtocol": "native"
       },
       "namedConfig": []
     }
