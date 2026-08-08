@@ -102,8 +102,10 @@ a bounded ambiguity and execution policy.
 \item A characterization of six distinct malformed-stream failure
 patterns and the recovery mechanism for each.
 \item A cumulative layer-wise ablation on a 900-case suite, including 150
-ambiguity controls, plus 4,000 transport-fragmentation trials and an
-over-tolerance analysis of silently accepted conflicting fields.
+ambiguity controls, with a separate 4,000-trial transport-fragmentation sweep.
+\item An over-tolerance analysis of configurations that silently accept
+conflicting fields rather than rejecting ambiguity, a correctness risk
+under-reported in tolerant-parsing evaluations.
 \end{enumerate}
 
 Accordingly, the evaluation asks three mechanism-level questions: how much
@@ -158,17 +160,18 @@ Classical compiler recovery continues past syntax violations by locally
 resynchronizing on recognizable tokens \cite{burkefisher}; incremental parsers
 maintain partial trees while input arrives \cite{wagnergraham,treesitter}.
 Layers 2 and 3 adapt these ideas to structurally plausible LLM completions,
-using IMP delimiters as resynchronization points. Unlike editor-oriented
-incremental parsing, the scanner buffers transport-fragmented delimiters so
-partial control syntax does not leak into user-visible output.
+using IMP delimiters rather than statement boundaries as resynchronization
+points. Unlike tree-sitter's optimization for re-parsing after editor changes,
+the scanner targets zero-leakage buffering under arbitrary network chunking, a
+transport-specific failure mode.
 
 \subsection{Indentation-Sensitive and Tolerant Lexical Grammars}
 
 YAML \cite{yamlspec} demonstrates whitespace-delimited structure, while JSON5
 \cite{json5spec} relaxes JSON quoting and comma rules. Layer 3's contribution
-is their composition as a per-payload fallback cascade: brace-delimited object
-parsing, layout parsing, then protection of embedded \texttt{@}/\texttt{.}
-tokens.
+is not either grammar in isolation, but their dynamic composition as a
+per-payload fallback cascade: brace-delimited object parsing, layout parsing,
+then protection of embedded \texttt{@}/\texttt{.} tokens.
 
 \subsection{Schema-Aware Downstream Parsing}
 
@@ -181,11 +184,13 @@ streaming for typed partial UI state \cite{baml-docs}. Consequently,
 schema-informed downstream recovery is prior art, not a novelty claim of this
 paper.
 
-Layer 4 uses compiler-produced exact aliases and authorized paths to
-reconstruct flat output. Relative to SAP's broader schema-aligned correction,
-the contribution is its composition with an IMP envelope scanner,
-transport-aware finalization, duplicate-key rejection, and a rule that partial
-recovery cannot authorize execution.
+Layer 4 is closer to compiled schema mapping than parsing: systems such as
+Protocol Buffers \cite{protobuf} and GraphQL \cite{graphqlspec} use precompiled
+metadata to interpret runtime data, whereas Layer 4 uses compiler-produced
+exact aliases and authorized paths to reconstruct flat output. Relative to
+SAP's broader correction, the contribution is its composition with an IMP
+scanner, transport-aware finalization, duplicate-key rejection, and a rule that
+partial recovery cannot authorize execution.
 
 \subsection{Repair-Based and Retry-Based Alternatives}
 
@@ -412,7 +417,8 @@ IMP with Qwen-3-32B, Llama-3.3-70B, and gpt-oss-120b \cite{irai2026}. The
 present ablation freezes generation to isolate parser-layer effects. The prior
 study supplies end-to-end evidence for its tested models; this study supplies
 mechanism-level evidence but no new model-scale result or estimate of corruption
-prevalence. SRR therefore denotes conditional recovery coverage.
+prevalence. The artifact can import provenance-labeled JSONL generations, but
+SRR here denotes conditional recovery coverage.
 
 \textbf{Baselines.} Config A removes only an exact protocol envelope and
 uses strict JSON deserialization. A payload-only \texttt{json-repair}
