@@ -85,7 +85,7 @@ fragments delimiters across packet boundaries, and models emit
 semi-structured text that violates strict JSON grammar. \cite{irai2026}
 explicitly identifies comparison against generation-layer constrained
 decoding as ``the most important open technical question for journal
-follow-up.'' Before that comparison can be interpreted, the post-hoc parser's
+follow-up.'' Before that comparison can be interpreted, the downstream parser's
 own contribution must be separated from model behavior. This paper provides
 that mechanism-level ablation and grounds each architectural decision against
 existing parsing and schema-mapping literature.
@@ -133,7 +133,7 @@ introduces grammar-processing or token-filtering overhead.
 declarations) instead expose vendor-managed structured-generation interfaces;
 their internal enforcement mechanisms are implementation-specific, and model
 or schema availability can vary \cite{irai2026}.
-\textbf{Application-layer post-hoc parsing}, the subject of this paper,
+\textbf{Application-layer downstream tolerant parsing}, the subject of this paper,
 decouples generation from validation entirely: the model streams plain
 text or IMP markers, and a client-side parser tolerantly reconstructs
 structured output without constraining generation or requiring a provider's
@@ -150,9 +150,9 @@ malformation at different pipeline stages and are not interchangeable.}
 \toprule
 Approach & Control locus & Partial state & Malformation policy \\
 \midrule
-Constrained decoding & Generation-time decoder & Decoder-specific & Prevent grammar violations \\
+Constrained decoding & Generation-time decoder & Decoder-specific & Prevent out-of-grammar syntax \\
 Provider-native & Vendor service & Provider-specific & Provider-managed \\
-Post-hoc IMP & Client runtime & Yes & Bounded recovery \\
+Downstream IMP & Client runtime & Yes & Bounded recovery \\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -193,7 +193,7 @@ then semantic token protection for embedded \texttt{@}/\texttt{.}
 characters), driven by which stage first fails rather than a single
 fixed grammar chosen ahead of time.
 
-\subsection{Schema-Aware Post-Hoc Parsing}
+\subsection{Schema-Aware Downstream Parsing}
 
 A closely related system is BAML's Schema-Aligned Parsing (SAP)
 \cite{baml-sap}. BoundaryML describes SAP as post-processing that uses the
@@ -231,7 +231,7 @@ an LLM inference round-trip per failure. BAML's schema-aware and streaming
 alternative is treated separately above rather than grouped with these
 payload-only or retry-based techniques. Section~V therefore reports
 \texttt{json-repair} as a scoped payload baseline, not as a representative of
-all post-hoc structured-output parsers.
+all downstream structured-output parsers.
 
 \subsection{Prior Failure Taxonomies}
 
@@ -571,7 +571,7 @@ correctness outcomes.}
 \caption{Exact SRR by Test Suite (\%)}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-Configuration & Syntax A & Protocol B & Structure C & Holdout H \\
+Configuration & Syntax A & Protocol B & Structure C & Regression H \\
 \midrule
 A -- Strict JSON & 0.00 & 0.00 & 0.00 & 0.00 \\
 B -- Scanner & 0.00 & 100.00 & 0.00 & 33.33 \\
@@ -582,7 +582,7 @@ D -- Full system & 100.00 & 100.00 & 100.00 & 100.00 \\
 \end{table}
 
 The full system recovered every syntax, protocol, structural, and positive
-holdout case. End-of-stream header repair is conservative: it uses a line
+regression case. End-of-stream header repair is conservative: it uses a line
 ending as the missing \texttt{]} boundary only for a completed stream, so
 incremental scans do not prematurely close a fragmented header. Dotted
 paths are reconstructed only when the complete path occurs in compiler
@@ -701,7 +701,7 @@ On 750 recoverable synthetic cases, tolerant lexical parsing delivered the
 largest increase, while compiler-bound structural unflattening added 24.00
 percentage points for a 100.00\% full-system exact SRR. Streaming delivery
 was invariant even at one character per chunk, and the full system rejected
-all 150 duplicate-key controls. These results support post-hoc parsing as a
+all 150 duplicate-key controls. These results support downstream tolerant parsing as a
 useful, model-agnostic recovery layer with bounded, schema-aware repair. The
 real-model evidence remains that of the preceding study; a direct comparison
 with generation-layer constrained decoding and broader model families remains
