@@ -52,9 +52,9 @@ facade, stream delimiter scanner, dual-dialect tolerant lexer,
 compiler-bound schema unflattening, and incremental state synthesis --
 and situate each layer against its nearest architectural precedent:
 error-tolerant and incremental parsing, indentation-sensitive lexical
-grammars, and static-metadata-driven schema mapping. We characterize
-parser behavior against six classes of malformed intent-stream patterns and
-report a cumulative ablation isolating the scanner, tolerant lexer, and compiler-bound
+grammars, and static-metadata-driven schema mapping. We describe six classes
+of malformed intent-stream patterns, directly quantify five, and report a
+cumulative ablation isolating the scanner, tolerant lexer, and compiler-bound
 unflattening contributions. Across 750 deterministic recoverable cases, the
 full system achieved 100.00\% exact syntactic recovery, compared with
 76.00\% without compiler-bound unflattening, while preserving identical
@@ -96,11 +96,10 @@ This paper makes the following contributions:
 parsing, each layer motivated by and contrasted against an established
 architectural lineage (error-tolerant compilation, incremental parsing,
 indentation-sensitive grammars, static schema mapping).
-\item A compiler-bound schema unflattening layer that resolves flat or
-aliased LLM output through explicitly authorized compiler paths, coupled to
-a bounded ambiguity and execution policy.
-\item A characterization of six distinct malformed-stream failure
-patterns and the recovery mechanism for each.
+\item An execution-safety policy coupling compiler-authorized structural
+reconstruction to ambiguity rejection and partial-state execution gating.
+\item A characterization of six malformed-stream patterns and their recovery
+mechanisms, five of which are directly quantified in the present corpus.
 \item A cumulative layer-wise ablation on a 900-case suite, including 150
 ambiguity controls, with a separate 4,000-trial transport-fragmentation sweep.
 \item An over-tolerance analysis of configurations that silently accept
@@ -240,7 +239,7 @@ sequential layers, illustrated in Fig.~\ref{fig:architecture}.
   \draw[arr] (\a) -- (\b);
 
 \node[left=6mm of l1, font=\tiny, rotate=90, anchor=center] {Token stream in};
-\node[left=6mm of l5, font=\tiny, rotate=90, anchor=center] {Validated JSON out};
+\node[left=6mm of l5, font=\tiny, rotate=90, anchor=center] {Validated Intent AST out};
 \end{tikzpicture}%
 }
 \caption{The five-layer IMP parser pipeline. Each layer's failure mode
@@ -308,9 +307,9 @@ side-effects in host applications consuming live tool-argument previews.
 
 \section{Fault Recovery Mechanics}
 
-We define six malformed-stream patterns against which the architecture
-in Section~III is evaluated, illustrated for the fragmentation case in
-Fig.~\ref{fig:fragmentation}.
+We describe six malformed-stream patterns handled by the architecture. Five
+are directly exercised by the fault-directed evaluation; Pattern 2 is an
+implemented behavior documented here but not independently quantified.
 
 \textbf{Pattern 1 -- Syntax-corrupted payloads.} Unquoted keys, missing
 commas, or brace-free layout text. Resolved by Layer 3's fallback cascade
@@ -320,7 +319,8 @@ without re-prompting.
 terminates mid-key-value (e.g., \texttt{age:} with no trailing value).
 The line collector emits the fields resolved so far and assigns an
 explicit null to the incomplete trailing field rather than raising a
-deserialization exception.
+deserialization exception. No standalone corpus stratum is assigned to this
+behavior in the present study.
 
 \textbf{Pattern 3 -- Protocol-corrupted control delimiters.} Absent
 \texttt{[/tool\_call]} tags are handled by implicit block termination at
@@ -351,16 +351,17 @@ O_k &::= \texttt{[}k\texttt{]} \mid \texttt{[}k\texttt{:}N\texttt{]},
 & k &\in \mathcal{K}_{\mathrm{IMP}},
 \end{aligned}
 \]
-where $N$ is a target name or metadata, $P$ is payload text, and $C(k)$ is
-the registered closing marker for intent kind $k$. Recovery maps malformed
+where $\mathcal{K}_{\mathrm{IMP}}$ is the set of registered IMP intent kinds,
+$N$ is a target name or metadata, $P$ is payload text, and $C(k)$ is the
+registered closing marker for kind $k$. Recovery maps malformed
 input to this envelope only under four execution-safety invariants: a final
 intent requires a recognized, boundary-resolved opening marker; its payload
 must parse without duplicate keys; structural expansion must match an exact
 compiler-authorized path; and non-final prefix recovery may update partial UI
 state but cannot authorize execution. End-of-stream header repair additionally
 requires a newline boundary. Inputs outside these predicates are rejected;
-recovery coverage is claimed only for the six evaluated patterns, not for
-arbitrary corruption.
+quantified coverage is claimed only for the five directly evaluated patterns,
+not for Pattern 2 or arbitrary corruption.
 
 \begin{figure}[t]
 \centering
@@ -385,7 +386,7 @@ arbitrary corruption.
 \draw[-{Stealth[length=2mm]}, thick, dashed] (c4.south) -- (buf.north east);
 
 \node[below=3mm of buf, font=\tiny, align=center]
-  {Resolved on \texttt{c4}: \texttt{tool\_call = create\_user}\\emitted once, not per chunk};
+  {Resolved on final fragment: \texttt{tool\_call = create\_user}\\emitted once, not per chunk};
 \end{tikzpicture}%
 }
 \caption{Pattern 5: a single delimiter fragmented across four network
@@ -430,7 +431,7 @@ SRR here denotes conditional recovery coverage.
 
 \textbf{Baselines.} Config A removes only an exact protocol envelope and
 uses strict JSON deserialization. A payload-only \texttt{json-repair}
-v0.62.0 comparison is also run on Suites A and C. Because it does not
+v0.62.0 comparison is also run on Suites A, C, and H. Because it does not
 process the protocol envelope, it is reported separately rather than
 inserted into the layer-wise ablation.
 Generation-layer constrained decoding is not an additional ablation
@@ -667,7 +668,12 @@ on Suites A and C. Its exact recoveries were confined to the 100
 unquoted-key/string cases; it did not exactly recover the layout,
 comma-omission, protected-scalar, alias, or dotted-path categories. Because it
 does not interpret IMP envelopes, its transport latency is not compared with
-the full IMP parser. On the 150 conflicting duplicate-key controls, strict
+the full IMP parser. On positive Suite H payloads it recovered 50/150
+(33.33\%); all 50 were already-valid JSON bodies paired with malformed headers
+that the payload-only baseline did not receive. It failed the email and dotted
+categories and accepted all 50 Suite H duplicate controls (100.00\% OTR), so
+this result is not evidence of envelope recovery. On all 150 conflicting
+duplicate-key controls, strict
 JSON and scanner-plus-JSON each had a 75.33\% over-tolerance rate. Both
 tolerant-lexer configurations rejected every control, yielding 0.00\%
 over-tolerance. The remaining strict-baseline acceptances reflect duplicate
