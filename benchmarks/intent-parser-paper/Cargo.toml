@@ -1,0 +1,20 @@
+[package]
+name = "intent-parser-paper-benchmark"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+auwgent-protocol = { path = "vendor/Auwgent-5a110e78a8440921d7d4302769bc049180f9d2bf/runtime/crates/auwgent-protocol" }
+function-parser = { path = "vendor/Auwgent-5a110e78a8440921d7d4302769bc049180f9d2bf/runtime/crates/function-parser" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[workspace]
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+schemars = { version = "0.8", features = ["preserve_order"] }
+ts-rs = { version = "10", features = ["serde-compat"] }
+auwgent-ir-schema = { path = "vendor/Auwgent-5a110e78a8440921d7d4302769bc049180f9d2bf/auwgent-compiler/crates/auwgent-ir-schema" }

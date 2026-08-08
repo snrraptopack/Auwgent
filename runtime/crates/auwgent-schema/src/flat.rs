@@ -1,5 +1,5 @@
-use auwgent_ir_schema::TypeDeclIR as TypeDefinition;
 use crate::format::format_type_value;
+use auwgent_ir_schema::TypeDeclIR as TypeDefinition;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 
@@ -163,10 +163,18 @@ pub fn unflatten_object(flat: &Value, alias_map: &HashMap<String, Vec<String>>) 
     let mut rebuilt = Map::new();
 
     for (key, value) in obj {
-        let path = alias_map
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| vec![key.clone()]);
+        let path = alias_map.get(key).cloned().unwrap_or_else(|| {
+            let dotted_path: Vec<String> = key.split('.').map(str::to_string).collect();
+            if dotted_path.len() > 1
+                && alias_map
+                    .values()
+                    .any(|known_path| known_path == &dotted_path)
+            {
+                dotted_path
+            } else {
+                vec![key.clone()]
+            }
+        });
         insert_value_at_path(&mut rebuilt, &path, value.clone());
     }
 
@@ -403,5 +411,33 @@ mod tests {
                 .iter()
                 .any(|spec| spec.alias == "profile_contact_email")
         );
+    }
+
+    #[test]
+    fn test_unflatten_object_accepts_known_dotted_path() {
+        let aliases = HashMap::from([(
+            "user_address_city".to_string(),
+            vec![
+                "user".to_string(),
+                "address".to_string(),
+                "city".to_string(),
+            ],
+        )]);
+        let result = unflatten_object(&json!({"user.address.city": "Tarkwa"}), &aliases);
+        assert_eq!(result, json!({"user": {"address": {"city": "Tarkwa"}}}));
+    }
+
+    #[test]
+    fn test_unflatten_object_preserves_unknown_dotted_literal() {
+        let aliases = HashMap::from([(
+            "user_address_city".to_string(),
+            vec![
+                "user".to_string(),
+                "address".to_string(),
+                "city".to_string(),
+            ],
+        )]);
+        let result = unflatten_object(&json!({"metrics.p95": 12}), &aliases);
+        assert_eq!(result, json!({"metrics.p95": 12}));
     }
 }

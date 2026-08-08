@@ -1,0 +1,968 @@
+diff --git a/runtime/crates/auwgent-protocol/src/orchestrator.rs b/runtime/crates/auwgent-protocol/src/orchestrator.rs
+index a34f668..f80eea7 100644
+--- a/runtime/crates/auwgent-protocol/src/orchestrator.rs
++++ b/runtime/crates/auwgent-protocol/src/orchestrator.rs
+@@ -183,7 +183,11 @@ impl BlockOrchestrator {
+     }
+ 
+     fn check_blocks(&mut self, is_final: bool) {
+-        let mut scanner = BlockScanner::new(&self.buffer);
++        let mut scanner = if is_final {
++            BlockScanner::new_final(&self.buffer)
++        } else {
++            BlockScanner::new(&self.buffer)
++        };
+         let blocks = scanner.scan();
+ 
+         if blocks.is_empty() {
+@@ -247,9 +251,10 @@ impl BlockOrchestrator {
+                         if !is_final && block.content.trim().is_empty() {
+                             continue;
+                         }
+-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+-                            self.unflatten_tool_args(tool_name, ast_to_json_object(&fields))
+-                        });
++                        let parsed =
++                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
++                                self.unflatten_tool_args(tool_name, ast_to_json_object(&fields))
++                            });
+                         if is_final && parsed.is_none() {
+                             continue;
+                         }
+@@ -281,9 +286,13 @@ impl BlockOrchestrator {
+                         if !is_final && block.content.trim().is_empty() {
+                             continue;
+                         }
+-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+-                            self.unflatten_workflow_args(workflow_name, ast_to_json_object(&fields))
+-                        });
++                        let parsed =
++                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
++                                self.unflatten_workflow_args(
++                                    workflow_name,
++                                    ast_to_json_object(&fields),
++                                )
++                            });
+                         if is_final && parsed.is_none() {
+                             continue;
+                         }
+@@ -315,9 +324,10 @@ impl BlockOrchestrator {
+                         if !is_final && block.content.trim().is_empty() {
+                             continue;
+                         }
+-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+-                            self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
+-                        });
++                        let parsed =
++                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
++                                self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
++                            });
+                         if is_final && parsed.is_none() {
+                             continue;
+                         }
+@@ -348,12 +358,13 @@ impl BlockOrchestrator {
+                     if let (Some(component_name), Some(instance_id)) =
+                         (block.target_name.as_deref(), block.instance_id.as_deref())
+                     {
+-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+-                            self.unflatten_component_args(
+-                                component_name,
+-                                ast_to_json_object(&fields),
+-                            )
+-                        });
++                        let parsed =
++                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
++                                self.unflatten_component_args(
++                                    component_name,
++                                    ast_to_json_object(&fields),
++                                )
++                            });
+                         if is_final && parsed.is_none() {
+                             continue;
+                         }
+@@ -387,9 +398,10 @@ impl BlockOrchestrator {
+                     if !is_final && block.content.trim().is_empty() {
+                         continue;
+                     }
+-                    let parsed = parse_partial_schema_content(&block.content).map(|obj_ast| {
+-                        self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast))
+-                    });
++                    let parsed =
++                        parse_schema_content_for_phase(&block.content, is_final).map(|obj_ast| {
++                            self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast))
++                        });
+                     if is_final && parsed.is_none() {
+                         continue;
+                     }
+@@ -653,7 +665,7 @@ impl BlockOrchestrator {
+                 continue;
+             };
+ 
+-            let parsed = parse_partial_block_fields(&block.content).map(|fields| {
++            let parsed = parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
+                 self.unflatten_component_args(component_name, ast_to_json_object(&fields))
+             });
+ 
+@@ -740,6 +752,17 @@ fn parse_partial_block_fields(
+     best
+ }
+ 
++fn parse_block_fields_for_phase(
++    content: &str,
++    is_final: bool,
++) -> Option<std::collections::HashMap<String, ASTValue>> {
++    if is_final {
++        parse_block_fields(content)
++    } else {
++        parse_partial_block_fields(content)
++    }
++}
++
+ fn parse_schema_content(content: &str) -> Result<ASTValue, String> {
+     let trimmed = content.trim();
+     if trimmed.is_empty() {
+@@ -770,6 +793,14 @@ fn parse_partial_schema_content(content: &str) -> Option<ASTValue> {
+     best
+ }
+ 
++fn parse_schema_content_for_phase(content: &str, is_final: bool) -> Option<ASTValue> {
++    if is_final {
++        parse_schema_content(content).ok()
++    } else {
++        parse_partial_schema_content(content)
++    }
++}
++
+ fn is_incomplete_response_text_open(input: &str) -> bool {
+     const OPEN_TAG: &str = "[response_text]";
+     let trimmed = input.trim_start();
+@@ -1147,7 +1178,10 @@ fn merge_template(template: &Value, actual: &Value) -> Value {
+     }
+ }
+ 
+-fn build_named_field_template(schema_value: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> Value {
++fn build_named_field_template(
++    schema_value: &Value,
++    types: Option<&HashMap<String, TypeDefinition>>,
++) -> Value {
+     Value::Object(build_template_fields(schema_value, types))
+ }
+ 
+@@ -1702,4 +1736,111 @@ mod tests {
+             intent_names
+         );
+     }
++
++    #[test]
++    fn finalization_recovers_unclosed_tool_header() {
++        let mut orch = setup_orchestrator();
++        orch.register_tool_shape(
++            "search",
++            &serde_json::json!({"query": {"type": "string"}}),
++            None,
++        );
++        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
++        let emitted_for_handler = Arc::clone(&emitted);
++        orch.on_intent_ready(Arc::new(move |name, value| {
++            emitted_for_handler.lock().unwrap().push((name, value));
++        }));
++
++        orch.write("[tool_call: search\nquery: parsers\n[/tool_call]");
++        assert!(emitted.lock().unwrap().is_empty());
++        orch.end();
++
++        let emitted = emitted.lock().unwrap();
++        assert_eq!(emitted.len(), 1);
++        assert_eq!(emitted[0].0, "tool_call");
++        assert_eq!(
++            emitted[0].1["args"],
++            serde_json::json!({"query": "parsers"})
++        );
++    }
++
++    #[test]
++    fn tool_call_unflattens_schema_known_dotted_path() {
++        let mut orch = setup_orchestrator();
++        orch.register_tool_shape(
++            "locate",
++            &serde_json::json!({
++                "user": {
++                    "type": {
++                        "type": "object",
++                        "properties": {
++                            "address": {
++                                "type": {
++                                    "type": "object",
++                                    "properties": {
++                                        "city": {"type": "string"}
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
++            }),
++            None,
++        );
++        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
++        let emitted_for_handler = Arc::clone(&emitted);
++        orch.on_intent_ready(Arc::new(move |name, value| {
++            emitted_for_handler.lock().unwrap().push((name, value));
++        }));
++
++        orch.write("[tool_call: locate]\nuser.address.city: Tarkwa\n[/tool_call]");
++        orch.end();
++
++        let emitted = emitted.lock().unwrap();
++        assert_eq!(
++            emitted[0].1["args"],
++            serde_json::json!({"user": {"address": {"city": "Tarkwa"}}})
++        );
++    }
++
++    #[test]
++    fn duplicate_tool_argument_is_rejected() {
++        let mut orch = setup_orchestrator();
++        orch.register_tool_shape(
++            "search",
++            &serde_json::json!({"query": {"type": "string"}}),
++            None,
++        );
++        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
++        let emitted_for_handler = Arc::clone(&emitted);
++        orch.on_intent_ready(Arc::new(move |name, value| {
++            emitted_for_handler.lock().unwrap().push((name, value));
++        }));
++
++        orch.write("[tool_call: search]\n{query: first, query: second}\n[/tool_call]");
++        orch.end();
++
++        assert!(emitted.lock().unwrap().is_empty());
++    }
++
++    #[test]
++    fn duplicate_layout_tool_argument_is_rejected_at_finalization() {
++        let mut orch = setup_orchestrator();
++        orch.register_tool_shape(
++            "search",
++            &serde_json::json!({"query": {"type": "string"}}),
++            None,
++        );
++        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
++        let emitted_for_handler = Arc::clone(&emitted);
++        orch.on_intent_ready(Arc::new(move |name, value| {
++            emitted_for_handler.lock().unwrap().push((name, value));
++        }));
++
++        orch.write("[tool_call: search]\nquery: first\nquery: second\n[/tool_call]");
++        orch.end();
++
++        assert!(emitted.lock().unwrap().is_empty());
++    }
+ }
+diff --git a/runtime/crates/auwgent-schema/src/flat.rs b/runtime/crates/auwgent-schema/src/flat.rs
+index 8b270d9..6fa1f2a 100644
+--- a/runtime/crates/auwgent-schema/src/flat.rs
++++ b/runtime/crates/auwgent-schema/src/flat.rs
+@@ -1,5 +1,5 @@
+-use auwgent_ir_schema::TypeDeclIR as TypeDefinition;
+ use crate::format::format_type_value;
++use auwgent_ir_schema::TypeDeclIR as TypeDefinition;
+ use serde_json::{Map, Value};
+ use std::collections::{HashMap, HashSet};
+ 
+@@ -163,10 +163,18 @@ pub fn unflatten_object(flat: &Value, alias_map: &HashMap<String, Vec<String>>)
+     let mut rebuilt = Map::new();
+ 
+     for (key, value) in obj {
+-        let path = alias_map
+-            .get(key)
+-            .cloned()
+-            .unwrap_or_else(|| vec![key.clone()]);
++        let path = alias_map.get(key).cloned().unwrap_or_else(|| {
++            let dotted_path: Vec<String> = key.split('.').map(str::to_string).collect();
++            if dotted_path.len() > 1
++                && alias_map
++                    .values()
++                    .any(|known_path| known_path == &dotted_path)
++            {
++                dotted_path
++            } else {
++                vec![key.clone()]
++            }
++        });
+         insert_value_at_path(&mut rebuilt, &path, value.clone());
+     }
+ 
+@@ -404,4 +412,32 @@ mod tests {
+                 .any(|spec| spec.alias == "profile_contact_email")
+         );
+     }
++
++    #[test]
++    fn test_unflatten_object_accepts_known_dotted_path() {
++        let aliases = HashMap::from([(
++            "user_address_city".to_string(),
++            vec![
++                "user".to_string(),
++                "address".to_string(),
++                "city".to_string(),
++            ],
++        )]);
++        let result = unflatten_object(&json!({"user.address.city": "Tarkwa"}), &aliases);
++        assert_eq!(result, json!({"user": {"address": {"city": "Tarkwa"}}}));
++    }
++
++    #[test]
++    fn test_unflatten_object_preserves_unknown_dotted_literal() {
++        let aliases = HashMap::from([(
++            "user_address_city".to_string(),
++            vec![
++                "user".to_string(),
++                "address".to_string(),
++                "city".to_string(),
++            ],
++        )]);
++        let result = unflatten_object(&json!({"metrics.p95": 12}), &aliases);
++        assert_eq!(result, json!({"metrics.p95": 12}));
++    }
+ }
+diff --git a/runtime/crates/function-parser/src/block_scanner.rs b/runtime/crates/function-parser/src/block_scanner.rs
+index f5d5637..7d3c007 100644
+--- a/runtime/crates/function-parser/src/block_scanner.rs
++++ b/runtime/crates/function-parser/src/block_scanner.rs
+@@ -37,6 +37,7 @@ pub struct Block {
+ pub struct BlockScanner {
+     chars: Vec<char>,
+     pos: usize,
++    recover_unclosed_headers: bool,
+ }
+ 
+ impl BlockScanner {
+@@ -65,6 +66,19 @@ impl BlockScanner {
+         Self {
+             chars: input.chars().collect(),
+             pos: 0,
++            recover_unclosed_headers: false,
++        }
++    }
++
++    /// Creates a scanner for a completed stream. At end-of-stream only, a
++    /// known opening header may use its line ending as a missing `]` boundary.
++    /// Incremental scans remain strict so a legitimately fragmented header is
++    /// never closed prematurely.
++    pub fn new_final(input: &str) -> Self {
++        Self {
++            chars: input.chars().collect(),
++            pos: 0,
++            recover_unclosed_headers: true,
+         }
+     }
+ 
+@@ -143,6 +157,9 @@ impl BlockScanner {
+             if *ch == ']' {
+                 return Some(header.trim().to_string());
+             }
++            if self.recover_unclosed_headers && matches!(*ch, '\n' | '\r') {
++                return Some(header.trim().to_string());
++            }
+             header.push(*ch);
+             idx += 1;
+         }
+@@ -150,18 +167,24 @@ impl BlockScanner {
+         None
+     }
+ 
+-    /// Returns the raw (untrimmed) character count between `[` and `]`.
+-    fn raw_header_len(&self) -> usize {
++    /// Returns the number of characters occupied by the header, including its
++    /// closing `]` or the recovered line ending.
++    fn raw_header_span_len(&self) -> usize {
+         if self.peek() != Some('[') {
+             return 0;
+         }
+         let mut idx = self.pos + 1;
+-        let mut count = 0;
+         while let Some(ch) = self.chars.get(idx) {
+             if *ch == ']' {
+-                return count;
++                return idx - self.pos + 1;
++            }
++            if self.recover_unclosed_headers && matches!(*ch, '\n' | '\r') {
++                let mut end = idx + 1;
++                if *ch == '\r' && self.chars.get(end) == Some(&'\n') {
++                    end += 1;
++                }
++                return end - self.pos;
+             }
+-            count += 1;
+             idx += 1;
+         }
+         0
+@@ -169,11 +192,11 @@ impl BlockScanner {
+ 
+     fn consume_header(&mut self) -> Option<String> {
+         let header = self.try_read_header()?;
+-        // Use the raw (untrimmed) length between [ and ] for accurate advancement.
+-        // try_read_header trims whitespace from the header, but we must advance
+-        // past the full raw header including any trailing spaces before `]`.
+-        let raw_len = self.raw_header_len();
+-        self.pos += raw_len + 2; // +2 for '[' and ']'
++        let span_len = self.raw_header_span_len();
++        if span_len == 0 {
++            return None;
++        }
++        self.pos += span_len;
+         Some(header)
+     }
+ 
+@@ -240,7 +263,12 @@ impl BlockScanner {
+         }
+ 
+         if header.eq_ignore_ascii_case("render_component") {
+-            return Some((BlockType::RenderComponent, None, None, "[/render_component]"));
++            return Some((
++                BlockType::RenderComponent,
++                None,
++                None,
++                "[/render_component]",
++            ));
+         }
+ 
+         let (kind, target) = header.split_once(':')?;
+@@ -258,7 +286,12 @@ impl BlockScanner {
+                 {
+                     return None;
+                 }
+-                Some((BlockType::Tool, Some(target.to_string()), None, "[/tool_call]"))
++                Some((
++                    BlockType::Tool,
++                    Some(target.to_string()),
++                    None,
++                    "[/tool_call]",
++                ))
+             }
+             "workflow_call" => {
+                 if target
+@@ -281,7 +314,12 @@ impl BlockScanner {
+                 {
+                     return None;
+                 }
+-                Some((BlockType::Helper, Some(target.to_string()), None, "[/helper]"))
++                Some((
++                    BlockType::Helper,
++                    Some(target.to_string()),
++                    None,
++                    "[/helper]",
++                ))
+             }
+             "component" => {
+                 let (component_name, instance_id) = parse_component_header_target(target)?;
+@@ -384,7 +422,11 @@ impl BlockScanner {
+     }
+ 
+     fn raw_span(&self, start: usize, end: usize) -> String {
+-        self.chars[start..end].iter().collect::<String>().trim().to_string()
++        self.chars[start..end]
++            .iter()
++            .collect::<String>()
++            .trim()
++            .to_string()
+     }
+ 
+     pub fn scan(&mut self) -> Vec<Block> {
+@@ -755,6 +797,32 @@ mod tests {
+         assert!(blocks.is_empty());
+     }
+ 
++    #[test]
++    fn test_final_scan_recovers_header_closed_by_newline() {
++        let input = "[tool_call: search\nquery: fault tolerant parsing\n[/tool_call]";
++        let mut scanner = BlockScanner::new_final(input);
++        let blocks = scanner.scan();
++
++        assert_eq!(blocks.len(), 1);
++        assert_eq!(blocks[0].block_type, BlockType::Tool);
++        assert_eq!(blocks[0].target_name.as_deref(), Some("search"));
++        assert_eq!(blocks[0].content, "query: fault tolerant parsing");
++        assert_eq!(blocks[0].raw, input);
++    }
++
++    #[test]
++    fn test_streaming_scan_defers_the_same_unclosed_header() {
++        let input = "[tool_call: search\nquery: fault tolerant parsing\n[/tool_call]";
++        let mut scanner = BlockScanner::new(input);
++        assert!(scanner.scan().is_empty());
++    }
++
++    #[test]
++    fn test_final_scan_does_not_guess_header_without_line_boundary() {
++        let mut scanner = BlockScanner::new_final("[tool_call: search");
++        assert!(scanner.scan().is_empty());
++    }
++
+     #[test]
+     fn test_incomplete_tool_header_flushes_prior_chat_only() {
+         let input = "Thinking...[tool_call: user_name";
+@@ -773,9 +841,18 @@ mod tests {
+         let mut scanner = BlockScanner::new(input);
+         let blocks = scanner.scan();
+ 
+-        assert_eq!(blocks.len(), 2, "Expected 2 blocks (Chat + Out), got {}: {:?}", blocks.len(), blocks);
++        assert_eq!(
++            blocks.len(),
++            2,
++            "Expected 2 blocks (Chat + Out), got {}: {:?}",
++            blocks.len(),
++            blocks
++        );
+         assert_eq!(blocks[0].block_type, BlockType::Chat);
+-        assert_eq!(blocks[0].content, "Hiroshi is a 21-year-old student from Japan.");
++        assert_eq!(
++            blocks[0].content,
++            "Hiroshi is a 21-year-old student from Japan."
++        );
+         assert_eq!(blocks[1].block_type, BlockType::Out);
+         assert_eq!(blocks[1].target_name, Some("Output".to_string()));
+         assert!(blocks[1].content.contains("name: Hiroshi"));
+@@ -783,12 +860,18 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn test_tool_call_llama_reproduce(){
++    fn test_tool_call_llama_reproduce() {
+         let input = " \n[tool_call: get_user_name_age] \n[/tool_call]\n[tool_call: get_location] \n[/tool_call]";
+         let mut scanner = BlockScanner::new(input);
+         let blocks = scanner.scan();
+ 
+-        assert_eq!(blocks.len(), 2, "expected 2 tools got {} : {:?}", blocks.len(), blocks);
++        assert_eq!(
++            blocks.len(),
++            2,
++            "expected 2 tools got {} : {:?}",
++            blocks.len(),
++            blocks
++        );
+         assert_eq!(blocks[0].block_type, BlockType::Tool);
+         assert_eq!(blocks[1].block_type, BlockType::Tool);
+         assert_eq!(blocks[0].target_name, Some("get_user_name_age".to_string()));
+diff --git a/runtime/crates/function-parser/src/ts_object.rs b/runtime/crates/function-parser/src/ts_object.rs
+index 3893b4b..9ec5817 100644
+--- a/runtime/crates/function-parser/src/ts_object.rs
++++ b/runtime/crates/function-parser/src/ts_object.rs
+@@ -18,6 +18,13 @@ pub fn parse_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>,
+             return Ok(obj);
+         }
+     }
++    // The token parser intentionally skips unknown punctuation for recovery.
++    // For a bare, single-line email this turns `alice@example.com` into a
++    // different string while still returning Ok, so route that scalar through
++    // the layout parser which preserves raw string punctuation.
++    if should_prefer_layout_scalar(input) {
++        return parse_indented_assignment_object(input);
++    }
+     match parse_ts_object(&format!("{{{}}}", input)) {
+         Ok(ASTValue::Object(obj)) => Ok(obj),
+         Ok(_) => Err("Expected assignment object".to_string()),
+@@ -25,6 +32,19 @@ pub fn parse_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>,
+     }
+ }
+ 
++fn should_prefer_layout_scalar(input: &str) -> bool {
++    let Some((_key, value)) = split_key_value(input) else {
++        return false;
++    };
++    let value = value.trim();
++    !value.starts_with('{')
++        && !value.starts_with('[')
++        && !value.starts_with('(')
++        && !value.starts_with('"')
++        && !value.starts_with('\'')
++        && value.contains('@')
++}
++
+ #[derive(Debug, Clone)]
+ struct IndentedLine {
+     indent: usize,
+@@ -89,7 +109,9 @@ fn parse_indented_object(
+         }
+ 
+         let (key, value) = parse_object_entry(lines, index)?;
+-        map.insert(key, value);
++        if map.insert(key.clone(), value).is_some() {
++            return Err(format!("Duplicate key '{}'", key));
++        }
+     }
+ 
+     Ok(map)
+@@ -100,8 +122,12 @@ fn parse_object_entry(
+     index: &mut usize,
+ ) -> Result<(String, ASTValue), String> {
+     let line = &lines[*index];
+-    let (key, value_text) = split_key_value(&line.text)
+-        .ok_or_else(|| format!("Expected 'key: value' or 'key = value' pair near '{}'", line.text))?;
++    let (key, value_text) = split_key_value(&line.text).ok_or_else(|| {
++        format!(
++            "Expected 'key: value' or 'key = value' pair near '{}'",
++            line.text
++        )
++    })?;
+     let current_indent = line.indent;
+     *index += 1;
+ 
+@@ -122,8 +148,7 @@ fn parse_object_entry(
+             full_value.push_str(&format!("\n{}", &lines[*index].text));
+             *index += 1;
+         }
+-        parse_ts_object(&full_value)
+-            .unwrap_or_else(|_| ASTValue::String(full_value))
++        parse_ts_object(&full_value).unwrap_or_else(|_| ASTValue::String(full_value))
+     } else {
+         // Parse the value while avoiding tokenizer corruption of special chars
+         // like @ (emails) and . (URLs/domains). Only route through parse_ts_object
+@@ -143,7 +168,12 @@ fn parse_object_entry(
+             ASTValue::Boolean(false)
+         } else if trimmed == "null" {
+             ASTValue::Null
+-        } else if trimmed.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) {
++        } else if trimmed
++            .chars()
++            .next()
++            .map(|c| c.is_ascii_digit() || c == '-')
++            .unwrap_or(false)
++        {
+             // Starts with digit or minus — try as number, fall back to string
+             parse_ts_object(&value_text)
+                 .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
+@@ -220,8 +250,7 @@ fn parse_nested_value(
+             collected.push_str(&lines[*index].text);
+             *index += 1;
+         }
+-        parse_ts_object(&collected)
+-            .map_err(|e| format!("Failed to parse nested JSON value: {}", e))
++        parse_ts_object(&collected).map_err(|e| format!("Failed to parse nested JSON value: {}", e))
+     } else {
+         Ok(ASTValue::Object(parse_indented_object(
+             lines,
+@@ -265,13 +294,17 @@ fn parse_indented_array(
+             } else {
+                 parse_ts_object(&value_text)?
+             };
+-            object.insert(key, first_value);
++            if object.insert(key.clone(), first_value).is_some() {
++                return Err(format!("Duplicate key '{}'", key));
++            }
+ 
+             if *index < lines.len() && lines[*index].indent > current_indent {
+                 let nested_indent = lines[*index].indent;
+                 let nested_object = parse_indented_object(lines, index, nested_indent)?;
+                 for (nested_key, nested_value) in nested_object {
+-                    object.insert(nested_key, nested_value);
++                    if object.insert(nested_key.clone(), nested_value).is_some() {
++                        return Err(format!("Duplicate key '{}'", nested_key));
++                    }
+                 }
+             }
+ 
+@@ -340,7 +373,8 @@ fn consume_structured_closer(
+     parent_indent: usize,
+     closer: &str,
+ ) {
+-    if *index < lines.len() && lines[*index].indent > parent_indent && lines[*index].text == closer {
++    if *index < lines.len() && lines[*index].indent > parent_indent && lines[*index].text == closer
++    {
+         *index += 1;
+     }
+ }
+@@ -483,7 +517,9 @@ impl TSObjectParser {
+             self.advance();
+ 
+             let value = self.parse_value()?;
+-            map.insert(key, value);
++            if map.insert(key.clone(), value).is_some() {
++                return Err(format!("Duplicate key '{}'", key));
++            }
+ 
+             if self.current == TokenKind::Comma {
+                 self.advance();
+@@ -525,7 +561,9 @@ impl TSObjectParser {
+ 
+             // Parse value
+             let value = self.parse_value()?;
+-            map.insert(key, value);
++            if map.insert(key.clone(), value).is_some() {
++                return Err(format!("Duplicate key '{}'", key));
++            }
+ 
+             // Optional comma
+             if self.current == TokenKind::Comma {
+@@ -685,10 +723,7 @@ mod tests {
+             result.get("action_onclick"),
+             Some(&ASTValue::Call {
+                 name: "delete".to_string(),
+-                args: HashMap::from([(
+-                    "id".to_string(),
+-                    ASTValue::String("123".to_string())
+-                )]),
++                args: HashMap::from([("id".to_string(), ASTValue::String("123".to_string()))]),
+             })
+         );
+     }
+@@ -698,11 +733,21 @@ mod tests {
+         // Exact schema content format from LLM output
+         let input = "name: Hiroshi\nage: 21\ncountry: Japan\nis_student: true";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse schema content: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse schema content: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+-        assert_eq!(obj.get("name"), Some(&ASTValue::String("Hiroshi".to_string())));
++        assert_eq!(
++            obj.get("name"),
++            Some(&ASTValue::String("Hiroshi".to_string()))
++        );
+         assert_eq!(obj.get("age"), Some(&ASTValue::Number(21.0)));
+-        assert_eq!(obj.get("country"), Some(&ASTValue::String("Japan".to_string())));
++        assert_eq!(
++            obj.get("country"),
++            Some(&ASTValue::String("Japan".to_string()))
++        );
+         assert_eq!(obj.get("is_student"), Some(&ASTValue::Boolean(true)));
+     }
+ 
+@@ -728,7 +773,11 @@ mod tests {
+         // LLM outputs arrays across multiple indented lines
+         let input = "project_name: Auwgent SDK Launch\ntasks: [\n  { title: Write documentation, priority: high, completed: false },\n  { title: Fix buffer bugs, priority: medium, completed: true },\n  { title: Publish to npm, priority: low, completed: false }\n]";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse multi-line array: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse multi-line array: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+         assert_eq!(
+             obj.get("project_name"),
+@@ -745,7 +794,11 @@ mod tests {
+     fn test_assignment_object_dash_prefixed_inline_object_array() {
+         let input = "project_name: Auwgent SDK Launch\ntasks:\n  - { title: Write documentation, priority: high, completed: false }\n  - { title: Fix buffer bugs, priority: medium, completed: true }\n  - { title: Publish to npm, priority: low, completed: false }";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse task array: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse task array: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+ 
+         assert_eq!(
+@@ -769,10 +822,7 @@ mod tests {
+             first_task.get("priority"),
+             Some(&ASTValue::String("high".to_string()))
+         );
+-        assert_eq!(
+-            first_task.get("completed"),
+-            Some(&ASTValue::Boolean(false))
+-        );
++        assert_eq!(first_task.get("completed"), Some(&ASTValue::Boolean(false)));
+     }
+ 
+     #[test]
+@@ -780,16 +830,28 @@ mod tests {
+         // LLM puts the array value on the next indented line after "key:"
+         let input = "company_name: SnrRaptoPack\ncompany_departments:\n  [\n    {\n      dept_name: Engineering,\n      employees:\n        [\n          { name: Alice, role: Lead Developer, salary: 95000 },\n          { name: Bob, role: Backend Engineer, salary: null }\n        ]\n    },\n    {\n      dept_name: Design,\n      employees:\n        [\n          { name: Clara, role: UI Designer, salary: 72000 }\n        ]\n    }\n  ]";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse nested array: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse nested array: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+         assert_eq!(
+             obj.get("company_name"),
+             Some(&ASTValue::String("SnrRaptoPack".to_string()))
+         );
+         if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
+-            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
++            assert_eq!(
++                depts.len(),
++                2,
++                "Expected 2 departments, got {}",
++                depts.len()
++            );
+         } else {
+-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
++            panic!(
++                "company_departments should be an array, got {:?}",
++                obj.get("company_departments")
++            );
+         }
+     }
+ 
+@@ -797,7 +859,11 @@ mod tests {
+     fn test_assignment_object_dash_prefixed_multiline_object_array() {
+         let input = "company_departments:\n  - {\n      dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n        - { name: Bob, role: Backend Engineer, salary: null }\n    }\n  - {\n      dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }\ncompany_name: SnrRaptoPack";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse company: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+ 
+         assert_eq!(
+@@ -806,7 +872,10 @@ mod tests {
+         );
+ 
+         let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
+-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
++            panic!(
++                "company_departments should be an array, got {:?}",
++                obj.get("company_departments")
++            );
+         };
+         assert_eq!(depts.len(), 2);
+ 
+@@ -819,14 +888,20 @@ mod tests {
+         );
+ 
+         let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
+-            panic!("employees should be an array, got {:?}", engineering.get("employees"));
++            panic!(
++                "employees should be an array, got {:?}",
++                engineering.get("employees")
++            );
+         };
+         assert_eq!(employees.len(), 2);
+ 
+         let ASTValue::Object(alice) = &employees[0] else {
+             panic!("first employee should be an object, got {:?}", employees[0]);
+         };
+-        assert_eq!(alice.get("name"), Some(&ASTValue::String("Alice".to_string())));
++        assert_eq!(
++            alice.get("name"),
++            Some(&ASTValue::String("Alice".to_string()))
++        );
+         assert_eq!(
+             alice.get("role"),
+             Some(&ASTValue::String("Lead Developer".to_string()))
+@@ -834,7 +909,10 @@ mod tests {
+         assert_eq!(alice.get("salary"), Some(&ASTValue::Number(95000.0)));
+ 
+         let ASTValue::Object(bob) = &employees[1] else {
+-            panic!("second employee should be an object, got {:?}", employees[1]);
++            panic!(
++                "second employee should be an object, got {:?}",
++                employees[1]
++            );
+         };
+         assert_eq!(bob.get("salary"), Some(&ASTValue::Null));
+     }
+@@ -843,11 +921,18 @@ mod tests {
+     fn test_assignment_object_dash_prefixed_object_with_inline_prefix_and_nested_fields() {
+         let input = "company_departments:\n  - { dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n    }\n  - { dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse company: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+ 
+         let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
+-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
++            panic!(
++                "company_departments should be an array, got {:?}",
++                obj.get("company_departments")
++            );
+         };
+ 
+         let ASTValue::Object(engineering) = &depts[0] else {
+@@ -859,7 +944,10 @@ mod tests {
+         );
+ 
+         let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
+-            panic!("employees should be an array, got {:?}", engineering.get("employees"));
++            panic!(
++                "employees should be an array, got {:?}",
++                engineering.get("employees")
++            );
+         };
+         assert_eq!(employees.len(), 1);
+     }
+@@ -869,16 +957,28 @@ mod tests {
+         // Exact model output pattern: [ at same indent as key (indent=0)
+         let input = "company_name: SnrRaptoPack\ncompany_departments:\n[\n  {\n    dept_name: Engineering\n    employees:\n    [\n      {\n        name: Alice\n        role: Lead Developer\n        salary: 95000\n      }\n      {\n        name: Bob\n        role: Backend Engineer\n        salary: null\n      }\n    ]\n  }\n  {\n    dept_name: Design\n    employees:\n    [\n      {\n        name: Clara\n        role: UI Designer\n        salary: 72000\n      }\n    ]\n  }\n]";
+         let result = parse_assignment_object(input);
+-        assert!(result.is_ok(), "Failed to parse same-indent array: {:?}", result.err());
++        assert!(
++            result.is_ok(),
++            "Failed to parse same-indent array: {:?}",
++            result.err()
++        );
+         let obj = result.unwrap();
+         assert_eq!(
+             obj.get("company_name"),
+             Some(&ASTValue::String("SnrRaptoPack".to_string()))
+         );
+         if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
+-            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
++            assert_eq!(
++                depts.len(),
++                2,
++                "Expected 2 departments, got {}",
++                depts.len()
++            );
+         } else {
+-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
++            panic!(
++                "company_departments should be an array, got {:?}",
++                obj.get("company_departments")
++            );
+         }
+     }
+ 
+@@ -897,13 +997,33 @@ mod tests {
+             obj.get("person_id"),
+             Some(&ASTValue::String("usr_777".to_string()))
+         );
+-        assert_eq!(
+-            obj.get("account_active"),
+-            Some(&ASTValue::Boolean(true))
+-        );
++        assert_eq!(obj.get("account_active"), Some(&ASTValue::Boolean(true)));
+         assert_eq!(
+             obj.get("account_plan"),
+             Some(&ASTValue::String("pro".to_string()))
+         );
+     }
++
++    #[test]
++    fn test_single_line_assignment_preserves_unquoted_email() {
++        let obj = parse_assignment_object("email: alice+alerts@example.co.uk").unwrap();
++        assert_eq!(
++            obj.get("email"),
++            Some(&ASTValue::String("alice+alerts@example.co.uk".to_string()))
++        );
++    }
++
++    #[test]
++    fn test_ts_object_rejects_duplicate_keys() {
++        let result = parse_ts_object(r#"{"name":"first","name":"second"}"#);
++        assert!(result.is_err());
++        assert!(result.unwrap_err().contains("Duplicate key 'name'"));
++    }
++
++    #[test]
++    fn test_layout_object_rejects_duplicate_keys() {
++        let result = parse_assignment_object("name: first\nname: second");
++        assert!(result.is_err());
++        assert!(result.unwrap_err().contains("Duplicate key 'name'"));
++    }
+ }

@@ -1,0 +1,5 @@
+{
+  "python": "3.12.6",
+  "matplotlib": "3.11.1",
+  "json_repair": "0.62.0"
+}

@@ -183,7 +183,11 @@ impl BlockOrchestrator {
     }
 
     fn check_blocks(&mut self, is_final: bool) {
-        let mut scanner = BlockScanner::new(&self.buffer);
+        let mut scanner = if is_final {
+            BlockScanner::new_final(&self.buffer)
+        } else {
+            BlockScanner::new(&self.buffer)
+        };
         let blocks = scanner.scan();
 
         if blocks.is_empty() {
@@ -247,9 +251,10 @@ impl BlockOrchestrator {
                         if !is_final && block.content.trim().is_empty() {
                             continue;
                         }
-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
-                            self.unflatten_tool_args(tool_name, ast_to_json_object(&fields))
-                        });
+                        let parsed =
+                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
+                                self.unflatten_tool_args(tool_name, ast_to_json_object(&fields))
+                            });
                         if is_final && parsed.is_none() {
                             continue;
                         }
@@ -281,9 +286,13 @@ impl BlockOrchestrator {
                         if !is_final && block.content.trim().is_empty() {
                             continue;
                         }
-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
-                            self.unflatten_workflow_args(workflow_name, ast_to_json_object(&fields))
-                        });
+                        let parsed =
+                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
+                                self.unflatten_workflow_args(
+                                    workflow_name,
+                                    ast_to_json_object(&fields),
+                                )
+                            });
                         if is_final && parsed.is_none() {
                             continue;
                         }
@@ -315,9 +324,10 @@ impl BlockOrchestrator {
                         if !is_final && block.content.trim().is_empty() {
                             continue;
                         }
-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
-                            self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
-                        });
+                        let parsed =
+                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
+                                self.unflatten_helper_args(helper_name, ast_to_json_object(&fields))
+                            });
                         if is_final && parsed.is_none() {
                             continue;
                         }
@@ -348,12 +358,13 @@ impl BlockOrchestrator {
                     if let (Some(component_name), Some(instance_id)) =
                         (block.target_name.as_deref(), block.instance_id.as_deref())
                     {
-                        let parsed = parse_partial_block_fields(&block.content).map(|fields| {
-                            self.unflatten_component_args(
-                                component_name,
-                                ast_to_json_object(&fields),
-                            )
-                        });
+                        let parsed =
+                            parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
+                                self.unflatten_component_args(
+                                    component_name,
+                                    ast_to_json_object(&fields),
+                                )
+                            });
                         if is_final && parsed.is_none() {
                             continue;
                         }
@@ -387,9 +398,10 @@ impl BlockOrchestrator {
                     if !is_final && block.content.trim().is_empty() {
                         continue;
                     }
-                    let parsed = parse_partial_schema_content(&block.content).map(|obj_ast| {
-                        self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast))
-                    });
+                    let parsed =
+                        parse_schema_content_for_phase(&block.content, is_final).map(|obj_ast| {
+                            self.unflatten_schema_response(schema_name, ast_to_json(&obj_ast))
+                        });
                     if is_final && parsed.is_none() {
                         continue;
                     }
@@ -653,7 +665,7 @@ impl BlockOrchestrator {
                 continue;
             };
 
-            let parsed = parse_partial_block_fields(&block.content).map(|fields| {
+            let parsed = parse_block_fields_for_phase(&block.content, is_final).map(|fields| {
                 self.unflatten_component_args(component_name, ast_to_json_object(&fields))
             });
 
@@ -740,6 +752,17 @@ fn parse_partial_block_fields(
     best
 }
 
+fn parse_block_fields_for_phase(
+    content: &str,
+    is_final: bool,
+) -> Option<std::collections::HashMap<String, ASTValue>> {
+    if is_final {
+        parse_block_fields(content)
+    } else {
+        parse_partial_block_fields(content)
+    }
+}
+
 fn parse_schema_content(content: &str) -> Result<ASTValue, String> {
     let trimmed = content.trim();
     if trimmed.is_empty() {
@@ -768,6 +791,14 @@ fn parse_partial_schema_content(content: &str) -> Option<ASTValue> {
     }
 
     best
+}
+
+fn parse_schema_content_for_phase(content: &str, is_final: bool) -> Option<ASTValue> {
+    if is_final {
+        parse_schema_content(content).ok()
+    } else {
+        parse_partial_schema_content(content)
+    }
 }
 
 fn is_incomplete_response_text_open(input: &str) -> bool {
@@ -1147,7 +1178,10 @@ fn merge_template(template: &Value, actual: &Value) -> Value {
     }
 }
 
-fn build_named_field_template(schema_value: &Value, types: Option<&HashMap<String, TypeDefinition>>) -> Value {
+fn build_named_field_template(
+    schema_value: &Value,
+    types: Option<&HashMap<String, TypeDefinition>>,
+) -> Value {
     Value::Object(build_template_fields(schema_value, types))
 }
 
@@ -1701,5 +1735,112 @@ mod tests {
             "Expected response_schema, got: {:?}",
             intent_names
         );
+    }
+
+    #[test]
+    fn finalization_recovers_unclosed_tool_header() {
+        let mut orch = setup_orchestrator();
+        orch.register_tool_shape(
+            "search",
+            &serde_json::json!({"query": {"type": "string"}}),
+            None,
+        );
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: search\nquery: parsers\n[/tool_call]");
+        assert!(emitted.lock().unwrap().is_empty());
+        orch.end();
+
+        let emitted = emitted.lock().unwrap();
+        assert_eq!(emitted.len(), 1);
+        assert_eq!(emitted[0].0, "tool_call");
+        assert_eq!(
+            emitted[0].1["args"],
+            serde_json::json!({"query": "parsers"})
+        );
+    }
+
+    #[test]
+    fn tool_call_unflattens_schema_known_dotted_path() {
+        let mut orch = setup_orchestrator();
+        orch.register_tool_shape(
+            "locate",
+            &serde_json::json!({
+                "user": {
+                    "type": {
+                        "type": "object",
+                        "properties": {
+                            "address": {
+                                "type": {
+                                    "type": "object",
+                                    "properties": {
+                                        "city": {"type": "string"}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }),
+            None,
+        );
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: locate]\nuser.address.city: Tarkwa\n[/tool_call]");
+        orch.end();
+
+        let emitted = emitted.lock().unwrap();
+        assert_eq!(
+            emitted[0].1["args"],
+            serde_json::json!({"user": {"address": {"city": "Tarkwa"}}})
+        );
+    }
+
+    #[test]
+    fn duplicate_tool_argument_is_rejected() {
+        let mut orch = setup_orchestrator();
+        orch.register_tool_shape(
+            "search",
+            &serde_json::json!({"query": {"type": "string"}}),
+            None,
+        );
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: search]\n{query: first, query: second}\n[/tool_call]");
+        orch.end();
+
+        assert!(emitted.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn duplicate_layout_tool_argument_is_rejected_at_finalization() {
+        let mut orch = setup_orchestrator();
+        orch.register_tool_shape(
+            "search",
+            &serde_json::json!({"query": {"type": "string"}}),
+            None,
+        );
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::<(String, Value)>::new()));
+        let emitted_for_handler = Arc::clone(&emitted);
+        orch.on_intent_ready(Arc::new(move |name, value| {
+            emitted_for_handler.lock().unwrap().push((name, value));
+        }));
+
+        orch.write("[tool_call: search]\nquery: first\nquery: second\n[/tool_call]");
+        orch.end();
+
+        assert!(emitted.lock().unwrap().is_empty());
     }
 }

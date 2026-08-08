@@ -18,11 +18,31 @@ pub fn parse_assignment_object(input: &str) -> Result<HashMap<String, ASTValue>,
             return Ok(obj);
         }
     }
+    // The token parser intentionally skips unknown punctuation for recovery.
+    // For a bare, single-line email this turns `alice@example.com` into a
+    // different string while still returning Ok, so route that scalar through
+    // the layout parser which preserves raw string punctuation.
+    if should_prefer_layout_scalar(input) {
+        return parse_indented_assignment_object(input);
+    }
     match parse_ts_object(&format!("{{{}}}", input)) {
         Ok(ASTValue::Object(obj)) => Ok(obj),
         Ok(_) => Err("Expected assignment object".to_string()),
         Err(_) => parse_indented_assignment_object(input),
     }
+}
+
+fn should_prefer_layout_scalar(input: &str) -> bool {
+    let Some((_key, value)) = split_key_value(input) else {
+        return false;
+    };
+    let value = value.trim();
+    !value.starts_with('{')
+        && !value.starts_with('[')
+        && !value.starts_with('(')
+        && !value.starts_with('"')
+        && !value.starts_with('\'')
+        && value.contains('@')
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +109,9 @@ fn parse_indented_object(
         }
 
         let (key, value) = parse_object_entry(lines, index)?;
-        map.insert(key, value);
+        if map.insert(key.clone(), value).is_some() {
+            return Err(format!("Duplicate key '{}'", key));
+        }
     }
 
     Ok(map)
@@ -100,8 +122,12 @@ fn parse_object_entry(
     index: &mut usize,
 ) -> Result<(String, ASTValue), String> {
     let line = &lines[*index];
-    let (key, value_text) = split_key_value(&line.text)
-        .ok_or_else(|| format!("Expected 'key: value' or 'key = value' pair near '{}'", line.text))?;
+    let (key, value_text) = split_key_value(&line.text).ok_or_else(|| {
+        format!(
+            "Expected 'key: value' or 'key = value' pair near '{}'",
+            line.text
+        )
+    })?;
     let current_indent = line.indent;
     *index += 1;
 
@@ -122,8 +148,7 @@ fn parse_object_entry(
             full_value.push_str(&format!("\n{}", &lines[*index].text));
             *index += 1;
         }
-        parse_ts_object(&full_value)
-            .unwrap_or_else(|_| ASTValue::String(full_value))
+        parse_ts_object(&full_value).unwrap_or_else(|_| ASTValue::String(full_value))
     } else {
         // Parse the value while avoiding tokenizer corruption of special chars
         // like @ (emails) and . (URLs/domains). Only route through parse_ts_object
@@ -143,7 +168,12 @@ fn parse_object_entry(
             ASTValue::Boolean(false)
         } else if trimmed == "null" {
             ASTValue::Null
-        } else if trimmed.chars().next().map(|c| c.is_ascii_digit() || c == '-').unwrap_or(false) {
+        } else if trimmed
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit() || c == '-')
+            .unwrap_or(false)
+        {
             // Starts with digit or minus — try as number, fall back to string
             parse_ts_object(&value_text)
                 .unwrap_or_else(|_| ASTValue::String(value_text.to_string()))
@@ -220,8 +250,7 @@ fn parse_nested_value(
             collected.push_str(&lines[*index].text);
             *index += 1;
         }
-        parse_ts_object(&collected)
-            .map_err(|e| format!("Failed to parse nested JSON value: {}", e))
+        parse_ts_object(&collected).map_err(|e| format!("Failed to parse nested JSON value: {}", e))
     } else {
         Ok(ASTValue::Object(parse_indented_object(
             lines,
@@ -265,13 +294,17 @@ fn parse_indented_array(
             } else {
                 parse_ts_object(&value_text)?
             };
-            object.insert(key, first_value);
+            if object.insert(key.clone(), first_value).is_some() {
+                return Err(format!("Duplicate key '{}'", key));
+            }
 
             if *index < lines.len() && lines[*index].indent > current_indent {
                 let nested_indent = lines[*index].indent;
                 let nested_object = parse_indented_object(lines, index, nested_indent)?;
                 for (nested_key, nested_value) in nested_object {
-                    object.insert(nested_key, nested_value);
+                    if object.insert(nested_key.clone(), nested_value).is_some() {
+                        return Err(format!("Duplicate key '{}'", nested_key));
+                    }
                 }
             }
 
@@ -340,7 +373,8 @@ fn consume_structured_closer(
     parent_indent: usize,
     closer: &str,
 ) {
-    if *index < lines.len() && lines[*index].indent > parent_indent && lines[*index].text == closer {
+    if *index < lines.len() && lines[*index].indent > parent_indent && lines[*index].text == closer
+    {
         *index += 1;
     }
 }
@@ -483,7 +517,9 @@ impl TSObjectParser {
             self.advance();
 
             let value = self.parse_value()?;
-            map.insert(key, value);
+            if map.insert(key.clone(), value).is_some() {
+                return Err(format!("Duplicate key '{}'", key));
+            }
 
             if self.current == TokenKind::Comma {
                 self.advance();
@@ -525,7 +561,9 @@ impl TSObjectParser {
 
             // Parse value
             let value = self.parse_value()?;
-            map.insert(key, value);
+            if map.insert(key.clone(), value).is_some() {
+                return Err(format!("Duplicate key '{}'", key));
+            }
 
             // Optional comma
             if self.current == TokenKind::Comma {
@@ -685,10 +723,7 @@ mod tests {
             result.get("action_onclick"),
             Some(&ASTValue::Call {
                 name: "delete".to_string(),
-                args: HashMap::from([(
-                    "id".to_string(),
-                    ASTValue::String("123".to_string())
-                )]),
+                args: HashMap::from([("id".to_string(), ASTValue::String("123".to_string()))]),
             })
         );
     }
@@ -698,11 +733,21 @@ mod tests {
         // Exact schema content format from LLM output
         let input = "name: Hiroshi\nage: 21\ncountry: Japan\nis_student: true";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse schema content: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse schema content: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
-        assert_eq!(obj.get("name"), Some(&ASTValue::String("Hiroshi".to_string())));
+        assert_eq!(
+            obj.get("name"),
+            Some(&ASTValue::String("Hiroshi".to_string()))
+        );
         assert_eq!(obj.get("age"), Some(&ASTValue::Number(21.0)));
-        assert_eq!(obj.get("country"), Some(&ASTValue::String("Japan".to_string())));
+        assert_eq!(
+            obj.get("country"),
+            Some(&ASTValue::String("Japan".to_string()))
+        );
         assert_eq!(obj.get("is_student"), Some(&ASTValue::Boolean(true)));
     }
 
@@ -728,7 +773,11 @@ mod tests {
         // LLM outputs arrays across multiple indented lines
         let input = "project_name: Auwgent SDK Launch\ntasks: [\n  { title: Write documentation, priority: high, completed: false },\n  { title: Fix buffer bugs, priority: medium, completed: true },\n  { title: Publish to npm, priority: low, completed: false }\n]";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse multi-line array: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse multi-line array: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
         assert_eq!(
             obj.get("project_name"),
@@ -745,7 +794,11 @@ mod tests {
     fn test_assignment_object_dash_prefixed_inline_object_array() {
         let input = "project_name: Auwgent SDK Launch\ntasks:\n  - { title: Write documentation, priority: high, completed: false }\n  - { title: Fix buffer bugs, priority: medium, completed: true }\n  - { title: Publish to npm, priority: low, completed: false }";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse task array: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse task array: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
 
         assert_eq!(
@@ -769,10 +822,7 @@ mod tests {
             first_task.get("priority"),
             Some(&ASTValue::String("high".to_string()))
         );
-        assert_eq!(
-            first_task.get("completed"),
-            Some(&ASTValue::Boolean(false))
-        );
+        assert_eq!(first_task.get("completed"), Some(&ASTValue::Boolean(false)));
     }
 
     #[test]
@@ -780,16 +830,28 @@ mod tests {
         // LLM puts the array value on the next indented line after "key:"
         let input = "company_name: SnrRaptoPack\ncompany_departments:\n  [\n    {\n      dept_name: Engineering,\n      employees:\n        [\n          { name: Alice, role: Lead Developer, salary: 95000 },\n          { name: Bob, role: Backend Engineer, salary: null }\n        ]\n    },\n    {\n      dept_name: Design,\n      employees:\n        [\n          { name: Clara, role: UI Designer, salary: 72000 }\n        ]\n    }\n  ]";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse nested array: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse nested array: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
         assert_eq!(
             obj.get("company_name"),
             Some(&ASTValue::String("SnrRaptoPack".to_string()))
         );
         if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
-            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
+            assert_eq!(
+                depts.len(),
+                2,
+                "Expected 2 departments, got {}",
+                depts.len()
+            );
         } else {
-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+            panic!(
+                "company_departments should be an array, got {:?}",
+                obj.get("company_departments")
+            );
         }
     }
 
@@ -797,7 +859,11 @@ mod tests {
     fn test_assignment_object_dash_prefixed_multiline_object_array() {
         let input = "company_departments:\n  - {\n      dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n        - { name: Bob, role: Backend Engineer, salary: null }\n    }\n  - {\n      dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }\ncompany_name: SnrRaptoPack";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse company: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
 
         assert_eq!(
@@ -806,7 +872,10 @@ mod tests {
         );
 
         let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+            panic!(
+                "company_departments should be an array, got {:?}",
+                obj.get("company_departments")
+            );
         };
         assert_eq!(depts.len(), 2);
 
@@ -819,14 +888,20 @@ mod tests {
         );
 
         let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
-            panic!("employees should be an array, got {:?}", engineering.get("employees"));
+            panic!(
+                "employees should be an array, got {:?}",
+                engineering.get("employees")
+            );
         };
         assert_eq!(employees.len(), 2);
 
         let ASTValue::Object(alice) = &employees[0] else {
             panic!("first employee should be an object, got {:?}", employees[0]);
         };
-        assert_eq!(alice.get("name"), Some(&ASTValue::String("Alice".to_string())));
+        assert_eq!(
+            alice.get("name"),
+            Some(&ASTValue::String("Alice".to_string()))
+        );
         assert_eq!(
             alice.get("role"),
             Some(&ASTValue::String("Lead Developer".to_string()))
@@ -834,7 +909,10 @@ mod tests {
         assert_eq!(alice.get("salary"), Some(&ASTValue::Number(95000.0)));
 
         let ASTValue::Object(bob) = &employees[1] else {
-            panic!("second employee should be an object, got {:?}", employees[1]);
+            panic!(
+                "second employee should be an object, got {:?}",
+                employees[1]
+            );
         };
         assert_eq!(bob.get("salary"), Some(&ASTValue::Null));
     }
@@ -843,11 +921,18 @@ mod tests {
     fn test_assignment_object_dash_prefixed_object_with_inline_prefix_and_nested_fields() {
         let input = "company_departments:\n  - { dept_name: Engineering\n      employees:\n        - { name: Alice, role: Lead Developer, salary: 95000 }\n    }\n  - { dept_name: Design\n      employees:\n        - { name: Clara, role: UI Designer, salary: 72000 }\n    }";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse company: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse company: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
 
         let Some(ASTValue::Array(depts)) = obj.get("company_departments") else {
-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+            panic!(
+                "company_departments should be an array, got {:?}",
+                obj.get("company_departments")
+            );
         };
 
         let ASTValue::Object(engineering) = &depts[0] else {
@@ -859,7 +944,10 @@ mod tests {
         );
 
         let Some(ASTValue::Array(employees)) = engineering.get("employees") else {
-            panic!("employees should be an array, got {:?}", engineering.get("employees"));
+            panic!(
+                "employees should be an array, got {:?}",
+                engineering.get("employees")
+            );
         };
         assert_eq!(employees.len(), 1);
     }
@@ -869,16 +957,28 @@ mod tests {
         // Exact model output pattern: [ at same indent as key (indent=0)
         let input = "company_name: SnrRaptoPack\ncompany_departments:\n[\n  {\n    dept_name: Engineering\n    employees:\n    [\n      {\n        name: Alice\n        role: Lead Developer\n        salary: 95000\n      }\n      {\n        name: Bob\n        role: Backend Engineer\n        salary: null\n      }\n    ]\n  }\n  {\n    dept_name: Design\n    employees:\n    [\n      {\n        name: Clara\n        role: UI Designer\n        salary: 72000\n      }\n    ]\n  }\n]";
         let result = parse_assignment_object(input);
-        assert!(result.is_ok(), "Failed to parse same-indent array: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Failed to parse same-indent array: {:?}",
+            result.err()
+        );
         let obj = result.unwrap();
         assert_eq!(
             obj.get("company_name"),
             Some(&ASTValue::String("SnrRaptoPack".to_string()))
         );
         if let Some(ASTValue::Array(depts)) = obj.get("company_departments") {
-            assert_eq!(depts.len(), 2, "Expected 2 departments, got {}", depts.len());
+            assert_eq!(
+                depts.len(),
+                2,
+                "Expected 2 departments, got {}",
+                depts.len()
+            );
         } else {
-            panic!("company_departments should be an array, got {:?}", obj.get("company_departments"));
+            panic!(
+                "company_departments should be an array, got {:?}",
+                obj.get("company_departments")
+            );
         }
     }
 
@@ -897,13 +997,33 @@ mod tests {
             obj.get("person_id"),
             Some(&ASTValue::String("usr_777".to_string()))
         );
-        assert_eq!(
-            obj.get("account_active"),
-            Some(&ASTValue::Boolean(true))
-        );
+        assert_eq!(obj.get("account_active"), Some(&ASTValue::Boolean(true)));
         assert_eq!(
             obj.get("account_plan"),
             Some(&ASTValue::String("pro".to_string()))
         );
+    }
+
+    #[test]
+    fn test_single_line_assignment_preserves_unquoted_email() {
+        let obj = parse_assignment_object("email: alice+alerts@example.co.uk").unwrap();
+        assert_eq!(
+            obj.get("email"),
+            Some(&ASTValue::String("alice+alerts@example.co.uk".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_ts_object_rejects_duplicate_keys() {
+        let result = parse_ts_object(r#"{"name":"first","name":"second"}"#);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Duplicate key 'name'"));
+    }
+
+    #[test]
+    fn test_layout_object_rejects_duplicate_keys() {
+        let result = parse_assignment_object("name: first\nname: second");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Duplicate key 'name'"));
     }
 }

@@ -1,0 +1,15 @@
+{
+  "artifact": "Auwgent IMP parser paper benchmark",
+  "source_repository": "https://github.com/snrraptopack/Auwgent",
+  "source_revision": "5a110e78a8440921d7d4302769bc049180f9d2bf",
+  "source_patch": "parser-hardening-v1",
+  "source_patch_sha256": "4ed8e986cdcd0c47dc9bea181be2371835bc065c05302de61b51c96fa7fc31cf",
+  "repetitions": 10,
+  "generated_cases": 900,
+  "positive_cases": 750,
+  "rejection_cases": 150,
+  "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "operating_system": "windows",
+  "architecture": "x86_64",
+  "metric_note": "TTFPS is parser-side time from first supplied chunk to first valid partial callback; it excludes model and network latency."
+}

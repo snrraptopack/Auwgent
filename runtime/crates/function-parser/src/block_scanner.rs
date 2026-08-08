@@ -37,6 +37,7 @@ pub struct Block {
 pub struct BlockScanner {
     chars: Vec<char>,
     pos: usize,
+    recover_unclosed_headers: bool,
 }
 
 impl BlockScanner {
@@ -65,6 +66,19 @@ impl BlockScanner {
         Self {
             chars: input.chars().collect(),
             pos: 0,
+            recover_unclosed_headers: false,
+        }
+    }
+
+    /// Creates a scanner for a completed stream. At end-of-stream only, a
+    /// known opening header may use its line ending as a missing `]` boundary.
+    /// Incremental scans remain strict so a legitimately fragmented header is
+    /// never closed prematurely.
+    pub fn new_final(input: &str) -> Self {
+        Self {
+            chars: input.chars().collect(),
+            pos: 0,
+            recover_unclosed_headers: true,
         }
     }
 
@@ -143,6 +157,9 @@ impl BlockScanner {
             if *ch == ']' {
                 return Some(header.trim().to_string());
             }
+            if self.recover_unclosed_headers && matches!(*ch, '\n' | '\r') {
+                return Some(header.trim().to_string());
+            }
             header.push(*ch);
             idx += 1;
         }
@@ -150,18 +167,24 @@ impl BlockScanner {
         None
     }
 
-    /// Returns the raw (untrimmed) character count between `[` and `]`.
-    fn raw_header_len(&self) -> usize {
+    /// Returns the number of characters occupied by the header, including its
+    /// closing `]` or the recovered line ending.
+    fn raw_header_span_len(&self) -> usize {
         if self.peek() != Some('[') {
             return 0;
         }
         let mut idx = self.pos + 1;
-        let mut count = 0;
         while let Some(ch) = self.chars.get(idx) {
             if *ch == ']' {
-                return count;
+                return idx - self.pos + 1;
             }
-            count += 1;
+            if self.recover_unclosed_headers && matches!(*ch, '\n' | '\r') {
+                let mut end = idx + 1;
+                if *ch == '\r' && self.chars.get(end) == Some(&'\n') {
+                    end += 1;
+                }
+                return end - self.pos;
+            }
             idx += 1;
         }
         0
@@ -169,11 +192,11 @@ impl BlockScanner {
 
     fn consume_header(&mut self) -> Option<String> {
         let header = self.try_read_header()?;
-        // Use the raw (untrimmed) length between [ and ] for accurate advancement.
-        // try_read_header trims whitespace from the header, but we must advance
-        // past the full raw header including any trailing spaces before `]`.
-        let raw_len = self.raw_header_len();
-        self.pos += raw_len + 2; // +2 for '[' and ']'
+        let span_len = self.raw_header_span_len();
+        if span_len == 0 {
+            return None;
+        }
+        self.pos += span_len;
         Some(header)
     }
 
@@ -240,7 +263,12 @@ impl BlockScanner {
         }
 
         if header.eq_ignore_ascii_case("render_component") {
-            return Some((BlockType::RenderComponent, None, None, "[/render_component]"));
+            return Some((
+                BlockType::RenderComponent,
+                None,
+                None,
+                "[/render_component]",
+            ));
         }
 
         let (kind, target) = header.split_once(':')?;
@@ -258,7 +286,12 @@ impl BlockScanner {
                 {
                     return None;
                 }
-                Some((BlockType::Tool, Some(target.to_string()), None, "[/tool_call]"))
+                Some((
+                    BlockType::Tool,
+                    Some(target.to_string()),
+                    None,
+                    "[/tool_call]",
+                ))
             }
             "workflow_call" => {
                 if target
@@ -281,7 +314,12 @@ impl BlockScanner {
                 {
                     return None;
                 }
-                Some((BlockType::Helper, Some(target.to_string()), None, "[/helper]"))
+                Some((
+                    BlockType::Helper,
+                    Some(target.to_string()),
+                    None,
+                    "[/helper]",
+                ))
             }
             "component" => {
                 let (component_name, instance_id) = parse_component_header_target(target)?;
@@ -384,7 +422,11 @@ impl BlockScanner {
     }
 
     fn raw_span(&self, start: usize, end: usize) -> String {
-        self.chars[start..end].iter().collect::<String>().trim().to_string()
+        self.chars[start..end]
+            .iter()
+            .collect::<String>()
+            .trim()
+            .to_string()
     }
 
     pub fn scan(&mut self) -> Vec<Block> {
@@ -756,6 +798,32 @@ mod tests {
     }
 
     #[test]
+    fn test_final_scan_recovers_header_closed_by_newline() {
+        let input = "[tool_call: search\nquery: fault tolerant parsing\n[/tool_call]";
+        let mut scanner = BlockScanner::new_final(input);
+        let blocks = scanner.scan();
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].block_type, BlockType::Tool);
+        assert_eq!(blocks[0].target_name.as_deref(), Some("search"));
+        assert_eq!(blocks[0].content, "query: fault tolerant parsing");
+        assert_eq!(blocks[0].raw, input);
+    }
+
+    #[test]
+    fn test_streaming_scan_defers_the_same_unclosed_header() {
+        let input = "[tool_call: search\nquery: fault tolerant parsing\n[/tool_call]";
+        let mut scanner = BlockScanner::new(input);
+        assert!(scanner.scan().is_empty());
+    }
+
+    #[test]
+    fn test_final_scan_does_not_guess_header_without_line_boundary() {
+        let mut scanner = BlockScanner::new_final("[tool_call: search");
+        assert!(scanner.scan().is_empty());
+    }
+
+    #[test]
     fn test_incomplete_tool_header_flushes_prior_chat_only() {
         let input = "Thinking...[tool_call: user_name";
         let mut scanner = BlockScanner::new(input);
@@ -773,9 +841,18 @@ mod tests {
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
-        assert_eq!(blocks.len(), 2, "Expected 2 blocks (Chat + Out), got {}: {:?}", blocks.len(), blocks);
+        assert_eq!(
+            blocks.len(),
+            2,
+            "Expected 2 blocks (Chat + Out), got {}: {:?}",
+            blocks.len(),
+            blocks
+        );
         assert_eq!(blocks[0].block_type, BlockType::Chat);
-        assert_eq!(blocks[0].content, "Hiroshi is a 21-year-old student from Japan.");
+        assert_eq!(
+            blocks[0].content,
+            "Hiroshi is a 21-year-old student from Japan."
+        );
         assert_eq!(blocks[1].block_type, BlockType::Out);
         assert_eq!(blocks[1].target_name, Some("Output".to_string()));
         assert!(blocks[1].content.contains("name: Hiroshi"));
@@ -783,12 +860,18 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_call_llama_reproduce(){
+    fn test_tool_call_llama_reproduce() {
         let input = " \n[tool_call: get_user_name_age] \n[/tool_call]\n[tool_call: get_location] \n[/tool_call]";
         let mut scanner = BlockScanner::new(input);
         let blocks = scanner.scan();
 
-        assert_eq!(blocks.len(), 2, "expected 2 tools got {} : {:?}", blocks.len(), blocks);
+        assert_eq!(
+            blocks.len(),
+            2,
+            "expected 2 tools got {} : {:?}",
+            blocks.len(),
+            blocks
+        );
         assert_eq!(blocks[0].block_type, BlockType::Tool);
         assert_eq!(blocks[1].block_type, BlockType::Tool);
         assert_eq!(blocks[0].target_name, Some("get_user_name_age".to_string()));
