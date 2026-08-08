@@ -292,6 +292,14 @@ underscore aliases (for example, \texttt{user\_address\_city}) and dotted
 paths whose complete segment sequence is present in the same metadata.
 Unknown dotted keys remain literal rather than being split heuristically.
 
+\paragraph{Operational summary.} For each chunk, Layer 2 appends text to its
+buffer, extracts only complete recognized headers, and retains any suffix that
+is a known header prefix; finalization alone enables newline-bounded header
+repair. For each parsed key--value pair, Layer 4 first tests the exact alias
+map, then tests a dotted path against compiler-authorized paths, otherwise
+preserving the key literally. Before reconstruction, any duplicate in a
+completed payload changes the decision from acceptance to rejection.
+
 \subsection{Layer 5: Incremental State Synthesis and Deduplicated Streaming}
 Maintains a structural hash of the partial payload tree; identical
 successive hashes (e.g., from whitespace-only deltas) suppress redundant
@@ -475,6 +483,13 @@ Duplicate key & \texttt{q:a\textbackslash n q:b} & Reject completed block & L3/L
 
 \subsection{Metrics}
 
+With $N_e$ exact positive-oracle matches, $N_r$ recoverable cases, $N_a$
+ambiguity controls accepted as a specific AST, and $N_c$ total controls:
+\[
+\mathrm{SRR}=100\frac{N_e}{N_r}, \qquad
+\mathrm{OTR}=100\frac{N_a}{N_c}.
+\]
+
 \begin{itemize}
 \item \textbf{Syntactic Recovery Rate (SRR):} parsed ASTs exactly equal to
 the case oracle / recoverable invocation attempts. Parser acceptance alone
@@ -485,7 +500,7 @@ network, rendering, and tool-execution latency.
 \item \textbf{Transport Invariance Score:} \% identical parsed AST output
 between monolithic and 1-character-fragmented delivery of the same
 stream.
-\item \textbf{Over-Tolerance Rate (new):} \% of all 150 ambiguity controls silently
+\item \textbf{Over-Tolerance Rate (OTR, new):} \% of all 150 ambiguity controls silently
 accepted as a specific structure rather than flagged as ambiguous.
 \end{itemize}
 
