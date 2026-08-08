@@ -43,10 +43,10 @@ maameansong36@gmail.com}
 
 \begin{abstract}
 Prior work evaluated the Intent Marker Protocol (IMP) against JSON-schema
-function calling across Qwen-3-32B, Llama-3.3-70B, and GPT-OSS-120B,
-establishing compatibility for those tested models and token-scaling behavior while leaving
-the downstream parser mechanisms unisolated \cite{irai2026}. This paper opens
-that box. We present a five-layer
+function calling across Qwen-3-32B, Llama-3.3-70B, and gpt-oss-120b,
+establishing compatibility for those tested models and token-scaling behavior
+without independently isolating the downstream parser \cite{irai2026}. This
+paper examines that parser independently. We present a five-layer
 runtime architecture for tolerant intent-marker parsing -- protocol
 facade, stream delimiter scanner, dual-dialect tolerant lexer,
 compiler-bound schema unflattening, and incremental state synthesis --
@@ -74,7 +74,7 @@ Intent Marker Protocol, Fault-Tolerant Parsing, Error-Tolerant Compilation, Stru
 The Intent Marker Protocol (IMP) was introduced as an alternative to
 provider-native JSON function calling, separating tool communication
 (a compact DSL) from output validation (a downstream parser), and was
-shown empirically across Qwen-3-32B, Llama-3.3-70B, and GPT-OSS-120B to
+shown empirically across Qwen-3-32B, Llama-3.3-70B, and gpt-oss-120b to
 avoid the observed provider-level exclusions, reduce schema-declaration token overhead by 47\%,
 and reduce aggregate effective input tokens by 6.32$\times$ at 100 registered
 tools \cite{irai2026}. That evaluation measured end-to-end protocol behavior
@@ -361,10 +361,25 @@ chunk boundaries; Section~V measures this property experimentally.
 ``repaired'' by selecting a value. Final executable blocks are rejected;
 longest-valid-prefix recovery is restricted to non-final partial state.
 
-\paragraph{Bounded recovery contract.} Final-stream header repair requires a
-newline boundary; dotted expansion requires an exact compiler-known path;
-duplicate keys reject the completed block; and prefix recovery may update
-partial UI state but cannot authorize tool execution.
+\paragraph{Canonical envelope and bounded recovery.} The canonical core
+envelope is
+\[
+\begin{aligned}
+S &::= B^*, & B_k &::= O_k\,P\,C(k),\\
+O_k &::= \texttt{[}k\texttt{]} \mid \texttt{[}k\texttt{:}N\texttt{]},
+& k &\in \mathcal{K}_{\mathrm{IMP}},
+\end{aligned}
+\]
+where $N$ is a target name or metadata, $P$ is payload text, and $C(k)$ is
+the registered closing marker for intent kind $k$. Recovery maps malformed
+input to this envelope only under four execution-safety invariants: a final
+intent requires a recognized, boundary-resolved opening marker; its payload
+must parse without duplicate keys; structural expansion must match an exact
+compiler-authorized path; and non-final prefix recovery may update partial UI
+state but cannot authorize execution. End-of-stream header repair additionally
+requires a newline boundary. Inputs outside these predicates are rejected;
+recovery coverage is claimed only for the six evaluated patterns, not for
+arbitrary corruption.
 
 \begin{figure}[t]
 \centering
@@ -406,6 +421,9 @@ chunks.}
 The corpus is fault-directed and stratified by parser transformation. Case
 quotas are chosen to isolate recovery mechanisms and exact semantic outcomes,
 not to approximate the prevalence of faults in deployed LLM traffic.
+The 900-case corpus contains 750 recoverable cases with exact-AST oracles
+(Suites A--C and the positive portion of Suite H) and 150 ambiguity controls
+with rejection oracles (Suite E and the remaining portion of Suite H).
 
 \textbf{Suite A -- Synthetic Syntax Corruption.} 100 unquoted-key/string
 payloads; 100 indentation-only (brace-free) payloads; 100 comma-omission
@@ -422,7 +440,7 @@ times each, producing 4,000 transport trials.
 across 1--5 nesting levels; 50 key-alias payloads.
 
 \textbf{Relation to prior real-model evaluation.} The preceding study tested
-IMP with Qwen-3-32B, Llama-3.3-70B, and GPT-OSS-120B \cite{irai2026}. The
+IMP with Qwen-3-32B, Llama-3.3-70B, and gpt-oss-120b \cite{irai2026}. The
 present ablation deliberately holds generation outside the experiment so
 parser-layer effects are measured independently. The artifact can import
 provenance-labeled JSONL generations, but no new model-scale result is claimed.
@@ -492,7 +510,7 @@ the case oracle / recoverable invocation attempts. Parser acceptance alone
 does not count as recovery.
 \item \textbf{First-Pass Execution Rate:} not reported because the
 micro-benchmark invokes no tool executor or corrective LLM loop.
-\item \textbf{Parser TTFPS:} local elapsed time from supplying the first
+\item \textbf{Parser Time to First Partial State (TTFPS):} local elapsed time from supplying the first
 chunk to the first valid partial-intent callback. This excludes generation,
 network, rendering, and tool-execution latency.
 \item \textbf{Prompt Token Footprint Reduction:} vs. full OpenAPI/JSON
@@ -664,25 +682,34 @@ end-to-end comparison with constrained decoding.}
 \end{figure}
 
 The payload-only \texttt{json-repair} baseline achieved 20.00\% exact SRR
-on Suites A and C. On the 150 conflicting duplicate-key controls, strict
+on Suites A and C. Its exact recoveries were confined to the 100
+unquoted-key/string cases; it did not exactly recover the layout,
+comma-omission, protected-scalar, alias, or dotted-path categories. Because it
+does not interpret IMP envelopes, its transport latency is not compared with
+the full IMP parser. On the 150 conflicting duplicate-key controls, strict
 JSON and scanner-plus-JSON each had a 75.33\% over-tolerance rate. Both
 tolerant-lexer configurations rejected every control, yielding 0.00\%
 over-tolerance. The remaining strict-baseline acceptances reflect duplicate
 selection by the JSON deserializer rather than safe disambiguation.
 
-\section{Discussion and Limitations}
+\section{Discussion and Threats to Validity}
 
-The evaluation isolates deterministic parser behavior, not end-to-end agent
-reliability. Its synthetic generators cover named corruption families but are
-not a probability sample of real LLM failures; consequently, SRR is not a
-forecast of the parser's deployment-wide success rate. Real-model compatibility and
-token scaling across Qwen-3-32B, Llama-3.3-70B, and GPT-OSS-120B were evaluated
-in \cite{irai2026}; they are not re-run here because the present experiment
-holds generation constant to isolate parser layers. Consequently, this paper
-adds no new model-family generalization, BFCL/ToolBench accuracy, or true
-first-pass execution claim. Prompt-token reduction is likewise inherited from
-\cite{irai2026}, and no generation-layer constrained-decoder or provider-native
-latency baseline was executed.
+\textbf{Construct validity.} The evaluation measures deterministic parser
+recovery, not end-to-end agent reliability or the model's latent intent. Its
+synthetic generators cover named corruption families but are not a probability
+sample of deployed LLM failures; SRR is therefore conditional corpus coverage,
+not a forecast of deployment-wide success. \textbf{Internal validity.} Exact
+oracles and deterministic inputs make configurations reproducible but do not
+sample generator variance. The template-disjoint regression suite, frozen
+patch, and artifact checksums limit implementation drift, but not benchmark
+designer bias. \textbf{External validity.} Real-model compatibility and token
+scaling across Qwen-3-32B, Llama-3.3-70B, and gpt-oss-120b were evaluated in
+\cite{irai2026}; they are not re-run here because generation is held constant
+to isolate parser layers. This paper therefore adds no new model-family
+generalization, BFCL/ToolBench accuracy, or true first-pass execution claim.
+Prompt-token reduction is inherited from \cite{irai2026}, and no
+generation-layer constrained-decoder or provider-native latency baseline was
+executed.
 
 The results support bounded recovery rather than unrestricted repair.
 Unclosed headers are repaired only at end-of-stream and only when a line
