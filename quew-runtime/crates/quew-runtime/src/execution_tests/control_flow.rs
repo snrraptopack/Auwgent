@@ -1,4 +1,4 @@
-use std::sync::Arc;
+﻿use std::sync::Arc;
 
 use quew_interner::Interner;
 use quew_ir::graph::{AgentGraph, CheckpointPolicy, DataRef, Edge, IrNode, NodeId, NodeKind};
@@ -34,12 +34,14 @@ fn execute_branch_routing() {
                 condition: DataRef::scalar(NodeId(0)),
                 then_node: NodeId(2),
                 else_node: Some(NodeId(3)),
+                then_span: Some((NodeId(2), NodeId(2))),
+                else_span: Some((NodeId(3), NodeId(3))),
             },
             checkpoint: CheckpointPolicy::Optional,
         },
     );
 
-    // n2: Then arm — bind 42
+    // n2: Then arm â€” bind 42
     nodes.insert(
         NodeId(2),
         IrNode {
@@ -52,7 +54,7 @@ fn execute_branch_routing() {
         },
     );
 
-    // n3: Else arm — bind 0
+    // n3: Else arm â€” bind 0
     nodes.insert(
         NodeId(3),
         IrNode {
@@ -65,7 +67,7 @@ fn execute_branch_routing() {
         },
     );
 
-    // n4: Output — returns the then_val
+    // n4: Output â€” returns the then_val
     nodes.insert(
         NodeId(4),
         IrNode {

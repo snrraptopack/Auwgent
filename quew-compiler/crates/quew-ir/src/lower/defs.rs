@@ -130,6 +130,7 @@ fn type_ref_name(ty: &IrType, interner: &Arc<Interner>) -> String {
         IrType::Bool => "bool".into(),
         IrType::Null => "null".into(),
         IrType::Void => "void".into(),
+        IrType::Any => "any".into(),
         IrType::Named(name) | IrType::GenericParam(name) | IrType::AgentOutput(name) => {
             interner.resolve(*name).to_string()
         }
@@ -358,6 +359,7 @@ pub(crate) fn lower_type_expr_with_params(
             "bool" => IrType::Bool,
             "null" => IrType::Null,
             "void" => IrType::Void,
+            "any" => IrType::Any,
             "Text" => IrType::Text,
             _ if type_params.contains(name) => IrType::GenericParam(*name),
             _ => IrType::Named(*name),

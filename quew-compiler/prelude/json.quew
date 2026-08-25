@@ -1,13 +1,8 @@
-@@type ParseResult<T> = {
-    data?: T
-    error?: string
-}
-
 @@rust("std.json.parse")
-!@@function json_parse<T>(value: string): ParseResult<T>
+!@@function json_parse(value: string): any
 
 @@rust("std.json.stringify")
-!@@function json_stringify<T>(value: T): string
+!@@function json_stringify(value: any): string
 
 @@rust("std.json.get")
-!@@function json_get<T>(value: T, path: string): T?
+!@@function json_get(value: any, path: string): any

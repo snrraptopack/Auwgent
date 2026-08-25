@@ -70,14 +70,19 @@ where
 
         let int_interp2 = interner.clone();
         let str_lit =
-            string_literal(source, interner.clone()).map_with(move |(val, s), _extra: &mut _| {
+            string_literal(source, interner.clone()).map_with(move |(_val, s), _extra: &mut _| {
                 let raw = &source[s.start..s.end];
-                let content = &raw[1..raw.len().saturating_sub(1)];
-                if has_interpolation(content) {
-                    build_interpolated(content, s.start + 1, &int_interp2)
+                // Unescape BEFORE interpolation scanning so `{expr}` detection
+                // and literal text operate on the real character stream.
+                let content = crate::common::unescape(&raw[1..raw.len().saturating_sub(1)]);
+                if has_interpolation(&content) {
+                    build_interpolated(&content, s.start + 1, &int_interp2)
                 } else {
+                    // No interpolation: still collapse `{{` / `}}` escapes so
+                    // brace handling is identical in every string.
+                    let text = unescape_braces(&content);
                     Expr::Lit(Lit::String(StringLit {
-                        value: val,
+                        value: int_interp2.intern(&text),
                         kind: StringKind::Regular,
                         span: to_span(s),
                     }))
@@ -447,6 +452,9 @@ fn build_interpolated(content: &str, offset: usize, interner: &Arc<Interner>) ->
                 if !text.is_empty() {
                     segments.push(InterpolatedSegment::Text(text));
                 }
+                // Mark everything consumed so the tail flush below does not
+                // push this fragment a second time.
+                text_start = content.len();
                 break;
             }
         } else {

@@ -17,6 +17,9 @@ pub enum PrimTy {
     Bool,
     Void,
     Null,
+    /// Dynamic value: accepts and produces any runtime value. Used by
+    /// JSON builtins and other untyped boundaries.
+    Any,
 }
 
 impl std::fmt::Display for PrimTy {
@@ -28,6 +31,7 @@ impl std::fmt::Display for PrimTy {
             PrimTy::Bool => write!(f, "bool"),
             PrimTy::Void => write!(f, "void"),
             PrimTy::Null => write!(f, "null"),
+            PrimTy::Any => write!(f, "any"),
         }
     }
 }
@@ -159,6 +163,9 @@ impl Ty {
     }
     pub fn null() -> Self {
         Ty::Primitive(PrimTy::Null)
+    }
+    pub fn any() -> Self {
+        Ty::Primitive(PrimTy::Any)
     }
 
     /// Wrap `self` in `Optional`. Idempotent: `T??` stays `T?`.
@@ -335,6 +342,13 @@ impl Ty {
             return true;
         }
 
+        // `any` accepts everything and everything accepts `any`.
+        if matches!(target, Ty::Primitive(PrimTy::Any))
+            || matches!(self, Ty::Primitive(PrimTy::Any))
+        {
+            return true;
+        }
+
         // Identical structural match
         if self == target {
             return true;
@@ -359,13 +373,17 @@ impl Ty {
             // T → Union target: at least one arm accepts T
             (src, Ty::Union(arms)) => arms.iter().any(|arm| src.is_assignable_to(arm)),
 
-            // Record subtyping: target fields must all be present with compatible types
+            // Record subtyping: target fields must all be present with compatible
+            // types — except optional (`T?`) target fields, which may be omitted.
             (Ty::Record(src_fields), Ty::Record(tgt_fields)) => {
                 tgt_fields.iter().all(|(name, tgt_ty)| {
-                    src_fields
-                        .get(name)
-                        .map(|src_ty| src_ty.is_assignable_to(tgt_ty))
-                        .unwrap_or(false)
+                    match src_fields.get(name) {
+                        Some(src_ty) => src_ty.is_assignable_to(tgt_ty),
+                        // Absent field: fine when the target marks it optional
+                        // or nullable.
+                        None => matches!(tgt_ty, Ty::Optional(_))
+                            || matches!(tgt_ty, Ty::Primitive(PrimTy::Null)),
+                    }
                 })
             }
 

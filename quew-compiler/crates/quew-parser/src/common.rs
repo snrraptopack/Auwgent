@@ -140,6 +140,9 @@ where
 }
 
 /// Parse a single-quoted string literal and intern its content (strips quotes).
+///
+/// Processes standard escape sequences: `\n`, `\r`, `\t`, `\"`, `\'`, `\\`,
+/// `\/`. Unknown escapes keep the escaped character as-is (`\q` -> `q`).
 pub fn string_literal<'tok, I>(
     source: &'tok str,
     interner: Arc<Interner>,
@@ -151,8 +154,34 @@ where
         let s: CSpan = extra.span();
         let raw = &source[s.start..s.end]; // includes surrounding `"`
         let content = &raw[1..raw.len() - 1]; // strip quotes
-        (interner.intern(content), s)
+        (interner.intern(&unescape(content)), s)
     })
+}
+
+/// Resolve backslash escape sequences in a string's raw source text.
+pub(crate) fn unescape(content: &str) -> String {
+    if !content.contains('\\') {
+        return content.to_string();
+    }
+
+    let mut out = String::with_capacity(content.len());
+    let mut chars = content.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('\\') => out.push('\\'),
+            Some('/') => out.push('/'),
+            Some(other) => out.push(other),
+            None => out.push('\\'), // trailing backslash: keep literally
+        }
+    }
+    out
 }
 
 /// Parse a triple-quoted string literal and intern its content (strips `"""`).

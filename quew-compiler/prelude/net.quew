@@ -1,16 +1,16 @@
-
-@@type Headers = {}
-
-@@type FetchConfig = {
+type FetchConfig = {
     method?: string
-    headers?: Headers
+    headers?: any
     body?: string
+    timeout_seconds?: number
 }
 
-type FetchResult<T> = {
-    data: T
+type FetchResponse = {
+    status: number
+    ok: bool
+    body: string
     error: string
 }
 
 @@rust("std.net.fetch")
-!@@function fetch<T>(url: string, config?: FetchConfig): FetchResult<T>
+!@@function fetch(url: string, config?: FetchConfig): FetchResponse

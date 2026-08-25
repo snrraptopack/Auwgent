@@ -1186,7 +1186,8 @@ function greet(name: string): string {
 }
 
 #[test]
-fn interpolated_number_produces_error() {
+fn interpolated_number_is_allowed() {
+    // The runtime stringifies numbers/bools/any in interpolation.
     let r = check_source(
         r#"
 function greet(age: number): string {
@@ -1195,9 +1196,28 @@ function greet(age: number): string {
 "#,
     );
     assert!(
+        !r.diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error),
+        "number interpolation should be allowed, got: {:?}",
+        r.diagnostics
+    );
+}
+
+#[test]
+fn interpolated_record_still_produces_error() {
+    let r = check_source(
+        r#"
+type Point = { x: number, y: number }
+function show(p: Point): string {
+    return "at {p}"
+}
+"#,
+    );
+    assert!(
         r.diagnostics
             .iter()
-            .any(|d| { d.severity == Severity::Error && d.message.contains("must be a string") }),
+            .any(|d| d.severity == Severity::Error && d.message.contains("must be a string")),
         "expected string-type error, got: {:?}",
         r.diagnostics
     );

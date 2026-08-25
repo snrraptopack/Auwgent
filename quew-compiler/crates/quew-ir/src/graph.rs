@@ -117,10 +117,18 @@ pub enum NodeKind {
     /// The executor evaluates `condition`, then follows `then_node` or
     /// `else_node`. The branch taken is recorded in the journal so that on
     /// resume the executor does not re-evaluate the condition.
+    ///
+    /// `then_span` / `else_span` are the inclusive node-id ranges owned by
+    /// each arm (recorded by the lowerer after bodies are lowered). The
+    /// executor marks every node in the *untaken* arm's span unreachable —
+    /// structural, unlike edge-chasing, which breaks when a branch statement
+    /// produces no data consumed by its successor.
     Branch {
         condition: DataRef,
         then_node: NodeId,
         else_node: Option<NodeId>,
+        then_span: Option<(NodeId, NodeId)>,
+        else_span: Option<(NodeId, NodeId)>,
     },
 
     /// A call to a pure or internal DSL function.
@@ -206,6 +214,14 @@ pub enum NodeKind {
     /// The executor returns `ExecutionError::Continue` from `run()`, which the
     /// loop executor catches to proceed to the next iteration.
     Continue,
+
+    /// `return expr` — terminate the enclosing graph with a value.
+    ///
+    /// Unlike the top-level implicit return (the graph's `Output` node), this
+    /// node short-circuits execution from *any* nesting depth below a loop
+    /// body: when it runs, the executor records the value and skips every
+    /// remaining node in the current graph.
+    Return { value: DataRef },
 }
 
 /// How an `AgentCall` node merges the child's execution context.

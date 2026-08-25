@@ -1,0 +1,10 @@
+function main(): number {
+    let x = 5
+    let label = "small"
+
+    if x > 3 {
+        label = "big"
+    }
+
+    return len(label)
+}

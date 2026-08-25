@@ -221,27 +221,64 @@ fn lower_stmt(
             Some(DataRef::scalar(id))
         }
         Stmt::Return(ret) => {
-            let value = ret.value.as_ref()?;
-            if let Some((agent, args)) = agent_call(value, check, definitions, builder) {
+            let Some(value) = ret.value.as_ref() else {
+                // Bare `return` — nothing to produce.
+                return None;
+            };
+
+            // Evaluate the returned value (agent call, tool call, or pure expr).
+            let (kind, checkpoint, args) = if let Some((agent, args)) =
+                agent_call(value, check, definitions, builder)
+            {
                 let mode = match ret.mode {
                     ReturnMode::Normal => AgentCallMode::BlackBox,
                     ReturnMode::WithTurns => AgentCallMode::WithTurns,
                 };
-                let id = builder.push(
+                (
                     NodeKind::AgentCall {
                         agent,
                         args: args.clone(),
                         mode,
                     },
                     CheckpointPolicy::Required,
-                );
-                for (slot, data) in args {
-                    builder.edge(data.node, id, slot);
-                }
-                Some(DataRef::scalar(id))
+                    args,
+                )
+            } else if matches!(value, Expr::Call(_)) {
+                lower_value_node(value, check, definitions, builder)
             } else {
-                Some(ensure_ref(value, check, definitions, builder))
+                (
+                    NodeKind::LetBind {
+                        name: builder.interner.intern("_"),
+                        value: lower_expr(
+                            value,
+                            check,
+                            definitions,
+                            builder.interner,
+                            &mut builder.ctx,
+                        ),
+                    },
+                    CheckpointPolicy::Optional,
+                    IndexMap::new(),
+                )
+            };
+
+            let value_id = builder.push(kind, checkpoint);
+            for (slot, data) in args {
+                builder.edge(data.node, value_id, slot);
             }
+
+            // Terminate the graph from here. The runtime records this value
+            // and skips all remaining nodes, so early returns inside branch
+            // bodies short-circuit correctly.
+            let return_id = builder.push(
+                NodeKind::Return {
+                    value: DataRef::scalar(value_id),
+                },
+                CheckpointPolicy::Never,
+            );
+            builder.edge(value_id, return_id, interner.intern("value"));
+
+            None
         }
         Stmt::If(if_stmt) => {
             let condition = ensure_ref(&if_stmt.condition, check, definitions, builder);
@@ -264,40 +301,44 @@ fn lower_stmt(
             // let-declarations inside a branch do not leak into the outer scope.
             let snapshot = builder.ctx.slots.clone();
 
+            // Push a placeholder Branch node. Targets and arm spans are
+            // back-patched after the bodies are lowered, because predicting
+            // node counts ahead of time is unreliable (nested ifs push extra
+            // merge nodes, non-ident conditions push temp LetBind nodes).
             let branch_id = builder.next_id();
-            let then_node = if if_stmt.then_body.is_empty() {
-                condition.node
-            } else {
-                NodeId(branch_id + 1)
-            };
-            let else_node = match &if_stmt.else_clause {
-                ElseClause::Else(body, _) if !body.is_empty() => Some(NodeId(
-                    branch_id + 1 + estimated_body_nodes(&if_stmt.then_body),
-                )),
-                ElseClause::ElseIf(if_stmt) if !if_stmt.then_body.is_empty() => Some(NodeId(
-                    branch_id + 1 + estimated_body_nodes(&if_stmt.then_body),
-                )),
-                ElseClause::None => None,
-                _ => None,
-            };
             let id = builder.push(
                 NodeKind::Branch {
                     condition: condition.clone(),
-                    then_node,
-                    else_node,
+                    then_node: condition.node,
+                    else_node: None,
+                    then_span: None,
+                    else_span: None,
                 },
                 CheckpointPolicy::Optional,
             );
             builder.edge(condition.node, id, interner.intern("condition"));
 
-            // Lower then-branch.
-            for stmt in &if_stmt.then_body {
-                let _ = lower_stmt(stmt, check, interner, definitions, builder);
-            }
+            // Lower then-branch, recording its exact node span.
+            let then_span = if if_stmt.then_body.is_empty() {
+                None
+            } else {
+                let start = builder.next_id();
+                for stmt in &if_stmt.then_body {
+                    let _ = lower_stmt(stmt, check, interner, definitions, builder);
+                }
+                span_from(NodeId(start), builder.next_id())
+            };
             let then_slots = builder.ctx.slots.clone();
 
-            // Restore snapshot and lower else-branch.
+            // Restore snapshot and lower else-branch, recording its span.
             builder.ctx.slots = snapshot.clone();
+            let else_start = match &if_stmt.else_clause {
+                ElseClause::Else(body, _) if !body.is_empty() => Some(builder.next_id()),
+                ElseClause::ElseIf(nested) if !nested.then_body.is_empty() => {
+                    Some(builder.next_id())
+                }
+                _ => None,
+            };
             match &if_stmt.else_clause {
                 ElseClause::Else(body, _) => {
                     for stmt in body {
@@ -313,9 +354,34 @@ fn lower_stmt(
                         builder,
                     );
                 }
-                ElseClause::None => {}
+                _ => {}
             }
+            let else_span =
+                else_start.and_then(|start| span_from(NodeId(start), builder.next_id()));
             let else_slots = builder.ctx.slots.clone();
+
+            // Back-patch the branch targets now that real node ids exist.
+            let then_node = if if_stmt.then_body.is_empty() {
+                condition.node
+            } else {
+                NodeId(branch_id + 1)
+            };
+            let else_node = else_span.map(|(start, _)| start);
+            if let Some(node) = builder.nodes.get_mut(&id) {
+                if let NodeKind::Branch {
+                    then_node: patch_then,
+                    else_node: patch_else,
+                    then_span: patch_then_span,
+                    else_span: patch_else_span,
+                    ..
+                } = &mut node.kind
+                {
+                    *patch_then = then_node;
+                    *patch_else = else_node;
+                    *patch_then_span = then_span;
+                    *patch_else_span = else_span;
+                }
+            }
 
             // Restore snapshot and create merge nodes for variables assigned in either branch.
             builder.ctx.slots = snapshot.clone();
@@ -808,20 +874,14 @@ fn ty_to_string(ty: &quew_types::Ty, interner: &Arc<Interner>) -> String {
     }
 }
 
-fn estimated_body_nodes(body: &[Stmt]) -> u32 {
-    body.iter()
-        .map(|stmt| match stmt {
-            Stmt::If(if_stmt) => {
-                1 + estimated_body_nodes(&if_stmt.then_body)
-                    + match &if_stmt.else_clause {
-                        ElseClause::Else(body, _) => estimated_body_nodes(body),
-                        ElseClause::ElseIf(stmt) => 1 + estimated_body_nodes(&stmt.then_body),
-                        ElseClause::None => 0,
-                    }
-            }
-            _ => 1,
-        })
-        .sum()
+/// Inclusive node span `[start, next_free)` — `None` when the arm lowered
+/// zero nodes.
+fn span_from(start: NodeId, next_free: u32) -> Option<(NodeId, NodeId)> {
+    if next_free > start.0 {
+        Some((start, NodeId(next_free - 1)))
+    } else {
+        None
+    }
 }
 
 struct GraphBuilder<'a> {

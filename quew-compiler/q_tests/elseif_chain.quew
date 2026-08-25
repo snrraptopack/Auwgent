@@ -1,0 +1,14 @@
+function main(): number {
+    let x = 5
+    let result = "none"
+
+    if x > 10 {
+        result = "huge"
+    } else if x + 0 > 3 {
+        result = "medium"
+    } else {
+        result = "small"
+    }
+
+    return len(result)
+}

@@ -1,0 +1,6 @@
+function helper(x: number): number {
+    return x * 2
+}
+function main(): number {
+    return helper(21)
+}

@@ -1,0 +1,16 @@
+function main(): number {
+    let x = 5
+    let y = 0
+    let z = 0
+
+    if x > 3 {
+        if x > 4 {
+            y = 1
+        }
+        z = 10
+    } else {
+        z = 20
+    }
+
+    return y * 10 + z
+}

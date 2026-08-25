@@ -1,4 +1,4 @@
-//! Deterministic graph executor.
+﻿//! Deterministic graph executor.
 //!
 //! [`Execution`] walks an [`AgentGraph`] and evaluates each node, producing a
 //! [`Value`] for the graph's [`Output`] node. It handles the deterministic
@@ -7,7 +7,7 @@
 //! methods).
 //!
 //! Effectful nodes ([`HostToolCall`], [`Reply`], [`AgentCall`]) are **not**
-//! supported in this plan — they will be added in Plans 17–19.
+//! supported in this plan â€” they will be added in Plans 17â€“19.
 //!
 //! # Execution model
 //!
@@ -24,9 +24,9 @@ use std::sync::Arc;
 
 use quew_interner::Interner;
 use quew_ir::QuewGraphIR;
-use quew_ir::graph::{AgentGraph, NodeId, NodeKind};
+use quew_ir::graph::{NodeId, NodeKind};
 
-use crate::eval::{EvalError, eval_expr};
+use crate::eval::EvalError;
 use crate::native::{NativeHandler, NativeRegistry};
 use crate::value::Value;
 
@@ -36,7 +36,11 @@ pub enum ExecutionError {
     /// The requested graph does not exist in the IR.
     GraphNotFound { graph_id: String },
     /// A node referenced an output that was never produced.
-    MissingOutput { node: NodeId },
+    MissingOutput { node: NodeId, detail: String },
+    /// A `while` loop exceeded the configured iteration limit.
+    LoopLimitExceeded { node: NodeId, limit: u64 },
+    /// Nested graph execution exceeded the configured call-depth limit.
+    RecursionLimitExceeded { limit: u32 },
     /// Expression evaluation failed.
     EvalError { node: NodeId, source: EvalError },
     /// A Branch node was encountered but its condition did not evaluate to bool.
@@ -59,6 +63,9 @@ pub enum ExecutionError {
     Break,
     /// `continue` was encountered inside a loop body.
     Continue,
+    /// A `return` node executed â€” internal sentinel; the recorded value
+    /// short-circuits the graph result and never escapes `run()`.
+    Returned,
 }
 
 impl std::fmt::Display for ExecutionError {
@@ -67,8 +74,25 @@ impl std::fmt::Display for ExecutionError {
             ExecutionError::GraphNotFound { graph_id } => {
                 write!(f, "graph '{graph_id}' not found in IR")
             }
-            ExecutionError::MissingOutput { node } => {
-                write!(f, "node {node} referenced an output that does not exist")
+            ExecutionError::MissingOutput { node, detail } => {
+                write!(
+                    f,
+                    "node {node} referenced an output that does not exist: {detail}"
+                )
+            }
+            ExecutionError::LoopLimitExceeded { node, limit } => {
+                write!(
+                    f,
+                    "while loop at node {node} exceeded the iteration limit of {limit}; \
+                     if this loop is expected to run longer, raise `limits.max_loop_iterations`"
+                )
+            }
+            ExecutionError::RecursionLimitExceeded { limit } => {
+                write!(
+                    f,
+                    "nested execution exceeded the call-depth limit of {limit}; \
+                     likely unbounded recursion"
+                )
             }
             ExecutionError::EvalError { node, source } => {
                 write!(f, "expression evaluation failed at node {node}: {source}")
@@ -100,11 +124,39 @@ impl std::fmt::Display for ExecutionError {
             }
             ExecutionError::Break => write!(f, "break"),
             ExecutionError::Continue => write!(f, "continue"),
+            ExecutionError::Returned => write!(f, "returned"),
         }
     }
 }
 
 impl std::error::Error for ExecutionError {}
+
+/// Safety limits applied during execution.
+///
+/// These exist so that runaway programs (infinite `while` loops, unbounded
+/// recursion) fail with a clean error instead of hanging the host process or
+/// overflowing the stack.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExecutionLimits {
+    /// Maximum iterations for a single `while` loop. `for` loops are bounded
+    /// by the array they iterate and need no cap.
+    pub max_loop_iterations: u64,
+    /// Maximum nested graph executions (function calls, loop bodies).
+    pub max_call_depth: u32,
+}
+
+impl Default for ExecutionLimits {
+    fn default() -> Self {
+        Self {
+            max_loop_iterations: 100_000,
+            // Conservative: each nested level consumes real stack frames
+            // (run_graph + eval_expr), so the cap must fire well before the
+            // host thread's stack (often 1 MB) is exhausted. Agent programs
+            // legitimately nest far below this; deeper recursion is a bug.
+            max_call_depth: 64,
+        }
+    }
+}
 
 /// Executes a deterministic (effect-free) agent or function graph.
 pub struct Execution<'a> {
@@ -114,19 +166,37 @@ pub struct Execution<'a> {
     pub interner: &'a Arc<Interner>,
     /// Registry of native functions (`@@rust` builtins).
     pub natives: &'a NativeRegistry,
+    /// Safety limits for this execution.
+    pub limits: ExecutionLimits,
+    /// Current nested-graph depth. Shared across recursive calls through
+    /// `&self`, hence the cell.
+    depth: std::cell::Cell<u32>,
 }
 
 impl<'a> Execution<'a> {
-    /// Create a new execution context bound to a compiled IR.
+    /// Create a new execution context bound to a compiled IR, with default
+    /// [`ExecutionLimits`].
     pub fn new(
         ir: &'a QuewGraphIR,
         interner: &'a Arc<Interner>,
         natives: &'a NativeRegistry,
     ) -> Self {
+        Self::with_limits(ir, interner, natives, ExecutionLimits::default())
+    }
+
+    /// Create a new execution context with explicit safety limits.
+    pub fn with_limits(
+        ir: &'a QuewGraphIR,
+        interner: &'a Arc<Interner>,
+        natives: &'a NativeRegistry,
+        limits: ExecutionLimits,
+    ) -> Self {
         Self {
             ir,
             interner,
             natives,
+            limits,
+            depth: std::cell::Cell::new(0),
         }
     }
 
@@ -156,7 +226,31 @@ impl<'a> Execution<'a> {
     /// outputs map. The outputs map is used by loop handlers to extract
     /// mutated captured variables even when `break`/`continue` interrupts
     /// execution before the graph's `Output` node.
+    ///
+    /// Tracks nested-graph depth (function calls, loop bodies) against
+    /// [`ExecutionLimits::max_call_depth`] so unbounded recursion fails with
+    /// a clean error instead of a stack overflow.
     fn run_graph(
+        &self,
+        graph: &quew_ir::graph::AgentGraph,
+        input: Value,
+    ) -> (Result<Value, ExecutionError>, HashMap<NodeId, Value>) {
+        let depth = self.depth.get() + 1;
+        if depth > self.limits.max_call_depth {
+            return (
+                Err(ExecutionError::RecursionLimitExceeded {
+                    limit: self.limits.max_call_depth,
+                }),
+                HashMap::new(),
+            );
+        }
+        self.depth.set(depth);
+        let result = self.run_graph_inner(graph, input);
+        self.depth.set(depth - 1);
+        result
+    }
+
+    fn run_graph_inner(
         &self,
         graph: &quew_ir::graph::AgentGraph,
         input: Value,
@@ -164,6 +258,9 @@ impl<'a> Execution<'a> {
         let mut outputs: HashMap<NodeId, Value> = HashMap::new();
         let mut unreachable: HashSet<NodeId> = HashSet::new();
         let mut control: Option<ExecutionError> = None;
+        // Value recorded by a `Return` node, if one executed. Takes priority
+        // over the graph's `Output` node.
+        let mut early_return: Option<Value> = None;
 
         // Seed the Input node.
         outputs.insert(graph.entry_node, input);
@@ -190,13 +287,13 @@ impl<'a> Execution<'a> {
                         value: quew_ir::graph::IrExpr::Ternary { .. },
                         ..
                     } => {
-                        // merge node — execute below
+                        // merge node â€” execute below
                     }
                     NodeKind::LetBind { name, .. } if self.interner.resolve(*name) == "_" => {
-                        // temporary binding (e.g. return object) — execute below
+                        // temporary binding (e.g. return object) â€” execute below
                     }
                     NodeKind::Output { .. } => {
-                        // output node — execute below
+                        // output node â€” execute below
                     }
                     _ => continue,
                 }
@@ -212,9 +309,12 @@ impl<'a> Execution<'a> {
                 NodeKind::Output { value } => {
                     let output_value = match self.resolve_data_ref(value, &outputs) {
                         Ok(v) => v,
-                        Err(_) => {
+                        Err(detail) => {
                             return (
-                                Err(ExecutionError::MissingOutput { node: value.node }),
+                                Err(ExecutionError::MissingOutput {
+                                    node: value.node,
+                                    detail,
+                                }),
                                 outputs,
                             );
                         }
@@ -222,8 +322,7 @@ impl<'a> Execution<'a> {
                     outputs.insert(*node_id, output_value);
                 }
                 NodeKind::LetBind { name: _, value } => {
-                    let result =
-                        match eval_expr(value, &outputs, self.interner, self.natives, self.ir) {
+                    let result = match self.eval_expr(value, &outputs) {
                             Ok(v) => v,
                             Err(e) => {
                                 return (
@@ -239,29 +338,26 @@ impl<'a> Execution<'a> {
                 }
                 NodeKind::Branch {
                     condition,
-                    then_node,
-                    else_node,
+                    then_node: _,
+                    else_node: _,
+                    then_span,
+                    else_span,
                 } => {
                     let cond_value = match self.resolve_data_ref(condition, &outputs) {
                         Ok(v) => v,
-                        Err(_) => {
+                        Err(detail) => {
                             return (
                                 Err(ExecutionError::MissingOutput {
                                     node: condition.node,
+                                    detail,
                                 }),
                                 outputs,
                             );
                         }
                     };
 
-                    let taken = match cond_value {
-                        Value::Bool(b) => {
-                            if b {
-                                *then_node
-                            } else {
-                                else_node.unwrap_or(*node_id)
-                            }
-                        }
+                    let cond = match cond_value {
+                        Value::Bool(b) => b,
                         _ => {
                             return (
                                 Err(ExecutionError::InvalidBranchCondition { node: *node_id }),
@@ -270,14 +366,15 @@ impl<'a> Execution<'a> {
                         }
                     };
 
-                    let not_taken = if taken == *then_node {
-                        *else_node
-                    } else {
-                        Some(*then_node)
-                    };
-
-                    if let Some(not_taken_id) = not_taken {
-                        self.mark_unreachable(graph, not_taken_id, &mut unreachable);
+                    // Structurally mark every node in the untaken arm's span
+                    // unreachable. Spans are recorded by the lowerer and cover
+                    // the full arm, so multi-statement bodies are skipped
+                    // correctly regardless of data dependencies between them.
+                    let untaken_span = if cond { *else_span } else { *then_span };
+                    if let Some((start, end)) = untaken_span {
+                        for id in start.0..=end.0 {
+                            unreachable.insert(NodeId(id));
+                        }
                     }
 
                     outputs.insert(*node_id, Value::Null);
@@ -296,10 +393,11 @@ impl<'a> Execution<'a> {
                         for (_slot, data_ref) in args {
                             let val = match self.resolve_data_ref(data_ref, &outputs) {
                                 Ok(v) => v,
-                                Err(_) => {
+                                Err(detail) => {
                                     return (
                                         Err(ExecutionError::MissingOutput {
                                             node: data_ref.node,
+                                            detail,
                                         }),
                                         outputs,
                                     );
@@ -328,10 +426,11 @@ impl<'a> Execution<'a> {
                     for (slot, data_ref) in args {
                         let val = match self.resolve_data_ref(data_ref, &outputs) {
                             Ok(v) => v,
-                            Err(_) => {
+                            Err(detail) => {
                                 return (
                                     Err(ExecutionError::MissingOutput {
                                         node: data_ref.node,
+                                        detail,
                                     }),
                                     outputs,
                                 );
@@ -356,10 +455,11 @@ impl<'a> Execution<'a> {
                 } => {
                     let array = match self.resolve_data_ref(iterable, &outputs) {
                         Ok(v) => v,
-                        Err(_) => {
+                        Err(detail) => {
                             return (
                                 Err(ExecutionError::MissingOutput {
                                     node: iterable.node,
+                                    detail,
                                 }),
                                 outputs,
                             );
@@ -391,10 +491,11 @@ impl<'a> Execution<'a> {
                         for (name, data_ref) in captured {
                             let val = match self.resolve_data_ref(data_ref, &outputs) {
                                 Ok(v) => v,
-                                Err(_) => {
+                                Err(detail) => {
                                     return (
                                         Err(ExecutionError::MissingOutput {
                                             node: data_ref.node,
+                                            detail,
                                         }),
                                         outputs,
                                     );
@@ -442,15 +543,17 @@ impl<'a> Execution<'a> {
                     body_graph,
                     captured,
                 } => {
+                    let mut iterations: u64 = 0;
                     loop {
                         let mut obj = indexmap::IndexMap::new();
                         for (name, data_ref) in captured {
                             let val = match self.resolve_data_ref(data_ref, &outputs) {
                                 Ok(v) => v,
-                                Err(_) => {
+                                Err(detail) => {
                                     return (
                                         Err(ExecutionError::MissingOutput {
                                             node: data_ref.node,
+                                            detail,
                                         }),
                                         outputs,
                                     );
@@ -499,6 +602,20 @@ impl<'a> Execution<'a> {
                                 if !cond {
                                     break;
                                 }
+
+                                // The condition held â€” this iteration will
+                                // execute the body. Count it against the cap
+                                // (condition-only entries don't count).
+                                iterations += 1;
+                                if iterations > self.limits.max_loop_iterations {
+                                    return (
+                                        Err(ExecutionError::LoopLimitExceeded {
+                                            node: *node_id,
+                                            limit: self.limits.max_loop_iterations,
+                                        }),
+                                        outputs,
+                                    );
+                                }
                             }
                             Err(ExecutionError::Break) => break,
                             Err(ExecutionError::Continue) => continue,
@@ -516,6 +633,23 @@ impl<'a> Execution<'a> {
                     control = Some(ExecutionError::Continue);
                     outputs.insert(*node_id, Value::Null);
                 }
+                NodeKind::Return { value } => {
+                    let v = match self.resolve_data_ref(value, &outputs) {
+                        Ok(v) => v,
+                        Err(detail) => {
+                            return (
+                                Err(ExecutionError::MissingOutput {
+                                    node: value.node,
+                                    detail,
+                                }),
+                                outputs,
+                            );
+                        }
+                    };
+                    early_return = Some(v);
+                    control = Some(ExecutionError::Returned);
+                    outputs.insert(*node_id, Value::Null);
+                }
                 other => {
                     return (
                         Err(ExecutionError::UnsupportedNode {
@@ -528,33 +662,60 @@ impl<'a> Execution<'a> {
             }
         }
 
-        // Return the output node's value, or the control error if one was set.
-        let result = match control {
-            Some(err) => Err(err),
-            None => outputs.get(&graph.return_node).cloned().ok_or_else(|| {
-                ExecutionError::MissingReturnValue {
-                    graph_id: graph.graph_id.clone(),
-                }
-            }),
+        // A `return` node short-circuits everything, including the Output
+        // node's value and loop control sentinels.
+        let result = if let Some(v) = early_return {
+            Ok(v)
+        } else {
+            match control {
+                Some(err) => Err(err),
+                None => outputs.get(&graph.return_node).cloned().ok_or_else(|| {
+                    ExecutionError::MissingReturnValue {
+                        graph_id: graph.graph_id.clone(),
+                    }
+                }),
+            }
         };
         (result, outputs)
     }
 
     /// Resolve a `DataRef` to a `Value` by looking up the source node's output.
+    ///
+    /// The `Err` variant carries a human-readable detail string describing
+    /// exactly what was missing, so failures name their cause instead of a
+    /// bare node id.
     fn resolve_data_ref(
         &self,
         data_ref: &quew_ir::graph::DataRef,
         outputs: &HashMap<NodeId, Value>,
-    ) -> Result<Value, ()> {
-        let base = outputs.get(&data_ref.node).cloned().ok_or(())?;
+    ) -> Result<Value, String> {
+        let base = match outputs.get(&data_ref.node) {
+            Some(v) => v.clone(),
+            None => {
+                return Err(format!(
+                    "node {} never produced an output",
+                    data_ref.node.0
+                ));
+            }
+        };
 
         match &data_ref.slot {
             None => Ok(base),
             Some(slot) => {
                 let field_name = self.interner.resolve(*slot).to_string();
                 match base {
-                    Value::Object(map) => map.get(&field_name).cloned().ok_or(()),
-                    _ => Err(()),
+                    Value::Object(map) => map.get(&field_name).cloned().ok_or_else(|| {
+                        format!(
+                            "output of node {} has no field '{field_name}'",
+                            data_ref.node.0
+                        )
+                    }),
+                    other => Err(format!(
+                        "output of node {} is {}, expected an object to read \
+                         field '{field_name}' from",
+                        data_ref.node.0,
+                        other.type_name()
+                    )),
                 }
             }
         }
@@ -580,31 +741,6 @@ impl<'a> Execution<'a> {
 
         // Fallback: construct the graph ref from the name.
         format!("function:{name}")
-    }
-
-    /// Mark a node and all nodes transitively reachable from it as unreachable.
-    ///
-    /// This is used after a Branch to skip the untaken arm. We only follow
-    /// edges where this node is the *source* (i.e. edges from this node to
-    /// downstream nodes).
-    fn mark_unreachable(
-        &self,
-        graph: &AgentGraph,
-        start: NodeId,
-        unreachable: &mut HashSet<NodeId>,
-    ) {
-        let mut queue = vec![start];
-        while let Some(current) = queue.pop() {
-            if !unreachable.insert(current) {
-                continue; // already visited
-            }
-            // Find all edges originating from this node.
-            for edge in &graph.edges {
-                if edge.from == current {
-                    queue.push(edge.to);
-                }
-            }
-        }
     }
 }
 

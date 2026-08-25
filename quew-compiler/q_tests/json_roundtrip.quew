@@ -1,0 +1,5 @@
+function main(): string {
+    let parsed = json_parse("{{\"name\": \"ada\", \"age\": 36}}")
+    let name = json_get(parsed, "name")
+    return "{name} ok"
+}

@@ -11,7 +11,7 @@ use quew_interner::Interner;
 use quew_ir::QuewGraphIR;
 use quew_ir::graph::{BinaryOp, DataRef, IrExpr, IrLit, NodeId, UnaryOp};
 
-use crate::native::{NativeHandler, NativeRegistry};
+use crate::native::NativeHandler;
 use crate::value::{Value, ValueError};
 
 /// An error produced while evaluating an expression.
@@ -90,39 +90,38 @@ impl std::error::Error for EvalError {}
 
 /// Evaluate an `IrExpr` into a `Value`.
 ///
+/// This is a method on [`Execution`](crate::execution::Execution) so that
+/// expression-level function calls recurse through the *same* executor
+/// instance, sharing its safety limits and nested-call-depth tracking.
+/// (Previously each graph call from an expression constructed a fresh
+/// executor, which made depth limits unenforceable.)
+///
 /// `outputs` must contain an entry for every `NodeId` referenced by
 /// `DataRef`s inside the expression. If a referenced node is missing,
 /// [`EvalError::MissingNodeOutput`] is returned.
-///
-/// The `interner` is used to resolve `InternedStr` field names into readable
-/// strings for object field access and error messages.
-///
-/// The `natives` registry is used to dispatch `IrExpr::Call` nodes that
-/// reference builtin functions (`@@rust`).
-///
-/// The `ir` is used to look up and recurse into function graphs for inline
-/// calls that are not native builtins.
-pub fn eval_expr(
-    expr: &IrExpr,
-    outputs: &HashMap<NodeId, Value>,
-    interner: &Arc<Interner>,
-    natives: &NativeRegistry,
-    ir: &QuewGraphIR,
-) -> Result<Value, EvalError> {
-    match expr {
+impl<'a> crate::execution::Execution<'a> {
+    pub fn eval_expr(
+        &self,
+        expr: &IrExpr,
+        outputs: &HashMap<NodeId, Value>,
+    ) -> Result<Value, EvalError> {
+        let ir = self.ir;
+        let interner = self.interner;
+        let natives = self.natives;
+        match expr {
         IrExpr::Lit(lit) => Ok(eval_lit(lit, interner)),
         IrExpr::Ref(data_ref) => eval_data_ref(data_ref, outputs, interner),
         IrExpr::Binary { left, op, right } => {
-            let l = eval_expr(left, outputs, interner, natives, ir)?;
-            let r = eval_expr(right, outputs, interner, natives, ir)?;
+            let l = self.eval_expr(left, outputs)?;
+            let r = self.eval_expr(right, outputs)?;
             eval_binary_op(&l, *op, &r)
         }
         IrExpr::Unary { op, expr } => {
-            let v = eval_expr(expr, outputs, interner, natives, ir)?;
+            let v = self.eval_expr(expr, outputs)?;
             eval_unary_op(*op, &v)
         }
         IrExpr::Member { base, field } => {
-            let base_val = eval_expr(base, outputs, interner, natives, ir)?;
+            let base_val = self.eval_expr(base, outputs)?;
             let field_name = interner.resolve(*field).to_string();
             match base_val {
                 Value::Object(map) => {
@@ -156,7 +155,7 @@ pub fn eval_expr(
             if let Some(entry) = native_entry {
                 let mut arg_values = Vec::with_capacity(args.len());
                 for (_name, arg_expr) in args {
-                    arg_values.push(eval_expr(arg_expr, outputs, interner, natives, ir)?);
+                    arg_values.push(self.eval_expr(arg_expr, outputs)?);
                 }
                 match &entry.handler {
                     NativeHandler::Sync(f) => {
@@ -171,15 +170,35 @@ pub fn eval_expr(
                     // The compiler binds all parameters as `input.<name>`, so the
                     // runtime always packages arguments into an object keyed by
                     // parameter name, even for single-argument functions.
+                    //
+                    // IR argument names are not always trustworthy: the lowerer
+                    // falls back to positional `arg0, arg1, ...` when the callee
+                    // was not yet registered while its own body was lowered
+                    // (self-recursion). Re-key positionally from the callee's
+                    // real signature whenever we have one.
+                    let param_keys: Vec<String> = ir
+                        .definitions
+                        .functions
+                        .get(function)
+                        .map(|func| {
+                            func.params
+                                .keys()
+                                .map(|k| interner.resolve(*k).to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default();
+
                     let mut obj = indexmap::IndexMap::new();
-                    for (name, arg_expr) in args {
-                        let val = eval_expr(arg_expr, outputs, interner, natives, ir)?;
-                        let key = interner.resolve(*name).to_string();
+                    for (idx, (_name, arg_expr)) in args.iter().enumerate() {
+                        let val = self.eval_expr(arg_expr, outputs)?;
+                        let key = match param_keys.get(idx) {
+                            Some(k) => k.clone(),
+                            None => interner.resolve(*_name).to_string(),
+                        };
                         obj.insert(key, val);
                     }
 
-                    let child = crate::execution::Execution::new(ir, interner, natives);
-                    child.run(&graph_id, Value::Object(obj)).map_err(|e| {
+                    self.run(&graph_id, Value::Object(obj)).map_err(|e| {
                         EvalError::GraphCallError {
                             message: e.to_string(),
                         }
@@ -192,33 +211,33 @@ pub fn eval_expr(
         IrExpr::Array(elements) => {
             let mut vals = Vec::with_capacity(elements.len());
             for elem in elements {
-                vals.push(eval_expr(elem, outputs, interner, natives, ir)?);
+                vals.push(self.eval_expr(elem, outputs)?);
             }
             Ok(Value::Array(vals))
         }
         IrExpr::Object(fields) => {
             let mut map = indexmap::IndexMap::new();
             for (name, value_expr) in fields {
-                let val = eval_expr(value_expr, outputs, interner, natives, ir)?;
+                let val = self.eval_expr(value_expr, outputs)?;
                 map.insert(interner.resolve(*name).to_string(), val);
             }
             Ok(Value::Object(map))
         }
         IrExpr::Ternary { cond, then, else_ } => {
-            let c = eval_expr(cond, outputs, interner, natives, ir)?;
+            let c = self.eval_expr(cond, outputs)?;
             match c {
                 Value::Bool(b) => {
                     if b {
-                        eval_expr(then, outputs, interner, natives, ir)
+                        self.eval_expr(then, outputs)
                     } else {
-                        eval_expr(else_, outputs, interner, natives, ir)
+                        self.eval_expr(else_, outputs)
                     }
                 }
                 _ => Err(EvalError::NonBooleanCondition),
             }
         }
         IrExpr::Is { value, ty } => {
-            let val = eval_expr(value, outputs, interner, natives, ir)?;
+            let val = self.eval_expr(value, outputs)?;
             let ty_name = interner.resolve(*ty);
             let result = match ty_name {
                 "string" => matches!(val, Value::String(_)),
@@ -228,9 +247,11 @@ pub fn eval_expr(
                 "null" => matches!(val, Value::Null),
                 "void" => matches!(val, Value::Null),
                 "array" => matches!(val, Value::Array(_)),
+                "any" => true,
                 _ => value_matches_named_type(&val, *ty, interner, ir),
             };
             Ok(Value::Bool(result))
+        }
         }
     }
 }
@@ -267,6 +288,7 @@ fn value_matches_ir_type(
         quew_ir::types::IrType::String | quew_ir::types::IrType::Text => {
             matches!(value, Value::String(_))
         }
+        quew_ir::types::IrType::Any => true,
         quew_ir::types::IrType::Number => matches!(value, Value::Number(_)),
         quew_ir::types::IrType::Float => matches!(value, Value::Float(_)),
         quew_ir::types::IrType::Bool => matches!(value, Value::Bool(_)),
@@ -371,6 +393,20 @@ fn eval_unary_op(op: UnaryOp, value: &Value) -> Result<Value, EvalError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::native::NativeRegistry;
+
+    /// Test shim preserving the old free-function call shape; evaluation now
+    /// lives on `Execution` so graph calls share depth tracking.
+    fn eval_expr(
+        expr: &IrExpr,
+        outputs: &HashMap<NodeId, Value>,
+        interner: &Arc<Interner>,
+        natives: &NativeRegistry,
+        ir: &QuewGraphIR,
+    ) -> Result<Value, EvalError> {
+        crate::execution::Execution::new(ir, interner, natives).eval_expr(expr, outputs)
+    }
+
     use quew_ir::graph::{IrLit, NodeId};
 
     fn lit_int(n: i64) -> IrExpr {

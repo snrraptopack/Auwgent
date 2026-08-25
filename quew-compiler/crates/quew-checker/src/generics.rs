@@ -14,7 +14,7 @@ pub(crate) fn instantiate_function_call(
     call_span: Span,
     diags: &mut Vec<Diagnostic>,
 ) -> Ty {
-    if function.params.len() != arg_tys.len() {
+    if arg_tys.len() > function.params.len() {
         diags.push(error(
             call_span,
             format!(
@@ -27,8 +27,12 @@ pub(crate) fn instantiate_function_call(
         return Ty::Error;
     }
 
+    // Trailing optional parameters (`param?: T`) may be omitted at the call
+    // site; missing arguments are checked only for the provided prefix.
+    let provided = &function.params[..arg_tys.len()];
+
     let mut bindings = IndexMap::new();
-    for ((_, param_ty), arg_ty) in function.params.iter().zip(arg_tys) {
+    for ((_, param_ty), arg_ty) in provided.iter().zip(arg_tys) {
         bind_generics(param_ty, arg_ty, &mut bindings, call_span, diags);
     }
 
@@ -43,7 +47,7 @@ pub(crate) fn instantiate_function_call(
         }
     }
 
-    for ((_, param_ty), arg_ty) in function.params.iter().zip(arg_tys) {
+    for ((_name, param_ty), arg_ty) in provided.iter().zip(arg_tys) {
         let expected = param_ty.substitute(&bindings);
         if !arg_ty.is_assignable_to(&expected) {
             diags.push(error(

@@ -64,12 +64,20 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
     }
 
     // ── 3. Determine entry agent ──────────────────────────────────────────────
-    // Prefer the first agent, but allow function-only modules so
+    // The CLI merges prelude items *before* user items, so user declarations
+    // live at the end of `module.items`. Scanning in reverse therefore prefers
+    // a user-declared agent/function over any prelude declaration.
+    //
+    // Prefer the last declared agent, but allow function-only modules so
     // `quew run --target function:name` can execute deterministic functions.
-    // Future: an explicit `@entry` annotation will override this.
+    //
+    // NOTE: this is an approximation until an explicit `@entry` annotation
+    // exists. With multiple user agents the last one wins; pass
+    // `--target agent:Name` at the runtime level to override.
     let entry_agent: InternedStr = module
         .items
         .iter()
+        .rev()
         .find_map(|i| {
             if let quew_ast::Item::Agent(a) = i {
                 Some(a.name)
@@ -78,7 +86,7 @@ pub fn lower(module: &Module, check: &CheckResult, interner: &Arc<Interner>) -> 
             }
         })
         .or_else(|| {
-            module.items.iter().find_map(|i| {
+            module.items.iter().rev().find_map(|i| {
                 if let quew_ast::Item::Function(f) = i {
                     Some(f.name)
                 } else {

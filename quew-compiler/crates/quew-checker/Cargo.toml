@@ -15,9 +15,9 @@ quew-parser = { path = "../quew-parser" }
 quew-ast = { path = "../quew-ast" }
 quew-types = { path = "../quew-types" }
 quew-scope = { path = "../quew-scope" }
-quew-resolve = { path = "../quew-resolve" }
 quew-unify = { path = "../quew-unify" }
 indexmap = { workspace = true }
+include_dir = "0.7"
 
 [dev-dependencies]
 insta = { workspace = true }

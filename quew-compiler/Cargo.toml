@@ -18,14 +18,12 @@ members = [
 
     # Layer 4 — name resolution
     "crates/quew-scope",
-    "crates/quew-resolve",
 
     # Layer 5 — semantic analysis
     "crates/quew-checker",
 
-    # Layer 6 — lowering + output
+    # Layer 6 — lowering
     "crates/quew-ir",
-    "crates/quew-codegen",
 
     # Layer 7 — user-facing binary
     "crates/quew-cli",

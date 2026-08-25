@@ -102,7 +102,7 @@ fn run() -> Result<(), ExitCode> {
                     Ok(())
                 }
                 Err(err) => {
-                    eprintln!("Execution error: {:?}", err);
+                    eprintln!("Execution error: {err}");
                     Err(ExitCode::from(1))
                 }
             }

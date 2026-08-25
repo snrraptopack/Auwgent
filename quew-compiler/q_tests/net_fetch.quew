@@ -1,0 +1,7 @@
+function main(): string {
+    let response = fetch("https://example.com", {"method": "GET"})
+    if response.ok {
+        return "status {response.status}: got {len(response.body)} bytes"
+    }
+    return "request failed"
+}

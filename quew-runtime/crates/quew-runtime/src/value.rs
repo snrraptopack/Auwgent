@@ -116,13 +116,18 @@ impl Value {
 
     /// Add two values. Supported for `Number + Number`, `Float + Float`,
     /// `Number + Float`, `Float + Number`, and `String + String`.
+    ///
+    /// When either side is a String, the other side is converted to its
+    /// display form instead of erroring — this powers string interpolation
+    /// of numbers and booleans (`"count: {n}"`).
     pub fn add(&self, other: &Value) -> Result<Value, ValueError> {
         match (self, other) {
             (Value::Number(a), Value::Number(b)) => Ok(Value::Number(a + b)),
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::Number(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
             (Value::Float(a), Value::Number(b)) => Ok(Value::Float(a + *b as f64)),
-            (Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+            (Value::String(a), b) => Ok(Value::String(format!("{a}{}", b.to_display_string()))),
+            (a, Value::String(b)) => Ok(Value::String(format!("{}{b}", a.to_display_string()))),
             _ => Err(ValueError::TypeMismatch {
                 op: "add",
                 left: self.type_name(),
@@ -162,6 +167,9 @@ impl Value {
     }
 
     /// Divide two values. Supported for numeric types.
+    ///
+    /// Division by zero errors for both integer and float operands so that
+    /// failures never silently produce `inf`/`NaN` values downstream.
     pub fn div(&self, other: &Value) -> Result<Value, ValueError> {
         match (self, other) {
             (Value::Number(a), Value::Number(b)) => {
@@ -170,9 +178,24 @@ impl Value {
                 }
                 Ok(Value::Number(a / b))
             }
-            (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
-            (Value::Number(a), Value::Float(b)) => Ok(Value::Float(*a as f64 / b)),
-            (Value::Float(a), Value::Number(b)) => Ok(Value::Float(a / *b as f64)),
+            (Value::Float(a), Value::Float(b)) => {
+                if *b == 0.0 {
+                    return Err(ValueError::DivisionByZero);
+                }
+                Ok(Value::Float(a / b))
+            }
+            (Value::Number(a), Value::Float(b)) => {
+                if *b == 0.0 {
+                    return Err(ValueError::DivisionByZero);
+                }
+                Ok(Value::Float(*a as f64 / b))
+            }
+            (Value::Float(a), Value::Number(b)) => {
+                if *b == 0 {
+                    return Err(ValueError::DivisionByZero);
+                }
+                Ok(Value::Float(a / *b as f64))
+            }
             _ => Err(ValueError::TypeMismatch {
                 op: "div",
                 left: self.type_name(),
@@ -223,9 +246,12 @@ impl Value {
 
     /// Inequality comparison.
     pub fn not_eq_val(&self, other: &Value) -> Result<Value, ValueError> {
-        self.eq_val(other).map(|v| match v {
+        let eq = self.eq_val(other)?;
+        Ok(match eq {
             Value::Bool(b) => Value::Bool(!b),
-            _ => unreachable!(),
+            // eq_val always returns Bool; treat anything else conservatively
+            // as "not equal" rather than panicking.
+            _ => Value::Bool(true),
         })
     }
 
@@ -337,6 +363,14 @@ impl Value {
     }
 }
 
+impl Value {
+    /// Render this value as a human-readable string (same as `Display`).
+    /// Used by string concatenation/interpolation with non-string operands.
+    pub fn to_display_string(&self) -> String {
+        self.to_string()
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -415,10 +449,15 @@ mod tests {
     }
 
     #[test]
-    fn mixed_type_addition_errors() {
+    fn string_addition_coerces_other_side_to_display_string() {
+        // String + non-string concatenates (powers interpolation of numbers).
         let a = Value::Number(3);
         let b = Value::String("x".into());
-        assert!(a.add(&b).is_err());
+        assert_eq!(a.add(&b).unwrap(), Value::String("3x".into()));
+        assert_eq!(b.add(&a).unwrap(), Value::String("x3".into()));
+
+        // Non-string + non-string still errors.
+        assert!(Value::Number(1).add(&Value::Bool(true)).is_err());
     }
 
     #[test]

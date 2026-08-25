@@ -714,7 +714,21 @@ fn infer_expr(
             for seg in &interp.segments {
                 if let InterpolatedSegment::Expr(expr) = seg {
                     let ty = infer_expr(expr, table, local, wk, prim, unify, diags, resolved);
-                    if ty != Ty::string() && ty != Ty::Error {
+                    // Strings concatenate directly; numbers, floats, bools,
+                    // null, and `any` are stringified by the runtime.
+                    let interpolatable = matches!(
+                        &ty,
+                        Ty::Error
+                            | Ty::Primitive(
+                                quew_types::PrimTy::String
+                                    | quew_types::PrimTy::Number
+                                    | quew_types::PrimTy::Float
+                                    | quew_types::PrimTy::Bool
+                                    | quew_types::PrimTy::Null
+                                    | quew_types::PrimTy::Any
+                            )
+                    );
+                    if !interpolatable {
                         diags.push(Diagnostic {
                             severity: Severity::Error,
                             message: format!(
@@ -1033,6 +1047,25 @@ fn check_with_block(
 
     for field in &stmt.with_block.fields {
         let k = field.key;
+        // Dynamic model selection (`model: A if cond else B`) is not
+        // supported yet. Reject it here — before both the role-contract
+        // branch and the provider branch — so the lowerer never sees it
+        // (otherwise `lower_model_ref` panics on checker-approved input).
+        if (k == wk.model || k == wk.fallback)
+            && matches!(&field.value, quew_ast::Expr::PostfixIf(_))
+        {
+            let label = if k == wk.model { "model" } else { "fallback" };
+            diags.push(mk_err(
+                field.span,
+                format!("`{label}` does not support dynamic model selection yet"),
+                &format!(
+                    "bind the choice to a local first and reference named models: \
+                     let m = Gemini; reply(..) with {{ {label}: m }}"
+                ),
+                None,
+            ));
+            continue;
+        }
         if k == wk.tools {
             check_tools_field(field, table, local, wk, prim, unify, diags, resolved);
         } else if let Some(expected) = contract_fields.as_ref().and_then(|fields| fields.get(&k)) {

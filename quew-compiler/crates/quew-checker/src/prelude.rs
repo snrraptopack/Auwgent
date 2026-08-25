@@ -5,34 +5,16 @@
 
 use std::sync::Arc;
 
+use include_dir::{include_dir, Dir};
 use quew_ast::Module;
 use quew_errors::{Diagnostic, Span};
 use quew_interner::Interner;
 use quew_source::SourceMap;
 
-const TOOLS_PRELUDE: &str = include_str!("../../../prelude/tools.quew");
-const WITH_PRELUDE: &str = include_str!("../../../prelude/with.quew");
-const MODELS_PRELUDE: &str = include_str!("../../../prelude/models.quew");
-const STRING_PRELUDE: &str = include_str!("../../../prelude/string.quew");
-const ARRAY_PRELUDE: &str = include_str!("../../../prelude/array.quew");
-const NUMBER_PRELUDE: &str = include_str!("../../../prelude/number.quew");
-const IO_PRELUDE: &str = include_str!("../../../prelude/io.quew");
-const NET_PRELUDE: &str = include_str!("../../../prelude/net.quew");
-const JSON_PRELUDE: &str = include_str!("../../../prelude/json.quew");
-const GEMINI_PRELUDE: &str = include_str!("../../../prelude/gemini.quew");
-
-const PRELUDE_FILES: &[(&str, &str)] = &[
-    ("<quew-prelude:tools.quew>", TOOLS_PRELUDE),
-    ("<quew-prelude:with.quew>", WITH_PRELUDE),
-    ("<quew-prelude:models.quew>", MODELS_PRELUDE),
-    ("<quew-prelude:string.quew>", STRING_PRELUDE),
-    ("<quew-prelude:array.quew>", ARRAY_PRELUDE),
-    ("<quew-prelude:number.quew>", NUMBER_PRELUDE),
-    ("<quew-prelude:io.quew>", IO_PRELUDE),
-    ("<quew-prelude:net.quew>", NET_PRELUDE),
-    ("<quew-prelude:json.quew>", JSON_PRELUDE),
-    ("<quew-prelude:gemini.quew>", GEMINI_PRELUDE),
-];
+/// Every `.quew` file in the workspace `prelude/` directory, embedded at
+/// compile time. Adding a new prelude file requires **no Rust changes** —
+/// drop `foo.quew` into `prelude/` and it is picked up automatically.
+static PRELUDE_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prelude");
 
 #[derive(Debug)]
 pub struct PreludeModule {
@@ -60,8 +42,23 @@ fn parse_prelude(interner: &Arc<Interner>) -> PreludeModule {
     let mut diagnostics = Vec::new();
     let mut span = Span::new(0, 0);
 
-    for (path, source) in PRELUDE_FILES {
-        let source_id = source_map.add(path, *source);
+    // Deterministic order: sort by path so prelude semantics never depend on
+    // filesystem enumeration order.
+    let mut files: Vec<(String, &include_dir::File)> = PRELUDE_DIR
+        .files()
+        .filter(|f| f.path().extension().is_some_and(|e| e == "quew"))
+        .map(|f| (f.path().to_string_lossy().to_string(), f))
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut count = 0usize;
+    for (path, file) in files {
+        let Some(source) = file.contents_utf8() else {
+            continue;
+        };
+        count += 1;
+        let source_path = format!("<quew-prelude:{path}>");
+        let source_id = source_map.add(&source_path, source);
         let lex = quew_lexer::lex(source, source_id, interner);
         let parse = quew_parser::parse(&lex, source, interner);
 
@@ -69,6 +66,13 @@ fn parse_prelude(interner: &Arc<Interner>) -> PreludeModule {
         diagnostics.extend(parse.errors);
         span = span.cover(parse.module.span);
         items.extend(parse.module.items);
+    }
+
+    if count == 0 {
+        diagnostics.push(Diagnostic::error(
+            "prelude directory is empty or missing",
+            Span::new(0, 0),
+        ));
     }
 
     PreludeModule {

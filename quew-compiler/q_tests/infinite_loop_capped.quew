@@ -1,0 +1,7 @@
+function main(): number {
+    let count = 0
+    while true {
+        count = count + 1
+    }
+    return count
+}

@@ -24,6 +24,9 @@ pub enum IrType {
     Bool,
     Null,
     Void,
+    /// Dynamic value — matches any runtime value. Produced/consumed by
+    /// JSON builtins and other untyped boundaries.
+    Any,
 
     // ── Composite ─────────────────────────────────────────────────────────────
     /// An inline or named record: `{ field: Type, … }`.

@@ -52,6 +52,7 @@ pub(crate) struct PrimKeys {
     null: InternedStr,
     void: InternedStr,
     text: InternedStr,
+    any: InternedStr,
 }
 
 impl PrimKeys {
@@ -64,6 +65,7 @@ impl PrimKeys {
             null: i.intern("null"),
             void: i.intern("void"),
             text: i.intern("Text"),
+            any: i.intern("any"),
         }
     }
 
@@ -80,6 +82,8 @@ impl PrimKeys {
             Some(Ty::null())
         } else if name == self.void {
             Some(Ty::void())
+        } else if name == self.any {
+            Some(Ty::any())
         } else {
             None
         }

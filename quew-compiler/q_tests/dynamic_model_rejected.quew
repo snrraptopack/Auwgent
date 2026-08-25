@@ -1,0 +1,10 @@
+model Gemini = { model: gemini("gemini-pro") }
+model Groq = { model: groq("llama-3.3-70b-versatile") }
+
+function main(): string {
+    reply("hi") with {
+        prompt: "p"
+        model: Gemini if true else Groq
+    }
+    return "done"
+}

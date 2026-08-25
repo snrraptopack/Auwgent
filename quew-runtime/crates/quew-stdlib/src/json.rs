@@ -28,40 +28,36 @@ pub fn json_stringify(value: &Value) -> String {
     }
 }
 
-/// Walk a dot-separated path through a JSON value and return the
-/// element at that path as a JSON string.
+/// Walk a dot-separated path through a JSON value and return the element at
+/// that path as a real runtime value (`any`). Missing paths yield null.
 #[quew_builtin(
     id = "std.json.get",
-    decl = r#"!@@function json_get(value: string, path: string): string"#,
+    decl = r#"!@@function json_get(value: any, path: string): any"#,
 )]
-pub fn json_get(value: &Value, path: &str) -> String {
+pub fn json_get(value: &Value, path: &str) -> Value {
     let mut current = value;
     for segment in path.split('.') {
         match current {
             Value::Object(map) => {
                 current = match map.get(segment) {
                     Some(v) => v,
-                    None => return Value::Null.to_string(),
+                    None => return Value::Null,
                 };
             }
             Value::Array(arr) => {
                 let idx: usize = match segment.parse() {
                     Ok(i) => i,
-                    Err(_) => return Value::Null.to_string(),
+                    Err(_) => return Value::Null,
                 };
                 current = match arr.get(idx) {
                     Some(v) => v,
-                    None => return Value::Null.to_string(),
+                    None => return Value::Null,
                 };
             }
-            _ => return Value::Null.to_string(),
+            _ => return Value::Null,
         }
     }
-
-    match value_to_serde(current) {
-        Ok(json) => json.to_string(),
-        Err(_) => Value::Null.to_string(),
-    }
+    current.clone()
 }
 
 // ── Helpers: serde_json <-> Value ───────────────────────────────────────────
